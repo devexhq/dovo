@@ -29,6 +29,7 @@ class ArtifactsPruneFormatter(ComponentFormatter[ArtifactsPruneResult, Artifacts
             items=list(data.items),
             pruned_count=sum(1 for item in data.items if item.pruned),
             failed_count=sum(1 for item in data.items if not item.pruned),
+            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: ArtifactsPruneResult) -> RenderableType:

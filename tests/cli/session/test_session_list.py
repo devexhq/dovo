@@ -11,6 +11,8 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.core.db import SessionStatus
+from tests.harness.diagnostic_log import FROZEN_EVENT_ID
+from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_db
 
 
@@ -35,6 +37,31 @@ class SessionListCliIntegrationTests:
         event = json.loads(result.stdout)
         assert event["event_type"] == "HistoryListResult"
         assert [row["session_id"] for row in event["payload"]["sessions"]] == ["session-failed", "session-completed"]
+
+    def test_session_list_cli_json_reports_reconciliation_record_in_diagnostics(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Exit 0 and emit the sessions with no warning for the failed reconciliation and diagnostics [RECORD_JSON]."""
+        db = initialized_workspace_db(cli_workspace)
+        db.sessions.create(
+            session_id="session-completed",
+            blueprint_name="task-a",
+            blueprint_key="task-a",
+            status=SessionStatus.COMPLETED,
+        )
+        fail_reconciliation_list(monkeypatch)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "list", "--format", "json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)["payload"]
+        assert [row["session_id"] for row in payload["sessions"]] == ["session-completed"]
+        assert payload["warnings"] == []
+        assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]
 
     def test_bare_session_and_ls_alias_equal_session_list(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         db = initialized_workspace_db(cli_workspace)

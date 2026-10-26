@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.common.models import Remediation
@@ -26,7 +27,7 @@ from dovo.core.diagnostics.services.runner import (
 )
 from dovo.core.git.runner import GitRunner
 from tests.harness.builders import StubCheck
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -229,10 +230,10 @@ class DiagnosticRunnerContainmentTests:
             )
         ]
 
-    def test_crashing_check_records_error_and_hints_message_and_errors(
+    def test_crashing_check_records_error_in_diagnostics(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory, frozen_diagnostic_clock: Path
     ) -> None:
-        """Append the hint to message and errors[0] and write one doctor.check error record naming the check."""
+        """Keep message and errors[0] without a line, carry the record in diagnostics and write one doctor.check error record naming the check."""
         check = StubCheck(check_id="crashing.check", crash=RuntimeError("boom"))
         context = DiagnosticsContext(
             cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
@@ -240,9 +241,9 @@ class DiagnosticRunnerContainmentTests:
 
         result = execute_single_check(check, context)
 
-        hint = diagnostic_hint(frozen_diagnostic_clock)
-        assert result.message == f"Unhandled exception during check execution: boom{hint}"
-        assert result.errors == [f"Unhandled exception in crashing.check: boom{hint}"]
+        assert result.message == "Unhandled exception during check execution: boom"
+        assert result.errors == ["Unhandled exception in crashing.check: boom"]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         assert result.details == {"exception": "boom", "type": "RuntimeError"}
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "error"
@@ -252,7 +253,7 @@ class DiagnosticRunnerContainmentTests:
     def test_crashing_check_unchanged_when_recorder_cannot_write(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """Return today's message and errors[0] with no hint when <DOVO_HOME>/logs is a regular file."""
+        """Return the message and errors[0] with diagnostics [] when <DOVO_HOME>/logs is a regular file."""
         logs_dir = resolve_global_paths().logs_dir
         logs_dir.parent.mkdir(parents=True, exist_ok=True)
         logs_dir.write_text("not a directory", encoding="utf-8")
@@ -265,6 +266,7 @@ class DiagnosticRunnerContainmentTests:
 
         assert result.message == "Unhandled exception during check execution: boom"
         assert result.errors == ["Unhandled exception in crashing.check: boom"]
+        assert result.diagnostics == []
 
     def test_crashing_check_does_not_halt_subsequent_checks(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
@@ -297,6 +299,28 @@ class DiagnosticRunnerContainmentTests:
         assert report.checks[0].status == CheckStatus.FAILED
         assert report.checks[0].error_code == "DOCTOR_CHECK_CRASH"
         assert report.checks[1].status == CheckStatus.OK
+
+    def test_report_diagnostics_concatenates_checks_in_order(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """With three checks returning [record_a], [] and [record_b], return a report whose diagnostics == [record_a, record_b]."""
+        record_a = DiagnosticRecord(
+            event_id="exc_aaaaaaaaaaaa", log_path=tmp_path / "exc_aaaaaaaaaaaa.json", level=DiagnosticLevel.ERROR
+        )
+        record_b = DiagnosticRecord(
+            event_id="exc_bbbbbbbbbbbb", log_path=tmp_path / "exc_bbbbbbbbbbbb.json", level=DiagnosticLevel.ERROR
+        )
+        registry = CheckRegistry()
+        registry.register(StubCheck(check_id="check.a", diagnostics=[record_a]))
+        registry.register(StubCheck(check_id="check.none"))
+        registry.register(StubCheck(check_id="check.b", diagnostics=[record_b]))
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
+
+        report = DiagnosticRunner(registry=registry).run_checks(context)
+
+        assert report.diagnostics == [record_a, record_b]
 
 
 class DiagnosticRunnerMetricsTests:

@@ -49,6 +49,7 @@ class ArtifactsListFormatter(ComponentFormatter[ArtifactsListResult, ArtifactsLi
             "errors": list(data.errors),
             "warnings": list(data.warnings),
             "remediations": [remediation.model_dump(mode="json") for remediation in data.remediations],
+            "diagnostics": [record.model_dump(mode="json") for record in data.diagnostics],
         }
 
     def to_rich(self, data: ArtifactsListResult) -> RenderableType:

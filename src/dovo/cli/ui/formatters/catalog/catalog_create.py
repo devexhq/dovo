@@ -8,7 +8,7 @@ from rich.console import RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
-from dovo.cli.ui.formatters.common import build_error_panel
+from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogCreateResult, CatalogTier
 
@@ -24,20 +24,25 @@ def _display_path(tier: CatalogTier, rel_path: Path, resolved_path: Path) -> str
     return str(resolved_path)
 
 
+def _render(data: CatalogCreateResult) -> RenderableType:
+    """Render blueprint creation confirmation or failure panel."""
+    if data.errors or not data.ok or data.item is None or data.resolved_path is None:
+        return build_error_panel(
+            "Catalog Creation Failed",
+            data.errors,
+            "Catalog creation failed.",
+            remediations=data.remediations,
+        )
+
+    item_type = enum_value(data.item.item_type)
+    tier = enum_value(data.item.tier)
+    path = _display_path(data.item.tier, data.item.path, data.resolved_path)
+    return Text(f"Created {item_type} '{data.item.name}' (tier: {tier}) at '{path}'.")
+
+
 class CatalogCreateFormatter(ComponentFormatter[CatalogCreateResult]):
     """Formatter for catalog create command results."""
 
     def to_rich(self, data: CatalogCreateResult) -> RenderableType:
-        """Render blueprint creation confirmation or failure panel."""
-        if data.errors or not data.ok or data.item is None or data.resolved_path is None:
-            return build_error_panel(
-                "Catalog Creation Failed",
-                data.errors,
-                "Catalog creation failed.",
-                remediations=data.remediations,
-            )
-
-        item_type = enum_value(data.item.item_type)
-        tier = enum_value(data.item.tier)
-        path = _display_path(data.item.tier, data.item.path, data.resolved_path)
-        return Text(f"Created {item_type} '{data.item.name}' (tier: {tier}) at '{path}'.")
+        """Render blueprint creation confirmation or failure panel, followed by diagnostic_lines(diagnostics)."""
+        return with_diagnostics(_render(data), data.diagnostics)

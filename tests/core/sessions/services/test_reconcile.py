@@ -25,7 +25,7 @@ from dovo.core.sessions.services.reconcile import (
     is_run_stale,
     reconcile_stale_sessions,
 )
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 DEAD_PID = 4242
@@ -288,17 +288,17 @@ class ReconcileStaleRunsTests:
         assert stored.status == expected_status
         assert stored.error_message == expected_error
 
-    def test_repository_failure_records_error_and_returns_hint_warning(
+    def test_repository_failure_records_error_in_diagnostics(
         self, isolated_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return a hint-only warning and write one session.reconcile error record when SessionsRepository.list raises."""
+        """Return no warning, the record in diagnostics, and write one session.reconcile error record when SessionsRepository.list raises."""
         sessions = _sessions_for(isolated_workspace)
         monkeypatch.setattr(SessionsRepository, "list", _raise_db_unavailable)
 
         result = reconcile_stale_sessions(sessions, path=isolated_workspace)
 
         assert result == ReconciliationResult(
-            reconciled=[], warning=diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")
+            reconciled=[], warning=None, diagnostics=[diagnostic_record(frozen_diagnostic_clock)]
         )
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "error"

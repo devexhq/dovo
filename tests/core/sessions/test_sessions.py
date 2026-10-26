@@ -26,6 +26,8 @@ from dovo.core.sessions import (
     SessionLogEvent,
     SessionLogEventType,
 )
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
+from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -391,6 +393,22 @@ class SessionCollectionListTests:
         assert result.status == HistoryListStatus.OK
         assert result.sessions == []
         assert result.warnings == ["Session was terminated abnormally"]
+
+    def test_list_copies_reconciliation_record(
+        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """With SessionsRepository.list raising only under the reconcile lock, return OK sessions, no warning for it and diagnostics [the session.reconcile record]."""
+        sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
+        session_first = _create(sessions.db, "session-001")
+        fail_reconciliation_list(monkeypatch)
+
+        result = sessions.list()
+
+        assert result.status == HistoryListStatus.OK
+        assert result.sessions == [_as_expected_record(session_first)]
+        assert result.warnings == []
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "session.reconcile"
 
 
 class SessionDetailsTests:

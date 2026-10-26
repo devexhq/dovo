@@ -121,6 +121,7 @@ PAYLOAD_CASES = [
             "errors": [],
             "warnings": ["Failed to parse corrupted.yml"],
             "remediations": [],
+            "diagnostics": [],
             "items": [
                 {
                     "sha": "blueprint_1234567",
@@ -143,6 +144,7 @@ PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
             "items": [],
             "type_filter": None,
             "templates": [],

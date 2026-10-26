@@ -90,6 +90,7 @@ class StepDeleteCliTests:
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
             "error_code": None,
             "item": None,
             "deleted": False,

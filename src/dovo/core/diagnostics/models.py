@@ -6,6 +6,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
 from dovo.core.config.models import DovoConfig
@@ -70,6 +71,7 @@ class DiagnosticsReport(BaseModel):
 
     workspace_root: Path
     checks: list[DiagnosticCheckResult]
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)  # every check's records, in check order
     duration_seconds: float = 0.0
 
     @property

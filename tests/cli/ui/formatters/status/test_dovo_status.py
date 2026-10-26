@@ -119,6 +119,7 @@ def _make_status_view(**overrides: object) -> StatusView:
         "errors": [],
         "warnings": [],
         "remediations": [],
+        "diagnostics": [],
     }
     return StatusView.model_validate({**defaults, **overrides})
 
@@ -453,6 +454,7 @@ STATUS_PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
         },
         id="healthy_workspace",
     ),
@@ -479,6 +481,7 @@ STATUS_PAYLOAD_CASES = [
                 {"message": "Run 'dovo init' to initialize Dovo in this repository.", "command": "dovo init"},
                 {"message": "Run 'git init' or navigate to a Git repository.", "command": "git init"},
             ],
+            "diagnostics": [],
         },
         id="uninitialized_non_git",
     ),

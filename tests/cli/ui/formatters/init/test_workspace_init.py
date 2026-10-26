@@ -13,6 +13,7 @@ from dovo.cli.ui.formatters.init import (
     WorkspaceInitView,
 )
 from dovo.common.constants import DOVO_GITIGNORE_TRACKED_ENTRIES
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.bootstrap.models import (
@@ -68,6 +69,7 @@ def make_init_view(**overrides: object) -> WorkspaceInitView:
         "errors": [],
         "warnings": [],
         "remediations": [],
+        "diagnostics": [],
     }
     return WorkspaceInitView.model_validate({**defaults, **overrides})
 
@@ -332,8 +334,12 @@ BOOTSTRAP_FAILURE = FormatterCase(
 )
 
 IDENTITY_FAILURE_ERROR = (
-    "Unable to read project identity at '/workspace/my-repo/.dovo/project.json': denied (PROJECT_IDENTITY_UNREADABLE).\n"
-    "Details logged: /home/you/.dovo/logs/2026-10-19/exc_3f9a1c07b2de.json (event exc_3f9a1c07b2de)"
+    "Unable to read project identity at '/workspace/my-repo/.dovo/project.json': denied (PROJECT_IDENTITY_UNREADABLE)."
+)
+IDENTITY_FAILURE_RECORD = DiagnosticRecord(
+    event_id="exc_3f9a1c07b2de",
+    log_path=Path("/home/you/.dovo/logs/2026-10-19/exc_3f9a1c07b2de.json"),
+    level=DiagnosticLevel.ERROR,
 )
 
 IDENTITY_FAILURE = FormatterCase(
@@ -344,6 +350,7 @@ IDENTITY_FAILURE = FormatterCase(
         errors=[IDENTITY_FAILURE_ERROR],
         remediations=[Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")],
         failure_mode=InitFailureMode.BOOTSTRAP,
+        diagnostics=[IDENTITY_FAILURE_RECORD],
     ),
     view=make_init_view(
         ok=False,
@@ -356,6 +363,7 @@ IDENTITY_FAILURE = FormatterCase(
         failure_mode=InitFailureMode.BOOTSTRAP,
         errors=[IDENTITY_FAILURE_ERROR],
         remediations=[Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")],
+        diagnostics=[IDENTITY_FAILURE_RECORD],
     ),
     render_expectations=[
         "PROJECT_IDENTITY_UNREADABLE",
@@ -436,6 +444,7 @@ INIT_PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
         },
         id="initialized_payload",
     ),
@@ -465,6 +474,7 @@ INIT_PAYLOAD_CASES = [
             "errors": ["The current directory is not a valid Git repository."],
             "warnings": [],
             "remediations": [{"message": "Run 'git init' before running 'dovo init'.", "command": "git init"}],
+            "diagnostics": [],
         },
         id="preflight_failure_payload",
     ),
@@ -494,6 +504,12 @@ INIT_PAYLOAD_CASES = [
             "errors": [IDENTITY_FAILURE_ERROR],
             "warnings": [],
             "remediations": [{"message": "Resolve the path conflict above, then rerun 'dovo init'", "command": None}],
+            "diagnostics": [
+                {
+                    "event_id": "exc_3f9a1c07b2de",
+                    "log_path": "/home/you/.dovo/logs/2026-10-19/exc_3f9a1c07b2de.json",
+                }
+            ],
         },
         id="identity_failure_payload",
     ),

@@ -17,7 +17,7 @@ from dovo.cli.ui.formatters.catalog.common import (
     build_catalog_template_table,
     catalog_type_label,
 )
-from dovo.cli.ui.formatters.common import build_error_panel
+from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogListResult
 
@@ -40,6 +40,23 @@ def _render_list_items(view: CatalogListView) -> RenderableType:
     for warning in view.warnings:
         renderables.append(Panel(warning, title="Catalog Scan Warning", border_style="red"))
     return Group(*renderables)
+
+
+def _render(view: CatalogListView) -> RenderableType:
+    """Render catalog blueprint list, templates table, or empty state from the view."""
+    if view.errors:
+        return build_error_panel("Catalog Filter Error", view.errors, remediations=view.remediations)
+
+    if view.templates:
+        return build_catalog_template_table(view.templates)
+
+    if view.type_filter == "template":
+        return Text("No packaged templates found.")
+
+    if not view.items:
+        return _render_list_empty(view)
+
+    return _render_list_items(view)
 
 
 class CatalogListFormatter(ComponentFormatter[CatalogListResult, CatalogListView]):
@@ -77,22 +94,10 @@ class CatalogListFormatter(ComponentFormatter[CatalogListResult, CatalogListView
             errors=data.errors,
             warnings=data.warnings,
             remediations=data.remediations,
+            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: CatalogListResult) -> RenderableType:
-        """Render catalog blueprint list, templates table, or empty state."""
+        """Render catalog blueprint list, templates table, or empty state, followed by diagnostic_lines(diagnostics)."""
         view = self.transform(data)
-
-        if view.errors:
-            return build_error_panel("Catalog Filter Error", view.errors, remediations=view.remediations)
-
-        if view.templates:
-            return build_catalog_template_table(view.templates)
-
-        if view.type_filter == "template":
-            return Text("No packaged templates found.")
-
-        if not view.items:
-            return _render_list_empty(view)
-
-        return _render_list_items(view)
+        return with_diagnostics(_render(view), view.diagnostics)

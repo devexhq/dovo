@@ -104,3 +104,11 @@ def append_diagnostic_hint(message: str, record: DiagnosticRecord | None) -> str
         return message
 
     return f"{message}\n{line}"
+
+
+def error_diagnostics(record: DiagnosticRecord | None) -> list[DiagnosticRecord]:
+    """Return [record] for an error-level record, else []."""
+    if record is None or record.level is not DiagnosticLevel.ERROR:
+        return []
+
+    return [record]

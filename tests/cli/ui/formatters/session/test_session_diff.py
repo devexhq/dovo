@@ -43,6 +43,7 @@ def make_diff_view(**overrides: object) -> SessionDiffView:
         "errors": [],
         "warnings": [],
         "remediations": [],
+        "diagnostics": [],
     }
     return SessionDiffView.model_validate({**defaults, **overrides})
 
@@ -174,6 +175,7 @@ DIFF_PAYLOAD_CASES = [
             "errors": [],
             "warnings": ["Non-critical warning"],
             "remediations": [],
+            "diagnostics": [],
         },
         id="ok_populated_diff",
     ),
@@ -195,6 +197,7 @@ DIFF_PAYLOAD_CASES = [
             "remediations": [
                 {"message": "Run 'dovo session list' to list valid session IDs", "command": "dovo session list"}
             ],
+            "diagnostics": [],
         },
         id="session_not_found",
     ),

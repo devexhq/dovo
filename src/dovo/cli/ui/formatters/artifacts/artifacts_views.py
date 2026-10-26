@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.core.artifacts.models import ArtifactsPruneStatus, PrunedArtifact
 
 
@@ -47,3 +48,4 @@ class ArtifactsPruneView(BaseModel):
     items: list[PrunedArtifact] = Field(default_factory=list)
     pruned_count: int = 0
     failed_count: int = 0
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)

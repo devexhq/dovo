@@ -6,6 +6,7 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.common import with_diagnostics
 from dovo.cli.ui.formatters.status.common import build_status_table
 from dovo.cli.ui.formatters.status.status_view import StatusHealth, StatusView
 from dovo.common.formatters import format_remediations
@@ -78,10 +79,11 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.remediations),
+            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: DovoStatusResult) -> RenderableType:
-        """Render status summary table, warnings, and the remediation Fix: block from transform(data)."""
+        """Render status summary table, warnings, the remediation Fix: block and diagnostic_lines(view.diagnostics) from transform(data)."""
         view = self.transform(data)
         table = build_status_table(view)
         renderables: list[RenderableType] = [table]
@@ -96,4 +98,4 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
             renderables.append(Text(""))
             renderables.append(Text(format_remediations(view.remediations)))
 
-        return Group(*renderables) if len(renderables) > 1 else renderables[0]
+        return with_diagnostics(Group(*renderables) if len(renderables) > 1 else renderables[0], view.diagnostics)

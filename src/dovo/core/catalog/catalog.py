@@ -8,7 +8,7 @@ from typing import Any, Protocol, Self
 
 from pydantic import ValidationError
 
-from dovo.common.diagnostic_log import append_diagnostic_hint
+from dovo.common.diagnostic_log import error_diagnostics
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError, Failure, catch_failure
 from dovo.common.filesystem import Filesystem, WorkspacePaths
@@ -78,8 +78,9 @@ class Catalog:
         if caught.failure is not None:
             return CatalogListResult(
                 error_code=caught.failure.error_code,
-                errors=[_failure_message(caught.failure)],
+                errors=[caught.failure.message],
                 remediations=list(caught.failure.remediations),
+                diagnostics=error_diagnostics(caught.failure.diagnostic),
             )
         return listed
 
@@ -128,8 +129,9 @@ class Catalog:
         if caught.failure is not None:
             return CatalogShowResult(
                 error_code=caught.failure.error_code,
-                errors=[_failure_message(caught.failure)],
+                errors=[caught.failure.message],
                 remediations=list(caught.failure.remediations),
+                diagnostics=error_diagnostics(caught.failure.diagnostic),
             )
         return shown
 
@@ -188,8 +190,9 @@ class Catalog:
         if caught.failure is not None:
             return CatalogCreateResult(
                 error_code=caught.failure.error_code,
-                errors=[_failure_message(caught.failure)],
+                errors=[caught.failure.message],
                 remediations=list(caught.failure.remediations),
+                diagnostics=error_diagnostics(caught.failure.diagnostic),
             )
         return created
 
@@ -210,8 +213,9 @@ class Catalog:
         if caught.failure is not None:
             return CatalogDeleteResult(
                 error_code=caught.failure.error_code,
-                errors=[_failure_message(caught.failure)],
+                errors=[caught.failure.message],
                 remediations=list(caught.failure.remediations),
+                diagnostics=error_diagnostics(caught.failure.diagnostic),
             )
         return CatalogDeleteResult(item=deleted_item, deleted=True)
 
@@ -263,9 +267,10 @@ class Catalog:
                 resolved_path=resolved_path,
                 item_type=item_type_value,
                 error_code=caught.failure.error_code,
-                errors=[_failure_message(caught.failure)],
+                errors=[caught.failure.message],
                 warnings=warnings,
                 remediations=list(caught.failure.remediations),
+                diagnostics=error_diagnostics(caught.failure.diagnostic),
             )
         return validated
 
@@ -357,13 +362,8 @@ def _duplicate_name_warnings(key_or_sha: str, resolution: CatalogResolution) -> 
     ]
 
 
-def _failure_message(failure: Failure) -> str:
-    """Return failure.message with its Details logged line when a diagnostic was recorded."""
-    return append_diagnostic_hint(failure.message, failure.diagnostic)
-
-
 def _target_lookup_failure(target: str, item_type: CatalogItemType, failure: Failure) -> CatalogValidateResult:
-    """Build the failed validate result from a failed target lookup: its code, message and remediations, or the item_type-scoped catalog-name remediation for CATALOG_NOT_FOUND."""
+    """Build the failed validate result from a failed target lookup: its code, message, remediations and recorded diagnostic, or the item_type-scoped catalog-name remediation for CATALOG_NOT_FOUND."""
     remediations = (
         [Remediation(message=f"Check that '{target}' names an indexed {item_type.value}, or pass a file path instead.")]
         if failure.error_code is ErrorCode.CATALOG_NOT_FOUND
@@ -375,7 +375,8 @@ def _target_lookup_failure(target: str, item_type: CatalogItemType, failure: Fai
         resolved_path=None,
         item_type=None,
         error_code=failure.error_code,
-        errors=[_failure_message(failure)],
+        errors=[failure.message],
         warnings=[],
         remediations=remediations,
+        diagnostics=error_diagnostics(failure.diagnostic),
     )

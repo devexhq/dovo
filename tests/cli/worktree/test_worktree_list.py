@@ -86,5 +86,6 @@ class WorktreeListCliIntegrationTests:
                 "errors": [],
                 "warnings": [],
                 "remediations": [],
+                "diagnostics": [],
             },
         }

@@ -22,7 +22,7 @@ from dovo.core.config.generator import ConfigGenerationResult
 from dovo.core.project.models import PROJECT_ID_REGEX, ProjectIdentity, ProjectIdentityOutcome
 from dovo.core.project.services.identity import generate_project_identity, save_project_identity
 from tests.harness.builders import WorkspaceBuilder, init_git_repository
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
 
 class InitializeWorkspaceGlobalHomeTests:
@@ -263,17 +263,17 @@ class InitializeIdentityFailureTests:
         error_code: ErrorCode,
         logged: bool,
     ) -> None:
-        """Return a BOOTSTRAP failure with the identity error code, its message and any Details logged line."""
+        """Return a BOOTSTRAP failure with the identity error code, its message alone and its record in diagnostics when one was logged."""
         identity_path = Filesystem(git_repo).dovo_dir / "project.json"
         _fail_identity_io(monkeypatch, git_repo, failure)
 
         result = initialize_workspace(git_repo)
 
-        hint = diagnostic_hint(frozen_diagnostic_clock) if logged else ""
         assert result.ok is False
         assert result.failure_mode == InitFailureMode.BOOTSTRAP
         assert result.error_code == error_code
-        assert result.errors == [_expected_identity_message(identity_path, failure) + hint]
+        assert result.errors == [_expected_identity_message(identity_path, failure)]
+        assert result.diagnostics == ([diagnostic_record(frozen_diagnostic_clock)] if logged else [])
         assert result.remediations == [Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")]
         assert result.identity_path == identity_path
         assert result.project_identity is None
@@ -286,7 +286,7 @@ class InitializeIdentityFailureTests:
     def test_unexpected_provisioning_error_is_internal_error(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return an INTERNAL_ERROR BOOTSTRAP failure naming the operation, and record one event for it."""
+        """Return an INTERNAL_ERROR BOOTSTRAP failure naming the operation, with its record in diagnostics, and record one event for it."""
         identity_path = Filesystem(git_repo).dovo_dir / "project.json"
         _fail_identity_io(monkeypatch, git_repo, "unexpected")
 
@@ -295,9 +295,8 @@ class InitializeIdentityFailureTests:
         assert result.ok is False
         assert result.failure_mode == InitFailureMode.BOOTSTRAP
         assert result.error_code == ErrorCode.INTERNAL_ERROR
-        assert result.errors == [
-            "Unexpected error during bootstrap.provision_identity: boom" + diagnostic_hint(frozen_diagnostic_clock)
-        ]
+        assert result.errors == ["Unexpected error during bootstrap.provision_identity: boom"]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         assert result.remediations == [Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")]
         assert result.identity_path == identity_path
         event = read_single_event(frozen_diagnostic_clock)

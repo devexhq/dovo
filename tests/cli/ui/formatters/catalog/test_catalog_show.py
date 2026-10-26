@@ -145,6 +145,7 @@ PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
             "item": {
                 "sha": "blueprint_1234567",
                 "item_type": "blueprint",
@@ -166,6 +167,7 @@ PAYLOAD_CASES = [
             "errors": ["Catalog item 'missing' not found."],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
             "item": None,
             "content": None,
             "template_matches": [],
@@ -180,6 +182,7 @@ PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
             "item": None,
             "content": "name: default-blueprint\n",
             "template_matches": [{"item_type": "template", "path": "blueprints/default.yml"}],

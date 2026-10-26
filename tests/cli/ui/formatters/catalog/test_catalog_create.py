@@ -79,6 +79,7 @@ CATALOG_CREATE_PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
             "error_code": None,
             "item": {
                 "key": "test-blueprint",
@@ -100,6 +101,7 @@ CATALOG_CREATE_PAYLOAD_CASES = [
             "errors": ["Naming collision on blueprint."],
             "warnings": [],
             "remediations": [{"message": "Choose a different name", "command": None}],
+            "diagnostics": [],
             "error_code": "CATALOG_ALREADY_EXISTS",
             "item": None,
             "resolved_path": None,

@@ -66,6 +66,7 @@ _EMPTY_ENVELOPE: dict[str, Any] = {
     "errors": [],
     "warnings": [],
     "remediations": [],
+    "diagnostics": [],
 }
 
 LOGS_SHOW_PAYLOAD_CASES = [

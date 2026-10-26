@@ -64,5 +64,6 @@ class WorktreePruneCliIntegrationTests:
                 "errors": [],
                 "warnings": [],
                 "remediations": [],
+                "diagnostics": [],
             },
         }

@@ -9,6 +9,7 @@ from rich.table import Table
 from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.common import with_diagnostics
 from dovo.cli.ui.formatters.doctor.doctor_views import DoctorCheckView, DoctorReportView
 from dovo.common.formatters import format_remediations
 from dovo.common.models import Remediation
@@ -80,13 +81,15 @@ class DoctorReportFormatter(ComponentFormatter[DiagnosticsReport, DoctorReportVi
                     errors=check.errors,
                     warnings=check.warnings,
                     remediations=check.remediations,
+                    diagnostics=check.diagnostics,
                 )
                 for check in data.checks
             ],
+            diagnostics=data.diagnostics,
         )
 
     def to_rich(self, data: DiagnosticsReport) -> RenderableType:
-        """Render the checks table, summary line, and (when any check has remediations) one Fix: block with every remediation in check order, from transform(data)."""
+        """Render the checks table, summary line, and (when any check has remediations) one Fix: block with every remediation in check order, then diagnostic_lines(view.diagnostics), from transform(data)."""
         view = self.transform(data)
         renderables: list[RenderableType] = [_build_checks_table(view), Text(_summary_line(view))]
 
@@ -94,4 +97,4 @@ class DoctorReportFormatter(ComponentFormatter[DiagnosticsReport, DoctorReportVi
         if remediation_summary:
             renderables.append(Text(remediation_summary))
 
-        return Group(*renderables)
+        return with_diagnostics(Group(*renderables), view.diagnostics)

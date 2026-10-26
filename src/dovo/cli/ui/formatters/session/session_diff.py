@@ -112,6 +112,7 @@ class SessionDiffFormatter(ComponentFormatter[DiffResult, SessionDiffView]):
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.remediations),
+            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: DiffResult) -> RenderableType:

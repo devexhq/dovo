@@ -7,6 +7,7 @@ import os
 from collections.abc import Sequence
 
 from dovo.common.clock import Clock
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
 from dovo.common.session_id import SessionIdFactory
@@ -66,9 +67,10 @@ class Engine:
         sid = req.session_id or self.new_id("blueprint")
         engine_warnings: list[str] = list(resolved.warnings)
         snapshot_warnings: list[str] = []
-        manifest = self._snapshot_definitions(blueprint, sid, snapshot_warnings)
+        snapshot_diagnostics: list[DiagnosticRecord] = []
+        manifest = self._snapshot_definitions(blueprint, sid, snapshot_warnings, snapshot_diagnostics)
         if manifest is None:
-            return self._failed_outcome(sid, snapshot_warnings, engine_warnings)
+            return self._failed_outcome(sid, snapshot_warnings, engine_warnings, diagnostics=snapshot_diagnostics)
 
         engine_warnings.extend(snapshot_warnings)
         caller_worktree = True if req.use_worktree is None else req.use_worktree
@@ -166,12 +168,20 @@ class Engine:
                 message = logged_failure(message, exc, operation="engine.persist", context=context)
             return message
 
-    def _failed_outcome(self, session_id: str, errors: list[str], warnings: list[str]) -> RunOutcome:
-        """Build the FAILED RunOutcome for a run that could not start."""
+    def _failed_outcome(
+        self,
+        session_id: str,
+        errors: list[str],
+        warnings: list[str],
+        *,
+        diagnostics: Sequence[DiagnosticRecord] = (),
+    ) -> RunOutcome:
+        """Build the FAILED RunOutcome for a run that could not start, carrying any recorded diagnostics."""
         return RunOutcome(
             status=SessionStatus.FAILED,
             errors=errors,
             warnings=warnings,
+            diagnostics=list(diagnostics),
             worktree_path=self.path,
             session_id=session_id,
         )
@@ -181,10 +191,11 @@ class Engine:
         blueprint: Blueprint,
         session_id: str,
         warnings: list[str],
+        diagnostics: list[DiagnosticRecord],
     ) -> DefinitionsManifest | None:
         """Snapshot the resolved blueprint and its uses: step references into the session directory."""
         session_dir = get_session_dir(self.paths, session_id)
-        return snapshot_definitions(self.catalog, blueprint, session_dir, warnings)
+        return snapshot_definitions(self.catalog, blueprint, session_dir, warnings, diagnostics)
 
     def _build_start_config(
         self,

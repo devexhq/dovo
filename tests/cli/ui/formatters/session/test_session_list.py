@@ -27,6 +27,7 @@ def _make_session_list_view(**overrides: object) -> SessionListView:
         "errors": [],
         "warnings": [],
         "remediations": [],
+        "diagnostics": [],
     }
     return SessionListView.model_validate({**defaults, **overrides})
 
@@ -81,6 +82,7 @@ HISTORY_LIST_PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
         },
         id="empty_runs",
     ),
@@ -104,6 +106,7 @@ HISTORY_LIST_PAYLOAD_CASES = [
             "errors": [],
             "warnings": ["Reconciled 1 interrupted session (session_id: sess-stale)."],
             "remediations": [],
+            "diagnostics": [],
         },
         id="warnings_runs",
     ),

@@ -6,7 +6,7 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
-from dovo.cli.ui.formatters.common import build_error_panel
+from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.cli.ui.formatters.session.common import (
     build_session_summary,
     build_session_table,
@@ -50,12 +50,14 @@ class SessionListFormatter(ComponentFormatter[HistoryListResult, SessionListView
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.remediations),
+            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: HistoryListResult) -> RenderableType:
-        """Render execution history table, warnings, or empty state."""
+        """Render execution history table, warnings, or empty state, followed by diagnostic_lines(view.diagnostics)."""
         view = self.transform(data)
         if view.errors:
-            return build_error_panel("Session List Failed", view.errors, remediations=view.remediations)
+            panel = build_error_panel("Session List Failed", view.errors, remediations=view.remediations)
+            return with_diagnostics(panel, view.diagnostics)
 
-        return _render_list_runs(view)
+        return with_diagnostics(_render_list_runs(view), view.diagnostics)

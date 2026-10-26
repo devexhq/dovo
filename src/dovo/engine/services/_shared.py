@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dovo.common.diagnostic_log import append_diagnostic_hint
+from dovo.common.diagnostic_log import DiagnosticRecord, error_diagnostics
 from dovo.common.exceptions import Failure
 from dovo.core.agents.environment import env_passthrough_flag_error
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
@@ -11,23 +11,26 @@ from dovo.engine.executors.failure_log import logged_failure
 from dovo.engine.models import BlueprintRunResult, RunOutcome
 
 
-def fail(warnings: list[str], message: str) -> BlueprintRunResult:
-    """Construct a failed BlueprintRunResult carrying the caller's accumulated warnings."""
+def fail(warnings: list[str], diagnostics: list[DiagnosticRecord], message: str) -> BlueprintRunResult:
+    """Construct a failed BlueprintRunResult carrying the caller's accumulated warnings and diagnostics."""
     return BlueprintRunResult(
         session_record=None,
         errors=[message],
         warnings=warnings,
+        diagnostics=diagnostics,
     )
 
 
-def fail_with(warnings: list[str], failure: Failure) -> BlueprintRunResult:
-    """Construct a failed BlueprintRunResult from a caught failure: its code, message with any Details logged line, and remediations."""
+def fail_with(warnings: list[str], diagnostics: list[DiagnosticRecord], failure: Failure) -> BlueprintRunResult:
+    """Construct a failed BlueprintRunResult from a caught failure: its code, message, remediations, and its record appended to diagnostics."""
+    diagnostics.extend(error_diagnostics(failure.diagnostic))
     return BlueprintRunResult(
         session_record=None,
         error_code=failure.error_code,
-        errors=[append_diagnostic_hint(failure.message, failure.diagnostic)],
+        errors=[failure.message],
         remediations=list(failure.remediations),
         warnings=warnings,
+        diagnostics=diagnostics,
     )
 
 
@@ -50,21 +53,24 @@ def load_record(sessions_db: SessionsRepository, warnings: list[str], session_id
 def finalize(
     sessions_db: SessionsRepository,
     warnings: list[str],
+    diagnostics: list[DiagnosticRecord],
     run_outcome: RunOutcome,
     session_id: str,
 ) -> BlueprintRunResult:
-    """Merge outcome warnings, load the session record, and build the terminal BlueprintRunResult.
+    """Merge outcome warnings and diagnostics, load the session record, and build the terminal BlueprintRunResult.
 
     ``session_record`` is None whenever the record can't be found — no synthetic
     fallback record is ever substituted, for either caller.
     """
     warnings.extend(run_outcome.warnings)
+    diagnostics.extend(run_outcome.diagnostics)
     record = load_record(sessions_db, warnings, session_id) if session_id else None
 
     return BlueprintRunResult(
         session_record=record,
         errors=list(run_outcome.errors),
         warnings=warnings,
+        diagnostics=diagnostics,
         paused_prompt_id=run_outcome.paused_prompt_id,
     )
 

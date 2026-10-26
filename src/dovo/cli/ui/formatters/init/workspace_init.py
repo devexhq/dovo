@@ -10,6 +10,7 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.common import with_diagnostics
 from dovo.cli.ui.formatters.init.common import (
     render_bootstrap_lines,
     render_config_lines,
@@ -183,14 +184,15 @@ class WorkspaceInitFormatter(ComponentFormatter[WorkspaceInitResult, WorkspaceIn
             errors=_collect_errors(data),
             warnings=_collect_warnings(data),
             remediations=_collect_remediations(data),
+            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: WorkspaceInitResult) -> RenderableType:
-        """Render initialization summary, repair details, or failure panels."""
+        """Render initialization summary, repair details, or failure panels, followed by diagnostic_lines(view.diagnostics)."""
         view = self.transform(data)
         failure_panel = render_failure_panel(view)
         if failure_panel is not None:
-            return failure_panel
+            return with_diagnostics(failure_panel, view.diagnostics)
 
         renderables: list[RenderableType] = [Text("")]
         if view.bootstrap_outcome is not None:
@@ -205,7 +207,7 @@ class WorkspaceInitFormatter(ComponentFormatter[WorkspaceInitResult, WorkspaceIn
                 "[bold dim]Next: run [bold cyan]dovo config show[/bold cyan] or [bold cyan]dovo blueprint list[/bold cyan][/bold dim]"
             )
         )
-        return Group(*renderables)
+        return with_diagnostics(Group(*renderables), view.diagnostics)
 
 
 InitOutcomeFormatter = WorkspaceInitFormatter

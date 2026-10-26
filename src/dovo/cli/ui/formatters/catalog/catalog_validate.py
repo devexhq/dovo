@@ -10,6 +10,7 @@ from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import CatalogValidateView
+from dovo.cli.ui.formatters.common import with_diagnostics
 from dovo.common.models import Remediation
 from dovo.core.catalog.models import CatalogValidateResult
 
@@ -60,6 +61,16 @@ def _build_issues_table(
     return table
 
 
+def _render(view: CatalogValidateView) -> RenderableType:
+    """Render the status banner plus Errors/Warnings tables from the view."""
+    renderables: list[RenderableType] = [_build_status_banner(view)]
+    if view.errors:
+        renderables.append(_build_issues_table("Errors", view.errors, view.remediations, show_remediation=True))
+    if view.warnings:
+        renderables.append(_build_issues_table("Warnings", view.warnings, [], show_remediation=False))
+    return Group(*renderables)
+
+
 class CatalogValidateFormatter(ComponentFormatter[CatalogValidateResult, CatalogValidateView]):
     """Formatter for catalog validate command results."""
 
@@ -82,14 +93,10 @@ class CatalogValidateFormatter(ComponentFormatter[CatalogValidateResult, Catalog
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.remediations),
+            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: CatalogValidateResult) -> RenderableType:
-        """Render the status banner plus Errors/Warnings tables."""
+        """Render the status banner plus Errors/Warnings tables, followed by diagnostic_lines(diagnostics)."""
         view = self.transform(data)
-        renderables: list[RenderableType] = [_build_status_banner(view)]
-        if view.errors:
-            renderables.append(_build_issues_table("Errors", view.errors, view.remediations, show_remediation=True))
-        if view.warnings:
-            renderables.append(_build_issues_table("Warnings", view.warnings, [], show_remediation=False))
-        return Group(*renderables)
+        return with_diagnostics(_render(view), view.diagnostics)

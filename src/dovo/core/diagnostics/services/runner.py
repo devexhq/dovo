@@ -2,7 +2,7 @@
 
 from typing import Final
 
-from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, append_diagnostic_hint, record_exception
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.timing import Stopwatch
 from dovo.core.config.models import DovoConfig
 from dovo.core.diagnostics.models import (
@@ -67,17 +67,18 @@ def execute_single_check(
 
 
 def _crash_result(check: DiagnosticCheck, exc: Exception, record: DiagnosticRecord | None) -> DiagnosticCheckResult:
-    """Return the FAILED DOCTOR_CHECK_CRASH result for a check that raised exc, hinting its message and error."""
+    """Return the FAILED DOCTOR_CHECK_CRASH result for a check that raised exc, carrying its recorded diagnostic."""
     return DiagnosticCheckResult(
         check_id=check.check_id,
         name=check.name,
         category=check.category,
         status=CheckStatus.FAILED,
-        message=append_diagnostic_hint(f"Unhandled exception during check execution: {exc}", record),
+        message=f"Unhandled exception during check execution: {exc}",
         details={"exception": str(exc), "type": type(exc).__name__},
         error_code="DOCTOR_CHECK_CRASH",
-        errors=[append_diagnostic_hint(f"Unhandled exception in {check.check_id}: {exc}", record)],
+        errors=[f"Unhandled exception in {check.check_id}: {exc}"],
         warnings=[],
+        diagnostics=error_diagnostics(record),
     )
 
 
@@ -125,5 +126,6 @@ class DiagnosticRunner:
         return DiagnosticsReport(
             workspace_root=context.cwd,
             checks=results,
+            diagnostics=[record for result in results for record in result.diagnostics],
             duration_seconds=watch.elapsed_seconds,
         )

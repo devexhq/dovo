@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import FROZEN_EVENT_ID, details_line, read_single_event, unwrapped
 from tests.harness.lock import raise_lock_timeout
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
@@ -132,7 +132,7 @@ class BlueprintCreateCliTests:
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With scan_and_index_tier raising TypeError("bad"), exit 1 with INTERNAL_ERROR, the hint, and a catalog.create event with a traceback."""
+        """With scan_and_index_tier raising TypeError("bad"), exit 1 with INTERNAL_ERROR, the message alone, the record in diagnostics, and a catalog.create event with a traceback."""
 
         def _explode(*args: object) -> None:
             raise TypeError("bad")
@@ -146,7 +146,50 @@ class BlueprintCreateCliTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["error_code"] == "INTERNAL_ERROR"
-        assert payload["errors"][0].endswith(diagnostic_hint(frozen_diagnostic_clock))
+        assert payload["errors"] == ["Unexpected error during catalog.create: bad"]
+        assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["operation"] == "catalog.create"
         assert "TypeError: bad" in str(event["formatted_traceback"])
+
+    def test_unexpected_error_prints_details_line_after_panel(
+        self,
+        cli_runner: CliRunner,
+        isolated_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """Exit 1 and print the error panel then 'Details logged: <event file> (event exc_3f9a1c07b2de)'."""
+
+        def _explode(*args: object) -> None:
+            raise TypeError("bad")
+
+        monkeypatch.setattr("dovo.core.catalog.services.inventory.scan_and_index_tier", _explode)
+
+        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "create", "--name", "demo"])
+
+        assert result.exit_code == 1
+        output = unwrapped(result.stdout)
+        line = unwrapped(details_line(frozen_diagnostic_clock))
+        assert output.count(line) == 1
+        assert output.index(unwrapped("Unexpected error during catalog.create: bad")) < output.index(line)
+        assert output.index(unwrapped("Catalog Creation Failed")) < output.index(line)
+
+    def test_unrecorded_unexpected_error_prints_no_details_line(
+        self, cli_runner: CliRunner, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With <DOVO_HOME>/logs a regular file, exit 1 and print no 'Details logged:' text."""
+        logs_dir = resolve_global_paths().logs_dir
+        logs_dir.parent.mkdir(parents=True, exist_ok=True)
+        logs_dir.write_text("not a directory", encoding="utf-8")
+
+        def _explode(*args: object) -> None:
+            raise TypeError("bad")
+
+        monkeypatch.setattr("dovo.core.catalog.services.inventory.scan_and_index_tier", _explode)
+
+        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "create", "--name", "demo"])
+
+        assert result.exit_code == 1
+        assert "Unexpected error during catalog.create: bad" in result.stdout
+        assert "Details logged" not in result.stdout

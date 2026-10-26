@@ -8,7 +8,7 @@ from pathlib import Path
 
 import psutil
 
-from dovo.common.diagnostic_log import DiagnosticLevel, diagnostic_hint_line, record_exception
+from dovo.common.diagnostic_log import DiagnosticLevel, error_diagnostics, record_exception
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus, parse_timestamp
@@ -115,7 +115,7 @@ def reconcile_stale_sessions(db: SessionsRepository, path: Path | None = None) -
         record = record_exception(
             exc, level=DiagnosticLevel.ERROR, operation="session.reconcile", context={"path": str(root_dir)}
         )
-        return ReconciliationResult(warning=diagnostic_hint_line(record))
+        return ReconciliationResult(diagnostics=error_diagnostics(record))
 
 
 def _reconcile_under_lock(sessions_repo: SessionsRepository, root_dir: Path) -> ReconciliationResult:

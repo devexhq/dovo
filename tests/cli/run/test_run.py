@@ -16,6 +16,7 @@ from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.models import OutputFormatOptions
 from dovo.core.bootstrap import InitFailureMode, WorkspaceInitResult
+from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.models import SeedResult
 from dovo.core.config.models import ConfigTier
 from dovo.core.db import DovoDb, SessionStatus
@@ -26,8 +27,9 @@ from dovo.engine.state_models import ExecutionStateTree, SessionStateWriteResult
 from tests.harness import FakeAgentRunner, UnfixableAgentRunner
 from tests.harness.builders import init_git_repository
 from tests.harness.catalog import write_runnable_blueprint
-from tests.harness.diagnostic_log import diagnostic_hint
+from tests.harness.diagnostic_log import details_line, diagnostic_hint, unwrapped
 from tests.harness.fakes import fixed_clock, fixed_new_id
+from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 GUARD_MESSAGE_HEAD = "Workspace is not initialized: no valid project identity at"
@@ -36,6 +38,11 @@ GUARD_MESSAGE_HEAD = "Workspace is not initialized: no valid project identity at
 def _raise_keyboard_interrupt(*_args: object, **_kwargs: object) -> str:
     """Stand in for builtins.input, simulating a Ctrl+C during a blocking prompt read."""
     raise KeyboardInterrupt
+
+
+def _raise_type_error(*_args: object, **_kwargs: object) -> None:
+    """Stand in for Blueprint.load, failing with an unexpected TypeError("bad")."""
+    raise TypeError("bad")
 
 
 def _force_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -246,6 +253,76 @@ class RunCliIntegrationTests:
         assert warnings == [
             f"Failed to update run status in database: disk full{diagnostic_hint(frozen_diagnostic_clock)}"
         ]
+
+    def test_run_cli_renders_diagnostics_after_outcome(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With Blueprint.load raising, exit 1 and print 'Details logged: …' after every warning and after the 'Run Failed' panel, whose message has no line."""
+        write_runnable_blueprint(cli_workspace, key="load-task", steps=[{"id": "s1", "run": "true"}])
+        monkeypatch.setattr(Blueprint, "load", classmethod(_raise_type_error))
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "load-task", "--no-worktree"])
+
+        assert result.exit_code == 1
+        output = unwrapped(result.stdout)
+        line = unwrapped(details_line(frozen_diagnostic_clock))
+        assert output.count(unwrapped("Details logged")) == 1
+        assert output.index(unwrapped("Unexpected error during catalog.load_definition: bad")) < output.index(line)
+        assert output.index("RunFailed") < output.index(line)
+        assert output.endswith(line)
+
+    def test_run_cli_reconciliation_failure_prints_details_line_not_warning(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Print one 'Details logged: …' line after the run's warnings and outcome and no 'Warning: Details logged' line."""
+        write_runnable_blueprint(cli_workspace, key="noop-task", steps=[{"id": "s1", "run": "true"}])
+        fail_reconciliation_list(monkeypatch)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "noop-task", "--no-worktree"])
+
+        assert result.exit_code == 0
+        output = unwrapped(result.stdout)
+        line = unwrapped(details_line(frozen_diagnostic_clock))
+        assert output.count(unwrapped("Details logged")) == 1
+        assert unwrapped("Warning: Details logged") not in output
+        assert output.index(unwrapped("Blueprint Run Completed:")) < output.index(line)
+        assert output.endswith(line)
+
+    def test_run_cli_json_emits_no_diagnostics_event(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With Blueprint.load raising and --format json, exit 1 and emit no DiagnosticsEvent envelope and no 'Details logged' text in any event."""
+        write_runnable_blueprint(cli_workspace, key="load-task", steps=[{"id": "s1", "run": "true"}])
+        monkeypatch.setattr(Blueprint, "load", classmethod(_raise_type_error))
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "run", "load-task", "--no-worktree", "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        assert [event["payload"] for event in events if event["event_type"] == "ErrorPanelEvent"] == [
+            {
+                "title": "Run Failed",
+                "message": "Unexpected error during catalog.load_definition: bad",
+                "border_style": "red",
+            }
+        ]
+        assert "DiagnosticsEvent" not in {event["event_type"] for event in events}
+        assert "Details logged" not in result.stdout
+        assert frozen_diagnostic_clock.is_file()
 
     def test_run_cli_uninitialized_git_repo_auto_initializes_silently_and_proceeds(
         self, cli_runner: CliRunner, git_repo: Path, dispatch_spy: list[object]

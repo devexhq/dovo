@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .agent_progress import AgentProgressFormatter
+from .diagnostics import DiagnosticsFormatter
 from .error_panel import ErrorPanelFormatter
 from .lock_wait import LockWaitFormatter
 from .loop import LoopLifecycleFormatter
@@ -17,6 +18,7 @@ from .worktree import WorktreeLifecycleFormatter
 
 __all__ = [
     "AgentProgressFormatter",
+    "DiagnosticsFormatter",
     "ErrorPanelFormatter",
     "LockWaitFormatter",
     "LoopLifecycleFormatter",

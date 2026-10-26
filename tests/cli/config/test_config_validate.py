@@ -73,5 +73,6 @@ class ConfigValidateCliIntegrationTests:
                 "errors": [],
                 "warnings": [],
                 "remediations": [],
+                "diagnostics": [],
             },
         }

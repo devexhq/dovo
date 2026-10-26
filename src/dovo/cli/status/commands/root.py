@@ -26,6 +26,7 @@ def status_command(
 
     if reconciliation_result.warning and reconciliation_result.warning not in result.warnings:
         result.warnings.insert(0, reconciliation_result.warning)
+    result.diagnostics = [*reconciliation_result.diagnostics, *result.diagnostics]
 
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.models import Remediation
 from dovo.core.sessions import (
     DiffStatus,
@@ -43,6 +44,7 @@ class SessionListView(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
 class SessionShowView(BaseModel):
@@ -61,6 +63,7 @@ class SessionShowView(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
 class SessionLogsView(BaseModel):
@@ -77,6 +80,7 @@ class SessionLogsView(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
 class SessionDiffView(BaseModel):
@@ -99,3 +103,4 @@ class SessionDiffView(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)

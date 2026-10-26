@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.models import Remediation
 from dovo.core.config.models import DovoConfig
 from dovo.core.config.mutate import ConfigSetStatus
@@ -24,6 +25,7 @@ class ConfigValidationView(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
 class ConfigSetView(BaseModel):
@@ -40,3 +42,4 @@ class ConfigSetView(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)

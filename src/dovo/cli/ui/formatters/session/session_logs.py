@@ -75,6 +75,7 @@ class SessionLogsFormatter(ComponentFormatter[LogsShowResult, SessionLogsView]):
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.remediations),
+            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: LogsShowResult) -> RenderableType:

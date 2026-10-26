@@ -14,7 +14,9 @@ from dovo.core.git import GitNotFoundError
 from dovo.core.status.models import (
     DovoStatusResult,
 )
+from tests.harness.diagnostic_log import FROZEN_EVENT_ID
 from tests.harness.fakes import FakeGitRunner, use_fake_git
+from tests.harness.sessions import fail_reconciliation_list
 
 
 class StatusCliIntegrationTests:
@@ -58,6 +60,26 @@ class StatusCliIntegrationTests:
         assert event["event_type"] == "DovoStatusResult"
         assert event["payload"]["health"] == "ok"
         assert event["payload"]["root_dir"] == str(status_workspace)
+
+    def test_status_cli_json_reports_reconciliation_record_in_diagnostics(
+        self,
+        cli_runner: CliRunner,
+        status_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Exit 0 and emit a DovoStatusResult payload with no warning for the failed reconciliation and diagnostics [RECORD_JSON]."""
+        fail_reconciliation_list(monkeypatch)
+
+        result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", "json"])
+
+        assert result.exit_code == 0
+        event = json.loads(result.stdout)
+        assert event["event_type"] == "DovoStatusResult"
+        assert not any("Details logged" in warning for warning in event["payload"]["warnings"])
+        assert event["payload"]["diagnostics"] == [
+            {"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}
+        ]
 
     def test_status_cli_json_reports_unknown_branch_when_git_is_missing(
         self,

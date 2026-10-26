@@ -59,7 +59,14 @@ class ArtifactsListCliIntegrationTests:
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {
             "event_type": "ArtifactsListResult",
-            "payload": {"status": "ok", "artifacts": [], "errors": [], "warnings": [], "remediations": []},
+            "payload": {
+                "status": "ok",
+                "artifacts": [],
+                "errors": [],
+                "warnings": [],
+                "remediations": [],
+                "diagnostics": [],
+            },
         }
 
     def test_artifacts_list_cli_format_json_emits_one_row_per_revision_with_provenance(

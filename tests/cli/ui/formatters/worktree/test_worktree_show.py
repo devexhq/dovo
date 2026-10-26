@@ -93,6 +93,7 @@ WORKTREE_SHOW_PAYLOAD_CASES = [
             "errors": [],
             "error_code": None,
             "remediations": [],
+            "diagnostics": [],
         },
         id="found_active",
     ),
@@ -109,6 +110,7 @@ WORKTREE_SHOW_PAYLOAD_CASES = [
             "remediations": [
                 {"message": "Run 'dovo worktree list' to see known worktrees", "command": "dovo worktree list"}
             ],
+            "diagnostics": [],
         },
         id="not_found",
     ),

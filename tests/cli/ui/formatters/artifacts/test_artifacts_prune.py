@@ -54,12 +54,21 @@ ARTIFACTS_PRUNE_PAYLOAD_CASES = [
             ],
             "pruned_count": 1,
             "failed_count": 0,
+            "diagnostics": [],
         },
         id="with_pruned_item",
     ),
     pytest.param(
         DISABLED,
-        {"status": "disabled", "dry_run": False, "force": False, "items": [], "pruned_count": 0, "failed_count": 0},
+        {
+            "status": "disabled",
+            "dry_run": False,
+            "force": False,
+            "items": [],
+            "pruned_count": 0,
+            "failed_count": 0,
+            "diagnostics": [],
+        },
         id="disabled",
     ),
 ]

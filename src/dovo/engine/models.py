@@ -11,6 +11,7 @@ from typing import Protocol, runtime_checkable
 from pydantic import BaseModel, Field
 
 from dovo.common.clock import Clock
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult, Remediation
 from dovo.common.session_id import SessionIdFactory
@@ -307,6 +308,7 @@ class RunOutcome(BaseModel):
     step_results: list[StepResult] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
     worktree_kept: bool = False
     worktree_path: Path
     session_id: str | None = None

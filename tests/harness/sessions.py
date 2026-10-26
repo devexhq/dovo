@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from itertools import count
 from pathlib import Path
+
+import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import Remediation
@@ -29,6 +32,21 @@ SEEDED_FAILURE = "seeded failure"
 SEEDED_SPAN = TimeSpan(
     started_at="2026-09-28T00:00:00+00:00", ended_at="2026-09-28T00:00:01+00:00", duration_seconds=1.0
 )
+
+
+def fail_reconciliation_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch SessionsRepository.list so its first call, made by reconciliation, raises RuntimeError("db unavailable") and every later call lists normally."""
+    original_list = SessionsRepository.list
+    calls = count()
+
+    def _list(
+        self: SessionsRepository, limit: int | None = None, status: SessionStatus | str | None = None
+    ) -> list[SessionRecord]:
+        if next(calls) == 0:
+            raise RuntimeError("db unavailable")
+        return original_list(self, limit=limit, status=status)
+
+    monkeypatch.setattr(SessionsRepository, "list", _list)
 
 
 class NoOpRunObserver(RunObserver):
@@ -249,7 +267,7 @@ def seed_new_session(
     write_runnable_blueprint(paths.root_dir, key=session_id, steps=steps)
     catalog = Catalog(paths)
     blueprint = Blueprint.load(session_id, catalog=catalog)
-    manifest = snapshot_definitions(catalog, blueprint, paths.session_dir(session_id), [])
+    manifest = snapshot_definitions(catalog, blueprint, paths.session_dir(session_id), [], [])
     assert manifest is not None
 
     sessions.create(

@@ -13,6 +13,7 @@ from dovo.common.filesystem.services import resolve_global_paths
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
+from dovo.core.catalog.models import CatalogScan
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.engine import Engine, RunRequest, SessionStateStore
@@ -22,7 +23,7 @@ from dovo.engine.writer import get_session_dir
 from tests.engine.conftest import StubDriveRun
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_hint, diagnostic_record, read_single_event
 from tests.harness.fakes import FakeGitRunner, SequentialIds, fixed_clock, fixed_new_id
 from tests.harness.sessions import ScriptedFailurePrompter, seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -363,6 +364,42 @@ class EngineProcessIdentityTests:
 
 
 class EngineRunSnapshotsDefinitionsTests:
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_snapshot_failure_carries_catalog_record_in_outcome(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With the uses: step file unreadable, return a FAILED outcome whose errors hold 'Failed to snapshot run definitions: <message>' without the line and whose diagnostics hold the catalog.show record."""
+        write_runnable_step(
+            engine_paths.root_dir, key="locked-step", definition={"id": "locked-step", "run": "echo hi"}
+        )
+        blueprint = _catalog_blueprint(engine_paths, "locked-task", [{"id": "s1", "uses": "locked-step"}])
+        # Keep the index from the load above, so the step stays indexed after its file becomes unreadable.
+        monkeypatch.setattr(
+            "dovo.core.catalog.catalog.scan_and_index_catalog",
+            lambda paths: CatalogScan(records=(), skipped_files=()),
+        )
+        step_file = engine_paths.catalog_dir / "steps" / "locked-step.yml"
+        step_file.chmod(0o000)
+        try:
+            outcome = _engine(engine_paths, sessions_repo).run(
+                blueprint, RunRequest(session_id="snap-1", use_worktree=False)
+            )
+        finally:
+            step_file.chmod(0o644)
+
+        event = read_single_event(frozen_diagnostic_clock)
+        assert outcome.status == SessionStatus.FAILED
+        assert outcome.errors == [
+            "Failed to snapshot run definitions: Failed to read file for catalog blueprint 'locked-step': "
+            f"{event['exception_message']}"
+        ]
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        assert event["operation"] == "catalog.show"
+
     def test_run_writes_snapshot_files_and_records_manifest_in_state(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
     ) -> None:

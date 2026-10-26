@@ -17,7 +17,7 @@ from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.bootstrap.models import BootstrapOutcome
 from dovo.core.project.models import PROJECT_ID_REGEX, ProjectIdentity
 from tests.harness.builders import init_git_repository
-from tests.harness.diagnostic_log import diagnostic_hint
+from tests.harness.diagnostic_log import FROZEN_EVENT_ID
 
 
 def _dovo_dir(workspace: Path) -> Path:
@@ -180,7 +180,7 @@ class InitCliIntegrationTests:
     def test_init_cli_unexpected_provisioning_error_exits_one_with_json_failure(
         self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Exit 1 with failure_mode bootstrap and the unexpected error plus its Details logged line, and no traceback."""
+        """Exit 1 with failure_mode bootstrap, the unexpected error alone, its record in diagnostics, and no traceback."""
         init_git_repository(tmp_path)
 
         def _boom(*_args: object, **_kwargs: object) -> None:
@@ -193,9 +193,8 @@ class InitCliIntegrationTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["failure_mode"] == "bootstrap"
-        assert payload["errors"] == [
-            "Unexpected error during bootstrap.provision_identity: boom" + diagnostic_hint(frozen_diagnostic_clock)
-        ]
+        assert payload["errors"] == ["Unexpected error during bootstrap.provision_identity: boom"]
+        assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]
         assert "Traceback" not in result.stdout
 
     def test_init_cli_overwrite_repair_rerun_orders_warnings(self, cli_runner: CliRunner, tmp_path: Path) -> None:

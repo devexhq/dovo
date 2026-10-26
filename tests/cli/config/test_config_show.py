@@ -52,6 +52,7 @@ class ConfigShowCliIntegrationTests:
                 "errors": [],
                 "warnings": [],
                 "remediations": [],
+                "diagnostics": [],
             },
         }
 

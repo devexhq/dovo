@@ -41,6 +41,7 @@ def _event_formatters(console: Console | None) -> FormatterTable:
         models.ErrorPanelEvent: formatters.ErrorPanelFormatter(),
         models.LockWaitEvent: formatters.LockWaitFormatter(),
         models.WarningEvent: formatters.WarningFormatter(),
+        models.DiagnosticsEvent: formatters.DiagnosticsFormatter(),
         models.MessageEvent: formatters.MessageFormatter(),
         models.RunSuccessEvent: formatters.RunSuccessFormatter(),
         models.StepStartEvent: formatters.StepStartFormatter(),

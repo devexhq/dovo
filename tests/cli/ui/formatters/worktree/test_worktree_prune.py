@@ -57,6 +57,7 @@ def _make_prune_view(**overrides: object) -> WorktreePruneView:
         "errors": [],
         "warnings": [],
         "remediations": [],
+        "diagnostics": [],
     }
     return WorktreePruneView.model_validate({**defaults, **overrides})
 
@@ -200,6 +201,7 @@ PRUNE_PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
         },
         id="empty_prune",
     ),
@@ -253,6 +255,7 @@ PRUNE_PAYLOAD_CASES = [
             "errors": ["Ref lock failure"],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
         },
         id="pruned_multiple_items",
     ),

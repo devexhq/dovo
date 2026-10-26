@@ -146,5 +146,6 @@ class ConfigSetCliIntegrationTests:
                 "errors": [],
                 "warnings": [],
                 "remediations": [],
+                "diagnostics": [],
             },
         }

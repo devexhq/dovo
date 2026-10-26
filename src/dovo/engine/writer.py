@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.redact import SecretRedactor
 from dovo.core.catalog import Catalog
@@ -35,12 +36,15 @@ def _collect_uses_refs(steps: list[StepDefinition | LoopStepBlock]) -> list[str]
     return refs
 
 
-def _resolve_one_use(catalog: Catalog, ref: str, warnings: list[str]) -> tuple[CatalogRecord, str] | None:
-    """Resolve one uses: ref's catalog record and raw content, or append a warning and return None."""
+def _resolve_one_use(
+    catalog: Catalog, ref: str, warnings: list[str], diagnostics: list[DiagnosticRecord]
+) -> tuple[CatalogRecord, str] | None:
+    """Resolve one uses: ref's catalog record and raw content, or append a warning and the lookup's records and return None."""
     step_show = catalog.show(ref, item_type=CatalogItemType.STEP)
     if not step_show.ok or step_show.item is None or step_show.content is None:
         detail = step_show.errors[0] if step_show.errors else f"catalog step '{ref}' not found."
         warnings.append(f"Failed to snapshot run definitions: {detail}")
+        diagnostics.extend(step_show.diagnostics)
         return None
     return step_show.item, step_show.content
 
@@ -56,6 +60,7 @@ def _resolve_uses_chain(
     catalog: Catalog,
     blueprint: Blueprint,
     warnings: list[str],
+    diagnostics: list[DiagnosticRecord],
 ) -> dict[str, tuple[CatalogRecord, str]] | None:
     """Breadth-first resolve every distinct uses: reference reachable from blueprint's steps, or None on the first miss."""
     visited: dict[str, tuple[CatalogRecord, str]] = {}
@@ -66,7 +71,7 @@ def _resolve_uses_chain(
         ref = queue.pop(0)
         if ref in visited:
             continue
-        resolved = _resolve_one_use(catalog, ref, warnings)
+        resolved = _resolve_one_use(catalog, ref, warnings, diagnostics)
         if resolved is None:
             return None
         visited[ref] = resolved
@@ -137,20 +142,22 @@ def snapshot_definitions(
     blueprint: Blueprint,
     session_dir: Path,
     warnings: list[str],
+    diagnostics: list[DiagnosticRecord],
 ) -> DefinitionsManifest | None:
-    """Snapshot the resolved blueprint and its transitive uses: step chain into session_dir/definitions/."""
+    """Snapshot the resolved blueprint and its transitive uses: step chain into session_dir/definitions/, adding a failed lookup's records to diagnostics."""
     blueprint_show = catalog.show(blueprint.key, item_type=CatalogItemType.BLUEPRINT)
     if not blueprint_show.ok or blueprint_show.item is None or blueprint_show.content is None:
         detail = (
             blueprint_show.errors[0] if blueprint_show.errors else f"blueprint '{blueprint.key}' not found in catalog."
         )
         warnings.append(f"Failed to snapshot run definitions: {detail}")
+        diagnostics.extend(blueprint_show.diagnostics)
         return None
 
     blueprint_record = blueprint_show.item
     blueprint_content = blueprint_show.content
 
-    visited = _resolve_uses_chain(catalog, blueprint, warnings)
+    visited = _resolve_uses_chain(catalog, blueprint, warnings, diagnostics)
     if visited is None:
         return None
 
