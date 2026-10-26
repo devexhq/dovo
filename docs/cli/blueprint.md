@@ -4,7 +4,7 @@ The `dovo blueprint` command inspects, creates, deletes, and validates executabl
 
 `dovo blueprint` requires an explicit subcommand; there is no bare-invocation default.
 
-When `list`, `show`, `create`, `delete` or `validate` fails with an unexpected error, or with an operating-system error writing or deleting a catalog file or reading the file to show, and Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record for it, the error message ends with a `Details logged: <path> (event <event_id>)` line naming that file. If the record cannot be written, the line is absent.
+When `list`, `show`, `create`, `delete` or `validate` fails with an unexpected error, or with an operating-system error writing or deleting a catalog file or reading the file to show, and Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record for it, the error message is unchanged and a `Details logged: <path> (event <event_id>)` line naming that file follows it. With `--format json`, the record is listed in `diagnostics` as `{"event_id": …, "log_path": …}`. If the record cannot be written, there is no line and `diagnostics` is empty.
 
 If another Dovo process holds the workspace lock, `create` and `delete` exit with code 1 and print a Workspace Lock Timeout panel; wait for that process to finish and retry.
 

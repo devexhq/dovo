@@ -9,6 +9,7 @@ from dovo.common.constants import (
     ON_FAILURE_MAX_RETRIES_DEFAULT,
     ON_FAILURE_MAX_RETRIES_MINIMUM,
 )
+from dovo.common.diagnostic_log.models import DiagnosticRecord
 
 
 class DisplayFormatOptions(StrEnum):
@@ -46,6 +47,7 @@ class BaseResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
     error_code: str | None = None
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)  # error-level records only
 
     @model_validator(mode="after")
     def validate_error_code_presence(self) -> Self:

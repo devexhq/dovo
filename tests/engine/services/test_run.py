@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
@@ -17,8 +20,9 @@ from dovo.engine.models import RunOutcome
 from dovo.engine.services.run import BlueprintRunService
 from tests.engine.conftest import StubDriveRun
 from tests.harness.catalog import write_runnable_blueprint
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.fakes import fixed_clock, fixed_new_id
+from tests.harness.sessions import fail_reconciliation_list
 
 
 class BlueprintRunServiceExecuteTests:
@@ -135,7 +139,7 @@ class BlueprintRunServiceLoadTests:
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With BlueprintDefinition.from_document raising TypeError("bad"), return INTERNAL_ERROR with the hint, one catalog.load_definition event naming the blueprint, and no session row."""
+        """With BlueprintDefinition.from_document raising TypeError("bad"), return INTERNAL_ERROR with the message alone and its record in diagnostics, one catalog.load_definition event naming the blueprint, and no session row."""
         write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
 
         def _explode(cls: type[BlueprintDefinition], raw: dict[str, object], *, key: str) -> BlueprintDefinition:
@@ -154,14 +158,59 @@ class BlueprintRunServiceLoadTests:
 
         assert result.session_record is None
         assert result.error_code == ErrorCode.INTERNAL_ERROR
-        assert result.errors == [
-            f"Unexpected error during catalog.load_definition: bad{diagnostic_hint(frozen_diagnostic_clock)}"
-        ]
+        assert result.errors == ["Unexpected error during catalog.load_definition: bad"]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["operation"] == "catalog.load_definition"
         assert event["context"] == {"blueprint": "lint"}
         assert event["exception_type"] == "TypeError"
         assert sessions_repo.list() == []
+
+    def test_reconciliation_record_precedes_catalog_record(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With reconciliation and Blueprint.load both raising and uuid4 yielding two distinct ids, return diagnostics == [the exc_aaaaaaaaaaaa record, the exc_bbbbbbbbbbbb record] in that order and no warning holding a line."""
+        write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
+        monkeypatch.setattr(
+            "dovo.common.diagnostic_log.services.record.uuid4",
+            iter([UUID("aaaaaaaaaaaa" + "0" * 20), UUID("bbbbbbbbbbbb" + "0" * 20)]).__next__,
+        )
+        fail_reconciliation_list(monkeypatch)
+
+        def _explode(cls: type[BlueprintDefinition], raw: dict[str, object], *, key: str) -> BlueprintDefinition:
+            raise TypeError("bad")
+
+        monkeypatch.setattr(BlueprintDefinition, "from_document", classmethod(_explode))
+
+        result = BlueprintRunService(
+            name="lint",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        ).execute()
+
+        day_dir = frozen_diagnostic_clock.parent
+        assert result.diagnostics == [
+            DiagnosticRecord(
+                event_id="exc_aaaaaaaaaaaa", log_path=day_dir / "exc_aaaaaaaaaaaa.json", level=DiagnosticLevel.ERROR
+            ),
+            DiagnosticRecord(
+                event_id="exc_bbbbbbbbbbbb", log_path=day_dir / "exc_bbbbbbbbbbbb.json", level=DiagnosticLevel.ERROR
+            ),
+        ]
+        assert result.warnings == []
+        assert result.errors == ["Unexpected error during catalog.load_definition: bad"]
+        operations = [
+            json.loads((day_dir / f"{event_id}.json").read_text(encoding="utf-8"))["operation"]
+            for event_id in ("exc_aaaaaaaaaaaa", "exc_bbbbbbbbbbbb")
+        ]
+        assert operations == ["session.reconcile", "catalog.load_definition"]
 
     def test_execute_missing_required_input_returns_formatted_input_error(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository

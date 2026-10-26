@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dovo.common.diagnostic_log import append_diagnostic_hint
+from dovo.common.diagnostic_log import error_diagnostics
 from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
@@ -155,13 +155,14 @@ def _identity_failure(
     failure_mode: InitFailureMode,
     remediations: list[Remediation],
 ) -> WorkspaceInitResult:
-    """Build the init failure for an identity failure: its code, its message with any Details logged line, and remediations."""
+    """Build the init failure for an identity failure: its code, its message, its recorded diagnostic, and remediations."""
     return WorkspaceInitResult(
         bootstrap_result=bootstrap_result,
         identity_path=identity_path,
         error_code=failure.error_code,
-        errors=[append_diagnostic_hint(failure.message, failure.diagnostic)],
+        errors=[failure.message],
         remediations=remediations,
+        diagnostics=error_diagnostics(failure.diagnostic),
         failure_mode=failure_mode,
     )
 

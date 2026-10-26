@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.redact import SecretRedactor
@@ -30,7 +31,7 @@ from dovo.engine.writer import (
 )
 from tests.harness.builders import BlueprintBuilder, StepBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
@@ -48,7 +49,7 @@ class SnapshotDefinitionsTests:
         session_dir = tmp_path / "session"
         warnings: list[str] = []
 
-        manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings)
+        manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings, [])
 
         assert warnings == []
         assert manifest is not None
@@ -70,7 +71,7 @@ class SnapshotDefinitionsTests:
         session_dir = tmp_path / "session"
         warnings: list[str] = []
 
-        manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings)
+        manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings, [])
 
         assert warnings == []
         assert manifest is not None
@@ -89,7 +90,7 @@ class SnapshotDefinitionsTests:
         session_dir = tmp_path / "session"
         warnings: list[str] = []
 
-        manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings)
+        manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings, [])
 
         assert warnings == []
         assert manifest is not None
@@ -111,7 +112,7 @@ class SnapshotDefinitionsTests:
         session_dir = tmp_path / "session"
         warnings: list[str] = []
 
-        manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings)
+        manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings, [])
 
         assert manifest is None
         assert warnings == ["Failed to snapshot run definitions: Catalog item 'no-catalog-task' not found."]
@@ -124,18 +125,20 @@ class SnapshotDefinitionsTests:
         blueprint = Blueprint.load("missing-step-task", catalog=catalog)
         session_dir = tmp_path / "session"
         warnings: list[str] = []
+        diagnostics: list[DiagnosticRecord] = []
 
-        manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings)
+        manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings, diagnostics)
 
         assert manifest is None
         assert warnings == ["Failed to snapshot run definitions: Catalog item 'ghost-step' not found."]
+        assert diagnostics == []
         assert not (session_dir / "definitions").exists()
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
-    def test_snapshot_definitions_unreadable_uses_step_warning_carries_hint(
+    def test_snapshot_definitions_unreadable_uses_step_records_cause_in_diagnostics(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """For a uses: step whose indexed file is 0o000, return None and warn with show's read error and hint, with one error event under catalog.show."""
+        """For a uses: step whose indexed file is 0o000, return None, warn with show's read error alone and add show's catalog.show error record to diagnostics."""
         workspace = tmp_path / "workspace"
         write_runnable_step(workspace, key="locked-step", definition={"id": "locked-step", "run": "echo hi"})
         write_runnable_blueprint(workspace, key="locked-task", steps=[{"id": "s1", "uses": "locked-step"}])
@@ -150,8 +153,9 @@ class SnapshotDefinitionsTests:
         step_file = paths.catalog_dir / "steps" / "locked-step.yml"
         step_file.chmod(0o000)
         warnings: list[str] = []
+        diagnostics: list[DiagnosticRecord] = []
         try:
-            manifest = snapshot_definitions(catalog, blueprint, tmp_path / "session", warnings)
+            manifest = snapshot_definitions(catalog, blueprint, tmp_path / "session", warnings, diagnostics)
         finally:
             step_file.chmod(0o644)
 
@@ -159,8 +163,9 @@ class SnapshotDefinitionsTests:
         event = read_single_event(frozen_diagnostic_clock)
         assert warnings == [
             "Failed to snapshot run definitions: Failed to read file for catalog blueprint 'locked-step': "
-            f"{event['exception_message']}{diagnostic_hint(frozen_diagnostic_clock)}"
+            f"{event['exception_message']}"
         ]
+        assert diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         assert event["level"] == "error"
         assert event["operation"] == "catalog.show"
         assert event["context"] == {"name": "locked-step"}
@@ -175,7 +180,7 @@ class LoadBlueprintFromSnapshotTests:
         write_runnable_blueprint(workspace, key="shorthand-task", steps=[{"id": "s1", "uses": "lint-check"}])
         catalog = Catalog(initialized_workspace_paths(workspace))
         session_dir = tmp_path / "session"
-        manifest = snapshot_definitions(catalog, Blueprint.load("shorthand-task", catalog=catalog), session_dir, [])
+        manifest = snapshot_definitions(catalog, Blueprint.load("shorthand-task", catalog=catalog), session_dir, [], [])
         assert manifest is not None
 
         rebuilt = load_blueprint_from_snapshot(session_dir, manifest)

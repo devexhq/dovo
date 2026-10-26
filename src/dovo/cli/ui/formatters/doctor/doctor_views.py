@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.models import Remediation
 from dovo.core.diagnostics import CheckCategory, CheckStatus
 
@@ -27,6 +28,7 @@ class DoctorCheckView(BaseModel):
     errors: list[str]
     warnings: list[str]
     remediations: list[Remediation]
+    diagnostics: list[DiagnosticRecord]
 
 
 class DoctorReportView(BaseModel):
@@ -39,3 +41,4 @@ class DoctorReportView(BaseModel):
     workspace_root: Path
     duration_seconds: float
     checks: list[DoctorCheckView]
+    diagnostics: list[DiagnosticRecord]

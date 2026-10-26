@@ -134,6 +134,7 @@ PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
         },
         id="valid_payload",
     ),
@@ -154,6 +155,7 @@ PAYLOAD_CASES = [
                     "command": None,
                 }
             ],
+            "diagnostics": [],
         },
         id="invalid_payload",
     ),

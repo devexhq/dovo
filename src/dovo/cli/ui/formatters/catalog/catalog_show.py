@@ -14,7 +14,7 @@ from dovo.cli.ui.formatters.catalog.catalog_views import (
     CatalogShowView,
     CatalogTemplateView,
 )
-from dovo.cli.ui.formatters.common import build_error_panel
+from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogShowResult, CatalogTier
 
@@ -47,6 +47,25 @@ def _render_show_item(item: CatalogItemView, content: str | None, catalog_path_r
         renderables.append(Text.from_markup("\n[bold cyan]Definition:[/]\n"))
         renderables.append(Syntax(content.strip(), "yaml"))
     return Group(*renderables)
+
+
+def _render(view: CatalogShowView) -> RenderableType:
+    """Render blueprint header metadata and YAML syntax highlighting or template from the view."""
+    if view.errors or (view.item is None and view.content is None and not view.template_matches):
+        return build_error_panel(
+            "Catalog Show Failed",
+            view.errors,
+            "Catalog blueprint not found.",
+            remediations=view.remediations,
+        )
+
+    if view.template_matches:
+        return _render_show_template_matches(view.template_matches, view.content)
+
+    if view.item is not None:
+        return _render_show_item(view.item, view.content, view.catalog_path_relative)
+
+    return Text("")
 
 
 class CatalogShowFormatter(ComponentFormatter[CatalogShowResult, CatalogShowView]):
@@ -88,24 +107,10 @@ class CatalogShowFormatter(ComponentFormatter[CatalogShowResult, CatalogShowView
             errors=data.errors,
             warnings=data.warnings,
             remediations=data.remediations,
+            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: CatalogShowResult) -> RenderableType:
-        """Render blueprint header metadata and YAML syntax highlighting or template."""
+        """Render blueprint header metadata and YAML syntax highlighting or template, followed by diagnostic_lines(diagnostics)."""
         view = self.transform(data)
-
-        if view.errors or (view.item is None and view.content is None and not view.template_matches):
-            return build_error_panel(
-                "Catalog Show Failed",
-                view.errors,
-                "Catalog blueprint not found.",
-                remediations=view.remediations,
-            )
-
-        if view.template_matches:
-            return _render_show_template_matches(view.template_matches, view.content)
-
-        if view.item is not None:
-            return _render_show_item(view.item, view.content, view.catalog_path_relative)
-
-        return Text("")
+        return with_diagnostics(_render(view), view.diagnostics)

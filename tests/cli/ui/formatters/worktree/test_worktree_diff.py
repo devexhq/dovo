@@ -71,6 +71,7 @@ WORKTREE_DIFF_PAYLOAD_CASES = [
             "errors": [],
             "error_code": None,
             "remediations": [],
+            "diagnostics": [],
         },
         id="ok_with_diff",
     ),
@@ -86,6 +87,7 @@ WORKTREE_DIFF_PAYLOAD_CASES = [
             "errors": [],
             "error_code": None,
             "remediations": [],
+            "diagnostics": [],
         },
         id="empty_diff",
     ),
@@ -103,6 +105,7 @@ WORKTREE_DIFF_PAYLOAD_CASES = [
             "remediations": [
                 {"message": "Run 'dovo worktree list' to see known worktrees", "command": "dovo worktree list"}
             ],
+            "diagnostics": [],
         },
         id="not_found",
     ),

@@ -5,6 +5,7 @@ from .services import (
     append_diagnostic_hint,
     bind_cli_command,
     diagnostic_hint_line,
+    error_diagnostics,
     record_exception,
     reset_cli_command,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "append_diagnostic_hint",
     "bind_cli_command",
     "diagnostic_hint_line",
+    "error_diagnostics",
     "record_exception",
     "reset_cli_command",
 ]

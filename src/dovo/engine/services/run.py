@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from dovo.common.clock import Clock
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.session_id import SessionIdFactory
@@ -45,22 +46,24 @@ class BlueprintRunService:
     failure_prompter: FailurePrompter | None = None
     interaction_prompter: InteractionPrompter | None = None
     warnings: list[str] = field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = field(default_factory=list)
 
     def execute(self) -> BlueprintRunResult:
         """Run the full execution pipeline and return the outcome."""
         env_overrides, env_error = resolve_env_overrides(self.env_mode, self.env_passthrough)
         if env_error is not None:
-            return fail(self.warnings, env_error)
+            return fail(self.warnings, self.diagnostics, env_error)
 
         reconciliation_result = reconcile_stale_sessions(self.sessions_db, path=self.paths.root_dir)
         if reconciliation_result.warning:
             self.warnings.append(reconciliation_result.warning)
+        self.diagnostics.extend(reconciliation_result.diagnostics)
 
         catalog = Catalog(self.paths)
         with catch_failure("catalog.load_definition", blueprint=self.name) as caught:
             blueprint = Blueprint.load(self.name, catalog=catalog)
         if caught.failure is not None:
-            return fail_with(self.warnings, caught.failure)
+            return fail_with(self.warnings, self.diagnostics, caught.failure)
 
         try:
             run_outcome = Engine(
@@ -85,6 +88,7 @@ class BlueprintRunService:
         except EngineInputError as exc:
             return fail(
                 self.warnings,
+                self.diagnostics,
                 format_input_error_message(
                     name=self.name,
                     result=exc.result,
@@ -92,6 +96,6 @@ class BlueprintRunService:
                 ),
             )
         except EngineRuntimeError as exc:
-            return fail(self.warnings, str(exc))
+            return fail(self.warnings, self.diagnostics, str(exc))
 
-        return finalize(self.sessions_db, self.warnings, run_outcome, run_outcome.session_id or "")
+        return finalize(self.sessions_db, self.warnings, self.diagnostics, run_outcome, run_outcome.session_id or "")

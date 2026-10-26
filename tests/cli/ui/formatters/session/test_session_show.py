@@ -32,6 +32,7 @@ def _make_session_show_view(**overrides: object) -> SessionShowView:
         "errors": [],
         "warnings": [],
         "remediations": [],
+        "diagnostics": [],
     }
     return SessionShowView.model_validate({**defaults, **overrides})
 
@@ -295,6 +296,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
         },
         id="run_with_steps",
     ),
@@ -312,6 +314,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
         },
         id="not_found",
     ),

@@ -14,7 +14,7 @@ from dovo.core.config.models import DEFAULT_AGENT
 from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
 from dovo.core.diagnostics.checks.git_repo import GitRepoCheck
 from dovo.core.git import GitCommandError
-from tests.harness.diagnostic_log import diagnostic_hint
+from tests.harness.diagnostic_log import FROZEN_EVENT_ID
 from tests.harness.fakes import FakeGitRunner, use_fake_git
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -125,8 +125,10 @@ class DoctorCliIntegrationTests:
                     "errors": [],
                     "warnings": [],
                     "remediations": [],
+                    "diagnostics": [],
                 }
             ],
+            "diagnostics": [],
         }
 
     def test_doctor_cli_json_reports_not_repo_from_injected_git(
@@ -143,10 +145,10 @@ class DoctorCliIntegrationTests:
         assert check_payload["check_id"] == "git.repo"
         assert check_payload["error_code"] == "DOCTOR_GIT_NOT_REPO"
 
-    def test_doctor_cli_json_crashed_check_carries_hint(
+    def test_doctor_cli_json_crashed_check_reports_diagnostics(
         self, cli_runner: CliRunner, cli_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Exit 1 and end the crashed check's JSON message with the hint when GitRepoCheck.execute raises."""
+        """Exit 1 when GitRepoCheck.execute raises, with the crashed check's message and errors free of the line and its record in the check's and the top-level diagnostics."""
 
         def _crash(_self: GitRepoCheck, _context: object) -> None:
             raise RuntimeError("boom")
@@ -156,8 +158,11 @@ class DoctorCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "doctor", "--category", "git", "--format", "json"])
 
         assert result.exit_code == 1
-        check_payload = json.loads(result.stdout)["payload"]["checks"][0]
+        payload = json.loads(result.stdout)["payload"]
+        check_payload = payload["checks"][0]
+        record_json = {"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}
         assert check_payload["error_code"] == "DOCTOR_CHECK_CRASH"
-        assert check_payload["message"] == (
-            f"Unhandled exception during check execution: boom{diagnostic_hint(frozen_diagnostic_clock)}"
-        )
+        assert check_payload["message"] == "Unhandled exception during check execution: boom"
+        assert check_payload["errors"] == ["Unhandled exception in git.repo: boom"]
+        assert check_payload["diagnostics"] == [record_json]
+        assert payload["diagnostics"] == [record_json]

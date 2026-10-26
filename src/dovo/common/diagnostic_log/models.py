@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DiagnosticLevel(StrEnum):
@@ -14,13 +14,13 @@ class DiagnosticLevel(StrEnum):
 
 
 class DiagnosticRecord(BaseModel):
-    """A written diagnostic event: its id, absolute file path and level."""
+    """A written diagnostic event: its id, absolute file path and level; dumps omit the level."""
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
     event_id: str
     log_path: Path
-    level: DiagnosticLevel
+    level: DiagnosticLevel = Field(exclude=True)
 
 
 class DiagnosticEvent(BaseModel):

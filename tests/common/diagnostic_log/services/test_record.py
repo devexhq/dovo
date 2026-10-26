@@ -17,6 +17,7 @@ from dovo.common.diagnostic_log import (
     append_diagnostic_hint,
     bind_cli_command,
     diagnostic_hint_line,
+    error_diagnostics,
     record_exception,
     reset_cli_command,
 )
@@ -217,3 +218,18 @@ class DiagnosticHintLineTests:
 
         assert diagnostic_hint_line(error_record) == f"Details logged: {log_path} (event exc_3f9a1c07b2de)"
         assert diagnostic_hint_line(other) is None
+
+
+class ErrorDiagnosticsTests:
+    @pytest.mark.parametrize(
+        "level", [DiagnosticLevel.ERROR, DiagnosticLevel.DEBUG, None], ids=["error", "debug", "none"]
+    )
+    def test_returns_error_record_only(self, tmp_path: Path, level: DiagnosticLevel | None) -> None:
+        """Return [record] for an error record and [] for a debug record or None."""
+        log_path = tmp_path / "logs" / "2026-10-19" / "exc_3f9a1c07b2de.json"
+        record = (
+            None if level is None else DiagnosticRecord(event_id="exc_3f9a1c07b2de", log_path=log_path, level=level)
+        )
+
+        expected = [record] if level is DiagnosticLevel.ERROR else []
+        assert error_diagnostics(record) == expected

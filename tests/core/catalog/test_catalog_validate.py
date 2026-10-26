@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import stat
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -18,7 +17,7 @@ from dovo.core.catalog import Catalog, CatalogWriteError
 from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
 from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult
 from tests.harness.catalog import write_runnable_blueprint
-from tests.harness.diagnostic_log import FROZEN_EVENT_ID, diagnostic_hint
+from tests.harness.diagnostic_log import diagnostic_record
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -364,14 +363,14 @@ class CatalogValidateServiceTests:
             pytest.param(
                 CatalogWriteError("boom"),
                 ErrorCode.CATALOG_WRITE_FAILED,
-                lambda event_file: ["boom"],
+                ["boom"],
                 False,
                 id="write_failed",
             ),
             pytest.param(
                 TypeError("bad"),
                 ErrorCode.INTERNAL_ERROR,
-                lambda event_file: [f"Unexpected error during catalog.validate: bad{diagnostic_hint(event_file)}"],
+                ["Unexpected error during catalog.validate: bad"],
                 True,
                 id="internal_error",
             ),
@@ -384,10 +383,10 @@ class CatalogValidateServiceTests:
         monkeypatch: pytest.MonkeyPatch,
         raised: Exception,
         expected_code: ErrorCode,
-        expected_errors: Callable[[Path], list[str]],
+        expected_errors: list[str],
         logged: bool,
     ) -> None:
-        """With dovo.core.catalog.catalog.scan_and_index_catalog patched to raise `raised` for a catalog-name target, return error_code expected_code, valid False, resolved_path None; write_failed has errors ["boom"], internal_error has the unexpected-error message plus the Details logged line and writes the catalog.validate event file."""
+        """With dovo.core.catalog.catalog.scan_and_index_catalog patched to raise `raised` for a catalog-name target, return error_code expected_code, valid False, resolved_path None; write_failed has errors ["boom"], internal_error has the unexpected-error message alone, its record in diagnostics and writes the catalog.validate event file."""
 
         def _explode(*args: object) -> None:
             raise raised
@@ -399,7 +398,8 @@ class CatalogValidateServiceTests:
         assert result.error_code == expected_code
         assert result.valid is False
         assert result.resolved_path is None
-        assert result.errors == expected_errors(frozen_diagnostic_clock)
+        assert result.errors == expected_errors
+        assert result.diagnostics == ([diagnostic_record(frozen_diagnostic_clock)] if logged else [])
         assert frozen_diagnostic_clock.exists() is logged
 
 
@@ -441,7 +441,7 @@ class CatalogValidateDiagnosticLogTests:
     def test_unexpected_schema_failure_is_internal_error_under_catalog_validate(
         self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return valid False, INTERNAL_ERROR and the unexpected-error message plus hint, with one catalog.validate event naming the target."""
+        """Return valid False, INTERNAL_ERROR, the unexpected-error message alone and its record in diagnostics, with one catalog.validate event naming the target."""
         target_path = _write_yaml(
             workspace_paths.root_dir / "demo.yml", {"name": "demo", "steps": [{"id": "s1", "run": "echo hi"}]}
         )
@@ -455,9 +455,8 @@ class CatalogValidateDiagnosticLogTests:
 
         assert result.valid is False
         assert result.error_code == ErrorCode.INTERNAL_ERROR
-        assert result.errors == [
-            f"Unexpected error during catalog.validate: boom\nDetails logged: {frozen_diagnostic_clock} (event {FROZEN_EVENT_ID})"
-        ]
+        assert result.errors == ["Unexpected error during catalog.validate: boom"]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = json.loads(frozen_diagnostic_clock.read_text(encoding="utf-8"))
         assert event["level"] == "error"
         assert event["operation"] == "catalog.validate"

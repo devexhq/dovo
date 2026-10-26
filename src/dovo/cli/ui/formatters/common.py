@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from rich.console import Group
 from rich.panel import Panel
+from rich.text import Text
 
+from dovo.common.diagnostic_log import diagnostic_hint_line
 from dovo.common.formatters import format_remediations
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from rich.console import RenderableType
+
+    from dovo.common.diagnostic_log import DiagnosticRecord
     from dovo.common.models import Remediation
 
 DEFAULT_PANEL_STYLE = "blue"
@@ -69,11 +75,27 @@ def build_error_panel(
     return panel_cls(message, title=title, border_style=border_style)
 
 
+def diagnostic_lines(diagnostics: Sequence[DiagnosticRecord]) -> list[Text]:
+    """Return one plain 'Details logged: <log_path> (event <event_id>)' Text per error-level record, in order."""
+    return [Text(line) for record in diagnostics if (line := diagnostic_hint_line(record)) is not None]
+
+
+def with_diagnostics(renderable: RenderableType, diagnostics: Sequence[DiagnosticRecord]) -> RenderableType:
+    """Return renderable followed by diagnostic_lines(diagnostics), or renderable unchanged when there are none."""
+    lines = diagnostic_lines(diagnostics)
+    if not lines:
+        return renderable
+
+    return Group(renderable, *lines)
+
+
 __all__ = [
     "DEFAULT_PANEL_STYLE",
     "ERROR_PANEL_STYLE",
     "SUCCESS_STYLE",
     "WARNING_STYLE",
     "build_error_panel",
+    "diagnostic_lines",
     "render_list_errors",
+    "with_diagnostics",
 ]

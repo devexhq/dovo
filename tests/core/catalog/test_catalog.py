@@ -23,7 +23,7 @@ from dovo.core.catalog.models import (
     CatalogTier,
 )
 from dovo.core.catalog.services.inventory import compute_catalog_sha
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.lock import raise_lock_timeout
 
 
@@ -293,10 +293,10 @@ class CatalogShowTests:
         assert result.ok is False
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
-    def test_show_unreadable_file_records_cause_and_appends_hint(
+    def test_show_unreadable_file_records_cause_in_diagnostics(
         self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return error_code CATALOG_FILE_UNREADABLE and the read error plus hint, with one error event under operation catalog.show."""
+        """Return error_code CATALOG_FILE_UNREADABLE, the read error alone and its record in diagnostics, with one error event under operation catalog.show."""
         catalog = Catalog(workspace_paths)
         catalog.create(CatalogItemType.BLUEPRINT, "demo")
         # Keep the index written by create, so demo stays indexed after its file becomes unreadable.
@@ -313,10 +313,8 @@ class CatalogShowTests:
 
         event = read_single_event(frozen_diagnostic_clock)
         assert result.error_code == ErrorCode.CATALOG_FILE_UNREADABLE
-        assert result.errors == [
-            f"Failed to read file for catalog blueprint 'demo': {event['exception_message']}"
-            f"{diagnostic_hint(frozen_diagnostic_clock)}"
-        ]
+        assert result.errors == [f"Failed to read file for catalog blueprint 'demo': {event['exception_message']}"]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         assert event["level"] == "error"
         assert event["operation"] == "catalog.show"
         assert event["context"] == {"name": "demo"}
@@ -479,10 +477,10 @@ class CatalogMutationOutcomeTests:
             pytest.param("delete", "Failed to delete catalog item '", id="delete"),
         ],
     )
-    def test_write_failure_is_catalog_write_failed_with_hint(
+    def test_write_failure_is_catalog_write_failed_in_diagnostics(
         self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path, operation: str, message_start: str
     ) -> None:
-        """On a read-only blueprints dir, return CATALOG_WRITE_FAILED with the hint and one catalog.<operation> event; create leaves no file, delete keeps it."""
+        """On a read-only blueprints dir, return CATALOG_WRITE_FAILED with the record in diagnostics and one catalog.<operation> event; create leaves no file, delete keeps it."""
         catalog = Catalog(workspace_paths)
         blueprints_dir = workspace_paths.catalog_blueprints_dir
         blueprints_dir.mkdir(parents=True, exist_ok=True)
@@ -499,7 +497,8 @@ class CatalogMutationOutcomeTests:
         assert result.error_code == ErrorCode.CATALOG_WRITE_FAILED
         assert len(result.errors) == 1
         assert result.errors[0].startswith(message_start)
-        assert result.errors[0].endswith(diagnostic_hint(frozen_diagnostic_clock))
+        assert "Details logged" not in result.errors[0]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "error"
         assert event["operation"] == f"catalog.{operation}"
@@ -524,7 +523,7 @@ class CatalogMutationOutcomeTests:
         operation: str,
         patched: str,
     ) -> None:
-        """With scan_and_index_tier/delete_file raising TypeError("bad"), return INTERNAL_ERROR with the hint, and one catalog.<operation> event."""
+        """With scan_and_index_tier/delete_file raising TypeError("bad"), return INTERNAL_ERROR with the record in diagnostics, and one catalog.<operation> event."""
         catalog = Catalog(workspace_paths)
         if operation == "delete":
             catalog.create(CatalogItemType.BLUEPRINT, "demo")
@@ -537,9 +536,8 @@ class CatalogMutationOutcomeTests:
         result = catalog.delete("demo") if operation == "delete" else catalog.create(CatalogItemType.BLUEPRINT, "demo")
 
         assert result.error_code == ErrorCode.INTERNAL_ERROR
-        assert result.errors == [
-            f"Unexpected error during catalog.{operation}: bad{diagnostic_hint(frozen_diagnostic_clock)}"
-        ]
+        assert result.errors == [f"Unexpected error during catalog.{operation}: bad"]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["operation"] == f"catalog.{operation}"
         assert event["exception_type"] == "TypeError"
@@ -568,10 +566,10 @@ class CatalogListTests:
         assert result.warnings[0].startswith(f"Failed to read catalog blueprint '{bad_file}': ")
         assert result.errors == []
 
-    def test_list_failure_copies_error_with_hint(
+    def test_list_failure_copies_error_and_record(
         self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """With atomic_write_json raising OSError("disk full"), return CATALOG_WRITE_FAILED with the index-write message plus hint, and one catalog.list event."""
+        """With atomic_write_json raising OSError("disk full"), return CATALOG_WRITE_FAILED with the index-write message alone and its record in diagnostics, and one catalog.list event."""
 
         def _disk_full(path: Path, data: object) -> None:
             raise OSError("disk full")
@@ -582,9 +580,8 @@ class CatalogListTests:
 
         index_path = workspace_paths.global_paths.global_catalog_dir / "index.json"
         assert result.error_code == ErrorCode.CATALOG_WRITE_FAILED
-        assert result.errors == [
-            f"Failed to write catalog index '{index_path}': disk full{diagnostic_hint(frozen_diagnostic_clock)}"
-        ]
+        assert result.errors == [f"Failed to write catalog index '{index_path}': disk full"]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "error"
         assert event["operation"] == "catalog.list"
@@ -596,3 +593,33 @@ class CatalogListTests:
         assert result.error_code == ErrorCode.CATALOG_TYPE_INVALID
         assert result.errors == ["Invalid item_type 'widget'. Allowed choices: blueprint, step"]
         assert not resolve_global_paths(None).logs_dir.exists()
+
+
+class CatalogFailureDiagnosticsTests:
+    """Tests verifying a catalog failure with no written record reports an empty diagnostics list."""
+
+    def test_unrecorded_unexpected_failure_has_empty_diagnostics(
+        self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With <DOVO_HOME>/logs a regular file, return INTERNAL_ERROR, errors ["Unexpected error during catalog.create: bad"] and diagnostics []."""
+        logs_dir = resolve_global_paths(None).logs_dir
+        logs_dir.parent.mkdir(parents=True, exist_ok=True)
+        logs_dir.write_text("not a directory", encoding="utf-8")
+
+        def _explode(*args: object) -> None:
+            raise TypeError("bad")
+
+        monkeypatch.setattr("dovo.core.catalog.services.inventory.scan_and_index_tier", _explode)
+
+        result = Catalog(workspace_paths).create(CatalogItemType.BLUEPRINT, "demo")
+
+        assert result.error_code == ErrorCode.INTERNAL_ERROR
+        assert result.errors == ["Unexpected error during catalog.create: bad"]
+        assert result.diagnostics == []
+
+    def test_not_found_has_empty_diagnostics(self, workspace_paths: WorkspacePaths) -> None:
+        """Return CATALOG_NOT_FOUND for show('missing') with diagnostics []."""
+        result = Catalog(workspace_paths).show("missing")
+
+        assert result.error_code == ErrorCode.CATALOG_NOT_FOUND
+        assert result.diagnostics == []

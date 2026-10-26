@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.models import Remediation
 from dovo.core.agents import AgentProgressKind
 from dovo.core.db import SessionStatus
@@ -25,6 +26,14 @@ class WarningEvent(BaseModel):
     model_config = {"extra": "forbid", "strict": True}
 
     message: str
+
+
+class DiagnosticsEvent(BaseModel):
+    """UI event listing the diagnostic-log records a run recorded, shown in terminal output after its warnings and outcome."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    diagnostics: list[DiagnosticRecord]
 
 
 class LockWaitEvent(BaseModel):

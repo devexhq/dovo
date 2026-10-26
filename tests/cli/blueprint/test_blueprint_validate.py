@@ -15,7 +15,7 @@ from dovo.core.catalog import Catalog
 from dovo.core.catalog.definitions import BlueprintDefinition
 from dovo.core.catalog.models import CatalogItemType
 from tests.harness.ask import approval_gate_blueprint, review_triage_blueprint, revise_loop_blueprint
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import FROZEN_EVENT_ID, read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
@@ -109,7 +109,7 @@ class BlueprintValidateCliTests:
         assert payload["valid"] is False
 
     def test_invalid_definition_json_has_schema_invalid(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """Exit 1 with error_code CATALOG_SCHEMA_INVALID, valid False and payload keys exactly {valid, status_label, target, resolved_path, item_type, error_code, errors, warnings, remediations} for a file target failing schema validation."""
+        """Exit 1 with error_code CATALOG_SCHEMA_INVALID, valid False and payload keys exactly {valid, status_label, target, resolved_path, item_type, error_code, errors, warnings, remediations, diagnostics} for a file target failing schema validation."""
         target = isolated_workspace / "bad.yml"
         target.write_text(yaml.safe_dump({"name": "bad", "timeout_seconds": "not-a-number", "steps": []}), "utf-8")
 
@@ -131,6 +131,7 @@ class BlueprintValidateCliTests:
             "errors",
             "warnings",
             "remediations",
+            "diagnostics",
         }
 
     def test_unexpected_definition_error_reports_internal_error_json(
@@ -140,7 +141,7 @@ class BlueprintValidateCliTests:
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With BlueprintDefinition.from_document raising RuntimeError("boom"), exit 1 with INTERNAL_ERROR, the unexpected-error message plus hint, and one catalog.validate event."""
+        """With BlueprintDefinition.from_document raising RuntimeError("boom"), exit 1 with INTERNAL_ERROR, the unexpected-error message alone, the record in diagnostics, and one catalog.validate event."""
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "demo")
 
         def _explode(cls: type[BlueprintDefinition], raw: dict[str, object], *, key: str) -> BlueprintDefinition:
@@ -155,9 +156,8 @@ class BlueprintValidateCliTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["error_code"] == "INTERNAL_ERROR"
-        assert payload["errors"] == [
-            f"Unexpected error during catalog.validate: boom{diagnostic_hint(frozen_diagnostic_clock)}"
-        ]
+        assert payload["errors"] == ["Unexpected error during catalog.validate: boom"]
+        assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["operation"] == "catalog.validate"
         assert event["exception_type"] == "RuntimeError"

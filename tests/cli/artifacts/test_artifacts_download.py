@@ -94,6 +94,7 @@ class ArtifactsDownloadCliIntegrationTests:
                 "warnings": [],
                 "error_code": None,
                 "remediations": [],
+                "diagnostics": [],
             },
         }
 

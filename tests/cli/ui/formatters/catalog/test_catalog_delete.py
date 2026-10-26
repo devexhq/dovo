@@ -74,6 +74,7 @@ CATALOG_DELETE_PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
             "error_code": None,
             "item": {
                 "key": "test-blueprint",
@@ -98,6 +99,7 @@ CATALOG_DELETE_PAYLOAD_CASES = [
             "remediations": [
                 {"message": "Run 'dovo blueprint list' to inspect available items", "command": "dovo blueprint list"}
             ],
+            "diagnostics": [],
             "error_code": "CATALOG_NOT_FOUND",
             "item": None,
             "deleted": False,
@@ -111,6 +113,7 @@ CATALOG_DELETE_PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
             "error_code": None,
             "item": None,
             "deleted": False,

@@ -110,6 +110,7 @@ class SessionShowFormatter(ComponentFormatter[HistoryShowResult, SessionShowView
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.remediations),
+            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: HistoryShowResult) -> RenderableType:

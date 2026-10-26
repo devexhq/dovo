@@ -256,7 +256,12 @@ class SessionCollection:
 
         redactor = history_redactor(self.paths, self.sensitive_variables)
         sessions = [_mask_record(row, redactor) for row in self.db.list(limit=limit, status=status_filter)]
-        return HistoryListResult(status=HistoryListStatus.OK, sessions=sessions, warnings=warnings)
+        return HistoryListResult(
+            status=HistoryListStatus.OK,
+            sessions=sessions,
+            warnings=warnings,
+            diagnostics=list(reconciliation_result.diagnostics),
+        )
 
     def latest_details(self, *, include_logs: bool = False) -> HistoryShowResult:
         """Return the latest session's details, or NOT_FOUND when the project has no sessions."""

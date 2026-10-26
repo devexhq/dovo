@@ -106,6 +106,7 @@ def _check_view(check: DiagnosticCheckResult) -> DoctorCheckView:
         errors=check.errors,
         warnings=check.warnings,
         remediations=check.remediations,
+        diagnostics=check.diagnostics,
     )
 
 
@@ -121,6 +122,7 @@ MIXED_STATUS = FormatterCase(
         workspace_root=ROOT,
         duration_seconds=0.0124,
         checks=[_check_view(c) for c in (OK_CHECK, WARNING_CHECK, FAILED_CHECK, SKIPPED_CHECK)],
+        diagnostics=[],
     ),
     render_expectations=[
         "git.repo",
@@ -140,7 +142,9 @@ MIXED_STATUS = FormatterCase(
 
 EMPTY_CHECKS = FormatterCase(
     data=DiagnosticsReport(workspace_root=ROOT, checks=[], duration_seconds=0.0),
-    view=DoctorReportView(ok=True, has_warnings=False, workspace_root=ROOT, duration_seconds=0.0, checks=[]),
+    view=DoctorReportView(
+        ok=True, has_warnings=False, workspace_root=ROOT, duration_seconds=0.0, checks=[], diagnostics=[]
+    ),
     render_expectations=["0 checks: 0 ok, 0 warning, 0 failed (0.000s)"],
 )
 
@@ -172,6 +176,7 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                     "remediations": [
                         {"message": NO_MODEL_MESSAGE, "command": 'dovo config set agents.copilot.model "<model>"'}
                     ],
+                    "diagnostics": [],
                 },
                 {
                     "check_id": "config.schema",
@@ -185,8 +190,10 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                     "errors": ["Configuration file not found at '/workspace/my-repo/.dovo/config.json'."],
                     "warnings": [],
                     "remediations": [{"message": CONFIG_NOT_FOUND_MESSAGE, "command": "dovo init"}],
+                    "diagnostics": [],
                 },
             ],
+            "diagnostics": [],
         },
         id="warning_and_failed",
     ),
@@ -198,6 +205,7 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
             "workspace_root": "/workspace/my-repo",
             "duration_seconds": 0.0,
             "checks": [],
+            "diagnostics": [],
         },
         id="empty_checks",
     ),

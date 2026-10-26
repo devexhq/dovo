@@ -10,6 +10,7 @@ from uuid import UUID
 
 import pytest
 
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.filesystem.services import resolve_global_paths
 
 FROZEN_EVENT_ID: Final[str] = "exc_3f9a1c07b2de"
@@ -42,6 +43,21 @@ def frozen_diagnostic_clock(monkeypatch: pytest.MonkeyPatch) -> Path:
 def diagnostic_hint(event_file: Path) -> str:
     """Return the hint line, with its leading newline, that names the frozen event file."""
     return f"\nDetails logged: {event_file} (event {FROZEN_EVENT_ID})"
+
+
+def diagnostic_record(event_file: Path) -> DiagnosticRecord:
+    """Return the error-level record that names the frozen event file."""
+    return DiagnosticRecord(event_id=FROZEN_EVENT_ID, log_path=event_file, level=DiagnosticLevel.ERROR)
+
+
+def details_line(event_file: Path) -> str:
+    """Return the 'Details logged:' line that names the frozen event file, as terminal output prints it."""
+    return f"Details logged: {event_file} (event {FROZEN_EVENT_ID})"
+
+
+def unwrapped(output: str) -> str:
+    """Return output with every whitespace run removed, so a line the terminal wrapped still matches."""
+    return "".join(output.split())
 
 
 def read_single_event(event_file: Path) -> dict[str, object]:

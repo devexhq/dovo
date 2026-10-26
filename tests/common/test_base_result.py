@@ -44,6 +44,11 @@ class BaseResultTests:
         assert result.remediations == []
         assert result.model_dump(mode="json")["remediations"] == []
 
+    def test_defaults_diagnostics_to_empty(self) -> None:
+        """Default diagnostics to [] and accept a result validated from a dict with no diagnostics key."""
+        assert BaseResult().diagnostics == []
+        assert BaseResult.model_validate({"errors": ["boom"], "error_code": "INTERNAL_ERROR"}).diagnostics == []
+
     def test_rejects_fixes_keyword(self) -> None:
         """Raise ValidationError when any BaseResult is built with fixes=[...]."""
         with pytest.raises(ValidationError):

@@ -127,6 +127,7 @@ ARTIFACTS_LIST_PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
         },
         id="populated",
     ),
@@ -155,12 +156,13 @@ ARTIFACTS_LIST_PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "diagnostics": [],
         },
         id="legacy_row",
     ),
     pytest.param(
         EMPTY,
-        {"status": "ok", "artifacts": [], "errors": [], "warnings": [], "remediations": []},
+        {"status": "ok", "artifacts": [], "errors": [], "warnings": [], "remediations": [], "diagnostics": []},
         id="empty",
     ),
 ]

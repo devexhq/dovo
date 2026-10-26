@@ -98,7 +98,7 @@ class StepValidateCliTests:
         assert payload["valid"] is False
 
     def test_invalid_definition_json_has_schema_invalid(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """Exit 1 with error_code CATALOG_SCHEMA_INVALID, valid False and payload keys exactly {valid, status_label, target, resolved_path, item_type, error_code, errors, warnings, remediations} for a file target failing schema validation."""
+        """Exit 1 with error_code CATALOG_SCHEMA_INVALID, valid False and payload keys exactly {valid, status_label, target, resolved_path, item_type, error_code, errors, warnings, remediations, diagnostics} for a file target failing schema validation."""
         target = isolated_workspace / "bad.yml"
         target.write_text(yaml.safe_dump({"run": "pytest"}), "utf-8")
 
@@ -120,6 +120,7 @@ class StepValidateCliTests:
             "errors",
             "warnings",
             "remediations",
+            "diagnostics",
         }
 
     def test_blueprint_name_json_has_catalog_not_found(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:

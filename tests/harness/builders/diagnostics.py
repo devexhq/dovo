@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.core.diagnostics.models import (
     CheckCategory,
     CheckStatus,
@@ -24,7 +25,7 @@ def diagnostic_result(**overrides: object) -> DiagnosticCheckResult:
 
 
 class StubCheck(DiagnosticCheck):
-    """DiagnosticCheck that records its context and returns a result with its own identity and duration_seconds, or raises crash."""
+    """DiagnosticCheck that records its context and returns a result with its own identity, duration_seconds and diagnostics, or raises crash."""
 
     def __init__(
         self,
@@ -35,6 +36,7 @@ class StubCheck(DiagnosticCheck):
         status: CheckStatus = CheckStatus.OK,
         crash: Exception | None = None,
         duration_seconds: float = 0.0,
+        diagnostics: list[DiagnosticRecord] | None = None,
     ) -> None:
         self.check_id = check_id
         self.name = name
@@ -42,6 +44,7 @@ class StubCheck(DiagnosticCheck):
         self.status = status
         self.crash = crash
         self.duration_seconds = duration_seconds
+        self.diagnostics = list(diagnostics or [])
         self.executed = False
         self.captured_context: DiagnosticsContext | None = None
 
@@ -58,4 +61,5 @@ class StubCheck(DiagnosticCheck):
             status=self.status,
             message=f"Executed {self.check_id}",
             duration_seconds=self.duration_seconds,
+            diagnostics=self.diagnostics,
         )

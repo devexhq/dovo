@@ -84,6 +84,7 @@ class SessionDiffCliIntegrationTests:
                 "errors": [],
                 "warnings": [],
                 "remediations": [],
+                "diagnostics": [],
             },
         }
 
