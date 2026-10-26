@@ -14,6 +14,7 @@ from dovo.common.session_id import SessionIdFactory
 from dovo.core.config import Config
 from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
+from dovo.core.worktree.exceptions import WorktreeApplyConflictError
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
     WorktreeApplyStrategy,
@@ -223,22 +224,47 @@ class Worktree:
         delete: bool = False,
         message: str | None = None,
     ) -> WorktreeApplyResult:
-        """Apply worktree changes back to main workspace."""
-        with WorkspaceLock(self.paths.lock_file):
-            return self.patch.apply(
+        """Apply worktree changes back to the main workspace; report a failure by its error_code.
+
+        Raises:
+            LockTimeoutError: If another process holds the workspace lock.
+        """
+        conflicting_files: list[str] = []
+        with WorkspaceLock(self.paths.lock_file), catch_failure("worktree.apply", worktree_id=worktree_id) as caught:
+            try:
+                applied = self.patch.apply(
+                    worktree_id,
+                    strategy=strategy,
+                    allow_dirty=allow_dirty,
+                    dry_run=dry_run,
+                    delete=delete,
+                    message=message,
+                )
+            except WorktreeApplyConflictError as conflict:
+                conflicting_files = list(conflict.conflicting_files)
+                raise
+        if caught.failure is not None:
+            return WorktreeApplyResult(
                 worktree_id=worktree_id,
                 strategy=strategy,
-                allow_dirty=allow_dirty,
-                dry_run=dry_run,
-                delete=delete,
-                message=message,
+                conflicting_files=conflicting_files,
+                error_code=caught.failure.error_code,
+                errors=[caught.failure.message],
+                remediations=list(caught.failure.remediations),
+                diagnostics=error_diagnostics(caught.failure.diagnostic),
             )
+        return applied
 
-    def diff(
-        self,
-        worktree_id: str,
-        *,
-        stat: bool = False,
-    ) -> WorktreeDiffResult:
-        """Inspect unified diff or diffstat for a worktree."""
-        return self.patch.diff(worktree_id=worktree_id, stat=stat)
+    def diff(self, worktree_id: str, *, stat: bool = False) -> WorktreeDiffResult:
+        """Inspect unified diff or diffstat for a worktree; report a failure by its error_code."""
+        with catch_failure("worktree.diff", worktree_id=worktree_id) as caught:
+            diffed = self.patch.diff(worktree_id, stat=stat)
+        if caught.failure is not None:
+            return WorktreeDiffResult(
+                worktree_id=worktree_id,
+                error_code=caught.failure.error_code,
+                errors=[caught.failure.message],
+                remediations=list(caught.failure.remediations),
+                diagnostics=error_diagnostics(caught.failure.diagnostic),
+            )
+        return diffed

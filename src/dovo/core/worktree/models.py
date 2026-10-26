@@ -71,22 +71,9 @@ class WorktreeApplyStrategy(StrEnum):
     SQUASH = "squash"
 
 
-class WorktreeApplyStatus(StrEnum):
-    """Classified outcomes for applying a worktree."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    ALREADY_MERGED = "already_merged"
-    MAIN_REPO_DIRTY = "main_repo_dirty"
-    EMPTY_DIFF = "empty_diff"
-    CONFLICT = "conflict"
-    GIT_FAILED = "git_failed"
-
-
 class WorktreeApplyResult(BaseResult):
-    """Structured result of applying worktree changes."""
+    """Structured result of applying worktree changes; a failure is reported by error_code."""
 
-    status: WorktreeApplyStatus
     worktree_id: str
     strategy: WorktreeApplyStrategy = WorktreeApplyStrategy.PATCH
     touched_files: list[str] = Field(default_factory=list)
@@ -96,23 +83,13 @@ class WorktreeApplyResult(BaseResult):
 
     @property
     def ok(self) -> bool:
-        """Return True when changes were applied successfully without errors."""
-        return self.status == WorktreeApplyStatus.OK and not self.errors
-
-
-class WorktreeDiffStatus(StrEnum):
-    """Classified outcomes for inspecting worktree diffs."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    EMPTY_DIFF = "empty_diff"
-    GIT_FAILED = "git_failed"
+        """True exactly when error_code is None."""
+        return self.error_code is None
 
 
 class WorktreeDiffResult(BaseResult):
-    """Structured result of inspecting worktree diffs."""
+    """Structured result of inspecting worktree diffs; a failure is reported by error_code."""
 
-    status: WorktreeDiffStatus
     worktree_id: str
     diff_text: str = ""
     stat_text: str = ""
@@ -120,8 +97,8 @@ class WorktreeDiffResult(BaseResult):
 
     @property
     def ok(self) -> bool:
-        """Return True when diff was generated successfully without errors."""
-        return self.status == WorktreeDiffStatus.OK and not self.errors
+        """True exactly when error_code is None."""
+        return self.error_code is None
 
 
 class StaleWorktreeCategory(StrEnum):

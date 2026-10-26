@@ -55,11 +55,9 @@ from dovo.core.status import (
 )
 from dovo.core.worktree import (
     WorktreeApplyResult,
-    WorktreeApplyStatus,
     WorktreeCreateResult,
     WorktreeDeleteResult,
     WorktreeDiffResult,
-    WorktreeDiffStatus,
     WorktreeListResult,
     WorktreePruneResult,
     WorktreeShowResult,
@@ -141,11 +139,11 @@ SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
     WorktreeListResult: lambda: WorktreeListResult(diagnostics=[RECORD]),
     WorktreeCreateResult: lambda: WorktreeCreateResult(error_code="WORKTREE_PATH_CONFLICT", diagnostics=[RECORD]),
     WorktreeApplyResult: lambda: WorktreeApplyResult(
-        status=WorktreeApplyStatus.NOT_FOUND, worktree_id="wt-1", diagnostics=[RECORD]
+        error_code="WORKTREE_NOT_FOUND", worktree_id="wt-1", diagnostics=[RECORD]
     ),
     WorktreeDeleteResult: lambda: WorktreeDeleteResult(diagnostics=[RECORD]),
     WorktreeDiffResult: lambda: WorktreeDiffResult(
-        status=WorktreeDiffStatus.NOT_FOUND, worktree_id="wt-1", diagnostics=[RECORD]
+        error_code="WORKTREE_NOT_FOUND", worktree_id="wt-1", diagnostics=[RECORD]
     ),
     DovoStatusResult: _status_sample,
 }
@@ -167,6 +165,7 @@ RENDERED: Final[list[type[BaseResult]]] = [
     WorktreeCreateResult,
     WorktreeApplyResult,
     WorktreeDeleteResult,
+    WorktreeDiffResult,
 ]
 
 

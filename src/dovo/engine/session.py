@@ -301,18 +301,22 @@ class SessionRunner:
         )
 
     def _apply_worktree_changes(self, outcome: RunOutcome) -> RunOutcome:
-        """Auto-apply worktree changes on a completed run, returning the outcome (FAILED on conflict) and recording whether apply failed."""
+        """Auto-apply worktree changes on a completed run, copying the apply's warnings, errors and records, marking the run FAILED when apply fails, and recording whether it failed."""
         if outcome.status != SessionStatus.COMPLETED:
             return outcome
 
-        errors = list(outcome.errors)
-        warnings = list(outcome.warnings)
-        new_status, self._apply_failed = self._workspace.handle_auto_apply(
-            self._manager, self._worktree, errors, warnings
-        )
-        update: dict[str, object] = {"errors": errors, "warnings": warnings}
-        if new_status is not None:
-            update["status"] = new_status
+        result = self._workspace.handle_auto_apply(self._manager, self._worktree)
+        if result is None:
+            return outcome
+
+        self._apply_failed = not result.ok
+        update: dict[str, object] = {
+            "warnings": [*outcome.warnings, *result.warnings],
+            "diagnostics": [*outcome.diagnostics, *result.diagnostics],
+        }
+        if not result.ok:
+            update["errors"] = [*outcome.errors, *result.errors]
+            update["status"] = SessionStatus.FAILED
         return outcome.model_copy(update=update)
 
     def _close(self, outcome: RunOutcome) -> RunOutcome:

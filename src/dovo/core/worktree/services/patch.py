@@ -3,26 +3,27 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 
+from dovo.common.diagnostic_log import DiagnosticLevel, error_diagnostics, record_exception
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.core.db import WorktreeRecord, WorktreesRepository, WorktreeStatus
-from dovo.core.git.exceptions import (
-    GitPlumbingTimeoutError,
-)
+from dovo.core.git.exceptions import GitError, GitPlumbingTimeoutError
 from dovo.core.git.runner import GitRunner
 from dovo.core.git.tree_diff import diff_work_tree
+from dovo.core.worktree.exceptions import WorktreeApplyConflictError, WorktreeError, recorded_cause
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
-    WorktreeApplyStatus,
     WorktreeApplyStrategy,
     WorktreeDiffResult,
-    WorktreeDiffStatus,
     WorktreeRemoval,
 )
-from dovo.core.worktree.services.failure_log import logged_failure, record_fallback
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
+from dovo.core.worktree.services.show import find_worktree
 from dovo.core.worktree.services.wip import list_wip_paths
 
 _CONFLICT_PATTERNS = (
@@ -30,6 +31,7 @@ _CONFLICT_PATTERNS = (
     re.compile(r"^error:\s+([^:]+):\s+patch does not apply"),
     re.compile(r"cannot apply binary patch to '([^']+)'"),
     re.compile(r"^error:\s+([^:]+):\s+(?:already exists in working directory|does not exist in index)"),
+    re.compile(r"^error:\s+([^:]+):\s+No such file or directory"),
 )
 
 
@@ -41,6 +43,21 @@ def _match_conflict_line(line: str) -> str | None:
         if match:
             return match.group(1).strip()
     return None
+
+
+@contextmanager
+def _reraise_git(worktree_id: str, activity: str) -> Generator[None]:
+    """Re-raise a GitError from the block as a WorktreeError with its code, chained to recorded_cause(exc).
+
+    The message reads "Git timed out|failed <activity> for worktree '<id>': <exc>".
+    """
+    try:
+        yield
+    except GitError as exc:
+        verb = "timed out" if isinstance(exc, GitPlumbingTimeoutError) else "failed"
+        raise WorktreeError(
+            exc.error_code, f"Git {verb} {activity} for worktree '{worktree_id}': {exc}"
+        ) from recorded_cause(exc)
 
 
 def extract_conflicts(stderr: str) -> list[str]:
@@ -85,135 +102,71 @@ class WorktreePatch:
         self.git = git
         self.lifecycle = lifecycle
 
-    def _validate_for_diff(
-        self,
-        worktree_id: str,
-    ) -> tuple[WorktreeRecord | None, WorktreeDiffResult | None]:
-        """Validate worktree record for diff inspection."""
-        record = self.db.get(worktree_id)
-        if record is None:
-            return None, WorktreeDiffResult(
-                status=WorktreeDiffStatus.NOT_FOUND,
-                worktree_id=worktree_id,
-                errors=[f"Worktree '{worktree_id}' not found."],
-            )
-        if not Path(record.worktree_path).is_dir():
-            try:
-                self.db.reconcile_stale_active(worktree_id)
-            except Exception as exc:
-                record_fallback(
-                    exc,
-                    operation="worktree.diff",
-                    context={"worktree_id": worktree_id, "path": str(record.worktree_path)},
-                )
-            return None, WorktreeDiffResult(
-                status=WorktreeDiffStatus.NOT_FOUND,
-                worktree_id=worktree_id,
-                errors=[f"Worktree '{worktree_id}' directory is missing on disk."],
-            )
-        return record, None
+    def _require_present(self, record: WorktreeRecord, *, operation: str, missing_message: str) -> None:
+        """Ensure the row's worktree directory exists.
 
-    def _validate_for_apply(
-        self,
-        worktree_id: str,
-    ) -> tuple[WorktreeRecord | None, WorktreeApplyResult | None]:
-        """Validate that worktree exists in DB, is on disk, and is not already merged."""
-        record = self.db.get(worktree_id)
-        if record is None:
-            return None, WorktreeApplyResult(
-                status=WorktreeApplyStatus.NOT_FOUND,
-                worktree_id=worktree_id,
-                errors=[f"Worktree '{worktree_id}' not found."],
-                remediations=[
-                    Remediation(message="Run 'dovo worktree list' to see known worktrees", command="dovo worktree list")
-                ],
+        A missing directory is reconciled best-effort; a reconcile failure is recorded at debug level for
+        operation with context {"worktree_id", "path"}.
+
+        Raises:
+            WorktreeError: WORKTREE_MISSING with missing_message.
+        """
+        if Path(record.worktree_path).is_dir():
+            return
+        try:
+            self.db.reconcile_stale_active(record.id)
+        except Exception as exc:
+            record_exception(
+                exc,
+                level=DiagnosticLevel.DEBUG,
+                operation=operation,
+                context={"worktree_id": record.id, "path": str(record.worktree_path)},
             )
+        raise WorktreeError(ErrorCode.WORKTREE_MISSING, missing_message)
 
-        if not Path(record.worktree_path).is_dir():
-            try:
-                self.db.reconcile_stale_active(worktree_id)
-            except Exception as exc:
-                record_fallback(
-                    exc,
-                    operation="worktree.apply",
-                    context={"worktree_id": worktree_id, "path": str(record.worktree_path)},
-                )
-            return None, WorktreeApplyResult(
-                status=WorktreeApplyStatus.NOT_FOUND,
-                worktree_id=worktree_id,
-                errors=[f"Worktree '{worktree_id}' directory is missing on disk; reconciled status to 'cleaned'."],
-            )
+    def _check_main_repo_clean(self, allow_dirty: bool, worktree_id: str) -> None:
+        """Refuse any uncommitted main-repository change unless allow_dirty.
 
-        if record.status == WorktreeStatus.MERGED:
-            return None, WorktreeApplyResult(
-                status=WorktreeApplyStatus.ALREADY_MERGED,
-                worktree_id=worktree_id,
-                warnings=[f"Worktree '{worktree_id}' is already merged."],
-            )
-
-        return record, None
-
-    def _check_main_repo_clean(
-        self,
-        allow_dirty: bool,
-        worktree_id: str,
-    ) -> WorktreeApplyResult | None:
-        """Refuse any uncommitted main-repository change; this blanket check applies only without --allow-dirty."""
+        Raises:
+            WorktreeError: GIT_DIRTY_WORKTREE, or the status read's git code.
+        """
         if allow_dirty:
-            return None
+            return
 
-        dirty_paths = list_wip_paths(self.path, git=self.git)
+        with _reraise_git(worktree_id, "during conflict check"):
+            dirty_paths = list_wip_paths(self.path, git=self.git)
         if not dirty_paths:
-            return None
+            return
 
-        return WorktreeApplyResult(
-            status=WorktreeApplyStatus.MAIN_REPO_DIRTY,
-            worktree_id=worktree_id,
-            errors=[f"Cannot apply worktree {worktree_id}: main repository has uncommitted changes."],
-            remediations=[
+        raise WorktreeError(
+            ErrorCode.GIT_DIRTY_WORKTREE,
+            f"Cannot apply worktree {worktree_id}: main repository has uncommitted changes.",
+            [
                 Remediation(message="Commit or stash local changes in the main workspace"),
                 Remediation(message="Pass '--allow-dirty' to overlay changes anyway"),
             ],
         )
 
     def _check_squash_overlap(
-        self,
-        strategy: WorktreeApplyStrategy,
-        allow_dirty: bool,
-        patch_paths: list[str],
-        worktree_id: str,
-    ) -> WorktreeApplyResult | None:
-        """Refuse a squash that would commit main-repository changes to a path the patch also touches."""
+        self, strategy: WorktreeApplyStrategy, allow_dirty: bool, patch_paths: list[str], worktree_id: str
+    ) -> None:
+        """Refuse a squash that would commit main-repository changes to a path the patch also touches.
+
+        Raises:
+            WorktreeError: GIT_DIRTY_WORKTREE listing the overlapping files, or the status read's git code.
+        """
         if strategy != WorktreeApplyStrategy.SQUASH or not allow_dirty:
-            return None
-        try:
+            return
+        with _reraise_git(worktree_id, "during conflict check"):
             dirty = self.git.dirty_paths(self.path)
-        except Exception as exc:
-            return WorktreeApplyResult(
-                status=WorktreeApplyStatus.GIT_FAILED,
-                worktree_id=worktree_id,
-                strategy=strategy,
-                errors=[
-                    logged_failure(
-                        f"Failed to read main repository status: {exc}",
-                        exc,
-                        operation="worktree.apply",
-                        context={"worktree_id": worktree_id},
-                    )
-                ],
-            )
         overlapping = sorted(set(dirty) & set(patch_paths))
         if not overlapping:
-            return None
-        return WorktreeApplyResult(
-            status=WorktreeApplyStatus.MAIN_REPO_DIRTY,
-            worktree_id=worktree_id,
-            strategy=strategy,
-            errors=[
-                f"Cannot squash worktree {worktree_id}: the main repository has uncommitted changes "
-                "in files the worktree also changes.\nOverlapping files:\n" + "\n".join(f"  • {p}" for p in overlapping)
-            ],
-            remediations=[
+            return
+        raise WorktreeError(
+            ErrorCode.GIT_DIRTY_WORKTREE,
+            f"Cannot squash worktree {worktree_id}: the main repository has uncommitted changes "
+            "in files the worktree also changes.\nOverlapping files:\n" + "\n".join(f"  • {p}" for p in overlapping),
+            [
                 Remediation(message="Commit or stash those files in the main workspace"),
                 Remediation(message="Use '--strategy patch' to overlay the changes without committing"),
             ],
@@ -229,102 +182,63 @@ class WorktreePatch:
         return delta.diff_text, delta.files, delta.stat_text
 
     def _collect_worktree_changes(
-        self,
-        record: WorktreeRecord,
-        strategy: WorktreeApplyStrategy,
-    ) -> tuple[str, list[str], list[str], WorktreeApplyResult | None]:
-        """Generate unified diff, touched files, and for squash the patch paths (both sides of a rename)."""
+        self, record: WorktreeRecord, strategy: WorktreeApplyStrategy
+    ) -> tuple[str, list[str], list[str]]:
+        """Return the unified diff, touched files and, for squash, the patch paths.
+
+        Raises:
+            WorktreeError: PATCH_EMPTY when there is nothing to apply, or a git code during diff generation.
+        """
         worktree_path = Path(record.worktree_path)
         patch_paths: list[str] = []
-        try:
+        with _reraise_git(record.id, "during diff generation"):
             diff_text, touched_files, _ = self._collect_delta(worktree_path, record.base_commit)
             if strategy == WorktreeApplyStrategy.SQUASH and diff_text.strip():
                 patch_paths = self.git.patch_paths(worktree_path, diff_text)
-        except Exception as exc:
-            return (
-                "",
-                [],
-                [],
-                WorktreeApplyResult(
-                    status=WorktreeApplyStatus.GIT_FAILED,
-                    worktree_id=record.id,
-                    errors=[
-                        logged_failure(
-                            f"Failed to generate diff from worktree: {exc}",
-                            exc,
-                            operation="worktree.apply",
-                            context={"worktree_id": record.id, "path": str(record.worktree_path)},
-                        )
-                    ],
-                ),
-            )
 
         if not touched_files or not diff_text.strip():
-            return (
-                "",
-                [],
-                [],
-                WorktreeApplyResult(
-                    status=WorktreeApplyStatus.EMPTY_DIFF,
-                    worktree_id=record.id,
-                    warnings=[f"Worktree '{record.id}' has no changes to apply."],
-                ),
-            )
+            raise WorktreeError(ErrorCode.PATCH_EMPTY, f"Worktree '{record.id}' has no changes to apply.")
 
-        return diff_text, touched_files, patch_paths, None
+        return diff_text, touched_files, patch_paths
 
-    def _verify_patch_cleanliness(
-        self,
-        diff_text: str,
-        worktree_id: str,
-    ) -> tuple[list[str], WorktreeApplyResult | None]:
-        """Perform dry-run conflict check with git apply --check."""
-        try:
+    def _verify_patch_cleanliness(self, diff_text: str, worktree_id: str) -> None:
+        """Dry-run the patch with git apply --check, marking the worktree conflicted when it names conflicting paths.
+
+        Raises:
+            WorktreeApplyConflictError: When the check fails and its stderr names conflicting paths.
+            WorktreeError: GIT_FAILED when the check exits non-zero without naming a conflicting path,
+                or a git code during the conflict check.
+        """
+        with _reraise_git(worktree_id, "during conflict check"):
             returncode, _, stderr = self.git.apply_check(self.path, diff_text, binary=True)
-        except GitPlumbingTimeoutError as exc:
-            return [], WorktreeApplyResult(
-                status=WorktreeApplyStatus.GIT_FAILED,
-                worktree_id=worktree_id,
-                errors=[f"Git timeout during conflict check: {exc}"],
+        if returncode == 0:
+            return
+
+        conflicts = extract_conflicts(stderr)
+        if not conflicts:
+            raise WorktreeError(
+                ErrorCode.GIT_FAILED,
+                f"Git failed during conflict check for worktree '{worktree_id}': "
+                f"{stderr.strip() or 'patch check failed'}",
             )
+        try:
+            self.db.update_status(worktree_id, WorktreeStatus.CONFLICT)
         except Exception as exc:
-            return [], WorktreeApplyResult(
-                status=WorktreeApplyStatus.GIT_FAILED,
-                worktree_id=worktree_id,
-                errors=[
-                    logged_failure(
-                        f"Git failure during conflict check: {exc}",
-                        exc,
-                        operation="worktree.apply",
-                        context={"worktree_id": worktree_id},
-                    )
-                ],
+            record_exception(
+                exc, level=DiagnosticLevel.DEBUG, operation="worktree.apply", context={"worktree_id": worktree_id}
             )
-
-        if returncode != 0:
-            conflicts = extract_conflicts(stderr)
-            try:
-                self.db.update_status(worktree_id, WorktreeStatus.CONFLICT)
-            except Exception as exc:
-                record_fallback(exc, operation="worktree.apply", context={"worktree_id": worktree_id})
-            conflict_bullets = "\n".join(f"  • {f}" for f in conflicts) if conflicts else f"  {stderr.strip()}"
-            return conflicts, WorktreeApplyResult(
-                status=WorktreeApplyStatus.CONFLICT,
-                worktree_id=worktree_id,
-                conflicting_files=conflicts,
-                errors=[
-                    f"Cannot apply worktree {worktree_id}: conflicts detected.\nConflicting files:\n{conflict_bullets}"
-                ],
-                remediations=[
-                    Remediation(
-                        message=f"Inspect worktree differences with 'dovo worktree diff {worktree_id}'",
-                        command=f"dovo worktree diff {worktree_id}",
-                    ),
-                    Remediation(message="Resolve conflicts in the main workspace or worktree"),
-                ],
-            )
-
-        return [], None
+        conflict_bullets = "\n".join(f"  • {f}" for f in conflicts)
+        raise WorktreeApplyConflictError(
+            f"Cannot apply worktree {worktree_id}: conflicts detected.\nConflicting files:\n{conflict_bullets}",
+            [
+                Remediation(
+                    message=f"Inspect worktree differences with 'dovo worktree diff {worktree_id}'",
+                    command=f"dovo worktree diff {worktree_id}",
+                ),
+                Remediation(message="Resolve conflicts in the main workspace or worktree"),
+            ],
+            conflicting_files=conflicts,
+        )
 
     def _apply_patch_strategy(
         self,
@@ -333,96 +247,48 @@ class WorktreePatch:
         message: str | None,
         worktree_id: str,
         patch_paths: list[str],
-    ) -> tuple[str | None, WorktreeApplyResult | None]:
-        """Apply patch to working directory and, for squash, commit only the patch paths."""
-        try:
+    ) -> str | None:
+        """Apply the patch and, for squash, commit only the patch paths; return the squash commit SHA or None.
+
+        Raises:
+            WorktreeError: GIT_FAILED when git apply exits non-zero, or a git code during patch apply or squash commit.
+        """
+        with _reraise_git(worktree_id, "during patch apply"):
             returncode, _, stderr = self.git.apply(
                 self.path, diff_text, binary=True, index=strategy == WorktreeApplyStrategy.SQUASH
             )
-        except Exception as exc:
-            return None, WorktreeApplyResult(
-                status=WorktreeApplyStatus.GIT_FAILED,
-                worktree_id=worktree_id,
-                errors=[
-                    logged_failure(
-                        f"Git apply failed: {exc}",
-                        exc,
-                        operation="worktree.apply",
-                        context={"worktree_id": worktree_id},
-                    )
-                ],
-            )
-
         if returncode != 0:
-            err_detail = stderr.strip() or "patch failed"
-            return None, WorktreeApplyResult(
-                status=WorktreeApplyStatus.GIT_FAILED,
-                worktree_id=worktree_id,
-                errors=[f"Git apply failed: {err_detail}"],
+            raise WorktreeError(
+                ErrorCode.GIT_FAILED,
+                f"Git failed during patch apply for worktree '{worktree_id}': {stderr.strip() or 'patch failed'}",
             )
 
         if strategy != WorktreeApplyStrategy.SQUASH:
-            return None, None
+            return None
 
         commit_msg = message or f"dovo: apply changes from worktree {worktree_id}"
-        try:
+        with _reraise_git(worktree_id, "during squash commit"):
             self.git.commit(self.path, commit_msg, paths=patch_paths)
-            commit_sha = self.git.rev_parse(self.path, rev="HEAD")
-            return commit_sha, None
-        except Exception as exc:
-            return None, WorktreeApplyResult(
-                status=WorktreeApplyStatus.GIT_FAILED,
-                worktree_id=worktree_id,
-                errors=[
-                    logged_failure(
-                        f"Git squash commit failed: {exc}",
-                        exc,
-                        operation="worktree.apply",
-                        context={"worktree_id": worktree_id},
-                    )
-                ],
-            )
+            return self.git.rev_parse(self.path, rev="HEAD")
 
-    def diff(
-        self,
-        worktree_id: str,
-        *,
-        stat: bool = False,
-    ) -> WorktreeDiffResult:
-        """Inspect unified diff or file summary statistics for a worktree."""
-        record, val_err = self._validate_for_diff(worktree_id)
-        if val_err is not None or record is None:
-            return val_err or WorktreeDiffResult(
-                status=WorktreeDiffStatus.NOT_FOUND,
-                worktree_id=worktree_id,
-                errors=["Validation failed"],
-            )
+    def diff(self, worktree_id: str, *, stat: bool = False) -> WorktreeDiffResult:
+        """Return the worktree's diff against its base commit; a worktree with no changes is an empty success.
 
-        try:
+        Raises:
+            WorktreeError: WORKTREE_NOT_FOUND, WORKTREE_MISSING, or a git failure's code
+                (GIT_FAILED, GIT_TIMEOUT, GIT_BINARY_MISSING, FS_NOT_FOUND).
+        """
+        record = find_worktree(self.db, worktree_id)
+        self._require_present(
+            record, operation="worktree.diff", missing_message=f"Worktree '{worktree_id}' directory is missing on disk."
+        )
+        with _reraise_git(worktree_id, "while generating the diff"):
             diff_text, touched_files, stat_text = self._collect_delta(Path(record.worktree_path), record.base_commit)
-        except Exception as exc:
-            return WorktreeDiffResult(
-                status=WorktreeDiffStatus.GIT_FAILED,
-                worktree_id=worktree_id,
-                errors=[
-                    logged_failure(
-                        f"Failed to generate diff for worktree '{worktree_id}': {exc}",
-                        exc,
-                        operation="worktree.diff",
-                        context={"worktree_id": worktree_id, "path": str(record.worktree_path)},
-                    )
-                ],
-            )
 
         if not touched_files or not diff_text.strip():
-            return WorktreeDiffResult(
-                status=WorktreeDiffStatus.EMPTY_DIFF,
-                worktree_id=worktree_id,
-                warnings=[f"Worktree '{worktree_id}' has no changes compared to base commit."],
-            )
+            return WorktreeDiffResult(worktree_id=worktree_id)
 
         return WorktreeDiffResult(
-            status=WorktreeDiffStatus.OK,
             worktree_id=worktree_id,
             diff_text=diff_text,
             stat_text=stat_text if stat else "",
@@ -439,43 +305,35 @@ class WorktreePatch:
         delete: bool = False,
         message: str | None = None,
     ) -> WorktreeApplyResult:
-        """Apply worktree changes back to main workspace without raising for domain failures."""
-        record, val_err = self._validate_for_apply(worktree_id)
-        if val_err is not None or record is None:
-            return val_err or WorktreeApplyResult(
-                status=WorktreeApplyStatus.NOT_FOUND,
-                worktree_id=worktree_id,
-                errors=["Validation failed"],
-            )
+        """Apply worktree changes back to the main workspace and return the applied or dry-run result.
 
-        dirty_err = self._check_main_repo_clean(allow_dirty, worktree_id)
-        if dirty_err is not None:
-            return dirty_err
-
-        diff_text, touched_files, patch_paths, coll_err = self._collect_worktree_changes(record, strategy)
-        if coll_err is not None:
-            return coll_err
-
-        pre_err = (
-            self._check_squash_overlap(strategy, allow_dirty, patch_paths, worktree_id)
-            or self._verify_patch_cleanliness(diff_text, worktree_id)[1]
+        Raises:
+            WorktreeApplyConflictError: WORKTREE_APPLY_CONFLICT when the patch does not apply cleanly.
+            WorktreeError: WORKTREE_NOT_FOUND, WORKTREE_ALREADY_MERGED, WORKTREE_MISSING, GIT_DIRTY_WORKTREE,
+                PATCH_EMPTY, or a git failure's code (GIT_FAILED, GIT_TIMEOUT, GIT_BINARY_MISSING, FS_NOT_FOUND).
+        """
+        record = find_worktree(self.db, worktree_id)
+        if record.status == WorktreeStatus.MERGED:
+            raise WorktreeError(ErrorCode.WORKTREE_ALREADY_MERGED, f"Worktree '{worktree_id}' is already merged.")
+        self._require_present(
+            record,
+            operation="worktree.apply",
+            missing_message=f"Worktree '{worktree_id}' directory is missing on disk; reconciled status to 'cleaned'.",
         )
-        if pre_err is not None:
-            return pre_err
+        self._check_main_repo_clean(allow_dirty, worktree_id)
+        diff_text, touched_files, patch_paths = self._collect_worktree_changes(record, strategy)
+        self._check_squash_overlap(strategy, allow_dirty, patch_paths, worktree_id)
+        self._verify_patch_cleanliness(diff_text, worktree_id)
 
         if dry_run:
             return WorktreeApplyResult(
-                status=WorktreeApplyStatus.OK,
                 worktree_id=worktree_id,
                 strategy=strategy,
                 touched_files=touched_files,
                 warnings=["Dry run validation succeeded. No files were modified."],
             )
 
-        commit_sha, apply_err = self._apply_patch_strategy(diff_text, strategy, message, worktree_id, patch_paths)
-        if apply_err is not None:
-            return apply_err
-
+        commit_sha = self._apply_patch_strategy(diff_text, strategy, message, worktree_id, patch_paths)
         return self._applied_result(record, strategy, touched_files, commit_sha, delete=delete)
 
     def _applied_result(
@@ -487,29 +345,29 @@ class WorktreePatch:
         *,
         delete: bool,
     ) -> WorktreeApplyResult:
-        """Remove the worktree when delete, mark it merged, and build the OK result carrying the removal's warnings and diagnostics."""
+        """Remove the worktree when delete, mark it merged, and build the result carrying the removal's and the status write's warnings and diagnostics."""
         removal = self.lifecycle.cleanup(record) if delete else WorktreeRemoval()
         warnings = list(removal.warnings)
+        diagnostics = list(removal.diagnostics)
 
         try:
             self.db.update_status(record.id, WorktreeStatus.MERGED)
         except Exception as exc:
-            warnings.append(
-                logged_failure(
-                    f"Failed to update database status to 'merged' for worktree '{record.id}': {exc}",
-                    exc,
-                    operation="worktree.apply",
-                    context={"worktree_id": record.id},
+            warnings.append(f"Failed to update database status to 'merged' for worktree '{record.id}': {exc}")
+            diagnostics.extend(
+                error_diagnostics(
+                    record_exception(
+                        exc, level=DiagnosticLevel.ERROR, operation="worktree.apply", context={"worktree_id": record.id}
+                    )
                 )
             )
 
         return WorktreeApplyResult(
-            status=WorktreeApplyStatus.OK,
             worktree_id=record.id,
             strategy=strategy,
             touched_files=touched_files,
             commit_sha=commit_sha,
             cleaned_up=delete,
             warnings=warnings,
-            diagnostics=list(removal.diagnostics),
+            diagnostics=diagnostics,
         )

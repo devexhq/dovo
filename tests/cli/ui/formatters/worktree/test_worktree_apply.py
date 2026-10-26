@@ -12,7 +12,6 @@ from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.models import Remediation
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
-    WorktreeApplyStatus,
     WorktreeApplyStrategy,
 )
 from tests.harness.formatter import (
@@ -23,7 +22,6 @@ from tests.harness.formatter import (
 
 APPLIED_SQUASH = FormatterCase.identity(
     data=WorktreeApplyResult(
-        status=WorktreeApplyStatus.OK,
         worktree_id="dovo_1",
         strategy=WorktreeApplyStrategy.SQUASH,
         commit_sha="abc1234",
@@ -34,7 +32,6 @@ APPLIED_SQUASH = FormatterCase.identity(
 
 APPLIED_PATCH = FormatterCase.identity(
     data=WorktreeApplyResult(
-        status=WorktreeApplyStatus.OK,
         worktree_id="dovo_2",
         strategy=WorktreeApplyStrategy.PATCH,
         touched_files=["src/main.py"],
@@ -45,8 +42,8 @@ APPLIED_PATCH = FormatterCase.identity(
 
 FAILED_CONFLICT = FormatterCase.identity(
     data=WorktreeApplyResult(
-        status=WorktreeApplyStatus.GIT_FAILED,
         worktree_id="dovo_3",
+        error_code="GIT_FAILED",
         strategy=WorktreeApplyStrategy.SQUASH,
         conflicting_files=["src/conflict.py"],
         errors=["Merge conflict in src/conflict.py"],
@@ -57,7 +54,6 @@ FAILED_CONFLICT = FormatterCase.identity(
 
 APPLIED_DELETE_WITH_DIAGNOSTICS = FormatterCase.identity(
     data=WorktreeApplyResult(
-        status=WorktreeApplyStatus.OK,
         worktree_id="dovo_4",
         strategy=WorktreeApplyStrategy.SQUASH,
         commit_sha="def5678",
@@ -78,18 +74,27 @@ APPLIED_DELETE_WITH_DIAGNOSTICS = FormatterCase.identity(
     ],
 )
 
+ALREADY_MERGED = FormatterCase.identity(
+    data=WorktreeApplyResult(
+        worktree_id="dovo_5",
+        error_code="WORKTREE_ALREADY_MERGED",
+        errors=["Worktree 'dovo_5' is already merged."],
+    ),
+    render_expectations=["Worktree 'dovo_5' is already merged."],
+)
+
 WORKTREE_APPLY_CASES = [
     pytest.param(APPLIED_SQUASH, id="applied_squash"),
     pytest.param(APPLIED_PATCH, id="applied_patch"),
     pytest.param(FAILED_CONFLICT, id="failed_conflict"),
     pytest.param(APPLIED_DELETE_WITH_DIAGNOSTICS, id="applied_delete_with_diagnostics"),
+    pytest.param(ALREADY_MERGED, id="already_merged"),
 ]
 
 WORKTREE_APPLY_PAYLOAD_CASES = [
     pytest.param(
         APPLIED_SQUASH,
         {
-            "status": "ok",
             "worktree_id": "dovo_1",
             "strategy": "squash",
             "touched_files": [],
@@ -107,7 +112,6 @@ WORKTREE_APPLY_PAYLOAD_CASES = [
     pytest.param(
         FAILED_CONFLICT,
         {
-            "status": "git_failed",
             "worktree_id": "dovo_3",
             "strategy": "squash",
             "touched_files": [],
@@ -116,11 +120,28 @@ WORKTREE_APPLY_PAYLOAD_CASES = [
             "commit_sha": None,
             "warnings": [],
             "errors": ["Merge conflict in src/conflict.py"],
-            "error_code": None,
+            "error_code": "GIT_FAILED",
             "remediations": [{"message": "Resolve manually", "command": None}],
             "diagnostics": [],
         },
         id="failed_conflict",
+    ),
+    pytest.param(
+        ALREADY_MERGED,
+        {
+            "worktree_id": "dovo_5",
+            "strategy": "patch",
+            "touched_files": [],
+            "conflicting_files": [],
+            "cleaned_up": False,
+            "commit_sha": None,
+            "warnings": [],
+            "errors": ["Worktree 'dovo_5' is already merged."],
+            "error_code": "WORKTREE_ALREADY_MERGED",
+            "remediations": [],
+            "diagnostics": [],
+        },
+        id="already_merged",
     ),
 ]
 

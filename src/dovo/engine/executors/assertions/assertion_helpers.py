@@ -11,7 +11,7 @@ https://github.com/python/cpython/blob/v3.13.13/Lib/unittest/util.py
 
 from __future__ import annotations
 
-from os.path import commonprefix
+from itertools import takewhile
 
 _MAX_LENGTH = 80
 _PLACEHOLDER_LEN = 12
@@ -64,8 +64,8 @@ def common_shorten_repr(left: object, right: object) -> tuple[str, str]:
     if max_len <= _MAX_LENGTH:
         return left_repr, right_repr
 
-    prefix = commonprefix([left_repr, right_repr])
-    prefix_len = len(prefix)
+    prefix_len = sum(1 for _ in takewhile(lambda pair: pair[0] == pair[1], zip(left_repr, right_repr, strict=False)))
+    prefix = left_repr[:prefix_len]
     common_len = _MAX_LENGTH - (max_len - prefix_len + _MIN_BEGIN_LEN + _PLACEHOLDER_LEN)
     if common_len > _MIN_COMMON_LEN:
         shortened_prefix = shorten(prefix, _MIN_BEGIN_LEN, common_len)

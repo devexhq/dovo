@@ -19,7 +19,13 @@ from dovo.core.config import ConfigLoadError
 from dovo.core.db import SessionStatus, WorktreesRepository
 from dovo.core.git.exceptions import GitError
 from dovo.core.git.tree_diff import diff_work_tree
-from dovo.core.worktree import Worktree, WorktreeApplyStrategy, WorktreeCreateResult, WorktreeSession
+from dovo.core.worktree import (
+    Worktree,
+    WorktreeApplyResult,
+    WorktreeApplyStrategy,
+    WorktreeCreateResult,
+    WorktreeSession,
+)
 from dovo.engine.executors.failure_log import logged_failure
 from dovo.engine.models import RunSettings
 from dovo.engine.notify import safe_notify
@@ -204,30 +210,17 @@ class Workspace:
         return False
 
     def handle_auto_apply(
-        self,
-        manager: Worktree | None,
-        session: WorktreeSession | None,
-        errors: list[str],
-        warnings: list[str],
-    ) -> tuple[SessionStatus | None, bool]:
-        """Apply worktree changes on completed runs when auto_apply is enabled.
+        self, manager: Worktree | None, session: WorktreeSession | None
+    ) -> WorktreeApplyResult | None:
+        """Apply worktree changes with the patch strategy when auto_apply is enabled.
 
         Returns:
-            Tuple of (new_status_or_None, apply_failed_boolean).
+            The apply result, or None when auto-apply is off or the run has no worktree.
         """
         if not (self.context.auto_apply and session is not None and manager is not None):
-            return None, False
+            return None
 
-        apply_result = manager.apply(
-            session.session_id,
-            strategy=WorktreeApplyStrategy.PATCH,
-        )
-        warnings.extend(apply_result.warnings)
-        if not apply_result.ok:
-            errors.extend(apply_result.errors)
-            return SessionStatus.FAILED, True
-
-        return None, False
+        return manager.apply(session.session_id, strategy=WorktreeApplyStrategy.PATCH)
 
     def capture_and_persist_diff(
         self,
