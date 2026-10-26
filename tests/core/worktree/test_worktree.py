@@ -1,13 +1,20 @@
-"""Contract tests for the Worktree entrypoint's pass-through delegation."""
+"""Contract tests for the Worktree entrypoint's delegation and prune failure reporting."""
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.filesystem.services import resolve_global_paths
+from dovo.common.lock import LockTimeoutError
+from dovo.core.db import WorktreesRepository
+from dovo.core.git.exceptions import GitCommandError
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
     WorktreeApplyStatus,
@@ -16,9 +23,11 @@ from dovo.core.worktree.models import (
     WorktreeListStatus,
     WorktreeShowStatus,
 )
+from dovo.core.worktree.services.detector import WorktreeDetector
 from dovo.core.worktree.worktree import Worktree
 from tests.harness import WorkspaceBuilder
-from tests.harness.fakes import fixed_clock, fixed_new_id
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
+from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id
 
 
 @pytest.fixture
@@ -112,3 +121,80 @@ class WorktreeDiffApplyDelegationTests:
         result = worktree.apply("missing_worktree")
 
         assert result.status == WorktreeApplyStatus.NOT_FOUND
+
+
+def _raise_type_error(*args: object, **kwargs: object) -> NoReturn:
+    """Stand in for a call that fails with an unexpected TypeError("boom")."""
+    raise TypeError("boom")
+
+
+class WorktreePruneEntrypointTests:
+    @pytest.mark.parametrize(
+        "trigger",
+        [
+            pytest.param("detect", id="detect"),
+            pytest.param("db_list", id="db_list"),
+        ],
+    )
+    def test_prune_unexpected_failure_returns_internal_error_with_one_diagnostic(
+        self,
+        worktree_workspace_paths: WorkspacePaths,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        trigger: str,
+    ) -> None:
+        """Return status None, error_code INTERNAL_ERROR, errors == ["Unexpected error during worktree.prune: boom"], items == [], ok False, diagnostics == [diagnostic_record(frozen_diagnostic_clock)], and one error event with operation worktree.prune when detection raises TypeError("boom")."""
+        if trigger == "detect":
+            monkeypatch.setattr(WorktreeDetector, "detect", _raise_type_error)
+        else:
+            monkeypatch.setattr(WorktreesRepository, "list", _raise_type_error)
+        worktree = Worktree(worktree_workspace_paths, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
+
+        result = worktree.prune()
+
+        assert result.status is None
+        assert result.error_code == ErrorCode.INTERNAL_ERROR
+        assert result.errors == ["Unexpected error during worktree.prune: boom"]
+        assert result.items == []
+        assert result.ok is False
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "worktree.prune"
+        assert event["exception_type"] == "TypeError"
+
+    def test_prune_reports_detection_git_error_by_its_code(
+        self, worktree_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return status None, error_code GIT_FAILED, errors == ["Git execution failed ('git worktree list'): fatal error"], items == [], diagnostics == [] and ok False, and leave <DOVO_HOME>/logs absent, when git worktree list raises GitCommandError(["worktree", "list"], 1, "", "fatal error")."""
+        failure = GitCommandError(["worktree", "list"], 1, "", "fatal error")
+        git = FakeGitRunner({("worktree", "list"): failure})
+        worktree = Worktree(worktree_workspace_paths, git=git, clock=fixed_clock, new_id=fixed_new_id)
+
+        result = worktree.prune()
+
+        assert result.status is None
+        assert result.error_code == ErrorCode.GIT_FAILED
+        assert result.errors == ["Git execution failed ('git worktree list'): fatal error"]
+        assert result.items == []
+        assert result.diagnostics == []
+        assert result.ok is False
+        assert not resolve_global_paths().logs_dir.exists()
+
+    def test_prune_lock_timeout_propagates_and_prunes_nothing(
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Raise LockTimeoutError from Worktree.prune() when dovo.core.worktree.worktree.WorkspaceLock.__enter__ raises it, leaving a stale dovo/dovo_* branch in place."""
+        git = GitRunner()
+        subprocess.run(["git", "branch", "dovo/dovo_stale"], cwd=worktree_workspace, check=True, capture_output=True)
+
+        def _locked(self: object) -> NoReturn:
+            raise LockTimeoutError("Timed out waiting for workspace lock")
+
+        monkeypatch.setattr("dovo.core.worktree.worktree.WorkspaceLock.__enter__", _locked)
+        worktree = Worktree(worktree_workspace_paths, git=git, clock=fixed_clock, new_id=fixed_new_id)
+
+        with pytest.raises(LockTimeoutError):
+            worktree.prune()
+
+        assert git.list_branches(worktree_workspace, pattern="dovo/dovo_*") == ["dovo/dovo_stale"]

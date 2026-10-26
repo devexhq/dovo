@@ -167,6 +167,7 @@ RENDERED: Final[list[type[BaseResult]]] = [
     WorkspaceInitResult,
     DovoStatusResult,
     HistoryListResult,
+    WorktreePruneResult,
 ]
 
 

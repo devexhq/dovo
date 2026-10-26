@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.core.git.exceptions import GitCommandError, GitNotFoundError, GitPlumbingTimeoutError
 from dovo.core.worktree.exceptions import WorktreeError
@@ -23,7 +24,9 @@ class WorktreeFailureLogTests:
             pytest.param(GitCommandError(["git", "worktree", "add"], 128, "", "fatal"), id="git_command"),
             pytest.param(GitNotFoundError("git not found"), id="git_missing"),
             pytest.param(GitPlumbingTimeoutError("timed out"), id="git_timeout"),
-            pytest.param(WorktreeError("worktree path does not exist"), id="worktree_error"),
+            pytest.param(
+                WorktreeError(ErrorCode.WORKTREE_MISSING, "worktree path does not exist"), id="worktree_error"
+            ),
         ],
     )
     def test_logged_failure_returns_message_unchanged_for_expected_errors(

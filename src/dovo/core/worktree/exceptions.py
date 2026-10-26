@@ -1,15 +1,15 @@
-"""Domain exceptions for worktree lifecycle and patch integration."""
+"""The worktree package's domain error and its fixed-code capacity subclass."""
 
-from __future__ import annotations
-
-
-class WorktreeError(RuntimeError):
-    """Base exception for all worktree domain operations."""
+from dovo.common.error_codes import ErrorCode
+from dovo.common.exceptions import DomainError
 
 
-class WorktreeConfigError(WorktreeError):
-    """Raised when worktree configuration is missing or invalid."""
+class WorktreeError(DomainError):
+    """Business failure in a worktree operation, such as overlaying uncommitted changes into a worktree."""
 
 
 class WorktreeCapacityError(WorktreeError):
     """Raised when active worktree count reaches configured capacity limit."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(ErrorCode.WORKTREE_CAPACITY_EXCEEDED, message)

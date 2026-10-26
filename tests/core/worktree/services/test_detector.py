@@ -3,23 +3,23 @@
 from __future__ import annotations
 
 import shutil
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.filesystem.services import resolve_global_paths
 from dovo.core.db import WorktreesRepository, WorktreeStatus
-from dovo.core.git.exceptions import GitCommandError
+from dovo.core.git.exceptions import GitCommandError, GitNotFoundError, GitPlumbingTimeoutError
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
-from dovo.core.worktree.models import (
-    StaleWorktreeCategory,
-    WorktreeDetectionStatus,
-)
+from dovo.core.worktree.models import StaleWorktreeCategory
 from dovo.core.worktree.services.detector import WorktreeDetector, detect_stale_worktrees
 from tests.harness import WorkspaceBuilder
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -54,9 +54,8 @@ class WorktreeDetectorBaselineTests:
 
         result = detector.detect()
 
-        assert result.status == WorktreeDetectionStatus.OK
         assert len(result.items) == 0
-        assert len(result.errors) == 0
+        assert result.warnings == ()
         assert result.active_worktree_count == 0
 
     def test_active_worktree_is_excluded_from_all_categories(
@@ -74,9 +73,8 @@ class WorktreeDetectorBaselineTests:
 
         result = detector.detect()
 
-        assert result.status == WorktreeDetectionStatus.OK
         assert len(result.items) == 0
-        assert len(result.errors) == 0
+        assert result.warnings == ()
         assert result.active_worktree_count == 1
 
 
@@ -102,9 +100,8 @@ class WorktreeDetectorCategoryTests:
 
         result = detector.detect()
 
-        assert result.status == WorktreeDetectionStatus.OK
         assert len(result.items) == 2
-        assert len(result.errors) == 0
+        assert result.warnings == ()
 
         worktree_item = next(i for i in result.items if i.category == StaleWorktreeCategory.STALE_WORKTREE_REF)
         assert worktree_item.identifier == str(target)
@@ -152,7 +149,6 @@ class WorktreeDetectorCategoryTests:
 
         result = detector.detect()
 
-        assert result.status == WorktreeDetectionStatus.OK
         assert len(result.items) == 3
 
         clean_item = next(i for i in result.items if i.identifier == "dovo_clean")
@@ -192,7 +188,6 @@ class WorktreeDetectorCategoryTests:
 
         result = detector.detect()
 
-        assert result.status == WorktreeDetectionStatus.OK
         assert len(result.items) == 1
 
         item = result.items[0]
@@ -216,7 +211,6 @@ class WorktreeDetectorCategoryTests:
 
         result = detector.detect()
 
-        assert result.status == WorktreeDetectionStatus.OK
         assert len(result.items) == 1
 
         item = result.items[0]
@@ -226,118 +220,113 @@ class WorktreeDetectorCategoryTests:
         assert item.reason == f"Worktree branch '{branch_name}' is not attached to any active worktree"
 
 
-class WorktreeDetectorEntrypointTests:
-    """Tests verifying helper function and Worktree entrypoint method agree."""
-
-    def test_detect_stale_worktrees_helper_and_worktree_entrypoint_agree(
-        self,
-        detector_workspace: Path,
-        detector_workspace_paths: WorkspacePaths,
-    ) -> None:
-        db = _repo(detector_workspace_paths)
-        manager = Worktree(detector_workspace_paths, db=db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
-
-        res_helper = detect_stale_worktrees(detector_workspace_paths, db, git=GitRunner())
-        res_manager = manager.detect()
-
-        assert res_helper.status == WorktreeDetectionStatus.OK
-        assert len(res_helper.items) == 0
-        assert res_manager.status == WorktreeDetectionStatus.OK
-        assert len(res_manager.items) == 0
-
-
 class WorktreeDetectorFailureTests:
     """Tests verifying error handling when git or database operations fail."""
 
-    def test_detect_returns_git_failed_on_worktree_list_error(
-        self,
-        detector_workspace: Path,
-        detector_workspace_paths: WorkspacePaths,
-    ) -> None:
-        db = _repo(detector_workspace_paths)
+    def test_detect_propagates_git_error_with_its_code(self, detector_workspace_paths: WorkspacePaths) -> None:
+        """Raise GitCommandError with error_code GIT_FAILED and message "Git execution failed ('git worktree list'): fatal error" when git worktree list raises GitCommandError(["worktree", "list"], 1, "", "fatal error")."""
         failure = GitCommandError(["worktree", "list"], 1, "", "fatal error")
-        detector = WorktreeDetector(detector_workspace_paths, db, git=FakeGitRunner({("worktree", "list"): failure}))
+        detector = WorktreeDetector(
+            detector_workspace_paths,
+            _repo(detector_workspace_paths),
+            git=FakeGitRunner({("worktree", "list"): failure}),
+        )
 
-        result = detector.detect()
+        with pytest.raises(GitCommandError) as excinfo:
+            detector.detect()
 
-        assert result.status == WorktreeDetectionStatus.GIT_FAILED
-        assert result.errors == [
-            "Failed to list git worktrees (GIT_FAILED): Git execution failed ('git worktree list'): fatal error"
-        ]
+        assert excinfo.value.error_code == ErrorCode.GIT_FAILED
+        assert excinfo.value.message == "Git execution failed ('git worktree list'): fatal error"
 
     @pytest.mark.parametrize(
-        ("target", "prefix"),
-        [
-            pytest.param("worktree_list", "Unexpected error while listing git worktrees: boom", id="worktree_list"),
-            pytest.param("db_list", "Failed to query worktrees from database: boom", id="db_list"),
-        ],
+        "target", [pytest.param("worktree_list", id="worktree_list"), pytest.param("db_list", id="db_list")]
     )
-    def test_detect_unexpected_failure_returns_error_with_hint(
-        self,
-        detector_workspace: Path,
-        detector_workspace_paths: WorkspacePaths,
-        frozen_diagnostic_clock: Path,
-        target: str,
-        prefix: str,
+    def test_detect_propagates_unexpected_exception_unwrapped(
+        self, detector_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path, target: str
     ) -> None:
-        """Return status error with errors == [f"{prefix}\nDetails logged: ... (event exc_3f9a1c07b2de)"] and one error record for worktree.detect."""
+        """Raise the original RuntimeError("boom") from detect() and leave <DOVO_HOME>/logs absent when git worktree list or WorktreesRepository.list raises it."""
         db = _repo(detector_workspace_paths)
+        boom = RuntimeError("boom")
         fake = FakeGitRunner()
         detector = WorktreeDetector(detector_workspace_paths, db, git=fake)
         if target == "worktree_list":
-            fake.responses[("worktree", "list")] = RuntimeError("boom")
-            result = detector.detect()
-        else:
-            with patch.object(db, "list", side_effect=RuntimeError("boom")):
-                result = detector.detect()
+            fake.responses[("worktree", "list")] = boom
 
-        assert result.status == WorktreeDetectionStatus.ERROR
-        assert result.errors == [f"{prefix}{diagnostic_hint(frozen_diagnostic_clock)}"]
-        event = read_single_event(frozen_diagnostic_clock)
-        assert event["level"] == "error"
-        assert event["operation"] == "worktree.detect"
-        assert event["context"] == {"path": str(detector.path)}
+        with patch.object(db, "list", side_effect=boom) if target == "db_list" else nullcontext():
+            with pytest.raises(RuntimeError) as excinfo:
+                detector.detect()
+
+        assert excinfo.value is boom
+        assert not resolve_global_paths().logs_dir.exists()
 
 
 class WorktreeDetectorDiagnosticLogTests:
-    def test_dirty_state_failure_hints_warning(
-        self, detector_workspace: Path, detector_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    @pytest.mark.parametrize(
+        ("failure", "recorded"),
+        [
+            pytest.param(RuntimeError("boom"), True, id="unexpected"),
+            pytest.param(GitPlumbingTimeoutError("git status timed out"), False, id="git_error"),
+        ],
+    )
+    def test_orphan_inspection_failure_warns_and_follows_recording_rule(
+        self,
+        detector_workspace_paths: WorkspacePaths,
+        frozen_diagnostic_clock: Path,
+        failure: Exception,
+        recorded: bool,
     ) -> None:
-        """Return ok with warnings == ["Unable to inspect git status for orphaned directory 'dovo_orphan': boom\nDetails logged: ..."] when git status --porcelain raises RuntimeError."""
-        fake = FakeGitRunner({("status", "--porcelain"): RuntimeError("boom")})
+        """Return warnings == ("Unable to inspect git status for orphaned directory 'dovo_orphan': <failure>",) with no hint. For RuntimeError, diagnostics == (diagnostic_record(...),) and one error event worktree.detect with context {"path": <orphan dir>}; for GitError, diagnostics == () and no logs dir."""
+        fake = FakeGitRunner({("status", "--porcelain"): failure})
         detector = WorktreeDetector(detector_workspace_paths, _repo(detector_workspace_paths), git=fake)
         orphan_dir = detector.worktree_base_dir / "dovo_orphan"
         orphan_dir.mkdir(parents=True)
 
         result = detector.detect()
 
-        assert result.status == WorktreeDetectionStatus.OK
-        assert result.warnings == [
-            "Unable to inspect git status for orphaned directory 'dovo_orphan': boom"
-            f"{diagnostic_hint(frozen_diagnostic_clock)}"
-        ]
-        event = read_single_event(frozen_diagnostic_clock)
-        assert event["level"] == "error"
-        assert event["operation"] == "worktree.detect"
-        assert event["context"] == {"path": str(orphan_dir)}
+        assert result.warnings == (f"Unable to inspect git status for orphaned directory 'dovo_orphan': {failure}",)
+        if recorded:
+            assert result.diagnostics == (diagnostic_record(frozen_diagnostic_clock),)
+            event = read_single_event(frozen_diagnostic_clock)
+            assert event["level"] == "error"
+            assert event["operation"] == "worktree.detect"
+            assert event["context"] == {"path": str(orphan_dir)}
+        else:
+            assert result.diagnostics == ()
+            assert not resolve_global_paths().logs_dir.exists()
 
-    def test_branch_discovery_failure_records_error_and_keeps_result(
-        self, detector_workspace: Path, detector_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    @pytest.mark.parametrize(
+        ("failure", "recorded"),
+        [
+            pytest.param(RuntimeError("boom"), True, id="unexpected"),
+            pytest.param(GitCommandError(["for-each-ref"], 1, "", "boom"), True, id="git_error"),
+            pytest.param(GitNotFoundError("git not found"), False, id="git_missing"),
+        ],
+    )
+    def test_branch_scan_failure_records_debug_and_skips_branches(
+        self,
+        detector_workspace: Path,
+        detector_workspace_paths: WorkspacePaths,
+        frozen_diagnostic_clock: Path,
+        failure: Exception,
+        recorded: bool,
     ) -> None:
-        """Return ok with no stale_branch items and warnings == [] when git for-each-ref raises RuntimeError, and write one error record for worktree.detect."""
+        """Return no stale_branch items, warnings == () and diagnostics == () when git for-each-ref raises failure with a stale dovo/dovo_stale branch; write one debug event worktree.detect when recorded, else no logs dir."""
         GitRunner().run(["branch", "dovo/dovo_stale"], path=detector_workspace)
-        fake = FakeGitRunner({("for-each-ref",): RuntimeError("boom")})
+        fake = FakeGitRunner({("for-each-ref",): failure})
         detector = WorktreeDetector(detector_workspace_paths, _repo(detector_workspace_paths), git=fake)
 
         result = detector.detect()
 
-        assert result.status == WorktreeDetectionStatus.OK
         assert [item for item in result.items if item.category == StaleWorktreeCategory.STALE_BRANCH] == []
-        assert result.warnings == []
-        event = read_single_event(frozen_diagnostic_clock)
-        assert event["level"] == "error"
-        assert event["operation"] == "worktree.detect"
-        assert event["context"] == {"path": str(detector.path)}
+        assert result.warnings == ()
+        assert result.diagnostics == ()
+        if recorded:
+            event = read_single_event(frozen_diagnostic_clock)
+            assert event["level"] == "debug"
+            assert event["operation"] == "worktree.detect"
+            assert event["context"] == {"path": str(detector.path)}
+        else:
+            assert not resolve_global_paths().logs_dir.exists()
 
 
 class WorktreeDetectorWorkspacePathsTests:
@@ -355,9 +344,8 @@ class WorktreeDetectorWorkspacePathsTests:
 
         result = detect_stale_worktrees(paths, _repo(paths), git=GitRunner())
 
-        assert result.status == WorktreeDetectionStatus.OK
         assert [item.path for item in result.orphaned_directories] == [paths.worktrees_dir / "orphan_1"]
-        assert result.warnings == []
+        assert result.warnings == ()
 
     def test_detect_missing_worktrees_dir_reports_no_orphans(
         self, detector_workspace: Path, detector_workspace_paths: WorkspacePaths, tmp_path: Path
@@ -368,5 +356,4 @@ class WorktreeDetectorWorkspacePathsTests:
 
         result = detect_stale_worktrees(paths, _repo(paths), git=GitRunner())
 
-        assert result.status == WorktreeDetectionStatus.OK
-        assert result.orphaned_directories == []
+        assert result.orphaned_directories == ()

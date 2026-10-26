@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from collections.abc import Callable
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
@@ -16,6 +17,7 @@ from dovo.core.diagnostics.models import CheckCategory, CheckStatus, Diagnostics
 from dovo.core.git.exceptions import GitCommandError
 from dovo.core.git.runner import GitRunner
 from tests.harness import WorkspaceBuilder
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.fakes import FakeGitRunner
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
@@ -42,6 +44,11 @@ def worktree_refs_repository(worktree_refs_workspace_paths: WorkspacePaths) -> W
         db_path=worktree_refs_workspace_paths.database_file,
         project_id=worktree_refs_workspace_paths.project_id,
     )
+
+
+def _raise_boom(*args: object, **kwargs: object) -> NoReturn:
+    """Stand in for a repository call that fails with an unexpected RuntimeError("boom")."""
+    raise RuntimeError("boom")
 
 
 class WorktreeRefsCheckTests:
@@ -188,24 +195,64 @@ class WorktreeRefsCheckTests:
         assert result.details == {"stale_ids": ["dovo_missing"]}
         assert result.warnings == ["1 stale worktree reference(s) detected."]
 
-    def test_execute_git_worktree_list_failure_returns_warning_with_no_error_code(
+    @pytest.mark.parametrize(
+        "case", [pytest.param("git_failed", id="git_failed"), pytest.param("unexpected", id="unexpected")]
+    )
+    def test_execute_detection_failure_returns_warning_naming_code(
         self,
         worktree_refs_workspace: Path,
         worktree_refs_workspace_paths: WorkspacePaths,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        case: str,
     ) -> None:
-        failure = GitCommandError(["git", "worktree", "list"], 1, "", "fatal error")
-        fake = FakeGitRunner({("worktree", "list"): failure})
-        check = WorktreeRefsCheck()
-        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths, git=fake)
+        """Return WARNING with error_code None. git_failed (FakeGitRunner raising GitCommandError(["worktree", "list"], 1, "", "fatal error") for ("worktree", "list")) gives message "Worktree detection could not complete (GIT_FAILED): Git execution failed ('git worktree list'): fatal error", details {"error_code": "GIT_FAILED"} and diagnostics []. unexpected (WorktreesRepository.list raising RuntimeError("boom")) gives message "Worktree detection could not complete (INTERNAL_ERROR): Unexpected error during worktree.detect: boom", details {"error_code": "INTERNAL_ERROR"}, diagnostics [diagnostic_record(frozen_diagnostic_clock)] and one error event with operation worktree.detect."""
+        git: GitRunner
+        if case == "git_failed":
+            git = FakeGitRunner({("worktree", "list"): GitCommandError(["worktree", "list"], 1, "", "fatal error")})
+            code = "GIT_FAILED"
+            detail = "Git execution failed ('git worktree list'): fatal error"
+        else:
+            git = GitRunner()
+            monkeypatch.setattr(WorktreesRepository, "list", _raise_boom)
+            code = "INTERNAL_ERROR"
+            detail = "Unexpected error during worktree.detect: boom"
+        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths, git=git)
 
-        result = check.execute(context)
+        result = WorktreeRefsCheck().execute(context)
 
+        message = f"Worktree detection could not complete ({code}): {detail}"
         assert result.check_id == "worktree.refs"
-        assert result.category == CheckCategory.WORKTREE
         assert result.status == CheckStatus.WARNING
         assert result.error_code is None
-        assert result.details == {"detection_status": "git_failed"}
-        assert result.warnings == ["Worktree detection could not complete (status='git_failed')."]
+        assert result.message == message
+        assert result.details == {"error_code": code}
+        assert result.warnings == [message]
+        if case == "git_failed":
+            assert result.diagnostics == []
+            assert not resolve_global_paths().logs_dir.exists()
+        else:
+            assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+            event = read_single_event(frozen_diagnostic_clock)
+            assert event["level"] == "error"
+            assert event["operation"] == "worktree.detect"
+
+    def test_execute_carries_detection_diagnostics(
+        self,
+        worktree_refs_workspace: Path,
+        worktree_refs_workspace_paths: WorkspacePaths,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """Return the DOCTOR_WORKTREE_ORPHAN warning with diagnostics == [diagnostic_record(frozen_diagnostic_clock)] when git status --porcelain on the orphaned directory raises RuntimeError("boom")."""
+        (worktree_refs_workspace_paths.worktrees_dir / "dovo_orphan").mkdir(parents=True)
+        fake = FakeGitRunner({("status", "--porcelain"): RuntimeError("boom")})
+        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths, git=fake)
+
+        result = WorktreeRefsCheck().execute(context)
+
+        assert result.status == CheckStatus.WARNING
+        assert result.error_code == "DOCTOR_WORKTREE_ORPHAN"
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
 
 
 class WorktreeRefsCheckRepositoryConstructionTests:

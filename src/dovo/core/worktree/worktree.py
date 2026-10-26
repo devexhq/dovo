@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import builtins
+from contextlib import nullcontext
 
 from dovo.common.clock import Clock
+from dovo.common.diagnostic_log import error_diagnostics
+from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
 from dovo.common.session_id import SessionIdFactory
@@ -15,7 +18,6 @@ from dovo.core.worktree.models import (
     WorktreeApplyStrategy,
     WorktreeCreateResult,
     WorktreeDeleteResult,
-    WorktreeDetectionResult,
     WorktreeDiffResult,
     WorktreeListResult,
     WorktreePruneResult,
@@ -23,7 +25,6 @@ from dovo.core.worktree.models import (
     WorktreeShowResult,
 )
 from dovo.core.worktree.services.delete import collect_worktree_delete
-from dovo.core.worktree.services.detector import WorktreeDetector
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.core.worktree.services.list import collect_worktree_list
 from dovo.core.worktree.services.patch import WorktreePatch
@@ -100,9 +101,26 @@ class Worktree:
         dry_run: bool = False,
         force: bool = False,
     ) -> WorktreePruneResult:
-        """Safely prune stale worktrees, orphaned directories, and temporary branches."""
+        """Safely prune stale worktrees, orphaned directories, and temporary branches; report a failure by its error_code.
+
+        Raises:
+            LockTimeoutError: If another process holds the workspace lock.
+        """
         pruner = WorktreePruner(self.paths, self.db, git=self.git, sessions_db=self.sessions_db)
-        return pruner.prune(dry_run=dry_run, force=force)
+        lock = nullcontext() if dry_run else WorkspaceLock(self.paths.lock_file)
+        with lock, catch_failure("worktree.prune", path=str(self.path)) as caught:
+            pruned = pruner.prune(dry_run=dry_run, force=force)
+        if caught.failure is not None:
+            return WorktreePruneResult(
+                status=None,
+                dry_run=dry_run,
+                force=force,
+                error_code=caught.failure.error_code,
+                errors=[caught.failure.message],
+                remediations=list(caught.failure.remediations),
+                diagnostics=error_diagnostics(caught.failure.diagnostic),
+            )
+        return pruned
 
     def apply(
         self,
@@ -133,8 +151,3 @@ class Worktree:
     ) -> WorktreeDiffResult:
         """Inspect unified diff or diffstat for a worktree."""
         return self.patch.diff(worktree_id=worktree_id, stat=stat)
-
-    def detect(self) -> WorktreeDetectionResult:
-        """Scan repository for stale worktrees, orphaned directories, and dead refs."""
-        detector = WorktreeDetector(self.paths, self.db, git=self.git, sessions_db=self.sessions_db)
-        return detector.detect()

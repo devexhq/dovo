@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+from typing import Any, Final
 
 import pytest
 
@@ -11,6 +12,7 @@ from dovo.cli.ui.formatters.worktree.worktree_views import (
     PrunedItemView,
     WorktreePruneView,
 )
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.models import Remediation
 from dovo.core.worktree.models import (
     PruneAction,
@@ -19,6 +21,7 @@ from dovo.core.worktree.models import (
     WorktreePruneResult,
     WorktreePruneStatus,
 )
+from tests.harness.diagnostic_log import details_line
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -54,6 +57,7 @@ def _make_prune_view(**overrides: object) -> WorktreePruneView:
         "pruned_count": 0,
         "skipped_count": 0,
         "failed_count": 0,
+        "error_code": None,
         "errors": [],
         "warnings": [],
         "remediations": [],
@@ -75,7 +79,7 @@ EMPTY_PRUNE = FormatterCase(
 
 PRUNED_MULTIPLE_ITEMS = FormatterCase(
     data=WorktreePruneResult(
-        status=WorktreePruneStatus.PARTIAL_SUCCESS,
+        status=WorktreePruneStatus.PARTIAL_FAILURE,
         dry_run=False,
         force=True,
         items=[
@@ -98,10 +102,11 @@ PRUNED_MULTIPLE_ITEMS = FormatterCase(
                 error="Ref locked",
             ),
         ],
+        error_code="WORKTREE_PRUNE_ITEMS_FAILED",
         errors=["Ref lock failure"],
     ),
     view=_make_prune_view(
-        status=WorktreePruneStatus.PARTIAL_SUCCESS,
+        status=WorktreePruneStatus.PARTIAL_FAILURE,
         force=True,
         items=[
             _make_pruned_item_view(
@@ -129,6 +134,7 @@ PRUNED_MULTIPLE_ITEMS = FormatterCase(
         pruned_count=1,
         skipped_count=1,
         failed_count=1,
+        error_code="WORKTREE_PRUNE_ITEMS_FAILED",
         errors=["Ref lock failure"],
     ),
     render_expectations=["feature/stale", "dovo_dirty", "/tmp/dovo_ref", "Ref lock failure"],
@@ -180,11 +186,46 @@ WITH_WARNINGS_AND_REMEDIATIONS = FormatterCase(
     render_expectations=["No stale worktrees found."],
 )
 
+DIAGNOSTIC_RECORD: Final[DiagnosticRecord] = DiagnosticRecord(
+    event_id="exc_3f9a1c07b2de",
+    log_path=Path("/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json"),
+    level=DiagnosticLevel.ERROR,
+)
+
+WITH_DIAGNOSTICS = FormatterCase(
+    data=WorktreePruneResult(
+        status=WorktreePruneStatus.OK,
+        dry_run=False,
+        force=False,
+        diagnostics=[DIAGNOSTIC_RECORD],
+    ),
+    view=_make_prune_view(diagnostics=[DIAGNOSTIC_RECORD]),
+    render_expectations=[details_line(DIAGNOSTIC_RECORD.log_path)],
+)
+
+STOPPED = FormatterCase(
+    data=WorktreePruneResult(
+        status=None,
+        dry_run=False,
+        force=False,
+        error_code="GIT_FAILED",
+        errors=["Git execution failed ('git worktree list'): fatal error"],
+    ),
+    view=_make_prune_view(
+        status=None,
+        error_code="GIT_FAILED",
+        errors=["Git execution failed ('git worktree list'): fatal error"],
+    ),
+    render_expectations=["Error: Git execution failed ('git worktree list'): fatal error"],
+)
+
 PRUNE_CASES = [
     pytest.param(EMPTY_PRUNE, id="empty_prune"),
     pytest.param(PRUNED_MULTIPLE_ITEMS, id="pruned_multiple_items"),
     pytest.param(DRY_RUN_PRUNE, id="dry_run_prune"),
     pytest.param(WITH_WARNINGS_AND_REMEDIATIONS, id="with_warnings_and_remediations"),
+    pytest.param(WITH_DIAGNOSTICS, id="with_diagnostics"),
+    pytest.param(STOPPED, id="stopped"),
 ]
 
 PRUNE_PAYLOAD_CASES = [
@@ -198,6 +239,7 @@ PRUNE_PAYLOAD_CASES = [
             "pruned_count": 0,
             "skipped_count": 0,
             "failed_count": 0,
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],
@@ -208,7 +250,7 @@ PRUNE_PAYLOAD_CASES = [
     pytest.param(
         PRUNED_MULTIPLE_ITEMS,
         {
-            "status": "partial_success",
+            "status": "partial_failure",
             "dry_run": False,
             "force": True,
             "items": [
@@ -252,12 +294,54 @@ PRUNE_PAYLOAD_CASES = [
             "pruned_count": 1,
             "skipped_count": 1,
             "failed_count": 1,
+            "error_code": "WORKTREE_PRUNE_ITEMS_FAILED",
             "errors": ["Ref lock failure"],
             "warnings": [],
             "remediations": [],
             "diagnostics": [],
         },
         id="pruned_multiple_items",
+    ),
+    pytest.param(
+        WITH_DIAGNOSTICS,
+        {
+            "status": "ok",
+            "dry_run": False,
+            "force": False,
+            "items": [],
+            "pruned_count": 0,
+            "skipped_count": 0,
+            "failed_count": 0,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [
+                {
+                    "event_id": "exc_3f9a1c07b2de",
+                    "log_path": "/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json",
+                }
+            ],
+        },
+        id="with_diagnostics",
+    ),
+    pytest.param(
+        STOPPED,
+        {
+            "status": None,
+            "dry_run": False,
+            "force": False,
+            "items": [],
+            "pruned_count": 0,
+            "skipped_count": 0,
+            "failed_count": 0,
+            "error_code": "GIT_FAILED",
+            "errors": ["Git execution failed ('git worktree list'): fatal error"],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
+        },
+        id="stopped",
     ),
 ]
 

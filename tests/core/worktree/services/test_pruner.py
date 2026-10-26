@@ -8,26 +8,24 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import NoReturn
-from unittest.mock import patch
 
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
-from dovo.common.lock import LockTimeoutError
+from dovo.common.filesystem.services import resolve_global_paths
 from dovo.core.db import WorktreesRepository, WorktreeStatus
+from dovo.core.git.exceptions import GitCommandError, GitNotFoundError
 from dovo.core.git.models import GitProcessOutput
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
 from dovo.core.worktree.models import (
     PruneAction,
     StaleWorktreeCategory,
-    WorktreeDetectionResult,
-    WorktreeDetectionStatus,
     WorktreePruneStatus,
 )
 from dovo.core.worktree.services.pruner import WorktreePruner
 from tests.harness import WorkspaceBuilder
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -65,6 +63,7 @@ class WorktreePrunerBaselineTests:
         assert result.force is False
         assert len(result.items) == 0
         assert len(result.errors) == 0
+        assert result.error_code is None
 
     def test_prune_dry_run_reports_all_categories_without_mutation(
         self,
@@ -405,56 +404,15 @@ class WorktreePrunerIdempotencyTests:
 
 
 class WorktreePrunerFailureTests:
-    """Tests verifying error handling, detection failures, and lock timeouts."""
+    """Tests verifying item failures leave a partial_failure result."""
 
-    def test_prune_aborts_with_git_failed_when_detection_fails(
-        self,
-        pruner_workspace: Path,
-        pruner_workspace_paths: WorkspacePaths,
-    ) -> None:
-        db = _repo(pruner_workspace_paths)
-        pruner = WorktreePruner(pruner_workspace_paths, db, git=GitRunner())
-
-        with patch.object(
-            pruner.detector,
-            "detect",
-            return_value=WorktreeDetectionResult(
-                status=WorktreeDetectionStatus.GIT_FAILED,
-                errors=["Git command failed"],
-                items=[],
-                active_worktree_count=0,
-                warnings=[],
-            ),
-        ):
-            result = pruner.prune()
-
-        assert result.status == WorktreePruneStatus.GIT_FAILED
-        assert result.errors == ["Git command failed"]
-
-    def test_prune_returns_locked_on_workspace_lock_timeout(
-        self,
-        pruner_workspace: Path,
-        pruner_workspace_paths: WorkspacePaths,
-    ) -> None:
-        db = _repo(pruner_workspace_paths)
-        pruner = WorktreePruner(pruner_workspace_paths, db, git=GitRunner())
-
-        with patch(
-            "dovo.core.worktree.services.pruner.WorkspaceLock.__enter__",
-            side_effect=LockTimeoutError("Locked"),
-        ):
-            result = pruner.prune()
-
-        assert result.status == WorktreePruneStatus.LOCKED
-        assert result.errors == ["Failed to acquire workspace lock: Locked"]
-
-    def test_prune_returns_partial_success_on_item_failure(
+    def test_prune_returns_partial_failure_on_item_failure(
         self,
         pruner_workspace: Path,
         pruner_workspace_paths: WorkspacePaths,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """Return partial_success with item.error and result.errors == [f"Failed to delete branch '{branch_name}': Permission denied\nDetails logged: ..."] and one error record for worktree.prune with context {worktree_id: None, branch, path: None}."""
+        """Return partial_failure with item.error and result.errors == [f"Failed to delete branch '{branch_name}': Permission denied"], diagnostics naming its record, and one error record for worktree.prune with context {worktree_id: None, branch, path: None}."""
         db = _repo(pruner_workspace_paths)
         branch_name = "dovo/dovo_fail_branch"
         subprocess.run(
@@ -470,7 +428,8 @@ class WorktreePrunerFailureTests:
 
         result = pruner.prune()
 
-        assert result.status == WorktreePruneStatus.PARTIAL_SUCCESS
+        assert result.status == WorktreePruneStatus.PARTIAL_FAILURE
+        assert result.error_code == "WORKTREE_PRUNE_ITEMS_FAILED"
         assert len(result.items) == 1
 
         item = result.items[0]
@@ -479,12 +438,11 @@ class WorktreePrunerFailureTests:
         assert item.action == PruneAction.FAILED
         assert item.branch_name == branch_name
         assert item.reason == f"Worktree branch '{branch_name}' is not attached to any active worktree"
-        expected_error = (
-            f"Failed to delete branch '{branch_name}': Permission denied{diagnostic_hint(frozen_diagnostic_clock)}"
-        )
+        expected_error = f"Failed to delete branch '{branch_name}': Permission denied"
         assert item.error == expected_error
 
         assert result.errors == [expected_error]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "error"
         assert event["operation"] == "worktree.prune"
@@ -522,10 +480,10 @@ def _make_untracked_orphan(workspace: Path, worktree_id: str) -> Path:
 
 
 class WorktreePrunerDiagnosticLogTests:
-    """Tests verifying unexpected prune failures are recorded and recovered fallbacks leave debug records."""
+    """Tests verifying prune item failures are recorded into diagnostics and recovered fallbacks leave debug records."""
 
     @pytest.mark.parametrize(
-        ("category", "prefix"),
+        ("category", "message"),
         [
             pytest.param("stale_worktree_ref", "Failed to prune git worktree ref: boom", id="stale_worktree_ref"),
             pytest.param(
@@ -534,24 +492,29 @@ class WorktreePrunerDiagnosticLogTests:
             pytest.param(
                 "orphan_status", "Failed to update database status for 'dovo_orphan': boom", id="orphan_status"
             ),
+            pytest.param(
+                "stale_branch_git",
+                "Failed to delete branch 'dovo/dovo_x': Git execution failed ('git branch -D dovo/dovo_x'): boom",
+                id="stale_branch_git",
+            ),
         ],
     )
-    def test_prune_action_unexpected_failure_records_error_and_appends_hint(
+    def test_prune_item_failure_records_error_into_diagnostics(
         self,
         pruner_workspace: Path,
         pruner_workspace_paths: WorkspacePaths,
         frozen_diagnostic_clock: Path,
         monkeypatch: pytest.MonkeyPatch,
         category: str,
-        prefix: str,
+        message: str,
     ) -> None:
-        """Return partial_success with the item failed and item.error == f"{prefix}\nDetails logged: ..." and one error record for worktree.prune."""
+        """Return partial_failure with the item failed, item.error == message, errors == [message], diagnostics == [diagnostic_record(frozen_diagnostic_clock)], and one error event with operation worktree.prune."""
         db = _repo(pruner_workspace_paths)
         worktrees_dir = pruner_workspace / ".dovo" / "worktrees"
         fake = _RemovesDirectory()
         if category == "stale_worktree_ref":
             target = worktrees_dir / "dovo_gone"
-            GitRunner().worktree_add(pruner_workspace, target_path=target, branch="dovo/dovo_gone", base_ref="main")
+            GitRunner().run(["worktree", "add", "--detach", str(target), "main"], path=pruner_workspace)
             shutil.rmtree(target)
             expected_category = StaleWorktreeCategory.STALE_WORKTREE_REF
             fake.responses[("worktree", "prune")] = RuntimeError("boom")
@@ -564,23 +527,43 @@ class WorktreePrunerDiagnosticLogTests:
             )
             expected_category = StaleWorktreeCategory.STALE_DB_RECORD
             monkeypatch.setattr(db, "update_status", _raise_boom)
-        else:
+        elif category == "orphan_status":
             orphan_dir = _make_untracked_orphan(pruner_workspace, "dovo_orphan")
             db.create(id="dovo_orphan", branch_name="dovo/dovo_orphan", base_commit="abc", worktree_path=orphan_dir)
             db.update_status("dovo_orphan", WorktreeStatus.CLEANED)
             expected_category = StaleWorktreeCategory.ORPHANED_DIRECTORY
             monkeypatch.setattr(db, "update_status", _raise_boom)
+        else:
+            GitRunner().run(["branch", "dovo/dovo_x"], path=pruner_workspace)
+            expected_category = StaleWorktreeCategory.STALE_BRANCH
+            fake.responses[("branch", "-D")] = GitCommandError(["branch", "-D", "dovo/dovo_x"], 1, "", "boom")
 
         result = WorktreePruner(pruner_workspace_paths, db, git=fake).prune()
 
-        assert result.status == WorktreePruneStatus.PARTIAL_SUCCESS
+        assert result.status == WorktreePruneStatus.PARTIAL_FAILURE
         item = next(i for i in result.items if i.category == expected_category)
         assert item.action == PruneAction.FAILED
-        assert item.error == f"{prefix}{diagnostic_hint(frozen_diagnostic_clock)}"
+        assert item.error == message
+        assert result.errors == [message]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "error"
         assert event["operation"] == "worktree.prune"
-        assert event["exception_type"] == "RuntimeError"
+
+    def test_fallback_git_not_found_writes_no_record(
+        self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return ok with the untracked orphan pruned by rmtree and leave <DOVO_HOME>/logs absent when git worktree remove raises GitNotFoundError."""
+        orphan_dir = _make_untracked_orphan(pruner_workspace, "dovo_orphan")
+        fake = FakeGitRunner({("worktree", "remove"): GitNotFoundError("git not found")})
+
+        result = WorktreePruner(pruner_workspace_paths, _repo(pruner_workspace_paths), git=fake).prune()
+
+        assert result.status == WorktreePruneStatus.OK
+        assert [(item.identifier, item.action) for item in result.items] == [("dovo_orphan", PruneAction.PRUNED)]
+        assert result.diagnostics == []
+        assert not orphan_dir.exists()
+        assert not resolve_global_paths().logs_dir.exists()
 
     def test_untracked_orphan_falls_back_to_rmtree_with_debug_record(
         self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
@@ -595,6 +578,7 @@ class WorktreePrunerDiagnosticLogTests:
             ("dovo_orphan", PruneAction.PRUNED, None)
         ]
         assert result.errors == []
+        assert result.diagnostics == []
         assert not orphan_dir.exists()
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "debug"
@@ -603,10 +587,10 @@ class WorktreePrunerDiagnosticLogTests:
         assert event["exception_type"] == "GitCommandError"
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permission bits")
-    def test_orphan_rmtree_failure_records_error_and_appends_hint(
+    def test_orphan_rmtree_failure_records_error_into_diagnostics(
         self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return partial_success with item.error starting "Failed to remove directory '<path>': " and ending with the hint when worktrees_dir is read-only, and one error record for worktree.prune."""
+        """Return partial_failure with item.error starting "Failed to remove directory '<path>': " and carrying no hint when worktrees_dir is read-only, diagnostics naming its record, and one error record for worktree.prune."""
         orphan_dir = _make_untracked_orphan(pruner_workspace, "dovo_orphan")
         orphan_dir.parent.chmod(0o555)
         try:
@@ -614,12 +598,13 @@ class WorktreePrunerDiagnosticLogTests:
         finally:
             orphan_dir.parent.chmod(0o755)
 
-        assert result.status == WorktreePruneStatus.PARTIAL_SUCCESS
+        assert result.status == WorktreePruneStatus.PARTIAL_FAILURE
         item = result.items[0]
         assert item.action == PruneAction.FAILED
         assert item.error is not None
         assert item.error.startswith(f"Failed to remove directory '{orphan_dir}': ")
-        assert item.error.endswith(diagnostic_hint(frozen_diagnostic_clock))
+        assert "Details logged:" not in item.error
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "error"
         assert event["operation"] == "worktree.prune"
@@ -639,6 +624,7 @@ class WorktreePrunerDiagnosticLogTests:
 
         assert result.status == WorktreePruneStatus.OK
         assert [(item.identifier, item.action) for item in result.items] == [("dovo_orphan", PruneAction.PRUNED)]
+        assert result.diagnostics == []
         assert not orphan_dir.exists()
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "debug"

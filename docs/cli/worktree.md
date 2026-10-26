@@ -2,7 +2,7 @@
 
 `dovo worktree` creates and manages isolated Git worktrees.
 
-When `create`, `apply`, `diff` or `prune` fails with an unexpected error, or `delete` hits one while removing the worktree, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record. The error or warning message then ends with a `Details logged: <path> (event <event_id>)` line naming that file; if the record cannot be written, the line is absent. A failed scan for stale branches during `prune` is recorded without a message, so no line points to it.
+When `create`, `apply` or `diff` fails with an unexpected error, or `delete` hits one while removing the worktree, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record. The error or warning message then ends with a `Details logged: <path> (event <event_id>)` line naming that file; if the record cannot be written, the line is absent.
 
 ## Subcommands
 
@@ -37,6 +37,10 @@ Safely prune stale worktrees, orphaned directories, and temporary branches:
 ```bash
 dovo worktree prune [--dry-run] [--force] [--format terminal|json]
 ```
+
+With `--format json`, `status` is `ok`, or `partial_failure` when at least one item could not be pruned; that run reports `error_code` `WORKTREE_PRUNE_ITEMS_FAILED` and lists one error per failed item. A failure that stops the scan reports `status` `null` and its `error_code`, for example `GIT_FAILED` when `git worktree list` fails, or `INTERNAL_ERROR` for an unexpected error. Either exits with code 1.
+
+When an unexpected error stops prune, or an item cannot be pruned, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record and prints a `Details logged: <path> (event <event_id>)` line after the output; with `--format json` the record is listed in `diagnostics`. Without `--dry-run`, prune waits for the workspace lock and exits with code 1 if another `dovo` process holds it too long.
 
 ### `dovo worktree delete`
 

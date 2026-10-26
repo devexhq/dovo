@@ -2,7 +2,6 @@
 
 from dovo.core.worktree.exceptions import (
     WorktreeCapacityError,
-    WorktreeConfigError,
     WorktreeError,
 )
 from dovo.core.worktree.models import (
@@ -17,8 +16,7 @@ from dovo.core.worktree.models import (
     WorktreeCreateStatus,
     WorktreeDeleteResult,
     WorktreeDeleteStatus,
-    WorktreeDetectionResult,
-    WorktreeDetectionStatus,
+    WorktreeDetection,
     WorktreeDiffResult,
     WorktreeDiffStatus,
     WorktreeListResult,
@@ -41,13 +39,11 @@ __all__ = [
     "WorktreeApplyStatus",
     "WorktreeApplyStrategy",
     "WorktreeCapacityError",
-    "WorktreeConfigError",
     "WorktreeCreateResult",
     "WorktreeCreateStatus",
     "WorktreeDeleteResult",
     "WorktreeDeleteStatus",
-    "WorktreeDetectionResult",
-    "WorktreeDetectionStatus",
+    "WorktreeDetection",
     "WorktreeDiffResult",
     "WorktreeDiffStatus",
     "WorktreeError",

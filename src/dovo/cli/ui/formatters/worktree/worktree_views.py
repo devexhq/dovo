@@ -37,13 +37,14 @@ class WorktreePruneView(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: WorktreePruneStatus
+    status: WorktreePruneStatus | None
     dry_run: bool
     force: bool
     items: list[PrunedItemView] = Field(default_factory=list)
     pruned_count: int = 0
     skipped_count: int = 0
     failed_count: int = 0
+    error_code: str | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
