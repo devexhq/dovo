@@ -16,7 +16,7 @@ from dovo.cli.ui.events import (
     WorktreeLifecycleEvent,
 )
 from dovo.cli.ui.formatters.base import ComponentFormatter
-from dovo.cli.ui.formatters.registry import register_formatters_for
+from dovo.cli.ui.formatters.registry import formatters_for
 from dovo.cli.ui.live import LiveDisplayManager
 from dovo.cli.ui.tail import CollapsingTailDisplay
 from dovo.common.models import OutputFormatOptions
@@ -126,7 +126,9 @@ class UiDispatcher:
         effective_format = output_format if output_format is not None else self._output_format
         data_type = type(data)
         if data_type not in self._registry:
-            register_formatters_for(self, data_type, console=self._custom_console)
+            # Load the type's default group; a formatter registered explicitly keeps precedence over its default.
+            for model_cls, default_formatter in formatters_for(data_type, console=self._custom_console).items():
+                self._registry.setdefault(model_cls, default_formatter)
         formatter = self._registry.get(data_type)
         if formatter is None:
             raise ValueError(f"No formatter registered for type: {data_type.__name__}")

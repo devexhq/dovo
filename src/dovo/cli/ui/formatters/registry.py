@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any, Final
 from pydantic import BaseModel
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
-from dovo.cli.ui.formatters.common import DispatcherProtocol
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -150,20 +149,14 @@ FORMATTER_GROUPS: Final[dict[str, Callable[[Console | None], FormatterTable]]] =
 }
 
 
-def register_formatters_for(
-    dispatcher: DispatcherProtocol,
-    model_cls: type[object],
-    console: Console | None = None,
-) -> None:
-    """Register every formatter in the group that renders `model_cls`, importing that group on first use.
+def formatters_for(model_cls: type[object], console: Console | None = None) -> FormatterTable:
+    """Return every formatter in the group that renders `model_cls`, importing that group.
 
     Args:
-        dispatcher: Target dispatcher complying with DispatcherProtocol.
-        model_cls: Model type about to be dispatched; a type outside every group registers nothing.
+        model_cls: Model type about to be dispatched; a type outside every group yields an empty table.
         console: Optional Rich Console instance to propagate to formatters.
     """
     for package, group in FORMATTER_GROUPS.items():
         if model_cls.__module__ == package or model_cls.__module__.startswith(f"{package}."):
-            for group_model_cls, formatter in group(console).items():
-                dispatcher.register(group_model_cls, formatter)
-            return
+            return group(console)
+    return {}

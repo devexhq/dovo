@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING
 
 from rich.panel import Panel
 
@@ -11,9 +11,6 @@ from dovo.common.formatters import format_remediations
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from pydantic import BaseModel
-
-    from dovo.cli.ui.formatters.base import ComponentFormatter
     from dovo.common.models import Remediation
 
 DEFAULT_PANEL_STYLE = "blue"
@@ -72,24 +69,11 @@ def build_error_panel(
     return panel_cls(message, title=title, border_style=border_style)
 
 
-class DispatcherProtocol(Protocol):
-    """Protocol for dispatcher registration entrypoint."""
-
-    def register(
-        self,
-        model_cls: type[BaseModel],
-        formatter: ComponentFormatter[Any],
-    ) -> object:
-        """Register a formatter instance for a specific result or event type."""
-        ...
-
-
 __all__ = [
     "DEFAULT_PANEL_STYLE",
     "ERROR_PANEL_STYLE",
     "SUCCESS_STYLE",
     "WARNING_STYLE",
-    "DispatcherProtocol",
     "build_error_panel",
     "render_list_errors",
 ]
