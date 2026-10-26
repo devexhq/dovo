@@ -250,6 +250,6 @@ def worktree_setup(worktree_root: Path, worktree_paths: WorkspacePaths) -> Workt
             **settings,
         )
         workspace = Workspace(context)
-        return WorktreeSetup(workspace, *workspace.setup())
+        return WorktreeSetup(workspace, *workspace.setup([], []))
 
     return _setup

@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_list import WorktreeListFormatter
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.core.db import WorktreeRecord, WorktreeStatus
-from dovo.core.worktree.models import (
-    WorktreeListResult,
-    WorktreeListStatus,
-)
+from dovo.core.worktree.models import WorktreeListResult
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -31,25 +30,43 @@ _RECORD = WorktreeRecord(
 )
 
 WITH_WORKTREES = FormatterCase.identity(
-    data=WorktreeListResult(status=WorktreeListStatus.OK, worktrees=[_RECORD]),
+    data=WorktreeListResult(worktrees=[_RECORD]),
     render_expectations=[_RECORD.id, "list-worktree", _RECORD.branch_name],
 )
 
 EMPTY_WORKTREES = FormatterCase.identity(
-    data=WorktreeListResult(status=WorktreeListStatus.OK, worktrees=[]),
+    data=WorktreeListResult(worktrees=[]),
     render_expectations=["No worktrees found."],
+)
+
+_RECORD_LOG = DiagnosticRecord(
+    event_id="exc_3f9a1c07b2de",
+    log_path=Path("/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json"),
+    level=DiagnosticLevel.ERROR,
+)
+
+INTERNAL_ERROR = FormatterCase.identity(
+    data=WorktreeListResult(
+        error_code="INTERNAL_ERROR",
+        errors=["Unexpected error during worktree.list: database is locked"],
+        diagnostics=[_RECORD_LOG],
+    ),
+    render_expectations=[
+        "Unexpected error during worktree.list: database is locked",
+        "Details logged: /home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json (event exc_3f9a1c07b2de)",
+    ],
 )
 
 WORKTREE_LIST_CASES = [
     pytest.param(WITH_WORKTREES, id="with_worktrees"),
     pytest.param(EMPTY_WORKTREES, id="empty_worktrees"),
+    pytest.param(INTERNAL_ERROR, id="internal_error"),
 ]
 
 WORKTREE_LIST_PAYLOAD_CASES = [
     pytest.param(
         WITH_WORKTREES,
         {
-            "status": "ok",
             "worktrees": [
                 {
                     "id": "dovo_list1234",
@@ -74,7 +91,6 @@ WORKTREE_LIST_PAYLOAD_CASES = [
     pytest.param(
         EMPTY_WORKTREES,
         {
-            "status": "ok",
             "worktrees": [],
             "warnings": [],
             "errors": [],

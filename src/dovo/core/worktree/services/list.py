@@ -7,10 +7,7 @@ from dovo.core.db import (
     WorktreesRepository,
     WorktreeStatus,
 )
-from dovo.core.worktree.models import (
-    WorktreeListResult,
-    WorktreeListStatus,
-)
+from dovo.core.worktree.models import WorktreeListResult
 
 
 def collect_worktree_list(
@@ -36,4 +33,4 @@ def collect_worktree_list(
         status_filter = WorktreeStatus(status)
 
     rows = db.list(status=status_filter)
-    return WorktreeListResult(status=WorktreeListStatus.OK, worktrees=rows)
+    return WorktreeListResult(worktrees=rows)

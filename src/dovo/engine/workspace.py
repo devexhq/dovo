@@ -7,6 +7,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.formatters import format_remediations
 from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
@@ -19,7 +20,6 @@ from dovo.core.db import SessionStatus, WorktreesRepository
 from dovo.core.git.exceptions import GitError
 from dovo.core.git.tree_diff import diff_work_tree
 from dovo.core.worktree import Worktree, WorktreeApplyStrategy, WorktreeCreateResult, WorktreeSession
-from dovo.core.worktree.exceptions import WorktreeError
 from dovo.engine.executors.failure_log import logged_failure
 from dovo.engine.models import RunSettings
 from dovo.engine.notify import safe_notify
@@ -85,8 +85,10 @@ class Workspace:
         safe_notify(self.context.observer, "on_worktree_ready", path, active=True)
         return path, manager, session, None
 
-    def setup(self) -> tuple[Path, Worktree | None, WorktreeSession | None, str | None]:
-        """Create an optional worktree and return the execution directory.
+    def setup(
+        self, warnings: list[str], diagnostics: list[DiagnosticRecord]
+    ) -> tuple[Path, Worktree | None, WorktreeSession | None, str | None]:
+        """Create an optional worktree and return the execution directory, adding create's warnings and records to the lists.
 
         Returns:
             Tuple of (target_dir, manager, session, error_message).
@@ -111,8 +113,10 @@ class Workspace:
             create_result = manager.create(session_id=self.context.session_id)
         except ConfigLoadError as exc:
             return self.context.cwd.resolve(), None, None, f"Git worktree creation failed: {exc}"
+        diagnostics.extend(create_result.diagnostics)
         if not create_result.ok or create_result.session is None:
             return self.context.cwd.resolve(), None, None, _creation_failure_message(create_result)
+        warnings.extend(create_result.warnings)
 
         session = create_result.session
         target_dir = session.worktree_path
@@ -124,6 +128,7 @@ class Workspace:
         manager: Worktree | None,
         session: WorktreeSession | None,
         warnings: list[str],
+        diagnostics: list[DiagnosticRecord],
     ) -> str | None:
         """Link a freshly created run worktree to its session directory; on failure discard the worktree and return the prefixed error.
 
@@ -138,8 +143,8 @@ class Workspace:
         if link_error is None:
             return None
 
-        # The discard failure is recorded by _discard_worktree; the bridge error is the reported cause.
-        self._discard_worktree(manager, session)
+        # The discard's warnings and records are reported alongside the bridge error, which stays the returned cause.
+        warnings.extend(self._discard_worktree(manager, session, diagnostics))
         safe_notify(self.context.observer, "on_worktree_cleanup", kept=False, path=session.worktree_path)
         return f"Worktree storage bridge failed: {link_error}"
 
@@ -150,26 +155,18 @@ class Workspace:
 
         return self.context.keep or status == SessionStatus.FAILED
 
-    def _discard_worktree(self, manager: Worktree, session: WorktreeSession) -> str | None:
-        """Remove the worktree and return `Failed to remove worktree '<path>': <detail>` when removal raised or reported a problem."""
+    def _discard_worktree(
+        self, manager: Worktree, session: WorktreeSession, diagnostics: list[DiagnosticRecord]
+    ) -> list[str]:
+        """Remove the worktree, add its records to diagnostics, and return `Failed to remove worktree '<path>': <problem>` for each of its errors and warnings."""
         message = f"Failed to remove worktree '{session.worktree_path}'"
         try:
-            problems = manager.cleanup(session)
-        except (LockTimeoutError, GitError, WorktreeError) as exc:
-            # No record: lock contention and git or worktree failures are expected; the message names the cause.
-            return f"{message}: {exc}"
-        except Exception as exc:
-            return logged_failure(
-                f"{message}: {exc}",
-                exc,
-                operation="engine.workspace",
-                context={"session_id": self.context.session_id, "path": str(session.worktree_path)},
-            )
-
-        if problems:
-            return f"{message}: {problems[0]}"
-
-        return None
+            removal = manager.cleanup(session)
+        except LockTimeoutError as exc:
+            # No record: lock contention is expected; the message names the cause.
+            return [f"{message}: {exc}"]
+        diagnostics.extend(removal.diagnostics)
+        return [f"{message}: {problem}" for problem in [*removal.errors, *removal.warnings]]
 
     def cleanup(
         self,
@@ -178,8 +175,9 @@ class Workspace:
         target_dir: Path,
         status: SessionStatus,
         warnings: list[str],
+        diagnostics: list[DiagnosticRecord],
     ) -> bool:
-        """Keep or remove the worktree per `_retains(status)`, appending a removal warning on failure; return whether it was kept."""
+        """Keep or remove the worktree per `_retains(status)`, appending removal warnings and records on failure; return whether it was kept."""
         if manager is None or session is None:
             safe_notify(self.context.observer, "on_worktree_cleanup", kept=False, path=target_dir)
             return False
@@ -200,9 +198,7 @@ class Workspace:
         if unlink_warning is not None:
             warnings.append(unlink_warning)
 
-        removal_warning = self._discard_worktree(manager, session)
-        if removal_warning is not None:
-            warnings.append(removal_warning)
+        warnings.extend(self._discard_worktree(manager, session, diagnostics))
 
         safe_notify(self.context.observer, "on_worktree_cleanup", kept=False, path=session.worktree_path)
         return False
@@ -275,6 +271,7 @@ class Workspace:
         status: SessionStatus,
         apply_failed: bool,
         warnings: list[str],
+        diagnostics: list[DiagnosticRecord],
     ) -> bool:
         """Clean up or keep the worktree based on run status.
 
@@ -285,7 +282,7 @@ class Workspace:
             safe_notify(self.context.observer, "on_worktree_cleanup", kept=True, path=kept_path)
             return True
 
-        return self.cleanup(manager, session, target_dir, status, warnings)
+        return self.cleanup(manager, session, target_dir, status, warnings, diagnostics)
 
     def prepare_session_tmp_dir(self, warnings: list[str]) -> Path | None:
         """Resolve and create the session scratch directory tree, or warn and return None."""

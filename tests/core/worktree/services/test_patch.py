@@ -18,6 +18,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeApplyStatus, WorktreeApplyStrategy, WorktreeDiffStatus
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.core.worktree.services.patch import WorktreePatch, extract_conflicts
+from dovo.core.worktree.worktree import Worktree
 from tests.harness import WorkspaceBuilder
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id
@@ -75,8 +76,9 @@ def _patch(paths: WorkspacePaths, db: WorktreesRepository, *, git: GitRunner) ->
 
 def _create_worktree_with_change(paths: WorkspacePaths, worktree_id: str) -> None:
     """Create a real worktree and commit one file change inside it."""
-    lifecycle = WorktreeLifecycle(paths, _repo(paths), git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
-    result = lifecycle.create(session_id=worktree_id)
+    result = Worktree(paths, db=_repo(paths), git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id).create(
+        session_id=worktree_id
+    )
     assert result.session is not None
     worktree_path = result.session.worktree_path
     (worktree_path / "new_file.txt").write_text("worktree change\n", encoding="utf-8")
@@ -115,10 +117,9 @@ class WorktreePatchDiffTests:
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
         db = _repo(worktree_workspace_paths)
-        lifecycle = WorktreeLifecycle(
-            worktree_workspace_paths, db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
-        )
-        create_result = lifecycle.create(session_id="dovo_empty")
+        create_result = Worktree(
+            worktree_workspace_paths, db=db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+        ).create(session_id="dovo_empty")
         assert create_result.session is not None
         patch = _patch(worktree_workspace_paths, db, git=GitRunner())
 
@@ -212,10 +213,9 @@ class WorktreePatchApplyTests:
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
         db = _repo(worktree_workspace_paths)
-        lifecycle = WorktreeLifecycle(
-            worktree_workspace_paths, db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
-        )
-        create_result = lifecycle.create(session_id="dovo_empty_apply")
+        create_result = Worktree(
+            worktree_workspace_paths, db=db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+        ).create(session_id="dovo_empty_apply")
         assert create_result.session is not None
         patch = _patch(worktree_workspace_paths, db, git=GitRunner())
 
@@ -294,7 +294,7 @@ def _create_worktree_with_changes(
     rename: dict[str, str] | None = None,
 ) -> None:
     """Create a real worktree and commit the given writes, deletions and renames inside it."""
-    result = WorktreeLifecycle(paths, _repo(paths), git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id).create(
+    result = Worktree(paths, db=_repo(paths), git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id).create(
         session_id=worktree_id
     )
     assert result.session is not None

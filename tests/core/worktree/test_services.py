@@ -10,10 +10,7 @@ from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
-from dovo.core.worktree.models import (
-    WorktreeCreateStatus,
-)
-from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
+from dovo.core.worktree.worktree import Worktree
 from tests.harness.builders import WorkspaceBuilder
 from tests.harness.fakes import fixed_clock, fixed_new_id
 
@@ -43,17 +40,15 @@ class WorktreeCreationTests:
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
-        lifecycle = WorktreeLifecycle(
-            worktree_workspace_paths, db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
-        )
+        worktree = Worktree(worktree_workspace_paths, db=db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
 
-        result = lifecycle.create(session_id="dovo_test001", name="test-worktree")
+        result = worktree.create(session_id="dovo_test001", name="test-worktree")
 
         expected_worktree_path = (worktree_workspace / ".dovo" / "worktrees" / "dovo_test001").resolve()
         expected_branch = "dovo/dovo_test001"
         head_commit = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
 
-        assert result.status == WorktreeCreateStatus.OK
+        assert result.ok
         assert result.session is not None
         assert result.session.session_id == "dovo_test001"
         assert result.session.target_branch == expected_branch
@@ -92,18 +87,16 @@ class WorktreeCapacityTests:
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
-        lifecycle = WorktreeLifecycle(
-            worktree_workspace_paths, db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
-        )
+        worktree = Worktree(worktree_workspace_paths, db=db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
 
         assert DEFAULT_MAXIMUM_WORKTREES_ALLOWED >= 1
         for idx in range(DEFAULT_MAXIMUM_WORKTREES_ALLOWED):
-            lifecycle.create(f"dovo_cap_{idx + 1}")
+            worktree.create(f"dovo_cap_{idx + 1}")
 
         overflow_id = f"dovo_cap_{DEFAULT_MAXIMUM_WORKTREES_ALLOWED + 1}"
-        overflow = lifecycle.create(overflow_id)
+        overflow = worktree.create(overflow_id)
 
-        assert overflow.status == WorktreeCreateStatus.CAPACITY_EXCEEDED
+        assert overflow.error_code == "WORKTREE_CAPACITY_EXCEEDED"
         assert overflow.session is None
         assert overflow.errors == [
             f"Maximum active worktrees reached ({DEFAULT_MAXIMUM_WORKTREES_ALLOWED}/{DEFAULT_MAXIMUM_WORKTREES_ALLOWED})."

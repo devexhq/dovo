@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_show import WorktreeShowFormatter
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.models import Remediation
 from dovo.core.db import WorktreeRecord, WorktreeStatus
-from dovo.core.worktree.models import (
-    WorktreeShowResult,
-    WorktreeShowStatus,
-)
+from dovo.core.worktree.models import WorktreeShowResult
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -33,7 +32,6 @@ _RECORD = WorktreeRecord(
 
 FOUND_ACTIVE = FormatterCase.identity(
     data=WorktreeShowResult(
-        status=WorktreeShowStatus.OK,
         worktree=_RECORD,
         disk_present=True,
     ),
@@ -42,7 +40,6 @@ FOUND_ACTIVE = FormatterCase.identity(
 
 RECONCILED_MISSING_DISK = FormatterCase.identity(
     data=WorktreeShowResult(
-        status=WorktreeShowStatus.OK,
         worktree=_RECORD,
         disk_present=False,
         reconciled=True,
@@ -52,7 +49,7 @@ RECONCILED_MISSING_DISK = FormatterCase.identity(
 
 NOT_FOUND = FormatterCase.identity(
     data=WorktreeShowResult(
-        status=WorktreeShowStatus.NOT_FOUND,
+        error_code="WORKTREE_NOT_FOUND",
         errors=["Worktree 'dovo_missing' not found."],
         remediations=[
             Remediation(message="Run 'dovo worktree list' to see known worktrees", command="dovo worktree list")
@@ -65,17 +62,35 @@ NOT_FOUND = FormatterCase.identity(
     ],
 )
 
+_RECORD_LOG = DiagnosticRecord(
+    event_id="exc_3f9a1c07b2de",
+    log_path=Path("/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json"),
+    level=DiagnosticLevel.ERROR,
+)
+
+INTERNAL_ERROR = FormatterCase.identity(
+    data=WorktreeShowResult(
+        error_code="INTERNAL_ERROR",
+        errors=["Unexpected error during worktree.show: database is locked"],
+        diagnostics=[_RECORD_LOG],
+    ),
+    render_expectations=[
+        "Unexpected error during worktree.show: database is locked",
+        "Details logged: /home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json (event exc_3f9a1c07b2de)",
+    ],
+)
+
 WORKTREE_SHOW_CASES = [
     pytest.param(FOUND_ACTIVE, id="found_active"),
     pytest.param(RECONCILED_MISSING_DISK, id="reconciled_missing_disk"),
     pytest.param(NOT_FOUND, id="not_found"),
+    pytest.param(INTERNAL_ERROR, id="internal_error"),
 ]
 
 WORKTREE_SHOW_PAYLOAD_CASES = [
     pytest.param(
         FOUND_ACTIVE,
         {
-            "status": "ok",
             "worktree": {
                 "id": "dovo_test1234",
                 "project_id": "proj-a",
@@ -100,13 +115,12 @@ WORKTREE_SHOW_PAYLOAD_CASES = [
     pytest.param(
         NOT_FOUND,
         {
-            "status": "not_found",
             "worktree": None,
             "disk_present": False,
             "reconciled": False,
             "warnings": [],
             "errors": ["Worktree 'dovo_missing' not found."],
-            "error_code": None,
+            "error_code": "WORKTREE_NOT_FOUND",
             "remediations": [
                 {"message": "Run 'dovo worktree list' to see known worktrees", "command": "dovo worktree list"}
             ],

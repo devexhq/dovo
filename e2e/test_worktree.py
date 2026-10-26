@@ -320,8 +320,8 @@ class WorktreeCliTests:
             cwd=initialized_project,
             prompt_replies=[("[y/N]", "n\n")],
         )
-        assert abort_res.exit_code == 1
-        assert "Aborted." in abort_res.transcript
+        assert abort_res.exit_code == 0
+        assert "Deletion cancelled." in abort_res.transcript
         assert wt_dir.is_dir()
 
         # Confirm with 'y'
