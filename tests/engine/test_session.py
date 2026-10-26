@@ -23,7 +23,7 @@ from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions.services.read_logs import read_session_log_events
-from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus
+from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus, WorktreeCleanupResult
 from dovo.engine.executors.agent_step import WORKTREE_REQUIRED_MESSAGE
 from dovo.engine.executors.models import (
     StepExecutionContext,
@@ -39,8 +39,8 @@ from dovo.engine.writer import snapshot_blueprint_path
 from tests.engine.conftest import AgentRunnerBuild
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
 from tests.harness.builders import WorkspaceBuilder
-from tests.harness.diagnostic_log import diagnostic_hint
-from tests.harness.fakes import fixed_clock, fixed_new_id
+from tests.harness.diagnostic_log import diagnostic_hint, diagnostic_record
+from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id
 from tests.harness.sessions import (
     NoOpRunObserver,
     RecordingRunObserver,
@@ -73,6 +73,7 @@ def _drive(
     prompter: FailurePrompter | None = None,
     observer: RunObserver | None = None,
     env_overrides: AgentEnvOverrides | None = None,
+    git: GitRunner | None = None,
 ) -> RunOutcome:
     return drive_run(
         paths,
@@ -82,7 +83,7 @@ def _drive(
         prompter=prompter,
         no_tty=False,
         env_overrides=env_overrides,
-        git=GitRunner(),
+        git=git if git is not None else GitRunner(),
         clock=fixed_clock,
         new_id=fixed_new_id,
     )
@@ -204,6 +205,63 @@ class DriveRunStorageBridgeTests:
         assert not step_marker.exists()
         assert source_sentinel.read_text(encoding="utf-8") == "do not delete"
 
+    def test_link_failure_outcome_carries_setup_warnings_and_diagnostics(
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return a FAILED outcome whose errors hold the bridge error, warnings hold "Failed to remove worktree '<path>': Failed to delete branch 'dovo/<id>': boom", and diagnostics == [diagnostic_record(...)], when the storage bridge fails and git branch -D raises RuntimeError("boom") during discard."""
+        collision = git_paths.root_dir / ".dovo" / "run" / "sentinel.txt"
+        collision.parent.mkdir(parents=True)
+        collision.write_text("collision", encoding="utf-8")
+        GitRunner().run(["add", "-f", ".dovo/run/sentinel.txt"], path=git_paths.root_dir)
+        GitRunner().run(["commit", "-m", "Add storage bridge collision"], path=git_paths.root_dir)
+        seed_new_session(
+            git_paths, git_runs, session_id="bridge-discard", steps=[_step("a", "true")], use_worktree=True
+        )
+        worktree_path = git_paths.worktree_dir("bridge-discard").resolve()
+
+        outcome = _drive(
+            git_paths,
+            git_runs,
+            "bridge-discard",
+            git=FakeGitRunner({("branch", "-D"): RuntimeError("boom")}),
+        )
+
+        assert outcome.status == SessionStatus.FAILED
+        assert outcome.errors == [
+            f"Worktree storage bridge failed: Worktree storage bridge path '{worktree_path / '.dovo' / 'run'}' "
+            "is not a symlink."
+        ]
+        assert outcome.warnings == [
+            f"Failed to remove worktree '{worktree_path}': Failed to delete branch 'dovo/bridge-discard': boom"
+        ]
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+
+
+class SessionRunnerWorktreeDiagnosticsTests:
+    def test_run_removal_record_in_outcome_diagnostics(
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Keep a passing run's status COMPLETED, hold "Failed to remove worktree '<path>': Failed to delete branch 'dovo/<id>': boom" in warnings with no 'Details logged:' text, and diagnostics == [diagnostic_record(...)], when git branch -D raises RuntimeError("boom") during discard."""
+        seed_new_session(
+            git_paths, git_runs, session_id="removal-record", steps=[_step("a", "echo hi")], use_worktree=True
+        )
+        worktree_path = git_paths.worktree_dir("removal-record").resolve()
+
+        outcome = _drive(
+            git_paths,
+            git_runs,
+            "removal-record",
+            git=FakeGitRunner({("branch", "-D"): RuntimeError("boom")}),
+        )
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert (
+            f"Failed to remove worktree '{worktree_path}': Failed to delete branch 'dovo/removal-record': boom"
+            in outcome.warnings
+        )
+        assert not any("Details logged:" in warning for warning in outcome.warnings)
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+
 
 class DriveRunMissingRowTests:
     def test_unknown_session_returns_failed_outcome_without_running_steps_or_notifying(
@@ -321,11 +379,13 @@ class DriveRunCleanupTests:
         git_paths: WorkspacePaths,
         git_runs: SessionsRepository,
         monkeypatch: pytest.MonkeyPatch,
-        frozen_diagnostic_clock: Path,
     ) -> None:
 
-        def exploding_cleanup(self: Worktree, session: object, **kwargs: object) -> list[str]:
-            raise RuntimeError("Cleanup filesystem removal failed")
+        def exploding_cleanup(self: Worktree, session: object, **kwargs: object) -> WorktreeCleanupResult:
+            return WorktreeCleanupResult(
+                error_code="INTERNAL_ERROR",
+                errors=["Unexpected error during worktree.cleanup: Cleanup filesystem removal failed"],
+            )
 
         monkeypatch.setattr(Worktree, "cleanup", exploding_cleanup)
         seed_new_session(
@@ -342,9 +402,10 @@ class DriveRunCleanupTests:
         assert outcome.status == SessionStatus.FAILED
         assert outcome.worktree_kept is False
         assert outcome.warnings == [
-            f"Failed to remove worktree '{outcome.worktree_path}': Cleanup filesystem removal failed"
-            f"{diagnostic_hint(frozen_diagnostic_clock)}"
+            f"Failed to remove worktree '{outcome.worktree_path}': "
+            "Unexpected error during worktree.cleanup: Cleanup filesystem removal failed"
         ]
+        assert outcome.diagnostics == []
         assert outcome.errors == ["Step 'fail' failed: Command failed with exit code 1."]
 
     @pytest.mark.parametrize(

@@ -57,16 +57,12 @@ from dovo.core.worktree import (
     WorktreeApplyResult,
     WorktreeApplyStatus,
     WorktreeCreateResult,
-    WorktreeCreateStatus,
     WorktreeDeleteResult,
-    WorktreeDeleteStatus,
     WorktreeDiffResult,
     WorktreeDiffStatus,
     WorktreeListResult,
-    WorktreeListStatus,
     WorktreePruneResult,
     WorktreeShowResult,
-    WorktreeShowStatus,
 )
 from tests.harness.builders import diagnostic_result
 from tests.harness.formatter import render_rich
@@ -141,15 +137,13 @@ SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
     LogsShowResult: lambda: LogsShowResult(status=LogsShowStatus.SESSION_NOT_FOUND, diagnostics=[RECORD]),
     WorkspaceInitResult: lambda: WorkspaceInitResult(diagnostics=[RECORD]),
     WorktreePruneResult: lambda: WorktreePruneResult(diagnostics=[RECORD]),
-    WorktreeShowResult: lambda: WorktreeShowResult(status=WorktreeShowStatus.NOT_FOUND, diagnostics=[RECORD]),
-    WorktreeListResult: lambda: WorktreeListResult(status=WorktreeListStatus.OK, diagnostics=[RECORD]),
-    WorktreeCreateResult: lambda: WorktreeCreateResult(
-        status=WorktreeCreateStatus.ALREADY_EXISTS, diagnostics=[RECORD]
-    ),
+    WorktreeShowResult: lambda: WorktreeShowResult(error_code="WORKTREE_NOT_FOUND", diagnostics=[RECORD]),
+    WorktreeListResult: lambda: WorktreeListResult(diagnostics=[RECORD]),
+    WorktreeCreateResult: lambda: WorktreeCreateResult(error_code="WORKTREE_PATH_CONFLICT", diagnostics=[RECORD]),
     WorktreeApplyResult: lambda: WorktreeApplyResult(
         status=WorktreeApplyStatus.NOT_FOUND, worktree_id="wt-1", diagnostics=[RECORD]
     ),
-    WorktreeDeleteResult: lambda: WorktreeDeleteResult(status=WorktreeDeleteStatus.READY, diagnostics=[RECORD]),
+    WorktreeDeleteResult: lambda: WorktreeDeleteResult(diagnostics=[RECORD]),
     WorktreeDiffResult: lambda: WorktreeDiffResult(
         status=WorktreeDiffStatus.NOT_FOUND, worktree_id="wt-1", diagnostics=[RECORD]
     ),
@@ -168,6 +162,11 @@ RENDERED: Final[list[type[BaseResult]]] = [
     DovoStatusResult,
     HistoryListResult,
     WorktreePruneResult,
+    WorktreeShowResult,
+    WorktreeListResult,
+    WorktreeCreateResult,
+    WorktreeApplyResult,
+    WorktreeDeleteResult,
 ]
 
 

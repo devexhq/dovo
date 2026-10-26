@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import builtins
+from collections.abc import Callable
 from contextlib import nullcontext
 
 from dovo.common.clock import Clock
@@ -11,11 +11,13 @@ from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
 from dovo.common.session_id import SessionIdFactory
+from dovo.core.config import Config
 from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
     WorktreeApplyStrategy,
+    WorktreeCleanupResult,
     WorktreeCreateResult,
     WorktreeDeleteResult,
     WorktreeDiffResult,
@@ -24,12 +26,18 @@ from dovo.core.worktree.models import (
     WorktreeSession,
     WorktreeShowResult,
 )
-from dovo.core.worktree.services.delete import collect_worktree_delete
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.core.worktree.services.list import collect_worktree_list
 from dovo.core.worktree.services.patch import WorktreePatch
 from dovo.core.worktree.services.pruner import WorktreePruner
-from dovo.core.worktree.services.show import collect_worktree_show
+from dovo.core.worktree.services.show import collect_worktree_show, find_worktree
+
+
+def _target_id(target: WorktreeSession | WorktreeRecord) -> str:
+    """Return the worktree id of a session or record."""
+    if isinstance(target, WorktreeRecord):
+        return target.id
+    return target.session_id
 
 
 class Worktree:
@@ -57,16 +65,66 @@ class Worktree:
         self.patch = WorktreePatch(self.paths, self.db, git=git, lifecycle=self.lifecycle)
 
     def list(self, status: WorktreeStatus | str | None = None) -> WorktreeListResult:
-        """List tracked worktrees with lifecycle status, reconciling stale directories."""
-        return collect_worktree_list(self.paths, self.db, status)
+        """List tracked worktrees with lifecycle status, reconciling stale directories; report a failure by its error_code."""
+        with catch_failure("worktree.list", path=str(self.path)) as caught:
+            listed = collect_worktree_list(self.paths, self.db, status)
+        if caught.failure is not None:
+            return WorktreeListResult(
+                error_code=caught.failure.error_code,
+                errors=[caught.failure.message],
+                remediations=list(caught.failure.remediations),
+                diagnostics=error_diagnostics(caught.failure.diagnostic),
+            )
+        return listed
 
     def show(self, worktree_id: str) -> WorktreeShowResult:
-        """Show details for one tracked worktree, reconciling stale active rows."""
-        return collect_worktree_show(self.paths, self.db, worktree_id)
+        """Show details for one tracked worktree, reconciling a stale active row; report a failure by its error_code."""
+        with catch_failure("worktree.show", worktree_id=worktree_id) as caught:
+            shown = collect_worktree_show(self.paths, self.db, worktree_id)
+        if caught.failure is not None:
+            return WorktreeShowResult(
+                error_code=caught.failure.error_code,
+                errors=[caught.failure.message],
+                remediations=list(caught.failure.remediations),
+                diagnostics=error_diagnostics(caught.failure.diagnostic),
+            )
+        return shown
 
-    def delete(self, worktree_id: str) -> WorktreeDeleteResult:
-        """Inspect worktree row and disk state for deletion without mutating."""
-        return collect_worktree_delete(self.paths, self.db, worktree_id=worktree_id)
+    def delete(
+        self, worktree_id: str, *, confirm: Callable[[WorktreeRecord], bool] | None = None
+    ) -> WorktreeDeleteResult:
+        """Look up, confirm and remove a worktree; confirm=None skips confirmation.
+
+        An unknown id or a cleaned row is never confirmed; confirm runs before the workspace lock is taken.
+
+        Raises:
+            LockTimeoutError: If another process holds the workspace lock.
+        """
+        row: WorktreeRecord | None = None
+        with catch_failure("worktree.delete", worktree_id=worktree_id) as caught:
+            row = find_worktree(self.db, worktree_id)
+            if row.status is WorktreeStatus.CLEANED:
+                return WorktreeDeleteResult(worktree_id=worktree_id, worktree=row, already_cleaned=True)
+            if confirm is not None and not confirm(row):
+                return WorktreeDeleteResult(worktree_id=worktree_id, worktree=row, cancelled=True)
+            with WorkspaceLock(self.paths.lock_file):
+                removal = self.lifecycle.cleanup(row)
+        if caught.failure is not None:
+            return WorktreeDeleteResult(
+                worktree_id=worktree_id,
+                worktree=row,
+                error_code=caught.failure.error_code,
+                errors=[caught.failure.message],
+                remediations=list(caught.failure.remediations),
+                diagnostics=error_diagnostics(caught.failure.diagnostic),
+            )
+        return WorktreeDeleteResult(
+            worktree_id=worktree_id,
+            worktree=row,
+            deleted=True,
+            warnings=list(removal.warnings),
+            diagnostics=list(removal.diagnostics),
+        )
 
     def create(
         self,
@@ -76,24 +134,57 @@ class Worktree:
         name: str | None = None,
         base_ref: str | None = None,
     ) -> WorktreeCreateResult:
-        """Create an isolated worktree and return structured result."""
+        """Create an isolated worktree; report a failure by its error_code.
+
+        Raises:
+            LockTimeoutError: If another process holds the workspace lock.
+            ConfigLoadError: If config.json cannot be loaded.
+        """
         with WorkspaceLock(self.paths.lock_file):
-            return self.lifecycle.create(
-                session_id=session_id,
-                include_wip=include_wip,
-                name=name,
-                base_ref=base_ref,
+            worktree_cfg = Config(self.paths).worktree
+            with catch_failure("worktree.create", worktree_id=session_id, path=str(self.path)) as caught:
+                created = self.lifecycle.create(
+                    worktree_cfg, session_id=session_id, include_wip=include_wip, name=name, base_ref=base_ref
+                )
+        if caught.failure is not None:
+            return WorktreeCreateResult(
+                error_code=caught.failure.error_code,
+                errors=[caught.failure.message],
+                remediations=list(caught.failure.remediations),
+                diagnostics=error_diagnostics(caught.failure.diagnostic),
             )
+        return WorktreeCreateResult(
+            session=created.session, warnings=list(created.warnings), diagnostics=list(created.diagnostics)
+        )
 
     def cleanup(
         self,
         session: WorktreeSession | WorktreeRecord,
         *,
         force: bool = True,
-    ) -> builtins.list[str]:
-        """Remove worktree, delete throwaway branch, and prune."""
-        with WorkspaceLock(self.paths.lock_file):
-            return self.lifecycle.cleanup(session, force=force)
+    ) -> WorktreeCleanupResult:
+        """Remove worktree, delete throwaway branch, and prune; report failed steps as warnings and an unexpected error by its error_code.
+
+        Raises:
+            LockTimeoutError: If another process holds the workspace lock.
+        """
+        worktree_id = _target_id(session)
+        with (
+            WorkspaceLock(self.paths.lock_file),
+            catch_failure("worktree.cleanup", worktree_id=worktree_id, path=str(session.worktree_path)) as caught,
+        ):
+            removal = self.lifecycle.cleanup(session, force=force)
+        if caught.failure is not None:
+            return WorktreeCleanupResult(
+                worktree_id=worktree_id,
+                error_code=caught.failure.error_code,
+                errors=[caught.failure.message],
+                remediations=list(caught.failure.remediations),
+                diagnostics=error_diagnostics(caught.failure.diagnostic),
+            )
+        return WorktreeCleanupResult(
+            worktree_id=worktree_id, warnings=list(removal.warnings), diagnostics=list(removal.diagnostics)
+        )
 
     def prune(
         self,

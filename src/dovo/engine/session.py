@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dovo.common.clock import Clock
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.process import process_registry
 from dovo.common.session_id import SessionIdFactory
@@ -164,6 +165,7 @@ class SessionRunner:
         manager: Worktree | None,
         worktree: WorktreeSession | None,
         setup_warnings: list[str],
+        setup_diagnostics: list[DiagnosticRecord],
         agent: ResolvedAgentSettings,
     ) -> None:
         """Bind the session to its session row, collaborators, opened infrastructure, and resolved agent settings."""
@@ -177,6 +179,7 @@ class SessionRunner:
         self._manager = manager
         self._worktree = worktree
         self._setup_warnings = setup_warnings
+        self._setup_diagnostics = setup_diagnostics
         self._agent = agent
         self._apply_failed = False
 
@@ -200,21 +203,26 @@ class SessionRunner:
         config = Config(paths)
         sensitive_variables = tuple(config.environment.sensitive_variables)
         workspace = Workspace(_workspace_context(row, paths, observer, sensitive_variables, git, clock, new_id))
-        target_dir, manager, worktree, setup_error = workspace.setup()
+        setup_warnings: list[str] = []
+        setup_diagnostics: list[DiagnosticRecord] = []
+        target_dir, manager, worktree, setup_error = workspace.setup(setup_warnings, setup_diagnostics)
         if setup_error is not None:
             return RunOutcome(
                 status=SessionStatus.FAILED,
                 errors=[setup_error],
+                warnings=setup_warnings,
+                diagnostics=setup_diagnostics,
                 worktree_kept=False,
                 worktree_path=target_dir,
             )
 
-        setup_warnings: list[str] = []
-        link_error = workspace.link_session_dir(manager, worktree, setup_warnings)
+        link_error = workspace.link_session_dir(manager, worktree, setup_warnings, setup_diagnostics)
         if link_error is not None:
             return RunOutcome(
                 status=SessionStatus.FAILED,
                 errors=[link_error],
+                warnings=setup_warnings,
+                diagnostics=setup_diagnostics,
                 worktree_kept=False,
                 worktree_path=paths.root_dir,
             )
@@ -239,7 +247,18 @@ class SessionRunner:
             new_id=new_id,
         )
         return cls(
-            row, paths, sessions, observer, prompter, workspace, context, manager, worktree, setup_warnings, agent
+            row,
+            paths,
+            sessions,
+            observer,
+            prompter,
+            workspace,
+            context,
+            manager,
+            worktree,
+            setup_warnings,
+            setup_diagnostics,
+            agent,
         )
 
     def run(self) -> RunOutcome:
@@ -263,7 +282,7 @@ class SessionRunner:
         return self._close(outcome)
 
     def _execute(self) -> RunOutcome:
-        """Run the coordinator against the opened context, prefixing the setup warnings onto its outcome."""
+        """Run the coordinator against the opened context, prefixing the setup warnings and records onto its outcome."""
         coordinator = RunCoordinator(
             SessionStateStore(self._sessions, self._paths, self._row.session_id),
             self._context,
@@ -274,7 +293,12 @@ class SessionRunner:
         if coordinator.load():
             safe_notify(self._observer, "on_run_started", coordinator.steps)
         outcome = coordinator.execute()
-        return outcome.model_copy(update={"warnings": [*self._setup_warnings, *outcome.warnings]})
+        return outcome.model_copy(
+            update={
+                "warnings": [*self._setup_warnings, *outcome.warnings],
+                "diagnostics": [*self._setup_diagnostics, *outcome.diagnostics],
+            }
+        )
 
     def _apply_worktree_changes(self, outcome: RunOutcome) -> RunOutcome:
         """Auto-apply worktree changes on a completed run, returning the outcome (FAILED on conflict) and recording whether apply failed."""
@@ -295,9 +319,16 @@ class SessionRunner:
         """Capture the diff, clean up or keep the worktree and scratch directory, log SESSION_COMPLETED, and return the final outcome."""
         process_registry.terminate_all(grace_seconds=0.5)
         warnings = list(outcome.warnings)
+        diagnostics = list(outcome.diagnostics)
         self._workspace.capture_and_persist_diff(self._worktree, warnings)
         worktree_kept = self._workspace.finalize_cleanup(
-            self._manager, self._worktree, self._context.target_dir, outcome.status, self._apply_failed, warnings
+            self._manager,
+            self._worktree,
+            self._context.target_dir,
+            outcome.status,
+            self._apply_failed,
+            warnings,
+            diagnostics,
         )
         self._workspace.cleanup_session_tmp_dir(
             self._context.session_tmp_dir, keep=self._row.keep, status=outcome.status
@@ -306,4 +337,6 @@ class SessionRunner:
             self._context.session_log_dir,
             SessionLogEvent(event=SessionLogEventType.SESSION_COMPLETED, status=outcome.status.value),
         )
-        return outcome.model_copy(update={"warnings": warnings, "worktree_kept": worktree_kept})
+        return outcome.model_copy(
+            update={"warnings": warnings, "diagnostics": diagnostics, "worktree_kept": worktree_kept}
+        )

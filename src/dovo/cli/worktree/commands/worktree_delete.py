@@ -7,42 +7,20 @@ import typer
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.common.models import OutputFormatOptions
-from dovo.core.worktree import (
-    Worktree,
-    WorktreeDeleteResult,
-    WorktreeDeleteStatus,
-    WorktreeSession,
-)
+from dovo.core.db import WorktreeRecord
+from dovo.core.worktree import Worktree, WorktreeDeleteResult
 
 
-def _worktree_delete_confirm_prompt(worktree: object) -> str:
-    """Format confirmation prompt message for deleting a worktree."""
-    branch = getattr(worktree, "branch_name", getattr(worktree, "branch", "unknown"))
-    path = getattr(worktree, "worktree_path", getattr(worktree, "path", "unknown"))
-    s_id = getattr(worktree, "id", getattr(worktree, "session_id", "unknown"))
-    return f"Delete worktree '{s_id}' (branch {branch}, path {path})?\nThis removes the git worktree and branch."
-
-
-def collect_worktree_delete(
-    context: CliContext,
-    worktree_id: str,
-) -> WorktreeDeleteResult:
-    """Load config and look up one worktree for delete (no mutation)."""
-    return Worktree(
-        context.paths, git=context.git, clock=context.clock, new_id=context.new_id, db=context.db.worktrees
-    ).delete(worktree_id)
-
-
-def _confirm_or_abort(row: object) -> bool:
-    """Prompt user for confirmation; return True if confirmed."""
+def _confirm_delete(row: WorktreeRecord) -> bool:
+    """Ask to delete row's worktree and branch; True when confirmed, False when declined or aborted."""
     try:
-        confirmed = typer.confirm(
-            _worktree_delete_confirm_prompt(row),
+        return typer.confirm(
+            f"Delete worktree '{row.id}' (branch {row.branch_name}, path {row.worktree_path})?\n"
+            "This removes the git worktree and branch.",
             default=False,
         )
     except typer.Abort:
-        confirmed = False
-    return confirmed
+        return False
 
 
 def worktree_delete_command(
@@ -51,10 +29,7 @@ def worktree_delete_command(
     force: bool = False,
     output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> WorktreeDeleteResult:
-    """Delete a tracked worktree and branch.
-
-    Confirms before mutating unless ``force`` is True. Already-cleaned rows are
-    an idempotent no-op.
+    """Delete a tracked worktree and branch, confirming first unless force.
 
     Args:
         context: CLI context instance.
@@ -62,35 +37,8 @@ def worktree_delete_command(
         force: When True, skip the confirmation prompt.
         output_format: Presentation format ("terminal" or "json").
     """
-    worktree = Worktree(
+    result = Worktree(
         context.paths, git=context.git, clock=context.clock, new_id=context.new_id, db=context.db.worktrees
-    )
-    result = worktree.delete(worktree_id)
-
-    if result.status is WorktreeDeleteStatus.NOT_FOUND or result.worktree is None:
-        not_found_result = result.model_copy(update={"errors": [f"Worktree '{worktree_id}' not found."]})
-        ui_dispatcher.dispatch(not_found_result, output_format=output_format)
-        return not_found_result
-    if result.status is WorktreeDeleteStatus.ALREADY_CLEANED:
-        ui_dispatcher.dispatch(result, output_format=output_format)
-        return result
-
-    row = result.worktree
-
-    if not force and not _confirm_or_abort(row):
-        aborted = result.model_copy(update={"status": WorktreeDeleteStatus.ABORTED, "errors": ["Aborted."]})
-        ui_dispatcher.dispatch(aborted, output_format=output_format)
-        return aborted
-
-    session = WorktreeSession(
-        session_id=row.id,
-        target_branch=row.branch_name,
-        worktree_path=row.worktree_path,
-        base_commit=row.base_commit,
-        name=row.name,
-        created_at=row.created_at,
-    )
-    warnings = worktree.cleanup(session)
-    deleted = result.model_copy(update={"status": WorktreeDeleteStatus.DELETED, "deleted": True, "warnings": warnings})
-    ui_dispatcher.dispatch(deleted, output_format=output_format)
-    return deleted
+    ).delete(worktree_id, confirm=None if force else _confirm_delete)
+    ui_dispatcher.dispatch(result, output_format=output_format)
+    return result

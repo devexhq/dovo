@@ -9,6 +9,7 @@ from dovo.cli.run.commands.root import _dispatch_paused_prompt, _first_error
 from dovo.cli.run.observer import resolve_cli_observer
 from dovo.cli.run.prompter import DispatcherFailurePrompter, DispatcherInteractionPrompter
 from dovo.cli.ui import (
+    DiagnosticsEvent,
     ErrorPanelEvent,
     MessageEvent,
     RunSuccessEvent,
@@ -139,4 +140,6 @@ def session_resume_command(
     record = result.session_record
     if not _dispatch_paused_prompt(result, record, non_interactive=not interaction_prompter.is_interactive):
         _dispatch_resume_outcome(result, record, session_id)
+    if output_format is OutputFormatOptions.TERMINAL and result.diagnostics:
+        ui_dispatcher.dispatch(DiagnosticsEvent(diagnostics=list(result.diagnostics)))
     return result

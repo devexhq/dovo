@@ -19,6 +19,7 @@ from dovo.core.worktree.models import (
     WorktreeApplyStrategy,
     WorktreeDiffResult,
     WorktreeDiffStatus,
+    WorktreeRemoval,
 )
 from dovo.core.worktree.services.failure_log import logged_failure, record_fallback
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
@@ -382,14 +383,6 @@ class WorktreePatch:
                 ],
             )
 
-    def _cleanup_after_apply(self, record: WorktreeRecord, delete: bool) -> tuple[bool, list[str]]:
-        """Clean up worktree and branch if delete requested."""
-        if not delete:
-            return False, []
-
-        warnings = self.lifecycle.cleanup(record)
-        return True, warnings
-
     def diff(
         self,
         worktree_id: str,
@@ -483,28 +476,40 @@ class WorktreePatch:
         if apply_err is not None:
             return apply_err
 
-        warnings: list[str] = []
-        cleaned_up, cleanup_warnings = self._cleanup_after_apply(record, delete)
-        warnings.extend(cleanup_warnings)
+        return self._applied_result(record, strategy, touched_files, commit_sha, delete=delete)
+
+    def _applied_result(
+        self,
+        record: WorktreeRecord,
+        strategy: WorktreeApplyStrategy,
+        touched_files: list[str],
+        commit_sha: str | None,
+        *,
+        delete: bool,
+    ) -> WorktreeApplyResult:
+        """Remove the worktree when delete, mark it merged, and build the OK result carrying the removal's warnings and diagnostics."""
+        removal = self.lifecycle.cleanup(record) if delete else WorktreeRemoval()
+        warnings = list(removal.warnings)
 
         try:
-            self.db.update_status(worktree_id, WorktreeStatus.MERGED)
+            self.db.update_status(record.id, WorktreeStatus.MERGED)
         except Exception as exc:
             warnings.append(
                 logged_failure(
-                    f"Failed to update database status to 'merged' for worktree '{worktree_id}': {exc}",
+                    f"Failed to update database status to 'merged' for worktree '{record.id}': {exc}",
                     exc,
                     operation="worktree.apply",
-                    context={"worktree_id": worktree_id},
+                    context={"worktree_id": record.id},
                 )
             )
 
         return WorktreeApplyResult(
             status=WorktreeApplyStatus.OK,
-            worktree_id=worktree_id,
+            worktree_id=record.id,
             strategy=strategy,
             touched_files=touched_files,
             commit_sha=commit_sha,
-            cleaned_up=cleaned_up,
+            cleaned_up=delete,
             warnings=warnings,
+            diagnostics=list(removal.diagnostics),
         )

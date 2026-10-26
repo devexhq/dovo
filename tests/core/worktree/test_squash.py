@@ -11,10 +11,10 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
     WorktreeApplyStatus,
     WorktreeApplyStrategy,
-    WorktreeCreateStatus,
 )
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.core.worktree.services.patch import WorktreePatch
+from dovo.core.worktree.worktree import Worktree
 from tests.harness.builders import WorkspaceBuilder
 from tests.harness.fakes import fixed_clock, fixed_new_id
 
@@ -51,8 +51,10 @@ class WorktreeSquashApplyTests:
 
         head_before = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
 
-        create_result = lifecycle.create(session_id="dovo_squash")
-        assert create_result.status == WorktreeCreateStatus.OK
+        create_result = Worktree(
+            worktree_workspace_paths, db=db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+        ).create(session_id="dovo_squash")
+        assert create_result.ok
 
         worktree_dir = worktree_workspace / ".dovo" / "worktrees" / "dovo_squash"
 
@@ -100,8 +102,10 @@ class WorktreeSquashApplyTests:
 
         initial_commit = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
 
-        create_result = lifecycle.create(session_id="dovo_squash_del")
-        assert create_result.status == WorktreeCreateStatus.OK
+        create_result = Worktree(
+            worktree_workspace_paths, db=db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+        ).create(session_id="dovo_squash_del")
+        assert create_result.ok
 
         worktree_dir = worktree_workspace / ".dovo" / "worktrees" / "dovo_squash_del"
 

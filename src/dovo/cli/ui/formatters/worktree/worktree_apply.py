@@ -6,7 +6,7 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
-from dovo.cli.ui.formatters.common import build_error_panel
+from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.core.worktree.models import WorktreeApplyResult, WorktreeApplyStrategy
 
 
@@ -39,13 +39,14 @@ class WorktreeApplyFormatter(ComponentFormatter[WorktreeApplyResult]):
     """Formatter for worktree apply command results."""
 
     def to_rich(self, data: WorktreeApplyResult) -> RenderableType:
-        """Render worktree apply success summary or failure panel."""
+        """Render worktree apply success summary or failure panel, followed by diagnostic_lines(data.diagnostics)."""
         if data.ok:
-            return _format_apply_success(data)
+            return with_diagnostics(_format_apply_success(data), data.diagnostics)
 
-        return build_error_panel(
+        panel = build_error_panel(
             "Worktree Apply Failed",
             data.errors,
             "Worktree apply failed.",
             remediations=data.remediations,
         )
+        return with_diagnostics(panel, data.diagnostics)

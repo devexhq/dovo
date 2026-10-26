@@ -13,43 +13,28 @@ from dovo.common.models import BaseResult
 from dovo.core.db import WorktreeRecord
 
 
-class WorktreeListStatus(StrEnum):
-    """Classified outcome for ``dovo worktree list``."""
-
-    OK = "ok"
-
-
 class WorktreeListResult(BaseResult):
     """Structured result for ``dovo worktree list`` before rendering."""
 
-    status: WorktreeListStatus
     worktrees: list[WorktreeRecord] = Field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        """True when listing can proceed (including empty tables)."""
-        return self.status == WorktreeListStatus.OK and not self.errors
-
-
-class WorktreeShowStatus(StrEnum):
-    """Classified outcome for ``dovo worktree show``."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
+        """True exactly when error_code is None."""
+        return self.error_code is None
 
 
 class WorktreeShowResult(BaseResult):
     """Structured result for ``dovo worktree show`` before rendering."""
 
-    status: WorktreeShowStatus
     worktree: WorktreeRecord | None = None
     disk_present: bool = False
     reconciled: bool = False
 
     @property
     def ok(self) -> bool:
-        """True when a worktree row is available to render."""
-        return self.status == WorktreeShowStatus.OK and self.worktree is not None and not self.errors
+        """True exactly when error_code is None."""
+        return self.error_code is None
 
 
 class WorktreeSession(BaseModel):
@@ -68,28 +53,15 @@ class WorktreeSession(BaseModel):
     wip_paths: list[str] = Field(default_factory=list)
 
 
-class WorktreeCreateStatus(StrEnum):
-    """Classified outcomes for creating a worktree."""
-
-    OK = "ok"
-    ALREADY_EXISTS = "already_exists"
-    CAPACITY_EXCEEDED = "capacity_exceeded"
-    GIT_FAILED = "git_failed"
-    GIT_TIMEOUT = "git_timeout"
-    UNREADABLE_CONFIG = "unreadable_config"
-    WIP_FAILED = "wip_failed"
-
-
 class WorktreeCreateResult(BaseResult):
-    """Non-raising result of worktree creation."""
+    """Result of worktree creation; a failure is reported by error_code."""
 
-    status: WorktreeCreateStatus
     session: WorktreeSession | None = None
 
     @property
     def ok(self) -> bool:
-        """Return True when a worktree session was created successfully."""
-        return self.status == WorktreeCreateStatus.OK and not self.errors
+        """True exactly when error_code is None."""
+        return self.error_code is None
 
 
 class WorktreeApplyStrategy(StrEnum):
@@ -201,6 +173,34 @@ class WorktreeDetection:
         return tuple(i for i in self.items if i.category == StaleWorktreeCategory.STALE_DB_RECORD)
 
 
+@dataclass(frozen=True, slots=True)
+class WorktreeCreation:
+    """A created worktree session, with the warnings its metadata persist reported and their error-level records."""
+
+    session: WorktreeSession
+    warnings: tuple[str, ...] = ()
+    diagnostics: tuple[DiagnosticRecord, ...] = ()
+
+
+class WorktreeCleanupResult(BaseResult):
+    """Result of removing a worktree, its branch and git's record of it; failed steps are warnings."""
+
+    worktree_id: str = ""
+
+    @property
+    def ok(self) -> bool:
+        """True exactly when error_code is None."""
+        return self.error_code is None
+
+
+@dataclass(frozen=True, slots=True)
+class WorktreeRemoval:
+    """Warnings for the cleanup steps that failed, with their error-level records; empty when every step succeeded."""
+
+    warnings: tuple[str, ...] = ()
+    diagnostics: tuple[DiagnosticRecord, ...] = ()
+
+
 class PruneAction(StrEnum):
     """Action taken on a detected stale resource during pruning."""
 
@@ -275,33 +275,16 @@ class WorktreePruneResult(BaseResult):
         return len(self.failed_items)
 
 
-class WorktreeDeleteStatus(StrEnum):
-    """Classified outcome for ``dovo worktree delete``."""
-
-    READY = "ready"
-    DELETED = "deleted"
-    ALREADY_CLEANED = "already_cleaned"
-    ABORTED = "aborted"
-    NOT_FOUND = "not_found"
-
-
 class WorktreeDeleteResult(BaseResult):
-    """Structured result for ``dovo worktree delete``."""
+    """Structured result for ``dovo worktree delete``; a failure is reported by error_code."""
 
-    status: WorktreeDeleteStatus
     worktree_id: str = ""
     worktree: WorktreeRecord | None = None
     deleted: bool = False
+    already_cleaned: bool = False
+    cancelled: bool = False
 
     @property
     def ok(self) -> bool:
-        """True when delete succeeded (deleted), ready, or already-cleaned."""
-        return (
-            self.status
-            in {
-                WorktreeDeleteStatus.READY,
-                WorktreeDeleteStatus.DELETED,
-                WorktreeDeleteStatus.ALREADY_CLEANED,
-            }
-            and not self.errors
-        )
+        """True exactly when error_code is None."""
+        return self.error_code is None

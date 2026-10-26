@@ -1,7 +1,10 @@
 """The worktree package's domain error and its fixed-code capacity subclass."""
 
+from collections.abc import Sequence
+
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DomainError
+from dovo.common.models import Remediation
 
 
 class WorktreeError(DomainError):
@@ -11,5 +14,5 @@ class WorktreeError(DomainError):
 class WorktreeCapacityError(WorktreeError):
     """Raised when active worktree count reaches configured capacity limit."""
 
-    def __init__(self, message: str) -> None:
-        super().__init__(ErrorCode.WORKTREE_CAPACITY_EXCEEDED, message)
+    def __init__(self, message: str, remediations: Sequence[Remediation] = ()) -> None:
+        super().__init__(ErrorCode.WORKTREE_CAPACITY_EXCEEDED, message, remediations)

@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from dovo.core.worktree.models import WorktreePruneResult, WorktreePruneStatus
+from dovo.core.worktree.models import (
+    WorktreeCleanupResult,
+    WorktreeCreateResult,
+    WorktreeDeleteResult,
+    WorktreeListResult,
+    WorktreePruneResult,
+    WorktreePruneStatus,
+    WorktreeShowResult,
+)
 
 
 class WorktreePruneResultOkTests:
@@ -25,3 +33,26 @@ class WorktreePruneResultOkTests:
         result = WorktreePruneResult(status=status, error_code=error_code)
 
         assert result.ok is ok
+
+
+class WorktreeResultOkTests:
+    @pytest.mark.parametrize(
+        "model_cls",
+        [WorktreeShowResult, WorktreeListResult, WorktreeCreateResult, WorktreeCleanupResult, WorktreeDeleteResult],
+    )
+    @pytest.mark.parametrize("error_code", [None, "INTERNAL_ERROR"])
+    def test_ok_is_true_exactly_when_error_code_is_none(
+        self,
+        model_cls: type[
+            WorktreeShowResult
+            | WorktreeListResult
+            | WorktreeCreateResult
+            | WorktreeCleanupResult
+            | WorktreeDeleteResult
+        ],
+        error_code: str | None,
+    ) -> None:
+        """Return ok == (error_code is None) for each converted worktree result."""
+        result = model_cls(error_code=error_code)
+
+        assert result.ok is (error_code is None)

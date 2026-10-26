@@ -10,8 +10,8 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.core.git.runner import GitRunner
-from dovo.core.worktree.models import WorktreeCreateResult, WorktreeCreateStatus
-from tests.harness.fakes import SequentialIds, use_fixed_clock_and_ids
+from dovo.core.worktree.models import WorktreeCreateResult
+from tests.harness.fakes import FakeGitRunner, SequentialIds, use_fake_git, use_fixed_clock_and_ids
 
 
 class WorktreeCreateCliIntegrationTests:
@@ -41,7 +41,7 @@ class WorktreeCreateCliIntegrationTests:
 
         assert len(dispatch_spy) == 1
         payload = dispatch_spy[0]
-        assert payload.status == WorktreeCreateStatus.OK
+        assert payload.ok
         assert payload.session is not None
         assert payload.session.session_id == "dovo_0000abcd"
         assert payload.session.worktree_path == worktree_dir.resolve()
@@ -66,7 +66,7 @@ class WorktreeCreateCliIntegrationTests:
         assert "Maximum active worktrees reached (3/3)." in result.stdout
         assert len(dispatch_spy) == 4
         payload = dispatch_spy[-1]
-        assert payload.status == WorktreeCreateStatus.CAPACITY_EXCEEDED
+        assert payload.error_code == "WORKTREE_CAPACITY_EXCEEDED"
         assert payload.errors == ["Maximum active worktrees reached (3/3)."]
 
     def test_worktree_create_cli_renders_json(
@@ -82,7 +82,8 @@ class WorktreeCreateCliIntegrationTests:
         assert result.exit_code == 0
         event = json.loads(result.stdout)
         assert event["event_type"] == "WorktreeCreateResult"
-        assert event["payload"]["status"] == "ok"
+        assert event["payload"]["error_code"] is None
+        assert "status" not in event["payload"]
         assert event["payload"]["session"]["name"] == "demo"
         assert event["payload"]["session"]["session_id"] == "dovo_0000abcd"
         assert event["payload"]["session"]["created_at"] == "2026-01-02T03:04:05+00:00"
@@ -100,7 +101,6 @@ class WorktreeCreateCliIntegrationTests:
 
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
-        assert payload["status"] == "already_exists"
         assert payload["error_code"] == "WORKTREE_PATH_CONFLICT"
         assert payload["errors"] == ["Worktree 'dovo_0000abcd' already exists (WORKTREE_PATH_CONFLICT)."]
         assert (cli_workspace / ".dovo" / "worktrees" / "dovo_0000abcd").is_dir()
@@ -119,7 +119,7 @@ class WorktreeCreateCliIntegrationTests:
         assert result.exit_code == 0
         assert len(dispatch_spy) == 1
         payload = dispatch_spy[0]
-        assert payload.status == WorktreeCreateStatus.OK
+        assert payload.ok
         assert payload.session is not None
         assert payload.session.wip_paths == ["dirty.txt"]
 
@@ -145,10 +145,53 @@ class WorktreeCreateCliIntegrationTests:
         assert result.exit_code == 0
         assert len(dispatch_spy) == 1
         payload = dispatch_spy[0]
-        assert payload.status == WorktreeCreateStatus.OK
+        assert payload.ok
         assert payload.session is not None
         assert payload.session.base_commit == first_commit
 
         session = payload.session
         assert (session.worktree_path / "first.txt").read_text(encoding="utf-8") == "first commit\n"
         assert not (session.worktree_path / "second.txt").exists()
+
+    def test_worktree_create_cli_unexpected_failure_json_reports_internal_error(
+        self, cli_runner: CliRunner, cli_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 and emit payload error_code "INTERNAL_ERROR", errors == ["Unexpected error during worktree.create: boom"], diagnostics == [{"event_id": "exc_3f9a1c07b2de", "log_path": <frozen path>}] and no "status" key when git worktree add raises TypeError("boom")."""
+        use_fixed_clock_and_ids(monkeypatch)
+        use_fake_git(monkeypatch, FakeGitRunner({("worktree", "add"): TypeError("boom")}))
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "create", "--format", "json"])
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["error_code"] == "INTERNAL_ERROR"
+        assert payload["errors"] == ["Unexpected error during worktree.create: boom"]
+        assert payload["diagnostics"] == [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]
+        assert "status" not in payload
+        assert not (cli_workspace / ".dovo" / "worktrees" / "dovo_0000abcd").exists()
+
+    def test_worktree_create_cli_capacity_exceeded_json_reports_code(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 and emit error_code "WORKTREE_CAPACITY_EXCEEDED", errors == ["Maximum active worktrees reached (1/1)."] and both remediation dicts with max_active_worktrees 1."""
+        use_fixed_clock_and_ids(monkeypatch, new_id=SequentialIds("0000000a", "0000000b"))
+        configured = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "config", "set", "worktree.max_active_worktrees", "1"]
+        )
+        assert configured.exit_code == 0
+        first = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "create"])
+        assert first.exit_code == 0
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "create", "--format", "json"])
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["error_code"] == "WORKTREE_CAPACITY_EXCEEDED"
+        assert payload["errors"] == ["Maximum active worktrees reached (1/1)."]
+        assert payload["remediations"] == [
+            {
+                "message": "Remove a kept worktree with 'dovo worktree delete <worktree-id>' (see 'dovo worktree list')",
+                "command": "dovo worktree delete <worktree-id>",
+            },
+            {"message": "Raise 'worktree.max_active_worktrees' in '.dovo/config.json'", "command": None},
+        ]

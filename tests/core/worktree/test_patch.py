@@ -12,12 +12,13 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
     WorktreeApplyStatus,
     WorktreeApplyStrategy,
-    WorktreeCreateStatus,
 )
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.core.worktree.services.patch import WorktreePatch, extract_conflicts
+from dovo.core.worktree.worktree import Worktree
 from tests.harness.builders import WorkspaceBuilder
-from tests.harness.fakes import fixed_clock, fixed_new_id
+from tests.harness.diagnostic_log import diagnostic_record
+from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id
 
 
 @pytest.fixture
@@ -96,8 +97,10 @@ class WorktreeApplyRollbackTests:
         GitRunner().run(["commit", "-m", "Add target.py"], path=worktree_workspace)
         initial_commit = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
 
-        create_result = lifecycle.create(session_id="dovo_conflict")
-        assert create_result.status == WorktreeCreateStatus.OK
+        create_result = Worktree(
+            worktree_workspace_paths, db=db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+        ).create(session_id="dovo_conflict")
+        assert create_result.ok
 
         worktree_dir = worktree_workspace / ".dovo" / "worktrees" / "dovo_conflict"
         (worktree_dir / "target.py").write_text("line 1\nworktree edit\nline 3\n", encoding="utf-8")
@@ -141,3 +144,25 @@ class WorktreeApplyRollbackTests:
         assert record.base_commit == initial_commit
         assert record.worktree_path == (worktree_workspace / ".dovo" / "worktrees" / "dovo_conflict").resolve()
         assert record.status == WorktreeStatus.CONFLICT
+
+
+class WorktreeApplyDeleteDiagnosticsTests:
+    def test_apply_delete_copies_cleanup_warnings_and_diagnostics(
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return status ok, cleaned_up True, warnings == ["Failed to delete branch 'dovo/<id>': boom"] and diagnostics == [diagnostic_record(...)] from apply(delete=True) when git branch -D raises RuntimeError("boom")."""
+        git = FakeGitRunner()
+        worktree = Worktree(worktree_workspace_paths, git=git, clock=fixed_clock, new_id=fixed_new_id)
+        created = worktree.create(session_id="dovo_apply_delete")
+        assert created.session is not None
+        (created.session.worktree_path / "feature.py").write_text("feature\n", encoding="utf-8")
+        GitRunner().run(["add", "-A"], path=created.session.worktree_path)
+        GitRunner().run(["commit", "-m", "Add feature"], path=created.session.worktree_path)
+        git.responses[("branch", "-D")] = RuntimeError("boom")
+
+        result = worktree.apply("dovo_apply_delete", delete=True)
+
+        assert result.status == WorktreeApplyStatus.OK
+        assert result.cleaned_up is True
+        assert result.warnings == ["Failed to delete branch 'dovo/dovo_apply_delete': boom"]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]

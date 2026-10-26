@@ -15,8 +15,11 @@ from dovo.cli import app
 from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
+from dovo.engine import BlueprintResumeService
+from dovo.engine.models import BlueprintRunResult
 from tests.harness import FakeAgentRunner
 from tests.harness.catalog import write_runnable_step
+from tests.harness.diagnostic_log import details_line, diagnostic_record, unwrapped
 from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.sessions import seed_paused_ask_session, seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -367,3 +370,34 @@ class SessionResumeReconcileCliIntegrationTests:
         assert result.exit_code == 0, result.stdout
         assert _session_status(cli_workspace, "resumed") == SessionStatus.COMPLETED
         assert "Reconciled" not in (cli_workspace / "status.out").read_text(encoding="utf-8")
+
+
+class SessionResumeCliDiagnosticsTests:
+    def test_resume_cli_prints_details_line_after_outcome(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Print one 'Details logged: …' line after the resume outcome when BlueprintResumeService.execute returns a result carrying [diagnostic_record(...)]."""
+        _seed_paused_session(
+            cli_workspace,
+            session_id="paused-diagnostics",
+            steps=[{"id": "s1", "run": "true"}, {"id": "s2", "run": "true", "on_failure": "continue"}],
+            paused_step_id="s2",
+        )
+        real_execute = BlueprintResumeService.execute
+
+        def _execute_with_record(self: BlueprintResumeService) -> BlueprintRunResult:
+            return real_execute(self).model_copy(update={"diagnostics": [diagnostic_record(frozen_diagnostic_clock)]})
+
+        monkeypatch.setattr(BlueprintResumeService, "execute", _execute_with_record)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "resume", "paused-diagnostics"])
+
+        assert result.exit_code == 0
+        output = unwrapped(result.stdout)
+        line = unwrapped(details_line(frozen_diagnostic_clock))
+        assert output.count(unwrapped("Details logged")) == 1
+        assert output.endswith(line)

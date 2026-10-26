@@ -8,10 +8,10 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_create import WorktreeCreateFormatter
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.models import Remediation
 from dovo.core.worktree.models import (
     WorktreeCreateResult,
-    WorktreeCreateStatus,
     WorktreeSession,
 )
 from tests.harness.formatter import (
@@ -29,29 +29,48 @@ _SESSION = WorktreeSession(
 )
 
 CREATED_OK = FormatterCase.identity(
-    data=WorktreeCreateResult(status=WorktreeCreateStatus.OK, session=_SESSION),
+    data=WorktreeCreateResult(session=_SESSION),
     render_expectations=[_SESSION.session_id, _SESSION.target_branch],
 )
 
 FAILED_GIT = FormatterCase.identity(
     data=WorktreeCreateResult(
-        status=WorktreeCreateStatus.GIT_FAILED,
+        error_code="GIT_FAILED",
         errors=["Git checkout failed."],
         remediations=[Remediation(message="Check git status and branch name")],
     ),
     render_expectations=["Git checkout failed.", "Fix:", "- Check git status and branch name"],
 )
 
+CREATED_WITH_DIAGNOSTICS = FormatterCase.identity(
+    data=WorktreeCreateResult(
+        session=_SESSION,
+        warnings=["Failed to persist worktree metadata to the local database: boom"],
+        diagnostics=[
+            DiagnosticRecord(
+                event_id="exc_3f9a1c07b2de",
+                log_path=Path("/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json"),
+                level=DiagnosticLevel.ERROR,
+            )
+        ],
+    ),
+    render_expectations=[
+        _SESSION.session_id,
+        "Failed to persist worktree metadata to the local database: boom",
+        "Details logged: /home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json (event exc_3f9a1c07b2de)",
+    ],
+)
+
 WORKTREE_CREATE_CASES = [
     pytest.param(CREATED_OK, id="created_ok"),
     pytest.param(FAILED_GIT, id="failed_git"),
+    pytest.param(CREATED_WITH_DIAGNOSTICS, id="created_with_diagnostics"),
 ]
 
 WORKTREE_CREATE_PAYLOAD_CASES = [
     pytest.param(
         CREATED_OK,
         {
-            "status": "ok",
             "session": {
                 "session_id": "dovo_create123",
                 "target_branch": "dovo/create123",
@@ -74,11 +93,10 @@ WORKTREE_CREATE_PAYLOAD_CASES = [
     pytest.param(
         FAILED_GIT,
         {
-            "status": "git_failed",
             "session": None,
             "warnings": [],
             "errors": ["Git checkout failed."],
-            "error_code": None,
+            "error_code": "GIT_FAILED",
             "remediations": [{"message": "Check git status and branch name", "command": None}],
             "diagnostics": [],
         },
