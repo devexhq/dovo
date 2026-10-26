@@ -41,7 +41,7 @@ dovo blueprint show <sha_or_name> [--format terminal|json]
 
 ### `dovo blueprint delete`
 
-Deletes a REPO-tier blueprint file and reindexes that tier. A match resolved from USER or GLOBAL tier is refused with a "not deletable from this tier" error. Bundled templates in the `dovo/` namespace (e.g. `dovo/fix-tests`) are protected and cannot be deleted regardless of tier.
+Deletes a REPO-tier blueprint file and reindexes that tier. A match resolved from USER or GLOBAL tier is refused with a "not deletable from this tier" error. Bundled templates in the `dovo/` namespace (e.g. `dovo/fix-tests`) are protected and cannot be deleted regardless of tier. Without `--force`, it asks for confirmation first. Declining, or closing the prompt without an answer, deletes nothing, exits `0` and prints `Deletion cancelled.`; with `--format json`, the payload has `cancelled: true`.
 
 ```bash
 dovo blueprint delete <sha_or_name> [--force] [--format terminal|json]
@@ -55,4 +55,6 @@ Validates a blueprint definition (YAML syntax, schema, and semantic invariants s
 dovo blueprint validate <target> [--format terminal|json]
 ```
 
-`target` is a catalog name or namespaced identifier (e.g. `commit-plan`, `dovo/fix-tests`), or a relative/absolute file path. There is no `--type` option.
+`target` is a catalog name or namespaced identifier (e.g. `commit-plan`, `dovo/fix-tests`), or a relative/absolute file path. A catalog name matches blueprints only. There is no `--type` option.
+
+Exits `0` when the definition is valid and `1` on any failure, including a target that names no catalog item.

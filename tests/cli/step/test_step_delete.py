@@ -29,14 +29,14 @@ class StepDeleteCliIntegrationTests:
         assert result.exit_code == 0
         assert not (isolated_workspace / ".dovo" / "catalog" / "steps" / "del-step.yml").exists()
 
-    def test_step_delete_cli_confirmation_declined_exits_one(
+    def test_step_delete_cli_confirmation_declined_exits_zero(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "declined-step")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "delete", "declined-step"], input="n\n")
 
-        assert result.exit_code == 1
+        assert result.exit_code == 0
         assert "Deletion cancelled" in result.stdout
 
     def test_step_delete_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
@@ -78,17 +78,21 @@ class StepDeleteCliTests:
     def test_declined_confirmation_returns_cancelled_json(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """Exit 1 with payload cancelled True, deleted False, errors ["Deletion cancelled."], status 'cancelled' and no error_code when stdin answers 'n'."""
+        """Exit 0 with payload == the declined-delete JSON when stdin answers 'n', and keep the file on disk."""
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "kept-step")
 
         result = cli_runner.invoke(
             app, ["-p", str(isolated_workspace), "step", "delete", "kept-step", "--format", "json"], input="n\n"
         )
 
-        assert result.exit_code == 1
-        payload = json.loads(result.stdout.splitlines()[-1])["payload"]
-        assert (payload["cancelled"], payload["deleted"]) == (True, False)
-        assert payload["errors"] == ["Deletion cancelled."]
-        assert payload["status"] == "cancelled"
-        assert payload["error_code"] is None
+        assert result.exit_code == 0
+        assert json.loads(result.stdout.splitlines()[-1])["payload"] == {
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "error_code": None,
+            "item": None,
+            "deleted": False,
+            "cancelled": True,
+        }
         assert (isolated_workspace / ".dovo" / "catalog" / "steps" / "kept-step.yml").is_file()

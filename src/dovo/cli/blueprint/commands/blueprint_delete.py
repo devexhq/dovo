@@ -8,7 +8,7 @@ from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.common.models import OutputFormatOptions
 from dovo.core.catalog import Catalog
-from dovo.core.catalog.models import CatalogDeleteResult, CatalogDeleteStatus
+from dovo.core.catalog.models import CatalogDeleteResult
 
 
 def _confirm_delete(sha_or_name: str) -> bool:
@@ -37,12 +37,10 @@ def blueprint_delete_command(
         output_format: Presentation format ("terminal" or "json").
 
     Returns:
-        CatalogDeleteResult indicating deletion status.
+        CatalogDeleteResult: the deleted item, a declined confirmation, or the failure.
     """
     if not force and not _confirm_delete(sha_or_name):
-        result = CatalogDeleteResult(
-            status=CatalogDeleteStatus.CANCELLED, cancelled=True, errors=["Deletion cancelled."]
-        )
+        result = CatalogDeleteResult(cancelled=True)
         ui_dispatcher.dispatch(result, output_format=output_format)
         return result
 

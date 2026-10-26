@@ -12,7 +12,6 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.catalog.models import (
     CatalogDeleteResult,
-    CatalogDeleteStatus,
     CatalogItemType,
     CatalogRecord,
     CatalogTier,
@@ -35,20 +34,17 @@ _RECORD = CatalogRecord(
 )
 
 DELETED = FormatterCase.identity(
-    data=CatalogDeleteResult(status=CatalogDeleteStatus.OK, item=_RECORD, deleted=True, cancelled=False),
+    data=CatalogDeleteResult(item=_RECORD, deleted=True, cancelled=False),
     render_expectations=[_RECORD.sha, str(_RECORD.path)],
 )
 
 CANCELLED = FormatterCase.identity(
-    data=CatalogDeleteResult(
-        status=CatalogDeleteStatus.CANCELLED, item=None, deleted=False, cancelled=True, errors=["Deletion cancelled."]
-    ),
+    data=CatalogDeleteResult(cancelled=True),
     render_expectations=["Deletion cancelled."],
 )
 
 DELETE_ERROR = FormatterCase.identity(
     data=CatalogDeleteResult(
-        status=CatalogDeleteStatus.NOT_FOUND,
         error_code=ErrorCode.CATALOG_NOT_FOUND,
         item=None,
         deleted=False,
@@ -79,7 +75,6 @@ CATALOG_DELETE_PAYLOAD_CASES = [
             "warnings": [],
             "remediations": [],
             "error_code": None,
-            "status": "ok",
             "item": {
                 "key": "test-blueprint",
                 "sha": "blueprint_1234567",
@@ -104,12 +99,24 @@ CATALOG_DELETE_PAYLOAD_CASES = [
                 {"message": "Run 'dovo blueprint list' to inspect available items", "command": "dovo blueprint list"}
             ],
             "error_code": "CATALOG_NOT_FOUND",
-            "status": "not_found",
             "item": None,
             "deleted": False,
             "cancelled": False,
         },
         id="delete_error",
+    ),
+    pytest.param(
+        CANCELLED,
+        {
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "error_code": None,
+            "item": None,
+            "deleted": False,
+            "cancelled": True,
+        },
+        id="cancelled",
     ),
 ]
 

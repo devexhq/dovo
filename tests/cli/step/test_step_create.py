@@ -87,10 +87,8 @@ class StepCreateCliTests:
         assert not (global_paths.user_catalog_dir / "steps" / "both-step.yml").exists()
         assert not (global_paths.global_catalog_dir / "steps" / "both-step.yml").exists()
 
-    def test_collision_json_has_already_exists_status_and_code(
-        self, cli_runner: CliRunner, isolated_workspace: Path
-    ) -> None:
-        """Exit 1 with payload status 'already_exists', error_code CATALOG_ALREADY_EXISTS and the collision message."""
+    def test_collision_json_has_already_exists_code(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        """Exit 1 with error_code CATALOG_ALREADY_EXISTS and the collision message."""
         cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "create", "--name", "dup-step"])
 
         result = cli_runner.invoke(
@@ -99,6 +97,5 @@ class StepCreateCliTests:
 
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
-        assert payload["status"] == "already_exists"
         assert payload["error_code"] == "CATALOG_ALREADY_EXISTS"
         assert payload["errors"] == ["Catalog blueprint collision at path 'steps/dup-step.yml'"]

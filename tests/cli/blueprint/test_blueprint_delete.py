@@ -31,7 +31,7 @@ class BlueprintDeleteCliIntegrationTests:
         assert result.exit_code == 0
         assert not (isolated_workspace / ".dovo" / "catalog" / "blueprints" / "del-blueprint.yml").exists()
 
-    def test_blueprint_delete_cli_confirmation_declined_exits_one(
+    def test_blueprint_delete_cli_confirmation_declined_exits_zero(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "declined-blueprint")
@@ -40,7 +40,7 @@ class BlueprintDeleteCliIntegrationTests:
             app, ["-p", str(isolated_workspace), "blueprint", "delete", "declined-blueprint"], input="n\n"
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 0
         assert "Deletion cancelled" in result.stdout
 
     def test_blueprint_delete_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
@@ -63,7 +63,6 @@ class BlueprintDeleteCliIntegrationTests:
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
         assert payload["event_type"] == "CatalogDeleteResult"
-        assert payload["payload"]["status"] == "ok"
         assert payload["payload"]["deleted"] is True
 
     def test_blueprint_delete_cli_missing_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
@@ -94,7 +93,7 @@ class BlueprintDeleteCliTests:
     def test_declined_confirmation_returns_cancelled_json(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """Exit 1 with payload cancelled True, deleted False, errors ["Deletion cancelled."], status 'cancelled' and no error_code when stdin answers 'n'."""
+        """Exit 0 with payload == the declined-delete JSON when stdin answers 'n', and keep the file on disk."""
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "kept-blueprint")
 
         result = cli_runner.invoke(
@@ -103,10 +102,14 @@ class BlueprintDeleteCliTests:
             input="n\n",
         )
 
-        assert result.exit_code == 1
-        payload = json.loads(result.stdout.splitlines()[-1])["payload"]
-        assert (payload["cancelled"], payload["deleted"]) == (True, False)
-        assert payload["errors"] == ["Deletion cancelled."]
-        assert payload["status"] == "cancelled"
-        assert payload["error_code"] is None
+        assert result.exit_code == 0
+        assert json.loads(result.stdout.splitlines()[-1])["payload"] == {
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "error_code": None,
+            "item": None,
+            "deleted": False,
+            "cancelled": True,
+        }
         assert (isolated_workspace / ".dovo" / "catalog" / "blueprints" / "kept-blueprint.yml").is_file()

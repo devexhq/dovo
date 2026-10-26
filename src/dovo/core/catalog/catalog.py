@@ -20,9 +20,7 @@ from dovo.core.catalog.exceptions import (
 )
 from dovo.core.catalog.models import (
     CatalogCreateResult,
-    CatalogCreateStatus,
     CatalogDeleteResult,
-    CatalogDeleteStatus,
     CatalogItemType,
     CatalogListResult,
     CatalogRecord,
@@ -31,7 +29,6 @@ from dovo.core.catalog.models import (
     CatalogShowResult,
     CatalogTier,
     CatalogValidateResult,
-    CatalogValidateStatus,
     YamlParseOutcome,
 )
 from dovo.core.catalog.services.inventory import (
@@ -143,7 +140,9 @@ class Catalog:
         try:
             content = file_path.read_text(encoding="utf-8")
         except OSError as exc:
-            raise CatalogYamlError(f"Failed to read file for catalog blueprint '{sha_or_name}': {exc}") from exc
+            raise CatalogError(
+                ErrorCode.CATALOG_FILE_UNREADABLE, f"Failed to read file for catalog blueprint '{sha_or_name}': {exc}"
+            ) from exc
 
         template_matches = [(item.path.as_posix(), content)] if item.tier == CatalogTier.PACKAGED else []
         return CatalogShowResult(item=item, content=content, template_matches=template_matches)
@@ -188,7 +187,6 @@ class Catalog:
             created = self._create(item_type, name, tier)
         if caught.failure is not None:
             return CatalogCreateResult(
-                status=_create_status(caught.failure.error_code),
                 error_code=caught.failure.error_code,
                 errors=[_failure_message(caught.failure)],
                 remediations=list(caught.failure.remediations),
@@ -199,7 +197,7 @@ class Catalog:
         """Create the item and return the ok result, raising CatalogError on failure."""
         record = create_catalog_item(item_type, name, tier, self.paths)
         resolved_path = resolve_catalog_record_path(record, self.paths)
-        return CatalogCreateResult(status=CatalogCreateStatus.OK, item=record, resolved_path=resolved_path)
+        return CatalogCreateResult(item=record, resolved_path=resolved_path)
 
     def delete(self, sha_or_name: str) -> CatalogDeleteResult:
         """Delete a REPO-tier catalog blueprint file and reindex, refusing dovo/-namespaced or non-REPO-tier matches.
@@ -211,12 +209,11 @@ class Catalog:
             deleted_item = delete_catalog_item_by_sha_or_name(sha_or_name, self.paths)
         if caught.failure is not None:
             return CatalogDeleteResult(
-                status=_delete_status(caught.failure.error_code),
                 error_code=caught.failure.error_code,
                 errors=[_failure_message(caught.failure)],
                 remediations=list(caught.failure.remediations),
             )
-        return CatalogDeleteResult(status=CatalogDeleteStatus.OK, item=deleted_item, deleted=True)
+        return CatalogDeleteResult(item=deleted_item, deleted=True)
 
     def sync(self) -> CatalogScan:
         """Synchronize each disk-backed tier's index.json with its on-disk YAML blueprints.
@@ -236,22 +233,20 @@ class Catalog:
         self,
         target: str,
         *,
-        item_type: CatalogItemType | None = None,
+        item_type: CatalogItemType,
         blueprint_cls: type[_PydanticModel],
         step_cls: type[_PydanticModel],
     ) -> CatalogValidateResult:
         """Validate a catalog blueprint or step definition without executing it.
 
-        A catalog-name target is resolved via ``get()``, which re-syncs the index first, like every
-        other name-based lookup on this class (see ``sync()``). A file-path target is inspected
-        directly and never touches the index.
+        A catalog-name target is resolved via ``get()`` among items of item_type only, which re-syncs
+        the index first, like every other name-based lookup on this class (see ``sync()``). A file-path
+        target is inspected directly as item_type and never touches the index.
         """
         with catch_failure("catalog.validate", target=target) as caught:
             resolution = self._resolve_validate_target(target, item_type=item_type)
         if caught.failure is not None:
-            return _target_not_found(target, caught.failure)
-        if isinstance(resolution, CatalogValidateResult):
-            return resolution
+            return _target_lookup_failure(target, item_type, caught.failure)
         with catch_failure("catalog.validate", target=target) as caught:
             validated = validate_catalog_item(
                 target,
@@ -263,7 +258,6 @@ class Catalog:
         if caught.failure is not None:
             resolved_path, item_type_value, _, warnings = resolution
             return CatalogValidateResult(
-                status=CatalogValidateStatus.INVALID,
                 valid=False,
                 target=target,
                 resolved_path=resolved_path,
@@ -279,9 +273,9 @@ class Catalog:
         self,
         target: str,
         *,
-        item_type: CatalogItemType | None,
-    ) -> CatalogValidateResult | tuple[Path, str, str, builtins.list[str]]:
-        """Resolve target to (absolute_path, item_type_value, definition_key, warnings), or a terminal type-required result.
+        item_type: CatalogItemType,
+    ) -> tuple[Path, str, str, builtins.list[str]]:
+        """Resolve target to (absolute_path, item_type_value, definition_key, warnings), looking a catalog name up among items of item_type only.
 
         Raises:
             CatalogError: When a catalog-name target cannot be resolved (see ``get()``).
@@ -295,20 +289,9 @@ class Catalog:
         file_candidate = candidate if candidate.is_absolute() else self.path / candidate
 
         if file_candidate.is_file():
-            if item_type is None:
-                return CatalogValidateResult(
-                    status=CatalogValidateStatus.TYPE_REQUIRED,
-                    valid=False,
-                    target=target,
-                    resolved_path=file_candidate,
-                    item_type=None,
-                    errors=[f"'--type' is required to validate file target '{target}' (CATALOG_TYPE_REQUIRED)."],
-                    warnings=[],
-                    remediations=[Remediation(message="Pass '--type blueprint' or '--type step' for a file target.")],
-                )
             return file_candidate, item_type.value, file_candidate.stem, []
 
-        resolution = self.get(target)
+        resolution = self.get(target, item_type=item_type)
         record = resolution.record
         resolved_path = resolve_catalog_record_path(record, self.paths)
         return resolved_path, record.item_type.value, record.key, _duplicate_name_warnings(target, resolution)
@@ -374,48 +357,19 @@ def _duplicate_name_warnings(key_or_sha: str, resolution: CatalogResolution) -> 
     ]
 
 
-def _create_status(error_code: str | None) -> CatalogCreateStatus:
-    """Return the create status for a caught failure's code; internal_error for any code create does not raise."""
-    match error_code:
-        case ErrorCode.CATALOG_TYPE_INVALID:
-            return CatalogCreateStatus.INVALID_TYPE
-        case ErrorCode.CATALOG_ALREADY_EXISTS:
-            return CatalogCreateStatus.ALREADY_EXISTS
-        case ErrorCode.CATALOG_WRITE_FAILED:
-            return CatalogCreateStatus.WRITE_FAILED
-        case _:
-            return CatalogCreateStatus.INTERNAL_ERROR
-
-
-def _delete_status(error_code: str | None) -> CatalogDeleteStatus:
-    """Return the delete status for a caught failure's code; internal_error for any code delete does not raise."""
-    match error_code:
-        case ErrorCode.CATALOG_NOT_FOUND:
-            return CatalogDeleteStatus.NOT_FOUND
-        case ErrorCode.CATALOG_PROTECTED:
-            return CatalogDeleteStatus.PROTECTED
-        case ErrorCode.CATALOG_TIER_DELETE_FORBIDDEN:
-            return CatalogDeleteStatus.WRONG_TIER
-        case ErrorCode.CATALOG_WRITE_FAILED:
-            return CatalogDeleteStatus.WRITE_FAILED
-        case _:
-            return CatalogDeleteStatus.INTERNAL_ERROR
-
-
 def _failure_message(failure: Failure) -> str:
     """Return failure.message with its Details logged line when a diagnostic was recorded."""
     return append_diagnostic_hint(failure.message, failure.diagnostic)
 
 
-def _target_not_found(target: str, failure: Failure) -> CatalogValidateResult:
-    """Build the not_found validate result from a failed target lookup: its code, message and remediations, or the catalog-name remediation for CATALOG_NOT_FOUND."""
+def _target_lookup_failure(target: str, item_type: CatalogItemType, failure: Failure) -> CatalogValidateResult:
+    """Build the failed validate result from a failed target lookup: its code, message and remediations, or the item_type-scoped catalog-name remediation for CATALOG_NOT_FOUND."""
     remediations = (
-        [Remediation(message=f"Check that '{target}' names an indexed catalog item, or pass a file path instead.")]
+        [Remediation(message=f"Check that '{target}' names an indexed {item_type.value}, or pass a file path instead.")]
         if failure.error_code is ErrorCode.CATALOG_NOT_FOUND
         else list(failure.remediations)
     )
     return CatalogValidateResult(
-        status=CatalogValidateStatus.NOT_FOUND,
         valid=False,
         target=target,
         resolved_path=None,
