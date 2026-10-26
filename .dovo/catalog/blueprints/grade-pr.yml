@@ -1,0 +1,51 @@
+version: 1
+name: grade-pr
+id: grade-pr
+description: Collect a pull request's checks, its dovo run's plan, review and step history, and its head commit's files, grade it against the dovo-grade rubric, publish the report and record as artifacts, and post or update the pull request's one dovo-grade comment unless post is false
+summary: Grade a pull request against the dovo-grade rubric
+
+inputs:
+  pr:
+    type: string
+    description: Number of the pull request to grade
+    required: true
+    aliases: ["-p", "--pr"]
+  post:
+    type: boolean
+    description: Post or update the pull request's dovo-grade comment (pass -i post=false to only publish the artifacts)
+    default: true
+
+steps:
+  # The worktree stays at the run's base: the pull request's files are
+  # extracted into .agentic/grade-pr/ to read, so no step runs its code.
+  - id: collect
+    name: Collect the grade inputs
+    run: uv run python scripts/grade_inputs.py --pr "$PR"
+    env: { PR: "${{ inputs.pr }}" }
+    timeout_seconds: 300
+    artifacts:
+      - { name: grade-inputs, path: .agentic/grade-inputs.json }
+
+  - id: grade
+    name: Grade the pull request
+    type: agent
+    prompt: |
+      /dovo-grade ${{ inputs.pr }}
+
+      Follow .agents/skills/dovo-grade/SKILL.md if the slash command is not recognized.
+      Grade pull request ${{ inputs.pr }} from .agentic/grade-inputs.json and write
+      .agentic/grade.md and .agentic/grade.json. Do not post: the next step does.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: grade-report, path: .agentic/grade.md }
+      - { name: grade, path: .agentic/grade.json }
+
+  # Re-checks the grade before posting, and edits the earlier dovo-grade
+  # comment when there is one, so a pull request carries one grade.
+  - id: post
+    name: Post the grade to the pull request
+    run: '[ "$POST" = "False" ] || uv run python scripts/publish_grade.py --pr "$PR" --session "$DOVO_SESSION_ID"'
+    env: { PR: "${{ inputs.pr }}", POST: "${{ inputs.post }}" }
+    timeout_seconds: 120
+    on_failure: prompt_user
