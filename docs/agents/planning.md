@@ -171,5 +171,5 @@ class <TestClass>:  # <test file path>
 ## Step 5: Save and hand off
 
 1. Verify all planned paths, imports, stubs, and phases against R1–R18 in [AGENTS.md](../../AGENTS.md), and that every requirement ID and GWT scenario appears in `## Traceability`.
-2. Write `.agentic/plan.md` (and `.agentic/evidence.md` when used) and its open questions to `.agentic/plan.json` (schema in the `dovo-plan` skill), deleting any stale `.agentic/review*`, `.agentic/plan-review*` and `.agentic/plan-challenge*`.
+2. Write `.agentic/plan.md` (and `.agentic/evidence.md` when used) and its open questions to `.agentic/plan.json` (schema in the `dovo-plan` skill), deleting any stale `.agentic/review*`, `.agentic/plan-review*`, `.agentic/plan-challenge*` and `.agentic/plan-walkthrough*`.
 3. Report the plan path, the Phases table, and every numbered Open Question.

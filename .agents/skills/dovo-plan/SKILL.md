@@ -88,4 +88,4 @@ Write `.agentic/plan.json` alongside the markdown. `.dovo/catalog/blueprints/fea
 
 Run planning.md Step 5. Report the paths written, the Phases table, a one-paragraph summary, every numbered Open Question restated in chat, and plainly that this was planning only: nothing was implemented, tested, committed or pushed.
 
-**A human reviews the plan before implementation.** Stop and wait. `/dovo-plan-review` reviews it and `/dovo-plan-challenge` challenges its design, each in a fresh session, first; `/dovo-code` then implements every phase, in order.
+**A human reviews the plan before implementation.** Stop and wait. `/dovo-plan-review` reviews it and `/dovo-plan-challenge` challenges its design, each in a fresh session, first, and `/dovo-plan-walkthrough` explains the result to the approver; `/dovo-code` then implements every phase, in order.
