@@ -50,7 +50,7 @@ docs = [
 ]
 
 [project.scripts]
-dovo = "dovo.cli.cli:app"
+dovo = "dovo.cli.cli:run_cli"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
