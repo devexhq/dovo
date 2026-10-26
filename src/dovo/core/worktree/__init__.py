@@ -1,6 +1,7 @@
 """Git worktree management and lifecycle."""
 
 from dovo.core.worktree.exceptions import (
+    WorktreeApplyConflictError,
     WorktreeCapacityError,
     WorktreeError,
 )
@@ -10,14 +11,12 @@ from dovo.core.worktree.models import (
     StaleWorktreeCategory,
     StaleWorktreeItem,
     WorktreeApplyResult,
-    WorktreeApplyStatus,
     WorktreeApplyStrategy,
     WorktreeCleanupResult,
     WorktreeCreateResult,
     WorktreeDeleteResult,
     WorktreeDetection,
     WorktreeDiffResult,
-    WorktreeDiffStatus,
     WorktreeListResult,
     WorktreePruneResult,
     WorktreePruneStatus,
@@ -32,8 +31,8 @@ __all__ = [
     "StaleWorktreeCategory",
     "StaleWorktreeItem",
     "Worktree",
+    "WorktreeApplyConflictError",
     "WorktreeApplyResult",
-    "WorktreeApplyStatus",
     "WorktreeApplyStrategy",
     "WorktreeCapacityError",
     "WorktreeCleanupResult",
@@ -41,7 +40,6 @@ __all__ = [
     "WorktreeDeleteResult",
     "WorktreeDetection",
     "WorktreeDiffResult",
-    "WorktreeDiffStatus",
     "WorktreeError",
     "WorktreeListResult",
     "WorktreePruneResult",

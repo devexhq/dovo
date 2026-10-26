@@ -8,10 +8,7 @@ import pytest
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
-from dovo.core.worktree.models import (
-    WorktreeApplyStatus,
-    WorktreeApplyStrategy,
-)
+from dovo.core.worktree.models import WorktreeApplyStrategy
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.core.worktree.services.patch import WorktreePatch
 from dovo.core.worktree.worktree import Worktree
@@ -72,7 +69,7 @@ class WorktreeSquashApplyTests:
             message="Squash worktree feature",
         )
 
-        assert result.status == WorktreeApplyStatus.OK
+        assert result.ok
         assert result.worktree_id == "dovo_squash"
         assert result.strategy == WorktreeApplyStrategy.SQUASH
         assert result.touched_files == ["feature1.py", "feature2.py"]
@@ -120,7 +117,7 @@ class WorktreeSquashApplyTests:
             message="Squash and cleanup",
         )
 
-        assert result.status == WorktreeApplyStatus.OK
+        assert result.ok
         assert result.worktree_id == "dovo_squash_del"
         assert result.strategy == WorktreeApplyStrategy.SQUASH
         assert result.touched_files == ["feature.py"]

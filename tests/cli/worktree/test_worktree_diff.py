@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import NoReturn
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.common.filesystem.services import resolve_global_paths
+from dovo.core.git.exceptions import GitPlumbingTimeoutError
 from dovo.core.git.runner import GitRunner
-from dovo.core.worktree.models import WorktreeDiffResult, WorktreeDiffStatus, WorktreeSession
+from dovo.core.worktree.models import WorktreeDiffResult, WorktreeSession
 from dovo.core.worktree.worktree import Worktree
-from tests.harness.fakes import fixed_clock, fixed_new_id
+from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id, use_fake_git
 from tests.harness.git_index import snapshot_index
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -31,11 +35,20 @@ def _create_worktree_with_committed_change(cli_workspace: Path) -> WorktreeSessi
     return session
 
 
+def _create_worktree_without_changes(cli_workspace: Path) -> WorktreeSession:
+    """Create a worktree with no changes against its base commit."""
+    create_result = Worktree(
+        paths=initialized_workspace_paths(cli_workspace), git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+    ).create(name="no-changes")
+    assert create_result.session is not None
+    return create_result.session
+
+
 def _assert_dispatches_ok_diff(dispatch_spy: list[WorktreeDiffResult], session_id: str, *, stat: bool) -> None:
     """Assert the spy captured exactly one OK WorktreeDiffResult for target.py, with a diffstat only when stat."""
     assert len(dispatch_spy) == 1
     captured = dispatch_spy[0]
-    assert captured.status == WorktreeDiffStatus.OK
+    assert captured.ok
     assert captured.worktree_id == session_id
     assert ("target.py" in captured.stat_text) is stat
 
@@ -76,7 +89,7 @@ class WorktreeDiffCliIntegrationTests:
         assert "not found" in result.stdout
         assert len(dispatch_spy) == 1
         captured = dispatch_spy[0]
-        assert captured.status == WorktreeDiffStatus.NOT_FOUND
+        assert captured.error_code == "WORKTREE_NOT_FOUND"
         assert captured.worktree_id == "missing-id"
         assert captured.errors == ["Worktree 'missing-id' not found."]
 
@@ -90,7 +103,8 @@ class WorktreeDiffCliIntegrationTests:
         assert result.exit_code == 0
         event = json.loads(result.stdout)
         assert event["event_type"] == "WorktreeDiffResult"
-        assert event["payload"]["status"] == "ok"
+        assert "status" not in event["payload"]
+        assert event["payload"]["error_code"] is None
         assert event["payload"]["files_changed"] == ["target.py"]
 
     def test_worktree_diff_cli_keeps_untracked_file_untracked(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
@@ -103,3 +117,71 @@ class WorktreeDiffCliIntegrationTests:
         assert result.exit_code == 0
         assert "new.txt" in result.stdout
         assert snapshot_index(session.worktree_path) == before
+
+    def test_worktree_diff_cli_empty_diff_exits_zero_with_no_changes_line(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        session = _create_worktree_without_changes(cli_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "diff", session.session_id])
+
+        assert result.exit_code == 0
+        assert f"Worktree '{session.session_id}' has no changes compared to base commit." in result.stdout
+
+    def test_worktree_diff_cli_empty_diff_json_is_success(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        session = _create_worktree_without_changes(cli_workspace)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "worktree", "diff", session.session_id, "--format", "json"]
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["error_code"] is None
+        assert payload["errors"] == []
+        assert payload["warnings"] == []
+        assert payload["files_changed"] == []
+        assert payload["diff_text"] == ""
+
+    def test_worktree_diff_cli_git_timeout_json_exits_one(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        session = _create_worktree_with_committed_change(cli_workspace)
+        detail = "Git timed out after 30s ('git diff --cached') (GIT_TIMEOUT)"
+        use_fake_git(monkeypatch, FakeGitRunner({("diff", "--cached"): GitPlumbingTimeoutError(detail)}))
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "worktree", "diff", session.session_id, "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["error_code"] == "GIT_TIMEOUT"
+        assert payload["errors"] == [
+            f"Git timed out while generating the diff for worktree '{session.session_id}': {detail}"
+        ]
+        assert not resolve_global_paths(None).logs_dir.exists()
+
+    def test_worktree_diff_cli_unexpected_failure_json_reports_internal_error(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        session = _create_worktree_with_committed_change(cli_workspace)
+
+        def failing_diff(*args: object, **kwargs: object) -> NoReturn:
+            raise TypeError("boom")
+
+        monkeypatch.setattr("dovo.core.worktree.services.patch.diff_work_tree", failing_diff)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "worktree", "diff", session.session_id, "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["error_code"] == "INTERNAL_ERROR"
+        assert payload["errors"] == ["Unexpected error during worktree.diff: boom"]
+        assert payload["diagnostics"] == [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]

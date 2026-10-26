@@ -26,7 +26,6 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import (
     Worktree,
     WorktreeApplyResult,
-    WorktreeApplyStatus,
     WorktreeCleanupResult,
     WorktreeSession,
 )
@@ -623,7 +622,8 @@ class WorkspaceLinkSessionDirTests:
 
 
 class WorkspaceHandleAutoApplyTests:
-    def test_auto_apply_disabled_returns_none_and_false(self, tmp_path: Path) -> None:
+    def test_auto_apply_disabled_returns_none(self, tmp_path: Path) -> None:
+        """Return None when auto_apply is False."""
         context = RunSettings(
             cwd=tmp_path,
             use_worktree=False,
@@ -633,49 +633,19 @@ class WorkspaceHandleAutoApplyTests:
             clock=fixed_clock,
             new_id=fixed_new_id,
         )
-        errors: list[str] = []
-        warnings: list[str] = []
 
-        new_status, apply_failed = Workspace(context).handle_auto_apply(None, None, errors, warnings)
+        assert Workspace(context).handle_auto_apply(None, None) is None
 
-        assert (new_status, apply_failed) == (None, False)
-        assert (errors, warnings) == ([], [])
-
-    def test_auto_apply_success_returns_none_and_false(
+    def test_auto_apply_enabled_returns_the_apply_result(
         self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Return the result Worktree.apply returns, unchanged."""
         workspace, _, manager, session, _ = worktree_setup(auto_apply=True)
         assert session is not None
-        ok_result = WorktreeApplyResult(worktree_id=session.session_id, status=WorktreeApplyStatus.OK)
-        monkeypatch.setattr(Worktree, "apply", lambda self, *args, **kwargs: ok_result)
-        errors: list[str] = []
-        warnings: list[str] = []
+        applied = WorktreeApplyResult(worktree_id=session.session_id, warnings=["hunk note"])
+        monkeypatch.setattr(Worktree, "apply", lambda self, *args, **kwargs: applied)
 
-        new_status, apply_failed = workspace.handle_auto_apply(manager, session, errors, warnings)
-
-        assert (new_status, apply_failed) == (None, False)
-        assert errors == []
-
-    def test_auto_apply_conflict_returns_failed_status_and_appends_errors_and_warnings(
-        self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        workspace, _, manager, session, _ = worktree_setup(auto_apply=True)
-        assert session is not None
-        conflict_result = WorktreeApplyResult(
-            worktree_id=session.session_id,
-            status=WorktreeApplyStatus.CONFLICT,
-            errors=["merge conflict"],
-            warnings=["hunk rejected"],
-        )
-        monkeypatch.setattr(Worktree, "apply", lambda self, *args, **kwargs: conflict_result)
-        errors: list[str] = []
-        warnings: list[str] = []
-
-        new_status, apply_failed = workspace.handle_auto_apply(manager, session, errors, warnings)
-
-        assert (new_status, apply_failed) == (SessionStatus.FAILED, True)
-        assert errors == ["merge conflict"]
-        assert warnings == ["hunk rejected"]
+        assert workspace.handle_auto_apply(manager, session) == applied
 
 
 class WorkspaceCaptureAndPersistDiffTests:

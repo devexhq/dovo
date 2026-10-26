@@ -2,7 +2,7 @@
 
 `dovo worktree` creates and manages isolated Git worktrees.
 
-When `create` fails with an unexpected error or an operating-system error, or cannot save the worktree's metadata, or a step of removing the worktree hits an unexpected or operating-system error during `delete`, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record, prints a `Details logged: <path> (event <event_id>)` line after the output, and lists the record in `diagnostics` with `--format json`; the error or warning message is unchanged. When `apply` or `diff` fails with an unexpected error, the error or warning message instead ends with that line. If the record cannot be written, the line is absent.
+When `create`, `apply` or `diff` fails with an unexpected error or an operating-system error, or `create` cannot save the worktree's metadata, or `apply` cannot mark the worktree merged, or a step of removing the worktree hits an unexpected or operating-system error during `delete`, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record, prints a `Details logged: <path> (event <event_id>)` line after the output, and lists the record in `diagnostics` with `--format json`; the error or warning message is unchanged. If the record cannot be written, the line is absent.
 
 ## Subcommands
 
@@ -83,6 +83,8 @@ dovo worktree apply <worktree-id> [OPTIONS]
 
 With `--delete`, a failed removal step is listed as a warning and its record is listed in `diagnostics`.
 
+A failure exits with code 1 and reports its `error_code`: `WORKTREE_NOT_FOUND` for an unknown id, `WORKTREE_MISSING` when the worktree directory is missing on disk, `WORKTREE_ALREADY_MERGED` when the worktree was already applied, `GIT_DIRTY_WORKTREE` when the main workspace has uncommitted changes without `--allow-dirty`, or with `--strategy squash` has them in a file the worktree also changes, `PATCH_EMPTY` when the worktree has no changes to apply, `WORKTREE_APPLY_CONFLICT` when the changes do not apply cleanly (the paths are listed in `conflicting_files` with `--format json`), the git failure's code (`GIT_FAILED`, `GIT_BINARY_MISSING` or `GIT_TIMEOUT`) when a git command fails, `FS_NOT_FOUND` when the working directory disappeared while git ran, and `INTERNAL_ERROR` for an unexpected error.
+
 #### Examples
 
 Apply changes as working tree modifications:
@@ -109,6 +111,8 @@ dovo worktree diff <worktree-id> [OPTIONS]
 | --- | --- |
 | `--stat` | Output summary diffstat statistics (files changed, insertions, deletions) instead of the full unified diff. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). |
+
+A worktree with no changes prints `Worktree '<worktree-id>' has no changes compared to base commit.` and exits with code 0; with `--format json`, `files_changed` is `[]`. A failure exits with code 1 and reports its `error_code`: `WORKTREE_NOT_FOUND` for an unknown id, `WORKTREE_MISSING` when the worktree directory is missing on disk, the git failure's code (`GIT_FAILED`, `GIT_BINARY_MISSING` or `GIT_TIMEOUT`) when a git command fails, `FS_NOT_FOUND` when the working directory disappeared while git ran, and `INTERNAL_ERROR` for an unexpected error.
 
 #### Examples
 

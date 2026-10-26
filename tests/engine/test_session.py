@@ -23,7 +23,7 @@ from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions.services.read_logs import read_session_log_events
-from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus, WorktreeCleanupResult
+from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeCleanupResult
 from dovo.engine.executors.agent_step import WORKTREE_REQUIRED_MESSAGE
 from dovo.engine.executors.models import (
     StepExecutionContext,
@@ -262,6 +262,61 @@ class SessionRunnerWorktreeDiagnosticsTests:
         assert not any("Details logged:" in warning for warning in outcome.warnings)
         assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
 
+    def test_auto_apply_copies_apply_result_diagnostics(
+        self,
+        git_paths: WorkspacePaths,
+        git_runs: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """Mark the run FAILED with the apply's errors appended to outcome.errors, its warnings to outcome.warnings, and diagnostics ending with the apply's record, with no 'Details logged:' text, when Worktree.apply returns a failed result carrying one record."""
+        failed = WorktreeApplyResult(
+            worktree_id="apply-record",
+            error_code="INTERNAL_ERROR",
+            errors=["Unexpected error during worktree.apply: boom"],
+            warnings=["apply warning"],
+            diagnostics=[diagnostic_record(frozen_diagnostic_clock)],
+        )
+        monkeypatch.setattr(Worktree, "apply", lambda *args, **kwargs: failed)
+        seed_new_session(
+            git_paths,
+            git_runs,
+            session_id="apply-record",
+            steps=[_step("a", "echo change")],
+            use_worktree=True,
+            auto_apply=True,
+        )
+
+        outcome = _drive(git_paths, git_runs, "apply-record")
+
+        assert outcome.status == SessionStatus.FAILED
+        assert outcome.errors == ["Unexpected error during worktree.apply: boom"]
+        assert outcome.warnings[-1] == "apply warning"
+        assert not any("Details logged:" in message for message in [*outcome.errors, *outcome.warnings])
+        assert outcome.diagnostics[-1] == diagnostic_record(frozen_diagnostic_clock)
+
+    def test_auto_apply_unexpected_failure_record_in_outcome_diagnostics(
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Mark an auto-apply run FAILED with "Unexpected error during worktree.apply: boom" in errors, no 'Details logged:' text, and diagnostics == [diagnostic_record(...)] when ("apply","--check") raises TypeError("boom")."""
+        seed_new_session(
+            git_paths,
+            git_runs,
+            session_id="apply-boom",
+            steps=[_step("a", "echo change > tracked.txt")],
+            use_worktree=True,
+            auto_apply=True,
+        )
+
+        outcome = _drive(
+            git_paths, git_runs, "apply-boom", git=FakeGitRunner({("apply", "--check"): TypeError("boom")})
+        )
+
+        assert outcome.status == SessionStatus.FAILED
+        assert "Unexpected error during worktree.apply: boom" in outcome.errors
+        assert not any("Details logged:" in message for message in [*outcome.errors, *outcome.warnings])
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+
 
 class DriveRunMissingRowTests:
     def test_unknown_session_returns_failed_outcome_without_running_steps_or_notifying(
@@ -354,7 +409,7 @@ class DriveRunCleanupTests:
     ) -> None:
         conflict = WorktreeApplyResult(
             worktree_id="test-session",
-            status=WorktreeApplyStatus.CONFLICT,
+            error_code="WORKTREE_APPLY_CONFLICT",
             errors=["Patch merge conflict in worktree apply"],
             warnings=["Patch hunk rejected"],
         )

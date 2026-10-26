@@ -20,11 +20,7 @@ from dovo.core.config import ConfigLoadError
 from dovo.core.db import WorktreeRecord, WorktreesRepository
 from dovo.core.git.exceptions import GitCommandError
 from dovo.core.git.runner import GitRunner
-from dovo.core.worktree.models import (
-    WorktreeApplyStatus,
-    WorktreeCleanupResult,
-    WorktreeDiffStatus,
-)
+from dovo.core.worktree.models import WorktreeCleanupResult
 from dovo.core.worktree.services.detector import WorktreeDetector
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.core.worktree.worktree import Worktree
@@ -107,26 +103,6 @@ class WorktreeCleanupDelegationTests:
 
         assert result == WorktreeCleanupResult(worktree_id="dovo_entrypoint_cleanup")
         assert not create_result.session.worktree_path.exists()
-
-
-class WorktreeDiffApplyDelegationTests:
-    def test_diff_on_freshly_created_worktree_reports_empty_diff(
-        self, worktree_workspace_paths: WorkspacePaths
-    ) -> None:
-        worktree = Worktree(worktree_workspace_paths, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
-        create_result = worktree.create(session_id="dovo_entrypoint_diff")
-        assert create_result.ok
-
-        diff_result = worktree.diff("dovo_entrypoint_diff")
-
-        assert diff_result.status == WorktreeDiffStatus.EMPTY_DIFF
-
-    def test_apply_on_unknown_worktree_id_returns_not_found(self, worktree_workspace_paths: WorkspacePaths) -> None:
-        worktree = Worktree(worktree_workspace_paths, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
-
-        result = worktree.apply("missing_worktree")
-
-        assert result.status == WorktreeApplyStatus.NOT_FOUND
 
 
 def _raise_type_error(*args: object, **kwargs: object) -> NoReturn:
@@ -233,6 +209,26 @@ class WorktreeCleanupEntrypointTests:
             worktree.cleanup(created.session)
 
         assert created.session.worktree_path.is_dir()
+
+
+class WorktreeApplyLockTests:
+    def test_apply_lock_timeout_propagates(
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Raise LockTimeoutError from Worktree.apply() and leave the main repository unchanged."""
+        worktree = Worktree(worktree_workspace_paths, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
+        created = worktree.create(session_id="dovo_apply_locked")
+        assert created.session is not None
+        (created.session.worktree_path / "feature.py").write_text("feature\n", encoding="utf-8")
+        head_before = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
+        status_before = GitRunner().status_porcelain(worktree_workspace)
+        monkeypatch.setattr("dovo.core.worktree.worktree.WorkspaceLock.__enter__", _lock_timeout)
+
+        with pytest.raises(LockTimeoutError):
+            worktree.apply("dovo_apply_locked")
+
+        assert GitRunner().rev_parse(worktree_workspace, rev="HEAD") == head_before
+        assert GitRunner().status_porcelain(worktree_workspace) == status_before
 
 
 class WorktreeDeleteEntrypointTests:

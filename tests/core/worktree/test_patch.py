@@ -5,16 +5,13 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
-from dovo.core.worktree.models import (
-    WorktreeApplyStatus,
-    WorktreeApplyStrategy,
-)
-from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
-from dovo.core.worktree.services.patch import WorktreePatch, extract_conflicts
+from dovo.core.worktree.models import WorktreeApplyStrategy
+from dovo.core.worktree.services.patch import extract_conflicts
 from dovo.core.worktree.worktree import Worktree
 from tests.harness.builders import WorkspaceBuilder
 from tests.harness.diagnostic_log import diagnostic_record
@@ -87,10 +84,7 @@ class WorktreeApplyRollbackTests:
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
-        lifecycle = WorktreeLifecycle(
-            worktree_workspace_paths, db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
-        )
-        patch_service = WorktreePatch(worktree_workspace_paths, db, lifecycle=lifecycle, git=GitRunner())
+        worktree = Worktree(worktree_workspace_paths, db=db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
 
         (worktree_workspace / "target.py").write_text("line 1\nline 2\nline 3\n", encoding="utf-8")
         GitRunner().run(["add", "-A"], path=worktree_workspace)
@@ -113,9 +107,9 @@ class WorktreeApplyRollbackTests:
 
         initial_tree = (worktree_workspace / "target.py").read_text(encoding="utf-8")
 
-        result = patch_service.apply("dovo_conflict")
+        result = worktree.apply("dovo_conflict")
 
-        assert result.status == WorktreeApplyStatus.CONFLICT
+        assert result.error_code == ErrorCode.WORKTREE_APPLY_CONFLICT
         assert result.worktree_id == "dovo_conflict"
         assert result.strategy == WorktreeApplyStrategy.PATCH
         assert result.touched_files == []
@@ -150,7 +144,7 @@ class WorktreeApplyDeleteDiagnosticsTests:
     def test_apply_delete_copies_cleanup_warnings_and_diagnostics(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return status ok, cleaned_up True, warnings == ["Failed to delete branch 'dovo/<id>': boom"] and diagnostics == [diagnostic_record(...)] from apply(delete=True) when git branch -D raises RuntimeError("boom")."""
+        """Return ok, cleaned_up True, warnings == ["Failed to delete branch 'dovo/<id>': boom"] and diagnostics == [diagnostic_record(...)] from apply(delete=True) when git branch -D raises RuntimeError("boom")."""
         git = FakeGitRunner()
         worktree = Worktree(worktree_workspace_paths, git=git, clock=fixed_clock, new_id=fixed_new_id)
         created = worktree.create(session_id="dovo_apply_delete")
@@ -162,7 +156,7 @@ class WorktreeApplyDeleteDiagnosticsTests:
 
         result = worktree.apply("dovo_apply_delete", delete=True)
 
-        assert result.status == WorktreeApplyStatus.OK
+        assert result.ok
         assert result.cleaned_up is True
         assert result.warnings == ["Failed to delete branch 'dovo/dovo_apply_delete': boom"]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
