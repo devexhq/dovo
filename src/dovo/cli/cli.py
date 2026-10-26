@@ -1,6 +1,8 @@
 """Typer CLI entrypoint for the Dovo (`dovo`) command."""
 
+import importlib
 import sys
+from collections.abc import Iterator, MutableMapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -8,22 +10,12 @@ import typer
 from typer.core import TyperGroup
 
 if TYPE_CHECKING:
-    # TyperGroup.invoke is annotated with Typer's vendored click Context, which has no public name.
-    from typer._click.core import Context
+    # TyperGroup is annotated with Typer's vendored click types, which have no public name.
+    from typer._click.core import Command, Context
 
-from dovo.cli.artifacts.app import artifacts_app
-from dovo.cli.blueprint.app import blueprint_app
-from dovo.cli.config.app import config_app
 from dovo.cli.context import CliContext, default_lock_wait_notifier, ensure_lazy_project_init
-from dovo.cli.doctor.app import doctor_app
-from dovo.cli.init.app import init_app
-from dovo.cli.run.app import run_app
-from dovo.cli.session.app import register_session_shortcuts, session_app
-from dovo.cli.status.app import status_app
-from dovo.cli.step.app import step_app
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.cli.ui.events import ErrorPanelEvent, MessageEvent, WelcomeBannerEvent
-from dovo.cli.worktree.app import worktree_app
 from dovo.common.diagnostic_log import bind_cli_command, reset_cli_command
 from dovo.common.filesystem import Filesystem, WorkspaceNotInitializedError
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
@@ -36,9 +28,79 @@ __version__ = get_version()
 # Commands that tolerate a missing or broken config (see CliContext.build's load_config param); a project identity is still required
 NON_STRICT_CONFIG_COMMANDS = {"config", "doctor", "init", "status"}
 
+# Each command group's module and Typer app, in help order. A group is imported the first time it is looked up (to
+# run it, or to list it for help or completion), so a command does not pay for importing every other group.
+COMMAND_GROUPS = {
+    "artifacts": "dovo.cli.artifacts.app:artifacts_app",
+    "blueprint": "dovo.cli.blueprint.app:blueprint_app",
+    "config": "dovo.cli.config.app:config_app",
+    "doctor": "dovo.cli.doctor.app:doctor_app",
+    "init": "dovo.cli.init.app:init_app",
+    "run": "dovo.cli.run.app:run_app",
+    "session": "dovo.cli.session.app:session_app",
+    "worktree": "dovo.cli.worktree.app:worktree_app",
+    "status": "dovo.cli.status.app:status_app",
+    "step": "dovo.cli.step.app:step_app",
+}
+
+# Root shortcuts that run the session command of the same name, listed before the groups in help.
+SESSION_SHORTCUTS = ("logs", "diff", "resume")
+
+
+class LazyCommands(MutableMapping[str, "Command"]):
+    """The root group's commands by name, each built from its module the first time it is looked up."""
+
+    def __init__(self, commands: MutableMapping[str, "Command"]) -> None:
+        self._loaded: dict[str, Command] = dict(commands)
+
+    def __getitem__(self, name: str) -> "Command":
+        if name not in self._loaded:
+            self._loaded[name] = self._load(name)
+        return self._loaded[name]
+
+    def _load(self, name: str) -> "Command":
+        """Build the named group from its Typer app, or return the session command a shortcut runs."""
+        if name in SESSION_SHORTCUTS:
+            session_group = self["session"]
+            if not isinstance(session_group, TyperGroup):
+                raise TypeError("the session command must be a group to provide its shortcuts")
+            return session_group.commands[name]
+        if name not in COMMAND_GROUPS:
+            raise KeyError(name)
+        module_name, attribute = COMMAND_GROUPS[name].split(":")
+        return typer.main.get_group(getattr(importlib.import_module(module_name), attribute))
+
+    def __contains__(self, name: object) -> bool:
+        return name in self._loaded or name in SESSION_SHORTCUTS or name in COMMAND_GROUPS
+
+    def __setitem__(self, name: str, command: "Command") -> None:
+        self._loaded[name] = command
+
+    def __delitem__(self, name: str) -> None:
+        del self._loaded[name]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(dict.fromkeys([*SESSION_SHORTCUTS, *COMMAND_GROUPS, *self._loaded]))
+
+    def __len__(self) -> int:
+        return len(dict.fromkeys([*SESSION_SHORTCUTS, *COMMAND_GROUPS, *self._loaded]))
+
 
 class DovoTyperGroup(TyperGroup):
-    """Custom TyperGroup capturing subcommand args for context initialization."""
+    """Root group that loads command groups lazily and captures subcommand args for context initialization."""
+
+    @property
+    def commands(self) -> MutableMapping[str, "Command"]:
+        """The group's commands, loaded on first lookup."""
+        return self._lazy_commands
+
+    @commands.setter
+    def commands(self, commands: MutableMapping[str, "Command"]) -> None:
+        self._lazy_commands = LazyCommands(commands)
+
+    def list_commands(self, ctx: "Context") -> list[str]:
+        """List every command name without importing the groups."""
+        return list(self.commands)
 
     def invoke(self, ctx: "Context") -> object:
         """Capture help flags before executing command callbacks."""
@@ -57,18 +119,6 @@ app = typer.Typer(
     add_completion=True,
     rich_markup_mode="rich",
 )
-
-app.add_typer(artifacts_app, name="artifacts")
-app.add_typer(blueprint_app, name="blueprint")
-app.add_typer(config_app, name="config")
-app.add_typer(doctor_app, name="doctor")
-app.add_typer(init_app, name="init")
-app.add_typer(run_app, name="run")
-app.add_typer(session_app, name="session")
-register_session_shortcuts(app)
-app.add_typer(worktree_app, name="worktree")
-app.add_typer(status_app, name="status")
-app.add_typer(step_app, name="step")
 
 
 def print_welcome_banner() -> None:

@@ -8,12 +8,13 @@ from typing import Any
 
 import click
 import pytest
+import typer
+from typer.core import TyperGroup
 from typer.testing import CliRunner
 
 import dovo.cli.cli as cli_module
 from dovo.cli import app
 from dovo.cli.context import CliContext
-from dovo.cli.session.app import session_app
 from dovo.cli.ui import ErrorPanelEvent
 from dovo.common.clock import utc_now
 from dovo.common.lock import LockTimeoutError
@@ -38,6 +39,12 @@ class CliSmokeTests:
         assert result.exit_code == 0
         assert "Dovo CLI" in result.stdout
         assert "init" in result.stdout
+
+    def test_mistyped_command_suggests_a_command_group(self, cli_runner: CliRunner) -> None:
+        result = cli_runner.invoke(app, ["blueprnt"])
+
+        assert result.exit_code == 2
+        assert "Did you mean 'blueprint'?" in click.unstyle(result.stderr)
 
 
 class CliContextBuildTests:
@@ -403,12 +410,13 @@ class SessionCliTests:
         assert grouped_result.exit_code == shortcut_result.exit_code
         assert grouped_result.stdout == shortcut_result.stdout
 
-    def test_shortcut_commands_bind_the_same_handler_function(self) -> None:
-        root_callbacks = {command.name: command.callback for command in app.registered_commands}
-        session_callbacks = {command.name: command.callback for command in session_app.registered_commands}
+    def test_shortcut_commands_run_the_session_command_of_the_same_name(self) -> None:
+        root = typer.main.get_group(app)
+        session_group = root.commands["session"]
 
+        assert isinstance(session_group, TyperGroup)
         for name in ("logs", "diff", "resume"):
-            assert root_callbacks[name] is session_callbacks[name]
+            assert root.commands[name] is session_group.commands[name]
 
 
 _COMMANDS_WITH_FORMAT_ARGV = [

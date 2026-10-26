@@ -6,7 +6,7 @@ Walk the changed-file list against this table (and [docs/agents/documentation.md
 
 | Trigger in the diff | Must be satisfied | Where |
 |---|---|---|
-| Command added, renamed, or removed in `src/dovo/cli/cli.py` (`add_typer` / `register_*`) | `README.md` Quick start and command surface match `dovo --help` exactly, no documented command that does not exist, none shipped undocumented | `README.md` |
+| Command added, renamed, or removed in `src/dovo/cli/cli.py` (`COMMAND_GROUPS` / `SESSION_SHORTCUTS`) | `README.md` Quick start and command surface match `dovo --help` exactly, no documented command that does not exist, none shipped undocumented | `README.md` |
 | User-visible CLI behavior or flags changed | per-command page updated | `docs/cli/` |
 | User-visible config or blueprint schema changed | corresponding schema reference page updated | `docs/reference/` |
 | A production symbol deleted whose only caller was a test | the test deleted in the same change, coverage expected to fall, no backfilled tests holding the percentage, and no negative existence tests (`assert not hasattr(...)`) added | `AGENTS.md`, `docs/agents/testing.md` |
