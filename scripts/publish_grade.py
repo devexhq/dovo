@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import subprocess
 import sys
 from pathlib import Path
@@ -87,9 +86,10 @@ def raw_score(scores: dict[str, int | None]) -> int:
     scored = {name: score for name, score in scores.items() if score is not None}
     if not scored:
         raise PublishGradeError("grade.json scores no dimension")
-    weight = sum(WEIGHTS[name] for name in scored)
-    mean = sum(WEIGHTS[name] * score for name, score in scored.items()) / weight
-    return math.floor(mean * 100 / MAX_SCORE + 0.5)
+    # Integer arithmetic: a float mean misrounds exact halves, such as 57.5 to 57.
+    numerator = 100 * sum(WEIGHTS[name] * score for name, score in scored.items())
+    denominator = MAX_SCORE * sum(WEIGHTS[name] for name in scored)
+    return (2 * numerator + denominator) // (2 * denominator)
 
 
 def applied_caps(gates: dict[str, object], correctness: int | None) -> list[str]:

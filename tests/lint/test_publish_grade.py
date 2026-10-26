@@ -127,6 +127,12 @@ class PublishGradeScoreTests:
                 id="rounds-half-up",
             ),
             pytest.param(
+                _scores(None, None, 0, 3, None, 2, 4, 4),
+                GATES,
+                {"raw_score": 58, "score": 58, "grade": "F", "caps": []},
+                id="rounds-exact-half-a-float-misses",
+            ),
+            pytest.param(
                 _scores(4, 4, 4, 4, 4, 4, 4, 4),
                 {"checks_failed": True, "open_blockers": 0},
                 {"raw_score": 100, "score": 59, "grade": "F", "caps": ["checks_failed"]},
