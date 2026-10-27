@@ -149,9 +149,7 @@ class ConfigProviderRegistryValidationTests:
 
         assert result.status == ConfigValidationStatus.INVALID
         assert result.ok is False
-        assert result.errors == [
-            "default_agent: Unsupported agent provider 'copilot' (AGENT_PROVIDER_UNSUPPORTED). Supported: claude, fake."
-        ]
+        assert result.errors == ["default_agent: Unsupported agent provider 'copilot'. Supported: claude, fake."]
         assert result.remediations == [
             Remediation(message="Set 'default_agent' to one of the supported providers named in the error")
         ]

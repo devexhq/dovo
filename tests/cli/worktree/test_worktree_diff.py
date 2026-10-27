@@ -148,7 +148,7 @@ class WorktreeDiffCliIntegrationTests:
         self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         session = _create_worktree_with_committed_change(cli_workspace)
-        detail = "Git timed out after 30s ('git diff --cached') (GIT_TIMEOUT)"
+        detail = "Git timed out after 30s ('git diff --cached')"
         use_fake_git(monkeypatch, FakeGitRunner({("diff", "--cached"): GitError(ErrorCode.GIT_TIMEOUT, detail)}))
 
         result = cli_runner.invoke(

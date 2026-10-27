@@ -256,7 +256,7 @@ class ResolvePreAgentBaselineTests:
 
         monkeypatch.setattr(mutation_mod.subprocess, "run", _timeout)
 
-        with pytest.raises(AgentError, match="GIT_TIMEOUT") as raised:
+        with pytest.raises(AgentError) as raised:
             resolve_pre_agent_baseline(git_repo)
 
         assert raised.value.error_code == ErrorCode.GIT_TIMEOUT

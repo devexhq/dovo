@@ -662,7 +662,7 @@ class WorktreePatchGitFailureTests:
     def test_diff_git_timeout_reports_git_timeout(self, worktree_workspace_paths: WorkspacePaths) -> None:
         """Return GIT_TIMEOUT and errors == ["Git timed out while generating the diff for worktree 'dovo_t': <detail>"] when ("diff", "--cached") raises a GIT_TIMEOUT GitError, writing no event file."""
         _create_worktree_with_change(worktree_workspace_paths, "dovo_t")
-        detail = "Git timed out after 30s ('git diff --cached') (GIT_TIMEOUT)"
+        detail = "Git timed out after 30s ('git diff --cached')"
         fake = FakeGitRunner({("diff", "--cached"): GitError(ErrorCode.GIT_TIMEOUT, detail)})
         worktree = _worktree(worktree_workspace_paths, _repo(worktree_workspace_paths), git=fake)
 
@@ -740,7 +740,7 @@ class WorktreePatchGitFailureTests:
         """Return GIT_TIMEOUT and errors == [f"Git timed out during {phase} for worktree 'dovo_t': {detail}"], write no event file, and leave HEAD unchanged for every phase before patch apply."""
         _create_worktree_with_change(worktree_workspace_paths, "dovo_t")
         head_before = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
-        detail = f"Git timed out after 30s ('git {' '.join(git_key)}') (GIT_TIMEOUT)"
+        detail = f"Git timed out after 30s ('git {' '.join(git_key)}')"
         fake = FakeGitRunner({git_key: GitError(ErrorCode.GIT_TIMEOUT, detail)})
         worktree = _worktree(worktree_workspace_paths, _repo(worktree_workspace_paths), git=fake)
 

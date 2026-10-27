@@ -41,7 +41,7 @@ def _run_git(
     except subprocess.TimeoutExpired as exc:
         raise AgentError(
             ErrorCode.GIT_TIMEOUT,
-            f"git {' '.join(args)} timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s (GIT_TIMEOUT)",
+            f"git {' '.join(args)} timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s",
         ) from exc
     except OSError as exc:
         message = f"failed to run git {' '.join(args)}: {exc}"

@@ -69,7 +69,7 @@ A step's `tools` field controls what the agent may use. It has three keys: `allo
 { "agents": { "copilot": { "tools": { "allow": [{ "capability": "read" }] } } } }
 ```
 
-A provider that cannot enforce a restrictive policy rejects it before running, with `AGENT_TOOL_POLICY_UNSUPPORTED` and exit `203`. A tool call refused at run time ends the step as `blocked` (`204`) and names the grant that would allow it. Rule syntax is in the [Step Schema](../reference/step-schema.md).
+A provider that cannot enforce a restrictive policy rejects it before running, with `Agent provider '<name>' cannot enforce the requested tool policy.` and exit `203`. A tool call refused at run time ends the step as `blocked` (`204`) and names the grant that would allow it. Rule syntax is in the [Step Schema](../reference/step-schema.md).
 
 ### Profiles
 
@@ -111,7 +111,7 @@ The seeded `dovo/ai-planner`, `dovo/ai-reviewer` and `dovo/ai-code-patcher` step
 - A `*.host` network rule also matches the bare `host`, so a `*.host` allow is slightly wider and a `*.host` deny also blocks `host`.
 - Shell `allow` rules are not exclusive: Copilot runs read-only commands such as `git log` without a grant. Shell `deny` rules are enforced.
 - MCP servers come from your own `mcp-config.json` (`$COPILOT_HOME`, else `~/.copilot`); Dovo never copies it. Servers that no `mcp` allow names are switched off. `github-mcp-server` works without a config and exposes only its default read-only tools.
-- These policies are rejected with `AGENT_TOOL_POLICY_UNSUPPORTED`: no grants at all, read or write patterns other than `**`, any read or write `deny`, a scratch grant not given to every granted path tool, a scratch-only grant, and an `mcp` allow for a server that is neither `github-mcp-server` nor defined in your `mcp-config.json`.
+- These policies are rejected as unsupported: no grants at all, read or write patterns other than `**`, any read or write `deny`, a scratch grant not given to every granted path tool, a scratch-only grant, and an `mcp` allow for a server that is neither `github-mcp-server` nor defined in your `mcp-config.json`.
 - If the installed `gh copilot` rejects a required flag, the step fails and tells you to run `copilot update`. Dovo never retries with a more permissive policy.
 
 ### Claude Code behavior
@@ -125,7 +125,7 @@ The seeded `dovo/ai-planner`, `dovo/ai-reviewer` and `dovo/ai-code-patcher` step
 - **Missing authentication:** with none of the three, the step fails with `Claude Code is not authenticated` before `claude` starts, naming `claude auth login`, `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY`. `dovo doctor` reports the mode in use on its `agent.setup` row.
 - **Subprocess environment:** only the credential of the mode in use is forwarded. Inherited `CLAUDE_*` variables are removed and reported as withheld, while `CLAUDE_*` names you list in `agents.claude.env_passthrough`, `--env-passthrough` or a step `env` are kept, except the reserved control names, which are rejected. A credential name (`CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`) listed in `agents.claude.env_passthrough` or `--env-passthrough` is ignored, and one set in a step `env` is rejected; the mode in use decides which credential is forwarded.
 - **Missing flag:** if the installed Claude Code does not know a flag Dovo passes, the step fails with `Installed Claude Code lacks a required flag` and tells you to run `claude update`.
-- These policies are rejected with `AGENT_TOOL_POLICY_UNSUPPORTED`: an `mcp` allow or deny rule without a pattern, an `mcp` pattern containing a comma, an `mcp` allow for a server defined in neither `agents.claude.mcp_servers` nor your Claude config, an `mcp` allow without an invocation, a `*.host` network pattern in an `allow` or `deny`, a read or write pattern that escapes its root, a read or write path containing a comma, and a scratch rule without an invocation.
+- These policies are rejected as unsupported: an `mcp` allow or deny rule without a pattern, an `mcp` pattern containing a comma, an `mcp` allow for a server defined in neither `agents.claude.mcp_servers` nor your Claude config, an `mcp` allow without an invocation, a `*.host` network pattern in an `allow` or `deny`, a read or write pattern that escapes its root, a read or write path containing a comma, and a scratch rule without an invocation.
 - `read` and `write` rules accept the `worktree` and `scratch` roots, glob patterns, and both `allow` and `deny`. They are rendered as `Read(//<root>/<pattern>)` and `Edit(//<root>/<pattern>)`, anchored to the root's absolute path; an absent pattern is `**`. A `scratch` allow adds the attempt's scratch directory. `shell` and `network` rules are accepted, including the default policy. Under `allow_all: true`, `allow` rules other than `mcp` are not checked; `deny` rules are. With `allow_all: true` and `deny` rules, the attempt's scratch directory is not added.
 - MCP servers are loaded only when an `mcp` allow rule names them, including under `allow_all`. Each rule `server/tool` or `server/*` resolves `server` from `agents.claude.mcp_servers`, else from the top-level `mcpServers` of your Claude config (`$CLAUDE_CONFIG_DIR/.claude.json`, else `~/.claude.json`); a name in both takes the `agents.claude.mcp_servers` entry. Entries from your Claude config are written as-is and are not checked for literal secrets. Only the named servers are written to a config file in the attempt's private control directory, and the grant is `mcp__<server>__<tool>` or `mcp__<server>`. Project `.mcp.json`, local-scope and plugin servers are never loaded, and Claude Code always runs with `--strict-mcp-config`. With no `mcp` allow rule it runs with no MCP servers. `mcp` `deny` rules `server/tool` and `server/*` are enforced. The config file is written before `claude` starts; a write failure fails the step and starts no process.
 - `agents.claude.mcp_servers` maps a server name to a `stdio` (`command`, `args`, `env`) or `http`/`sse` (`url`, `headers`) definition, see [`McpServerDefinition`](https://github.com/devexhq/dovo/blob/main/src/dovo/common/mcp_servers.py). A name must not contain `/`, `*`, `,`, `__` or whitespace. Every `env` and `headers` value must contain a `${NAME}` reference, so the config never stores a secret; Claude Code expands it from the attempt's environment, so list the variable in `agents.claude.env_passthrough`. Copilot does not read `agents.copilot.mcp_servers`.
@@ -156,7 +156,7 @@ By default (`agents.<provider>.env_mode: "allowlist"`) the provider sees only:
 
 ### Step `env:`
 
-A step's `env:` entries are always forwarded, even outside the allowlist, and override base and passthrough values. They cannot override generated `DOVO_*` metadata, the provider's credential names, or the provider's model and permission controls. For agent steps they also cannot override `DOVO_AGENT_SCRATCH`, `TMPDIR`, `TMP` or `TEMP`; such a step fails before the provider runs with `AGENT_ENV_OVERRIDE_INVALID`.
+A step's `env:` entries are always forwarded, even outside the allowlist, and override base and passthrough values. They cannot override generated `DOVO_*` metadata, the provider's credential names, or the provider's model and permission controls. For agent steps they also cannot override `DOVO_AGENT_SCRATCH`, `TMPDIR`, `TMP` or `TEMP`; such a step fails before the provider runs with `Agent environment override '<name>' conflicts with provider or Dovo controls.`
 
 Command and script steps keep inheriting the ambient environment.
 
@@ -205,7 +205,7 @@ Each agent attempt gets its own scratch directory under the run's session temp d
 - If the session temp directory is missing, unwritable or overlaps the checkout, the step fails with exit code `203` before the provider runs:
 
 ```text
-Cannot prepare private scratch for agent step '<step_id>' (AGENT_SCRATCH_UNAVAILABLE): <detail>
+Cannot prepare private scratch for agent step '<step_id>': <detail>
 Fix:
 - Restore access to the session temp directory or correct its storage path.
 ```

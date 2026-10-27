@@ -1028,9 +1028,7 @@ class DriveRunAgentSettingsTests:
         outcome = _drive(paths, sessions, "unregistered")
 
         assert outcome.status == SessionStatus.FAILED
-        assert "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED)" in (
-            outcome.step_results[-1].error_message or ""
-        )
+        assert "Unsupported agent provider 'unregistered'." in (outcome.step_results[-1].error_message or "")
 
 
 class DriveRunAgentWorktreeTests:

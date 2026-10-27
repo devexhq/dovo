@@ -149,7 +149,7 @@ class RunDirectAttemptRequestTests:
         attempt = _attempt(git_repo, "unregistered")
 
         assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
-        assert "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED)" in attempt.errors[0]
+        assert "Unsupported agent provider 'unregistered'." in attempt.errors[0]
         assert attempt.diagnostics == []
         assert not frozen_diagnostic_clock.parent.parent.exists()
 

@@ -494,7 +494,7 @@ class SharedMutationAdapterTests:
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
-        assert resp.errors == ["Agent provider error (AGENT_PROVIDER_ERROR): boom"]
+        assert resp.errors == ["Agent provider error: boom"]
 
     def test_gate_violation_discards_edits(self, git_repo: Path, tmp_path: Path) -> None:
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"README.md": "edit one\n", "b.txt": "edit two\n"}))
@@ -527,8 +527,7 @@ class SharedMutationAdapterTests:
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
         assert resp.errors == [
-            "Agent provider error (AGENT_PROVIDER_ERROR): "
-            "Failed to discard rejected worktree edit: git reset failed: index locked",
+            "Agent provider error: Failed to discard rejected worktree edit: git reset failed: index locked",
             "Patch touches 2 files; max_files is 1.",
             f"Rejected edit saved to {destination}.",
         ]
@@ -538,12 +537,12 @@ class SharedMutationAdapterTests:
         [
             pytest.param(
                 "resolve_pre_agent_baseline",
-                "Agent provider error (AGENT_PROVIDER_ERROR): Failed to resolve worktree baseline: git broke",
+                "Agent provider error: Failed to resolve worktree baseline: git broke",
                 id="baseline",
             ),
             pytest.param(
                 "capture_diff_since",
-                "Agent provider error (AGENT_PROVIDER_ERROR): Failed to capture worktree diff: git broke",
+                "Agent provider error: Failed to capture worktree diff: git broke",
                 id="capture-diff",
             ),
         ],
@@ -591,7 +590,7 @@ class SharedMutationAdapterTests:
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
-        assert resp.errors == ["Agent provider error (AGENT_PROVIDER_ERROR): preflight failed"]
+        assert resp.errors == ["Agent provider error: preflight failed"]
         assert not run_function_called
 
 
@@ -622,7 +621,7 @@ class BlockedClassificationTests:
                 [AgentDenial(tool="bash", message="denied")],
                 False,
                 AgentResponseStatus.BLOCKED,
-                ["Agent run was blocked by tool permissions (AGENT_PERMISSION_BLOCKED): bash: denied"],
+                ["Agent run was blocked by tool permissions: bash: denied"],
                 id="denial-and-empty-diff",
             ),
             pytest.param(
@@ -660,15 +659,13 @@ class PreflightOrderingTests:
             pytest.param(
                 False,
                 [
-                    "Agent provider error (AGENT_PROVIDER_ERROR): "
+                    "Agent provider error: "
                     "missing TEST_CREDENTIAL_PRIMARY or TEST_CREDENTIAL_FALLBACK. "
                     "Fix: export TEST_CREDENTIAL_PRIMARY=... or export TEST_CREDENTIAL_FALLBACK=..."
                 ],
                 id="credential-check-wins-over-override",
             ),
-            pytest.param(
-                True, ["Agent provider error (AGENT_PROVIDER_ERROR): extra"], id="override-runs-after-credential-passes"
-            ),
+            pytest.param(True, ["Agent provider error: extra"], id="override-runs-after-credential-passes"),
         ],
     )
     def test_preflight_override_is_additive_to_credential_check(
@@ -964,8 +961,7 @@ class RejectedPatchDiscardOrderTests:
         )
 
         assert response.errors == [
-            "Agent provider error (AGENT_PROVIDER_ERROR): "
-            "Failed to discard rejected worktree edit: git reset failed: index locked",
+            "Agent provider error: Failed to discard rejected worktree edit: git reset failed: index locked",
             "Patch touches 2 files; max_files is 1.",
             f"Rejected edit saved to {destination}.",
         ]
@@ -1158,8 +1154,7 @@ class UnfixableClassificationTests:
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
         assert response.errors == [
-            f"Agent provider error (AGENT_PROVIDER_ERROR): Failed to read {request.agent_scratch_path}/unfixable.txt: "
-            f"{reason}"
+            f"Agent provider error: Failed to read {request.agent_scratch_path}/unfixable.txt: {reason}"
         ]
         assert response.unfixable_reason is None
         assert "TOP-SECRET-VALUE" not in response.model_dump_json()

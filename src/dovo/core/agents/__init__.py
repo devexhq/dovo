@@ -34,7 +34,6 @@ from dovo.core.agents.registry import PROVIDERS
 from dovo.core.agents.scratch import allocate_invocation_paths, new_invocation_id
 from dovo.core.agents.services.run_direct import run_direct_attempt
 from dovo.core.agents.tools import (
-    TOOL_POLICY_UNSUPPORTED_CODE,
     PolicyRoots,
     check_policy_support,
     default_tool_policy,
@@ -45,7 +44,6 @@ from dovo.core.agents.tools import (
 
 __all__ = [
     "PROVIDERS",
-    "TOOL_POLICY_UNSUPPORTED_CODE",
     "AgentAttempt",
     "AgentAttemptContext",
     "AgentEnvMode",

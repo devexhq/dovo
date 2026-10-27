@@ -13,7 +13,5 @@ PROVIDERS: dict[str, ProviderSpec] = {spec.token: spec for spec in (CLAUDE_PROVI
 
 
 def unsupported_provider_message(token: str) -> str:
-    """Return the AGENT_PROVIDER_UNSUPPORTED diagnostic naming token and the sorted registered tokens."""
-    return (
-        f"Unsupported agent provider '{token}' (AGENT_PROVIDER_UNSUPPORTED). Supported: {', '.join(sorted(PROVIDERS))}."
-    )
+    """Return the unsupported-provider message naming token and the sorted registered tokens."""
+    return f"Unsupported agent provider '{token}'. Supported: {', '.join(sorted(PROVIDERS))}."

@@ -79,7 +79,7 @@ class CopilotAuthTests:
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == [
-            "Agent provider error (AGENT_PROVIDER_ERROR): missing GH_TOKEN or GITHUB_TOKEN. "
+            "Agent provider error: missing GH_TOKEN or GITHUB_TOKEN. "
             "Fix: export GH_TOKEN=... or export GITHUB_TOKEN=..."
         ]
 
@@ -227,18 +227,18 @@ class CopilotInvokeOutcomeTests:
         [
             pytest.param(
                 FakeAgentRunner().raising(FileNotFoundError("gh")),
-                "Agent provider error (AGENT_PROVIDER_ERROR): gh is not installed or not on PATH: gh. "
+                "Agent provider error: gh is not installed or not on PATH: gh. "
                 "Fix: install the GitHub CLI (https://cli.github.com)",
                 id="gh-missing",
             ),
             pytest.param(
                 FakeAgentRunner().raising(OSError("exec failed")),
-                "Agent provider error (AGENT_PROVIDER_ERROR): exec failed",
+                "Agent provider error: exec failed",
                 id="os-error",
             ),
             pytest.param(
                 FakeAgentRunner().returning(returncode=1, stderr=b"gh failed"),
-                "Agent provider error (AGENT_PROVIDER_ERROR): gh failed",
+                "Agent provider error: gh failed",
                 id="non-zero-exit",
             ),
         ],

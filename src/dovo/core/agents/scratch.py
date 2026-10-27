@@ -21,8 +21,8 @@ def new_invocation_id() -> str:
 
 
 def scratch_unavailable_message(step_id: str, detail: str) -> str:
-    """Return the AGENT_SCRATCH_UNAVAILABLE diagnostic for the step."""
-    return f"Cannot prepare private scratch for agent step '{step_id}' (AGENT_SCRATCH_UNAVAILABLE): {detail}"
+    """Return the AGENT_SCRATCH_UNAVAILABLE message for the step."""
+    return f"Cannot prepare private scratch for agent step '{step_id}': {detail}"
 
 
 def allocate_invocation_paths(

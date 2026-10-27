@@ -111,11 +111,13 @@ class CheckPolicySupportTests:
 
         assert result == (tool_policy_unsupported_message("unit-test") if rejected else None)
 
-    def test_message_names_the_provider_token_and_code(self) -> None:
+    def test_message_names_the_provider_token(self) -> None:
         message = tool_policy_unsupported_message("copilot")
 
-        assert message.startswith("Agent provider 'copilot' cannot enforce the requested tool policy")
-        assert "(AGENT_TOOL_POLICY_UNSUPPORTED)" in message
+        assert message == (
+            "Agent provider 'copilot' cannot enforce the requested tool policy. "
+            "Fix: choose a policy-capable provider or an explicitly authorized policy it can enforce."
+        )
 
 
 class PolicyRuleHelpersTests:

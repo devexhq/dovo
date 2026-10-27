@@ -130,7 +130,7 @@ class GitRunner:
         Raises:
             GitError: With FS_NOT_FOUND when path is not a directory, chained to the OSError.
             GitError: With GIT_BINARY_MISSING when git binary is not found, or GIT_TIMEOUT when subprocess.run
-                times out; the timeout message ends `(GIT_TIMEOUT)`.
+                times out.
         """
         try:
             proc = subprocess.run(
@@ -157,7 +157,7 @@ class GitRunner:
         except subprocess.TimeoutExpired as exc:
             raise GitError(
                 ErrorCode.GIT_TIMEOUT,
-                f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git {' '.join(args)}') (GIT_TIMEOUT)",
+                f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git {' '.join(args)}')",
             ) from exc
         return GitProcessOutput(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
 

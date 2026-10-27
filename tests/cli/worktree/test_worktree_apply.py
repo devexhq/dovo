@@ -210,7 +210,7 @@ class WorktreeApplyCliIntegrationTests:
         self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         session = _create_worktree_with_committed_change(cli_workspace)
-        detail = "Git timed out after 30s ('git apply --check') (GIT_TIMEOUT)"
+        detail = "Git timed out after 30s ('git apply --check')"
         use_fake_git(monkeypatch, FakeGitRunner({("apply", "--check"): GitError(ErrorCode.GIT_TIMEOUT, detail)}))
 
         result = cli_runner.invoke(

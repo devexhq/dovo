@@ -26,7 +26,7 @@ from dovo.core.agents.registry import PROVIDERS
 from tests.harness import AgentRequestBuilder
 
 _OVERRIDE_MESSAGE = (
-    "Agent environment override '{name}' conflicts with provider or Dovo controls (AGENT_ENV_OVERRIDE_INVALID). "
+    "Agent environment override '{name}' conflicts with provider or Dovo controls. "
     "Fix: remove it from agents.{provider}.env_passthrough or the agent step's env."
 )
 
