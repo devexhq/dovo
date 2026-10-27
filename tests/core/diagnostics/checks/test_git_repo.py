@@ -15,7 +15,7 @@ from tests.harness.fakes import FakeGitRunner
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
-_FS_NOT_FOUND = GitError(ErrorCode.FS_NOT_FOUND, "working directory does not exist")
+_GIT_WORKDIR_MISSING = GitError(ErrorCode.GIT_WORKDIR_MISSING, "working directory does not exist")
 
 
 class GitRepoCheckTests:
@@ -57,11 +57,11 @@ class GitRepoCheckTests:
     @pytest.mark.parametrize(
         "responses",
         [
-            pytest.param({("rev-parse", "--is-inside-work-tree"): _FS_NOT_FOUND}, id="inside_work_tree"),
+            pytest.param({("rev-parse", "--is-inside-work-tree"): _GIT_WORKDIR_MISSING}, id="inside_work_tree"),
             pytest.param(
                 {
                     ("rev-parse", "--is-inside-work-tree"): GitProcessOutput(0, "true\n", ""),
-                    ("rev-parse", "--show-toplevel"): _FS_NOT_FOUND,
+                    ("rev-parse", "--show-toplevel"): _GIT_WORKDIR_MISSING,
                 },
                 id="show_toplevel",
             ),
@@ -74,7 +74,7 @@ class GitRepoCheckTests:
         workspace_paths_factory: WorkspacePathsFactory,
         responses: dict[tuple[str, ...], GitProcessOutput | Exception],
     ) -> None:
-        """Raise the GitError(FS_NOT_FOUND) a rev-parse probe raised instead of returning a failed check."""
+        """Raise the GitError(GIT_WORKDIR_MISSING) a rev-parse probe raised instead of returning a failed check."""
         monkeypatch.setattr("dovo.core.diagnostics.checks.git_repo.shutil.which", lambda _name: "/usr/bin/git")
         context = DiagnosticsContext(
             cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None), git=FakeGitRunner(responses)
@@ -83,7 +83,7 @@ class GitRepoCheckTests:
         with pytest.raises(GitError) as excinfo:
             GitRepoCheck().execute(context)
 
-        assert excinfo.value is _FS_NOT_FOUND
+        assert excinfo.value is _GIT_WORKDIR_MISSING
 
     def test_execute_outside_git_repository_returns_not_repo_failure(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory

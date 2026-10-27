@@ -210,7 +210,7 @@ class ResolvePreAgentBaselineTests:
     def test_failed_snapshot_raises_and_leaves_repository_unchanged(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, subcommand: str, action: str
     ) -> None:
-        """Raise AgentError(AGENT_MUTATION_GIT_FAILED) matching `{action} failed` with HEAD, refs, index bytes, status, the worktree listing and the `.git` listing outside `objects/` unchanged when that git subcommand exits non-zero."""
+        """Raise AgentError(GIT_FAILED) matching `{action} failed` with HEAD, refs, index bytes, status, the worktree listing and the `.git` listing outside `objects/` unchanged when that git subcommand exits non-zero."""
         _make_dirty(git_repo, "untracked")
         state_before = _repository_state(git_repo)
         worktree_before = _worktree_files(git_repo)
@@ -238,7 +238,7 @@ class ResolvePreAgentBaselineTests:
             resolve_pre_agent_baseline(git_repo)
         monkeypatch.undo()
 
-        assert raised.value.error_code == ErrorCode.AGENT_MUTATION_GIT_FAILED
+        assert raised.value.error_code == ErrorCode.GIT_FAILED
         assert _repository_state(git_repo) == state_before
         assert _worktree_files(git_repo) == worktree_before
         assert _git_dir_listing(git_repo) == git_dir_before
@@ -264,7 +264,7 @@ class ResolvePreAgentBaselineTests:
     def test_git_that_cannot_start_caught_with_catch_failure_leaves_no_event_file(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Copy AGENT_MUTATION_GIT_FAILED into caught.failure with no diagnostic when git cannot be started, and create no logs directory."""
+        """Copy GIT_FAILED into caught.failure with no diagnostic when git cannot be started, and create no logs directory."""
 
         def _cannot_start(*_args: object, **_kwargs: object) -> object:
             raise PermissionError("git")
@@ -275,19 +275,19 @@ class ResolvePreAgentBaselineTests:
             resolve_pre_agent_baseline(git_repo)
 
         assert caught.failure is not None
-        assert caught.failure.error_code == ErrorCode.AGENT_MUTATION_GIT_FAILED
+        assert caught.failure.error_code == ErrorCode.GIT_FAILED
         assert caught.failure.diagnostic is None
         assert not frozen_diagnostic_clock.parent.parent.exists()
 
     def test_missing_worktree_caught_with_catch_failure_records_the_cause(
         self, tmp_path: Path, frozen_diagnostic_clock: Path
     ) -> None:
-        """Copy AGENT_MUTATION_GIT_FAILED into caught.failure and record the OSError when the worktree directory does not exist."""
+        """Copy GIT_FAILED into caught.failure and record the OSError when the worktree directory does not exist."""
         with catch_failure("agent.attempt") as caught:
             resolve_pre_agent_baseline(tmp_path / "gone")
 
         assert caught.failure is not None
-        assert caught.failure.error_code == ErrorCode.AGENT_MUTATION_GIT_FAILED
+        assert caught.failure.error_code == ErrorCode.GIT_FAILED
         assert caught.failure.diagnostic is not None
         assert read_single_event(frozen_diagnostic_clock)["operation"] == "agent.attempt"
 

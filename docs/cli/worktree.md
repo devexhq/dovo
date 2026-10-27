@@ -24,7 +24,7 @@ Create a new isolated Git worktree:
 dovo worktree create [--name <name>] [--base-ref <ref>] [--wip/--no-wip] [--format terminal|json]
 ```
 
-A failure exits with code 1 and reports its `error_code`: `WORKTREE_PATH_CONFLICT` when the worktree directory or branch already exists, `WORKTREE_CAPACITY_EXCEEDED` when `worktree.max_active_worktrees` worktrees are active, `WORKTREE_CREATE_FAILED` when the target path cannot be checked, the git failure's code (`GIT_FAILED`, `GIT_BINARY_MISSING` or `GIT_TIMEOUT`) when a git command fails, including while `--wip` overlays your uncommitted changes, `FS_NOT_FOUND` when the working directory disappeared while git ran, `WORKTREE_WIP_COPY_FAILED` or `WORKTREE_MISSING` when `--wip` otherwise cannot overlay your uncommitted changes, and `INTERNAL_ERROR` for an unexpected error. A partly created worktree is removed first.
+A failure exits with code 1 and reports its `error_code`: `WORKTREE_PATH_CONFLICT` when the worktree directory or branch already exists, `WORKTREE_CAPACITY_EXCEEDED` when `worktree.max_active_worktrees` worktrees are active, `WORKTREE_CREATE_FAILED` when the target path cannot be checked, the git failure's code (`GIT_FAILED`, `GIT_BINARY_MISSING` or `GIT_TIMEOUT`) when a git command fails, including while `--wip` overlays your uncommitted changes, `GIT_WORKDIR_MISSING` when the working directory disappeared while git ran, `WORKTREE_WIP_COPY_FAILED` or `WORKTREE_MISSING` when `--wip` otherwise cannot overlay your uncommitted changes, and `INTERNAL_ERROR` for an unexpected error. A partly created worktree is removed first.
 
 ### `dovo worktree show`
 
@@ -83,7 +83,7 @@ dovo worktree apply <worktree-id> [OPTIONS]
 
 With `--delete`, a failed removal step is listed as a warning and its record is listed in `diagnostics`.
 
-A failure exits with code 1 and reports its `error_code`: `WORKTREE_NOT_FOUND` for an unknown id, `WORKTREE_MISSING` when the worktree directory is missing on disk, `WORKTREE_ALREADY_MERGED` when the worktree was already applied, `GIT_DIRTY_WORKTREE` when the main workspace has uncommitted changes without `--allow-dirty`, or with `--strategy squash` has them in a file the worktree also changes, `PATCH_EMPTY` when the worktree has no changes to apply, `WORKTREE_APPLY_CONFLICT` when the changes do not apply cleanly (the paths are listed in `conflicting_files` with `--format json`), the git failure's code (`GIT_FAILED`, `GIT_BINARY_MISSING` or `GIT_TIMEOUT`) when a git command fails, `FS_NOT_FOUND` when the working directory disappeared while git ran, and `INTERNAL_ERROR` for an unexpected error.
+A failure exits with code 1 and reports its `error_code`: `WORKTREE_NOT_FOUND` for an unknown id, `WORKTREE_MISSING` when the worktree directory is missing on disk, `WORKTREE_ALREADY_MERGED` when the worktree was already applied, `WORKTREE_WORKSPACE_DIRTY` when the main workspace has uncommitted changes without `--allow-dirty`, or with `--strategy squash` has them in a file the worktree also changes, `WORKTREE_CHANGES_EMPTY` when the worktree has no changes to apply, `WORKTREE_APPLY_CONFLICT` when the changes do not apply cleanly (the paths are listed in `conflicting_files` with `--format json`), the git failure's code (`GIT_FAILED`, `GIT_BINARY_MISSING` or `GIT_TIMEOUT`) when a git command fails, `GIT_WORKDIR_MISSING` when the working directory disappeared while git ran, and `INTERNAL_ERROR` for an unexpected error.
 
 #### Examples
 
@@ -112,7 +112,7 @@ dovo worktree diff <worktree-id> [OPTIONS]
 | `--stat` | Output summary diffstat statistics (files changed, insertions, deletions) instead of the full unified diff. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). |
 
-A worktree with no changes prints `Worktree '<worktree-id>' has no changes compared to base commit.` and exits with code 0; with `--format json`, `files_changed` is `[]`. A failure exits with code 1 and reports its `error_code`: `WORKTREE_NOT_FOUND` for an unknown id, `WORKTREE_MISSING` when the worktree directory is missing on disk, the git failure's code (`GIT_FAILED`, `GIT_BINARY_MISSING` or `GIT_TIMEOUT`) when a git command fails, `FS_NOT_FOUND` when the working directory disappeared while git ran, and `INTERNAL_ERROR` for an unexpected error.
+A worktree with no changes prints `Worktree '<worktree-id>' has no changes compared to base commit.` and exits with code 0; with `--format json`, `files_changed` is `[]`. A failure exits with code 1 and reports its `error_code`: `WORKTREE_NOT_FOUND` for an unknown id, `WORKTREE_MISSING` when the worktree directory is missing on disk, the git failure's code (`GIT_FAILED`, `GIT_BINARY_MISSING` or `GIT_TIMEOUT`) when a git command fails, `GIT_WORKDIR_MISSING` when the working directory disappeared while git ran, and `INTERNAL_ERROR` for an unexpected error.
 
 #### Examples
 

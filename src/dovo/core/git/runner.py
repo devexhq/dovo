@@ -128,7 +128,7 @@ class GitRunner:
             The exit code, stdout and stderr of the git process.
 
         Raises:
-            GitError: With FS_NOT_FOUND when path is not a directory, chained to the OSError.
+            GitError: With GIT_WORKDIR_MISSING when path is not a directory, chained to the OSError.
             GitError: With GIT_BINARY_MISSING when git binary is not found, or GIT_TIMEOUT when subprocess.run
                 times out.
         """
@@ -147,7 +147,7 @@ class GitRunner:
             if not path.is_dir():
                 # Chained: a vanished working directory is a broken workspace, so catch_failure records it.
                 raise GitError(
-                    ErrorCode.FS_NOT_FOUND,
+                    ErrorCode.GIT_WORKDIR_MISSING,
                     f"Git execution failed ('git {' '.join(args)}'): working directory '{path}' does not exist",
                 ) from exc
             # Not chained: a missing git binary is fully named by its code, so catch_failure leaves no event file.
@@ -183,7 +183,7 @@ class GitRunner:
             Stripped stdout text.
 
         Raises:
-            GitError: With GIT_BINARY_MISSING, GIT_TIMEOUT or FS_NOT_FOUND from exec, or GIT_FAILED when git
+            GitError: With GIT_BINARY_MISSING, GIT_TIMEOUT or GIT_WORKDIR_MISSING from exec, or GIT_FAILED when git
                 exits non-zero and check is True.
         """
         result = self.exec(args, path, input_text=input_text, env=env)

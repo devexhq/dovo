@@ -128,7 +128,7 @@ class WorktreePatch:
         """Refuse any uncommitted main-repository change unless allow_dirty.
 
         Raises:
-            WorktreeError: GIT_DIRTY_WORKTREE, or the status read's git code.
+            WorktreeError: WORKTREE_WORKSPACE_DIRTY, or the status read's git code.
         """
         if allow_dirty:
             return
@@ -139,7 +139,7 @@ class WorktreePatch:
             return
 
         raise WorktreeError(
-            ErrorCode.GIT_DIRTY_WORKTREE,
+            ErrorCode.WORKTREE_WORKSPACE_DIRTY,
             f"Cannot apply worktree {worktree_id}: main repository has uncommitted changes.",
             [
                 Remediation(message="Commit or stash local changes in the main workspace"),
@@ -153,7 +153,7 @@ class WorktreePatch:
         """Refuse a squash that would commit main-repository changes to a path the patch also touches.
 
         Raises:
-            WorktreeError: GIT_DIRTY_WORKTREE listing the overlapping files, or the status read's git code.
+            WorktreeError: WORKTREE_WORKSPACE_DIRTY listing the overlapping files, or the status read's git code.
         """
         if strategy != WorktreeApplyStrategy.SQUASH or not allow_dirty:
             return
@@ -163,7 +163,7 @@ class WorktreePatch:
         if not overlapping:
             return
         raise WorktreeError(
-            ErrorCode.GIT_DIRTY_WORKTREE,
+            ErrorCode.WORKTREE_WORKSPACE_DIRTY,
             f"Cannot squash worktree {worktree_id}: the main repository has uncommitted changes "
             "in files the worktree also changes.\nOverlapping files:\n" + "\n".join(f"  • {p}" for p in overlapping),
             [
@@ -187,7 +187,7 @@ class WorktreePatch:
         """Return the unified diff, touched files and, for squash, the patch paths.
 
         Raises:
-            WorktreeError: PATCH_EMPTY when there is nothing to apply, or a git code during diff generation.
+            WorktreeError: WORKTREE_CHANGES_EMPTY when there is nothing to apply, or a git code during diff generation.
         """
         worktree_path = Path(record.worktree_path)
         patch_paths: list[str] = []
@@ -197,7 +197,7 @@ class WorktreePatch:
                 patch_paths = self.git.patch_paths(worktree_path, diff_text)
 
         if not touched_files or not diff_text.strip():
-            raise WorktreeError(ErrorCode.PATCH_EMPTY, f"Worktree '{record.id}' has no changes to apply.")
+            raise WorktreeError(ErrorCode.WORKTREE_CHANGES_EMPTY, f"Worktree '{record.id}' has no changes to apply.")
 
         return diff_text, touched_files, patch_paths
 
@@ -277,7 +277,7 @@ class WorktreePatch:
 
         Raises:
             WorktreeError: WORKTREE_NOT_FOUND, WORKTREE_MISSING, or a git failure's code
-                (GIT_FAILED, GIT_TIMEOUT, GIT_BINARY_MISSING, FS_NOT_FOUND).
+                (GIT_FAILED, GIT_TIMEOUT, GIT_BINARY_MISSING, GIT_WORKDIR_MISSING).
         """
         record = find_worktree(self.db, worktree_id)
         self._require_present(
@@ -310,8 +310,8 @@ class WorktreePatch:
 
         Raises:
             WorktreeError: WORKTREE_APPLY_CONFLICT with WorktreeApplyConflict data when the patch does not apply
-                cleanly, WORKTREE_NOT_FOUND, WORKTREE_ALREADY_MERGED, WORKTREE_MISSING, GIT_DIRTY_WORKTREE,
-                PATCH_EMPTY, or a git failure's code (GIT_FAILED, GIT_TIMEOUT, GIT_BINARY_MISSING, FS_NOT_FOUND).
+                cleanly, WORKTREE_NOT_FOUND, WORKTREE_ALREADY_MERGED, WORKTREE_MISSING, WORKTREE_WORKSPACE_DIRTY,
+                WORKTREE_CHANGES_EMPTY, or a git failure's code (GIT_FAILED, GIT_TIMEOUT, GIT_BINARY_MISSING, GIT_WORKDIR_MISSING).
         """
         record = find_worktree(self.db, worktree_id)
         if record.status == WorktreeStatus.MERGED:

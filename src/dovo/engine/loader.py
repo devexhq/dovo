@@ -102,7 +102,7 @@ class EngineLoader:
 
     @classmethod
     def _check_retained_worktree(cls, session_id: str, paths: WorkspacePaths, row: SessionRecord) -> None:
-        """Raise WORKTREE_MISSING when a worktree-backed run has no recorded worktree_id or its directory no longer exists."""
+        """Raise SESSION_WORKTREE_MISSING when a worktree-backed run has no recorded worktree_id or its directory no longer exists."""
         if not row.use_worktree:
             return
 
@@ -111,7 +111,7 @@ class EngineLoader:
             return
 
         raise EngineError(
-            ErrorCode.WORKTREE_MISSING,
+            ErrorCode.SESSION_WORKTREE_MISSING,
             f"Cannot resume session '{session_id}': worktree path '{worktree_path or '<none recorded>'}' no longer exists.",
         )
 

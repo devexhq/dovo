@@ -170,14 +170,14 @@ class GitRunnerExecTests:
     def test_missing_working_directory_raises_fs_not_found_and_is_recorded(
         self, tmp_path: Path, frozen_diagnostic_clock: Path
     ) -> None:
-        """Report FS_NOT_FOUND naming the directory, not GIT_BINARY_MISSING, and record the OSError cause when path does not exist."""
+        """Report GIT_WORKDIR_MISSING naming the directory, not GIT_BINARY_MISSING, and record the OSError cause when path does not exist."""
         missing = tmp_path / "gone"
 
         with catch_failure("worktree.create") as caught:
             GitRunner().exec(["status"], missing)
 
         assert caught.failure is not None
-        assert caught.failure.error_code == ErrorCode.FS_NOT_FOUND
+        assert caught.failure.error_code == ErrorCode.GIT_WORKDIR_MISSING
         assert caught.failure.message == (
             f"Git execution failed ('git status'): working directory '{missing}' does not exist"
         )
@@ -227,8 +227,8 @@ class GitRunnerExecTests:
         )
 
     def test_get_current_branch_propagates_fs_not_found(self, tmp_path: Path) -> None:
-        """Raise the GitError(FS_NOT_FOUND) git branch --show-current raised instead of returning "unknown"."""
-        failure = GitError(ErrorCode.FS_NOT_FOUND, "working directory does not exist")
+        """Raise the GitError(GIT_WORKDIR_MISSING) git branch --show-current raised instead of returning "unknown"."""
+        failure = GitError(ErrorCode.GIT_WORKDIR_MISSING, "working directory does not exist")
         fake = FakeGitRunner({("branch", "--show-current"): failure})
 
         with pytest.raises(GitError) as excinfo:
@@ -237,7 +237,8 @@ class GitRunnerExecTests:
         assert excinfo.value is failure
 
     @pytest.mark.parametrize(
-        "code", [pytest.param(ErrorCode.GIT_TIMEOUT, id="timeout"), pytest.param(ErrorCode.FS_NOT_FOUND, id="fs")]
+        "code",
+        [pytest.param(ErrorCode.GIT_TIMEOUT, id="timeout"), pytest.param(ErrorCode.GIT_WORKDIR_MISSING, id="fs")],
     )
     def test_status_porcelain_propagates_codes_it_does_not_swallow(self, tmp_path: Path, code: ErrorCode) -> None:
         """Raise the GitError(code) git status raised instead of returning []."""

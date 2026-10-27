@@ -242,7 +242,7 @@ class WorktreePatchApplyTests:
 
         result = worktree.apply("dovo_dirty_main", strategy=strategy)
 
-        assert result.error_code == ErrorCode.GIT_DIRTY_WORKTREE
+        assert result.error_code == ErrorCode.WORKTREE_WORKSPACE_DIRTY
         assert result.strategy == strategy
         assert result.errors == ["Cannot apply worktree dovo_dirty_main: main repository has uncommitted changes."]
         assert result.remediations == [
@@ -253,7 +253,7 @@ class WorktreePatchApplyTests:
     def test_worktree_with_no_changes_reports_patch_empty(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        """Return PATCH_EMPTY, errors == ["Worktree 'dovo_empty' has no changes to apply."] and warnings == []."""
+        """Return WORKTREE_CHANGES_EMPTY, errors == ["Worktree 'dovo_empty' has no changes to apply."] and warnings == []."""
         db = _repo(worktree_workspace_paths)
         create_result = Worktree(
             worktree_workspace_paths, db=db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
@@ -263,7 +263,7 @@ class WorktreePatchApplyTests:
 
         result = worktree.apply("dovo_empty")
 
-        assert result.error_code == ErrorCode.PATCH_EMPTY
+        assert result.error_code == ErrorCode.WORKTREE_CHANGES_EMPTY
         assert result.errors == ["Worktree 'dovo_empty' has no changes to apply."]
         assert result.warnings == []
 
@@ -504,7 +504,7 @@ class WorktreeSquashScopeTests:
             "dovo_overlap", strategy=WorktreeApplyStrategy.SQUASH, allow_dirty=True, dry_run=dry_run
         )
 
-        assert result.error_code == ErrorCode.GIT_DIRTY_WORKTREE
+        assert result.error_code == ErrorCode.WORKTREE_WORKSPACE_DIRTY
         assert result.strategy == WorktreeApplyStrategy.SQUASH
         assert result.errors == [
             "Cannot squash worktree dovo_overlap: the main repository has uncommitted changes in files the worktree "
@@ -813,19 +813,19 @@ class WorktreePatchGitFailureTests:
     def test_fs_not_found_records_its_oserror_cause(
         self, worktree_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return FS_NOT_FOUND and diagnostics == [diagnostic_record(...)] with one error event {operation: worktree.apply, exception_type: FileNotFoundError} when apply_check raises GitError(FS_NOT_FOUND) chained to FileNotFoundError."""
+        """Return GIT_WORKDIR_MISSING and diagnostics == [diagnostic_record(...)] with one error event {operation: worktree.apply, exception_type: FileNotFoundError} when apply_check raises GitError(GIT_WORKDIR_MISSING) chained to FileNotFoundError."""
         _create_worktree_with_change(worktree_workspace_paths, "dovo_t")
         try:
             raise FileNotFoundError("cwd vanished")
         except FileNotFoundError as cause:
-            failure = GitError(ErrorCode.FS_NOT_FOUND, "working directory does not exist")
+            failure = GitError(ErrorCode.GIT_WORKDIR_MISSING, "working directory does not exist")
             failure.__cause__ = cause
         fake = FakeGitRunner({("apply", "--check"): failure})
         worktree = _worktree(worktree_workspace_paths, _repo(worktree_workspace_paths), git=fake)
 
         result = worktree.apply("dovo_t")
 
-        assert result.error_code == ErrorCode.FS_NOT_FOUND
+        assert result.error_code == ErrorCode.GIT_WORKDIR_MISSING
         assert result.errors == [
             "Git failed during conflict check for worktree 'dovo_t': working directory does not exist"
         ]

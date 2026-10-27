@@ -240,7 +240,7 @@ class EngineLoaderTests:
         with pytest.raises(EngineError) as exc_info:
             EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
 
-        assert exc_info.value.error_code is ErrorCode.WORKTREE_MISSING
+        assert exc_info.value.error_code is ErrorCode.SESSION_WORKTREE_MISSING
         assert "no longer exists" in str(exc_info.value)
         assert sessions_repo.get("paused-1") is not None
 
