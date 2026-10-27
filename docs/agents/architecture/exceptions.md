@@ -24,6 +24,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 
 - **Decision:** a `DomainError` raised while handling an `OSError` chains it with `from exc` only when the `OSError` hit Dovo's own state.
   - Dovo's own state: `.dovo/`, `.dovo/project.json`, the session directory and its temp directory.
+  - User-authored catalog definitions (blueprint and step YAML in any catalog tier, `.dovo/catalog/` included) are not Dovo's own state. A failure to read one is reported by its message alone, raised `from None` and never recorded.
   - A failure of an external tool or the environment that the code and message already name (git missing or failing to start) is raised `from None`.
 - **Why:** `catch_failure` records a `DomainError` only when its `__cause__` is an `OSError`, so the cause alone decides whether an event file is written.
 - **Since:** #1109
@@ -93,7 +94,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
   - The entrypoint reads it after the block with `isinstance(caught.failure.data, <the FailureData subclass>)`. That narrows the data, not the error, so it is not a branch on the exception class.
   - `result_fields()` returns `error_code`, the message as `errors`, `remediations` and `diagnostics`, spread into the result constructor so ty checks each field. `prior_diagnostics` puts records gathered earlier first.
   - A site that replaces the remediations assigns `fields["remediations"]` on the returned dict. There is no hand-written copy of a failure's fields and no per-package builder.
-  - One failure that reports several messages, such as a definition with several schema errors, is raised once: its first message as the message, one remediation per message, and every message in its data. The entrypoint assigns `fields["errors"]` from the data.
+  - One failure that reports several messages, such as a definition with several schema errors, is raised once with one remediation per message. Its data carries every message, its own message first, so `errors[0]` equals `Failure.message`; the site that builds the result assigns `fields["errors"]` from the data. A helper that processes several items uses the per-item collector in [results.md](results.md) instead.
   - A site that reports the failure as something other than its result's failure (a warning, a doctor check result, or a step or agent error) does not copy it into the result header. It carries the message, and the diagnostic through `error_diagnostics(failure.diagnostic)` where it keeps one, and never sets `error_code=` or `remediations=` from the failure.
 - **Why:** one copy keeps every result header the same, and typed data reaches the result without a catch and re-raise inside the block.
 - **Since:** #1214
