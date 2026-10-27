@@ -8,6 +8,7 @@ from collections.abc import Sequence
 
 from dovo.common.clock import Clock
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
 from dovo.common.session_id import SessionIdFactory
@@ -17,10 +18,10 @@ from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
-from dovo.core.inputs import InputResolveResult
+from dovo.core.inputs import InputResolveResult, format_input_error_message
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.core.sessions import current_process_started_at
-from dovo.engine.exceptions import EngineInputError
+from dovo.engine.exceptions import EngineError, EngineInputError
 from dovo.engine.executors.failure_log import logged_failure
 from dovo.engine.loader import EngineLoader
 from dovo.engine.models import (
@@ -34,7 +35,7 @@ from dovo.engine.models import (
 )
 from dovo.engine.preset_prompter import PresetInteractionPrompter
 from dovo.engine.session import drive_run
-from dovo.engine.state_models import SessionStateLoadStatus
+from dovo.engine.state_models import ExecutionStateTree
 from dovo.engine.state_store import SessionStateStore
 from dovo.engine.writer import get_session_dir, snapshot_definitions
 
@@ -76,7 +77,7 @@ class Engine:
         caller_worktree = True if req.use_worktree is None else req.use_worktree
         effective_worktree = caller_worktree and blueprint.use_worktree
         config = self._build_start_config(req, resolved.values, effective_worktree, manifest)
-        start_failure = self._start_run(blueprint, sid, config, manifest)
+        start_failure = self._start_run(blueprint, sid, config, manifest, engine_warnings)
         if start_failure is not None:
             return self._failed_outcome(sid, [start_failure], engine_warnings)
 
@@ -140,6 +141,7 @@ class Engine:
         session_id: str,
         config: RunStartConfig,
         manifest: DefinitionsManifest,
+        warnings: list[str],
     ) -> str | None:
         """Insert the RUNNING row and its initial execution state under the workspace lock; return a failure message or None."""
         with WorkspaceLock(self.paths.lock_file):
@@ -152,15 +154,15 @@ class Engine:
                 )
 
             try:
-                initialized = SessionStateStore(self.db, self.paths, session_id).initialize(blueprint, manifest)
+                SessionStateStore(self.db, self.paths, session_id).initialize(blueprint, manifest, warnings)
+            except EngineError as error:
+                message = error.message
             except Exception as exc:
                 message = logged_failure(
                     f"Failed to initialize run state: {exc}", exc, operation="engine.persist", context=context
                 )
             else:
-                if initialized.ok:
-                    return None
-                message = initialized.errors[0] if initialized.errors else "Failed to initialize run state."
+                return None
 
             try:
                 self.db.update_status(session_id, SessionStatus.FAILED, error_message=message)
@@ -227,10 +229,8 @@ class Engine:
         """Persist the outcome through the state store, or straight onto the row when it has no readable state."""
         error_message = outcome.errors[0] if outcome.errors else None
         store = SessionStateStore(self.db, self.paths, session_id)
-        loaded = store.load()
-        if not loaded.ok or loaded.state is None:
-            if loaded.status != SessionStateLoadStatus.MISSING_STATE and loaded.errors:
-                warnings.append(loaded.errors[0])
+        state = _load_for_finalize(store, warnings)
+        if state is None:
             self.db.update_status(
                 session_id,
                 outcome.status,
@@ -240,16 +240,17 @@ class Engine:
             )
             return
 
-        saved = store.save(
-            loaded.state,
-            run_status=outcome.status,
-            error_message=error_message,
-            worktree_id=outcome.worktree_id,
-            worktree_kept=outcome.worktree_kept,
-        )
-        warnings.extend([*loaded.warnings, *saved.warnings])
-        if not saved.ok:
-            warnings.append(saved.errors[0])
+        try:
+            store.save(
+                state,
+                warnings,
+                run_status=outcome.status,
+                error_message=error_message,
+                worktree_id=outcome.worktree_id,
+                worktree_kept=outcome.worktree_kept,
+            )
+        except EngineError as error:
+            warnings.append(error.message)
 
     def _finish_run(self, session_id: str, outcome: RunOutcome, warnings: list[str]) -> None:
         """Finalize the row under the workspace lock, recording persistence failures as warnings."""
@@ -283,7 +284,9 @@ class Engine:
         """Apply defaults and required checks; raise before a session row is inserted."""
         result = blueprint.resolve_inputs(request.cli_args, overrides=request.inputs)
         if not result.ok:
-            raise EngineInputError(result)
+            raise EngineInputError(
+                result, format_input_error_message(name=blueprint.key, result=result, declarations=blueprint.inputs)
+            )
         return result
 
     def _finalize_outcome(self, outcome: RunOutcome, session_id: str, extra_warnings: list[str]) -> RunOutcome:
@@ -311,3 +314,13 @@ def _status_write_failure(exc: Exception, session_id: str) -> str:
         operation="engine.persist",
         context={"session_id": session_id},
     )
+
+
+def _load_for_finalize(store: SessionStateStore, warnings: list[str]) -> ExecutionStateTree | None:
+    """Return the run's state, or None after appending the load failure to warnings; a row without state stays quiet."""
+    try:
+        return store.load(warnings)
+    except EngineError as error:
+        if error.error_code is not ErrorCode.SESSION_STATE_MISSING:
+            warnings.append(error.message)
+        return None

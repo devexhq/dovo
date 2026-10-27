@@ -7,9 +7,11 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.lock import LockTimeoutError
 from dovo.core.agents.models import AgentEnvOverrides
-from dovo.core.db import SessionsRepository, SessionStatus
+from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import HeadlessAnswerInput
@@ -19,7 +21,9 @@ from dovo.engine.services.resume import BlueprintResumeService
 from tests.engine.conftest import StubDriveRun
 from tests.harness.ask import scripted_loop_blueprint
 from tests.harness.catalog import write_runnable_blueprint
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.fakes import fixed_clock, fixed_new_id
+from tests.harness.lock import time_out_first_lock
 from tests.harness.sessions import seed_paused_ask_session, seed_paused_session
 
 
@@ -107,9 +111,10 @@ class BlueprintResumeServiceExecuteTests:
 
         assert not result.ok
         assert result.session_record is None
+        assert result.error_code is None
         assert result.errors == ["No paused session found to resume."]
 
-    def test_execute_unknown_session_returns_the_engine_resume_error_message(
+    def test_execute_unknown_session_returns_session_not_found(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         result = BlueprintResumeService(
@@ -123,8 +128,84 @@ class BlueprintResumeServiceExecuteTests:
 
         assert not result.ok
         assert result.session_record is None
-        assert len(result.errors) == 1
-        assert "ghost" in result.errors[0]
+        assert result.error_code == ErrorCode.SESSION_NOT_FOUND
+        assert result.errors == ["Session 'ghost' not found."]
+
+
+class BlueprintResumeServiceCatchTests:
+    def test_unexpected_error_after_load_returns_internal_error_recorded_under_engine_resume(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        stub_drive_run: StubDriveRun,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With a paused session and drive_run raising TypeError("boom"), return INTERNAL_ERROR, the message, the record, and one engine.resume event."""
+        _seed(engine_paths, sessions_repo, "paused-1")
+
+        def _boom(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> RunOutcome:
+            raise TypeError("boom")
+
+        stub_drive_run(_boom)
+
+        result = BlueprintResumeService(
+            paths=engine_paths,
+            db=sessions_repo,
+            session_id="paused-1",
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        ).execute()
+
+        assert result.error_code == ErrorCode.INTERNAL_ERROR
+        assert result.errors == ["Unexpected error during engine.resume: boom"]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["operation"] == "engine.resume"
+        assert event["context"] == {"session_id": "paused-1"}
+
+    def test_unexpected_error_resolving_latest_paused_returns_internal_error(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With no session id and get_latest_paused raising TypeError("boom"), return INTERNAL_ERROR and one engine.resume event."""
+
+        def _boom(self: SessionsRepository) -> SessionRecord | None:
+            raise TypeError("boom")
+
+        monkeypatch.setattr(SessionsRepository, "get_latest_paused", _boom)
+
+        result = BlueprintResumeService(
+            paths=engine_paths, db=sessions_repo, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+        ).execute()
+
+        assert result.error_code == ErrorCode.INTERNAL_ERROR
+        assert result.errors == ["Unexpected error during engine.resume: boom"]
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.resume"
+
+    def test_lock_timeout_propagates(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the first lock timing out, raise LockTimeoutError("lock held") and leave the session paused."""
+        _seed(engine_paths, sessions_repo, "paused-1")
+        time_out_first_lock(monkeypatch)
+
+        with pytest.raises(LockTimeoutError, match="lock held"):
+            BlueprintResumeService(
+                paths=engine_paths,
+                db=sessions_repo,
+                session_id="paused-1",
+                git=GitRunner(),
+                clock=fixed_clock,
+                new_id=fixed_new_id,
+            ).execute()
+
+        paused = sessions_repo.get("paused-1")
+        assert paused is not None
+        assert paused.status == SessionStatus.PAUSED
 
 
 class BlueprintResumeServiceEnvTests:

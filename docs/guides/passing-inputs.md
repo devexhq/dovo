@@ -108,7 +108,7 @@ Placeholders are replaced in these step fields:
 If a required input is missing or fails type validation, Dovo reports an error before creating the worktree:
 
 ```text
-Error: Missing required input 'api_token' for blueprint 'test-runner'.
+Error: Missing required input 'api_token' for 'test-runner'.
 
 Usage:
   dovo run test-runner -i api_token=<value>

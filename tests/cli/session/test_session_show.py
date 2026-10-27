@@ -122,6 +122,23 @@ class SessionShowCliIntegrationTests:
         steps = json.loads(result.stdout)["payload"]["steps"]
         assert [(step["step_id"], step["state"]) for step in steps] == [("format", "completed"), ("tests", "failed")]
 
+    def test_session_show_cli_json_without_step_data_warns_and_exits_zero(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        """For a session row with no execution state and --format json, exit 0 with steps == [] and the no-step-data warning."""
+        initialized_workspace_db(cli_workspace).sessions.create(
+            session_id="session-bare", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.COMPLETED
+        )
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "session", "show", "session-bare", "--format", "json"]
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["steps"] == []
+        assert "No step data recorded for this session." in payload["warnings"]
+
 
 class SessionShowLatestCliIntegrationTests:
     """Typer runner integration tests for dovo session show with the session id omitted."""

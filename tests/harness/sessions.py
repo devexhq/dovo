@@ -282,7 +282,7 @@ def seed_new_session(
         auto_apply=auto_apply,
         agent=agent,
     )
-    assert SessionStateStore(sessions, paths, session_id).initialize(blueprint, manifest).ok
+    SessionStateStore(sessions, paths, session_id).initialize(blueprint, manifest, [])
     row = sessions.get(session_id)
     assert row is not None
     return row
@@ -311,8 +311,7 @@ def seed_paused_session(
         agent=agent,
     )
     store = SessionStateStore(sessions, paths, session_id)
-    state = store.load().state
-    assert state is not None
+    state = store.load([])
 
     for node in state.nodes:
         assert isinstance(node, ExecutionLeafNode)
@@ -331,13 +330,13 @@ def seed_paused_session(
         if not completed:
             break
 
-    saved = store.save(
+    store.save(
         state,
+        [],
         run_status=SessionStatus.PAUSED,
         error_message=f"Step '{paused_step_id}' failed: {SEEDED_FAILURE}",
         worktree_id=worktree_id,
     )
-    assert saved.ok
     row = sessions.get(session_id)
     assert row is not None
     return row
@@ -367,8 +366,7 @@ def seed_failed_session(
     """
     seed_new_session(paths, sessions, session_id=session_id, steps=steps)
     store = SessionStateStore(sessions, paths, session_id)
-    state = store.load().state
-    assert state is not None
+    state = store.load([])
 
     for node in state.nodes:
         assert isinstance(node, ExecutionLeafNode)
@@ -388,12 +386,12 @@ def seed_failed_session(
         if not completed:
             break
 
-    saved = store.save(
+    store.save(
         state,
+        [],
         run_status=SessionStatus.FAILED,
         error_message=f"Step '{failed_step_id}' failed: {SEEDED_FAILURE}",
     )
-    assert saved.ok
     row = sessions.get(session_id)
     assert row is not None
     return row

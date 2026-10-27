@@ -8,13 +8,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import FailurePolicy
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
-from dovo.engine import SessionStateStore
+from dovo.engine import EngineError, SessionStateStore
 from dovo.engine.models import DefinitionRef, DefinitionsManifest
 from dovo.engine.projection import build_session_json_payload
 from dovo.engine.state_models import (
@@ -24,8 +25,6 @@ from dovo.engine.state_models import (
     ExecutionStateTree,
     NodeState,
     SessionJsonPayload,
-    SessionStateLoadStatus,
-    SessionStateWriteStatus,
     StepAttemptRecord,
 )
 from dovo.engine.state_store import new_iteration
@@ -80,13 +79,9 @@ class _Fixture:
 
     def initialized_at(self, revision: int) -> ExecutionStateTree:
         """Initialize the run, then advance it through the store to the given revision."""
-        result = self.store.initialize(_blueprint(), self.manifest)
-        assert result.state is not None
-        state = result.state
+        state = self.store.initialize(_blueprint(), self.manifest, [])
         for _ in range(revision):
-            saved = self.store.save(state)
-            assert saved.state is not None
-            state = saved.state
+            state = self.store.save(state, [])
         return state
 
     def projection(self) -> SessionJsonPayload:
@@ -128,7 +123,9 @@ class SessionStateStoreInitializeTests:
     def test_initialize_linear_and_loop_blueprint_builds_ordered_pending_tree(self, tmp_path: Path) -> None:
         fixture = _Fixture(tmp_path)
 
-        result = fixture.store.initialize(_blueprint(), fixture.manifest)
+        warnings: list[str] = []
+
+        state = fixture.store.initialize(_blueprint(), fixture.manifest, warnings)
 
         expected = ExecutionStateTree(
             manifest=fixture.manifest,
@@ -148,8 +145,8 @@ class SessionStateStoreInitializeTests:
                 ),
             ],
         )
-        assert result.status == SessionStateWriteStatus.OK
-        assert result.state == expected
+        assert state == expected
+        assert warnings == []
         assert fixture.projection().nodes == expected.nodes
         row = fixture.sessions.get(SESSION_ID)
         assert row is not None
@@ -157,14 +154,16 @@ class SessionStateStoreInitializeTests:
         assert ExecutionStateTree.model_validate_json(row.execution_state_json or "") == expected
         assert all(node.state == NodeState.PENDING for node in expected.nodes)
 
-    def test_initialize_missing_row_returns_not_found(self, tmp_path: Path) -> None:
+    def test_initialize_missing_row_raises_session_not_found(self, tmp_path: Path) -> None:
+        """Raise EngineError(SESSION_NOT_FOUND, "Session 'unknown' not found.") and write no session.json."""
         fixture = _Fixture(tmp_path)
         store = SessionStateStore(fixture.sessions, fixture.paths, "unknown")
 
-        result = store.initialize(_blueprint(), fixture.manifest)
+        with pytest.raises(EngineError) as raised:
+            store.initialize(_blueprint(), fixture.manifest, [])
 
-        assert result.status == SessionStateWriteStatus.NOT_FOUND
-        assert result.state is None
+        assert raised.value.error_code is ErrorCode.SESSION_NOT_FOUND
+        assert raised.value.message == "Session 'unknown' not found."
         assert not fixture.paths.session_dir("unknown").joinpath("session.json").exists()
 
 
@@ -174,76 +173,54 @@ class SessionStateStoreSaveTests:
     def test_save_loaded_state_persists_next_revision_in_row_and_projection(self, tmp_path: Path) -> None:
         fixture = _Fixture(tmp_path)
         fixture.initialized_at(4)
-        loaded = fixture.store.load()
-        assert loaded.state is not None
+        loaded = fixture.store.load([])
 
-        result = fixture.store.save(loaded.state)
+        saved = fixture.store.save(loaded, [])
 
         row = fixture.sessions.get(SESSION_ID)
         assert row is not None
-        assert result.status == SessionStateWriteStatus.OK
-        assert result.state is not None
-        assert result.state.revision == 5
+        assert saved.revision == 5
         assert row.execution_state_revision == 5
         assert fixture.projection().revision == 5
 
-    def test_save_stale_revision_returns_conflict_and_leaves_row_and_projection(self, tmp_path: Path) -> None:
+    def test_save_stale_revision_raises_conflict_and_leaves_row_and_projection(self, tmp_path: Path) -> None:
+        """Raise EngineError(SESSION_STATE_REVISION_CONFLICT, ...); row and session.json stay at the winner's revision 5."""
         fixture = _Fixture(tmp_path)
         stale = fixture.initialized_at(4)
-        assert fixture.store.save(stale).ok
+        fixture.store.save(stale, [])
         before = fixture.sessions.get(SESSION_ID)
         assert before is not None
 
-        result = fixture.store.save(stale)
+        with pytest.raises(EngineError) as raised:
+            fixture.store.save(stale, [])
 
         after = fixture.sessions.get(SESSION_ID)
-        assert result.status == SessionStateWriteStatus.REVISION_CONFLICT
-        assert result.state is None
+        assert raised.value.error_code is ErrorCode.SESSION_STATE_REVISION_CONFLICT
+        assert raised.value.message == f"Execution state for session '{SESSION_ID}' was changed by another writer."
         assert after is not None
         assert after.execution_state_json == before.execution_state_json
         assert after.execution_state_revision == 5
         assert fixture.projection().revision == 5
 
-    def test_save_missing_row_returns_not_found(self, tmp_path: Path) -> None:
+    def test_save_missing_row_raises_session_not_found(self, tmp_path: Path) -> None:
+        """Raise EngineError(SESSION_NOT_FOUND, "Session 'unknown' not found.") and write no session.json."""
         fixture = _Fixture(tmp_path)
         state = ExecutionStateTree(manifest=fixture.manifest)
         store = SessionStateStore(fixture.sessions, fixture.paths, "unknown")
 
-        result = store.save(state)
+        with pytest.raises(EngineError) as raised:
+            store.save(state, [])
 
-        assert result.status == SessionStateWriteStatus.NOT_FOUND
+        assert raised.value.error_code is ErrorCode.SESSION_NOT_FOUND
+        assert raised.value.message == "Session 'unknown' not found."
         assert not fixture.paths.session_dir("unknown").joinpath("session.json").exists()
-
-    def test_save_projection_write_failure_keeps_database_state_and_warns(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        fixture = _Fixture(tmp_path)
-        state = fixture.initialized_at(0)
-
-        def fail_write(_path: Path, _text: str) -> None:
-            raise OSError("disk full")
-
-        monkeypatch.setattr(Filesystem, "atomic_write_text", fail_write)
-
-        result = fixture.store.save(state)
-
-        row = fixture.sessions.get(SESSION_ID)
-        assert row is not None
-        assert result.status == SessionStateWriteStatus.OK
-        assert row.execution_state_revision == 1
-        assert len(result.warnings) == 1
-        assert "will be regenerated on the next load" in result.warnings[0]
-
-        monkeypatch.undo()
-        assert fixture.store.load().ok
-        assert fixture.projection().revision == 1
 
     def test_save_terminal_status_updates_row_and_session_json_in_same_commit(self, tmp_path: Path) -> None:
         fixture = _Fixture(tmp_path)
         state = fixture.initialized_at(0)
 
         fixture.store.save(
-            state, run_status=SessionStatus.FAILED, error_message="boom", worktree_id="dovo_1", worktree_kept=True
+            state, [], run_status=SessionStatus.FAILED, error_message="boom", worktree_id="dovo_1", worktree_kept=True
         )
 
         row = fixture.row()
@@ -258,6 +235,50 @@ class SessionStateStoreSaveTests:
         assert lifecycle.worktree_id == "dovo_1"
         assert lifecycle.worktree_kept is True
         assert fixture.projection().revision == row.execution_state_revision
+
+
+_CORRUPT = f"Execution state for session '{SESSION_ID}' is corrupt."
+_FAULT_MESSAGES = {
+    "no-state": f"Session '{SESSION_ID}' has no execution state.",
+    "invalid-json": _CORRUPT,
+    "revision-mismatch": _CORRUPT,
+    "pre-span-attempt": _CORRUPT,
+    "newer-projection": f"session.json for session '{SESSION_ID}' is at revision 3, newer than the database revision 2.",
+}
+
+
+def _pre_span_document(manifest: DefinitionsManifest) -> str:
+    """Return a revision 1 tree whose attempt carries the legacy started_at field in place of its span."""
+    leaf = ExecutionLeafNode(id="setup", attempts=[StepAttemptRecord(number=1, span=SEEDED_SPAN)])
+    base = ExecutionStateTree(revision=1, manifest=manifest, nodes=[leaf]).model_dump(mode="json")
+    attempt = base["nodes"][0]["attempts"][0]
+    del attempt["span"]
+    attempt.update({"started_at": "2026-09-28T00:00:00+00:00", "completed_at": None})
+    return json.dumps(base)
+
+
+def _break_store(fixture: _Fixture, fault: str) -> tuple[SessionStateStore, str]:
+    """Put the fixture's run into the fault state and return the store to load and the expected message."""
+    if fault == "unknown-row":
+        return SessionStateStore(fixture.sessions, fixture.paths, "unknown"), "Session 'unknown' not found."
+    if fault in ("invalid-json", "revision-mismatch", "pre-span-attempt"):
+        documents = {
+            "invalid-json": ("{not json", 0),
+            "revision-mismatch": (ExecutionStateTree(revision=1, manifest=fixture.manifest).model_dump_json(), 0),
+            "pre-span-attempt": (_pre_span_document(fixture.manifest), 1),
+        }
+        document, revision = documents[fault]
+        fixture.sessions.save_execution_state(SESSION_ID, document, expected_revision=0, next_revision=revision)
+    elif fault == "missing-snapshot":
+        fixture.initialized_at(0)
+        step_snapshot = fixture.paths.session_dir(SESSION_ID) / "definitions" / "steps" / "st.yml"
+        step_snapshot.unlink()
+        return fixture.store, f"Definition snapshot file missing: {step_snapshot}"
+    elif fault == "newer-projection":
+        state = fixture.initialized_at(2)
+        newer = build_session_json_payload(state.model_copy(update={"revision": 3}), fixture.row())
+        fixture.session_json.write_text(newer.model_dump_json(), encoding="utf-8")
+    return fixture.store, _FAULT_MESSAGES[fault]
 
 
 class SessionStateStoreLoadTests:
@@ -275,119 +296,87 @@ class SessionStateStoreLoadTests:
             older = build_session_json_payload(state.model_copy(update={"revision": 1}), fixture.row())
             fixture.session_json.write_text(older.model_dump_json(), encoding="utf-8")
 
-        result = fixture.store.load()
+        loaded = fixture.store.load([])
 
-        assert result.status == SessionStateLoadStatus.OK
-        assert result.state == state
+        assert loaded == state
         assert fixture.projection() == build_session_json_payload(state, fixture.row())
-
-    def test_load_newer_projection_returns_inconsistent_and_leaves_row(self, tmp_path: Path) -> None:
-        fixture = _Fixture(tmp_path)
-        state = fixture.initialized_at(2)
-        before = fixture.sessions.get(SESSION_ID)
-        assert before is not None
-        newer = build_session_json_payload(state.model_copy(update={"revision": 3}), before)
-        fixture.session_json.write_text(newer.model_dump_json(), encoding="utf-8")
-
-        result = fixture.store.load()
-
-        after = fixture.sessions.get(SESSION_ID)
-        assert result.status == SessionStateLoadStatus.INCONSISTENT_PROJECTION
-        assert result.state is None
-        assert after is not None
-        assert after.execution_state_json == before.execution_state_json
-        assert after.execution_state_revision == 2
 
     def test_load_rewrites_projection_when_row_lifecycle_changed_without_revision_bump(self, tmp_path: Path) -> None:
         fixture = _Fixture(tmp_path)
         fixture.initialized_at(2)
         fixture.sessions.update_status(SESSION_ID, SessionStatus.FAILED, error_message="stale")
 
-        result = fixture.store.load()
+        fixture.store.load([])
 
         lifecycle = fixture.projection().lifecycle
-        assert result.status == SessionStateLoadStatus.OK
         assert lifecycle.status == SessionStatus.FAILED
         assert lifecycle.error_message == "stale"
+
+    @pytest.mark.parametrize(
+        ("fault", "code"),
+        [
+            pytest.param("unknown-row", ErrorCode.SESSION_NOT_FOUND, id="unknown-row"),
+            pytest.param("no-state", ErrorCode.SESSION_STATE_MISSING, id="no-state"),
+            pytest.param("invalid-json", ErrorCode.SESSION_STATE_CORRUPT, id="invalid-json"),
+            pytest.param("revision-mismatch", ErrorCode.SESSION_STATE_CORRUPT, id="revision-mismatch"),
+            pytest.param("pre-span-attempt", ErrorCode.SESSION_STATE_CORRUPT, id="pre-span-attempt"),
+            pytest.param("missing-snapshot", ErrorCode.SESSION_SNAPSHOT_MISSING, id="missing-snapshot"),
+            pytest.param("newer-projection", ErrorCode.SESSION_STATE_INCONSISTENT, id="newer-projection"),
+        ],
+    )
+    def test_load_failure_raises_engine_error_with_code_and_message(
+        self, tmp_path: Path, fault: str, code: ErrorCode
+    ) -> None:
+        """Raise EngineError with the table's error_code and exact message, leaving the row unchanged and writing no session.json."""
+        fixture = _Fixture(tmp_path)
+        store, message = _break_store(fixture, fault)
+        projection = store.paths.session_dir(store.session_id) / "session.json"
+        row_before = fixture.sessions.get(store.session_id)
+        projection_before = projection.read_bytes() if projection.exists() else None
+
+        with pytest.raises(EngineError) as raised:
+            store.load([])
+
+        assert raised.value.error_code is code
+        assert raised.value.message == message
+        assert fixture.sessions.get(store.session_id) == row_before
+        assert (projection.read_bytes() if projection.exists() else None) == projection_before
 
     def test_load_returns_validated_state_when_projection_matches(self, tmp_path: Path) -> None:
         fixture = _Fixture(tmp_path)
         state = fixture.initialized_at(2)
+        warnings: list[str] = []
 
-        result = fixture.store.load()
+        loaded = fixture.store.load(warnings)
 
-        assert result.status == SessionStateLoadStatus.OK
-        assert result.state == state
-        assert result.warnings == []
+        assert loaded == state
+        assert warnings == []
 
-    @pytest.mark.parametrize("corruption", ["invalid_json", "revision_mismatch"])
-    def test_load_corrupt_state_returns_corrupt_state_without_writing_projection(
-        self, tmp_path: Path, corruption: str
+
+class SessionStateStoreProjectionWarningTests:
+    @pytest.mark.parametrize("operation", ["load", "initialize", "save"])
+    def test_projection_write_failure_succeeds_and_appends_warning(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
     ) -> None:
+        """With Filesystem.atomic_write_text raising OSError("disk full"), return the tree and append exactly the projection warning to warnings."""
         fixture = _Fixture(tmp_path)
-        document = (
-            "{not json"
-            if corruption == "invalid_json"
-            else ExecutionStateTree(revision=1, manifest=fixture.manifest).model_dump_json()
-        )
-        fixture.sessions.save_execution_state(SESSION_ID, document, expected_revision=0, next_revision=0)
+        state = fixture.initialized_at(1) if operation != "initialize" else None
+        fixture.session_json.unlink(missing_ok=True)
 
-        result = fixture.store.load()
+        def fail_write(_path: Path, _text: str) -> None:
+            raise OSError("disk full")
 
-        assert result.status == SessionStateLoadStatus.CORRUPT_STATE
-        assert result.state is None
-        assert not fixture.session_json.exists()
+        monkeypatch.setattr(Filesystem, "atomic_write_text", fail_write)
+        warnings: list[str] = []
 
-    @pytest.mark.parametrize(
-        "legacy_fields",
-        [
-            pytest.param({"started_at": "2026-09-28T00:00:00+00:00", "completed_at": None}, id="legacy-shape"),
-            pytest.param({"completed_at": "2026-09-28T00:00:01+00:00"}, id="span-plus-completed-at"),
-        ],
-    )
-    def test_load_state_with_pre_span_attempt_fields_returns_corrupt_state(
-        self, tmp_path: Path, legacy_fields: dict[str, object]
-    ) -> None:
-        """Return CORRUPT_STATE with no state and no session.json for a revision-matching tree whose attempt carries started_at or completed_at."""
-        fixture = _Fixture(tmp_path)
-        leaf = ExecutionLeafNode(id="setup", attempts=[StepAttemptRecord(number=1, span=SEEDED_SPAN)])
-        base = ExecutionStateTree(revision=1, manifest=fixture.manifest, nodes=[leaf]).model_dump(mode="json")
-        ExecutionStateTree.model_validate_json(json.dumps(base))
-        attempt = base["nodes"][0]["attempts"][0]
-        if "started_at" in legacy_fields:
-            del attempt["span"]
-        attempt.update(legacy_fields)
-        fixture.sessions.save_execution_state(SESSION_ID, json.dumps(base), expected_revision=0, next_revision=1)
+        if state is None:
+            returned = fixture.store.initialize(_blueprint(), fixture.manifest, warnings)
+        elif operation == "save":
+            returned = fixture.store.save(state, warnings)
+        else:
+            returned = fixture.store.load(warnings)
 
-        result = fixture.store.load()
-
-        assert result.status == SessionStateLoadStatus.CORRUPT_STATE
-        assert result.state is None
-        assert not fixture.session_json.exists()
-
-    def test_load_missing_snapshot_returns_missing_snapshot_naming_path(self, tmp_path: Path) -> None:
-        fixture = _Fixture(tmp_path)
-        fixture.initialized_at(0)
-        step_snapshot = fixture.paths.session_dir(SESSION_ID) / "definitions" / "steps" / "st.yml"
-        step_snapshot.unlink()
-
-        result = fixture.store.load()
-
-        assert result.status == SessionStateLoadStatus.MISSING_SNAPSHOT
-        assert result.state is None
-        assert str(step_snapshot) in result.errors[0]
-
-    def test_load_row_without_state_returns_missing_state(self, tmp_path: Path) -> None:
-        fixture = _Fixture(tmp_path)
-
-        result = fixture.store.load()
-
-        assert result.status == SessionStateLoadStatus.MISSING_STATE
-        assert result.state is None
-
-    def test_load_unknown_session_returns_not_found(self, tmp_path: Path) -> None:
-        fixture = _Fixture(tmp_path)
-
-        result = SessionStateStore(fixture.sessions, fixture.paths, "unknown").load()
-
-        assert result.status == SessionStateLoadStatus.NOT_FOUND
+        assert returned == fixture.store.load([])
+        assert warnings == [
+            "Failed to write session.json projection: disk full; it will be regenerated on the next load."
+        ]

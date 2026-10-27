@@ -8,6 +8,8 @@ from pathlib import Path
 import psutil
 import pytest
 
+from dovo.common.error_codes import ErrorCode
+from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.common.session_id import SessionIdFactory
@@ -16,9 +18,9 @@ from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.models import CatalogScan
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
-from dovo.engine import Engine, RunRequest, SessionStateStore
+from dovo.engine import Engine, EngineError, RunRequest, SessionStateStore
 from dovo.engine.models import FailurePromptDecision, RunOutcome
-from dovo.engine.state_models import SessionJsonPayload, SessionStateWriteResult, SessionStateWriteStatus
+from dovo.engine.state_models import ExecutionStateTree, SessionJsonPayload
 from dovo.engine.writer import get_session_dir
 from tests.engine.conftest import StubDriveRun
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
@@ -114,13 +116,11 @@ class EngineRunStartFailureTests:
     ) -> None:
         """Hint the start message and write one engine.persist record when marking the row failed raises."""
         blueprint = _catalog_blueprint(engine_paths, "mark-failed", [{"id": "a", "run": "touch marker"}])
-        monkeypatch.setattr(
-            SessionStateStore,
-            "initialize",
-            lambda *_args, **_kwargs: SessionStateWriteResult(
-                status=SessionStateWriteStatus.NOT_FOUND, errors=["state invalid"]
-            ),
-        )
+
+        def _initialize_invalid(*_args: object, **_kwargs: object) -> ExecutionStateTree:
+            raise EngineError(ErrorCode.SESSION_NOT_FOUND, "state invalid")
+
+        monkeypatch.setattr(SessionStateStore, "initialize", _initialize_invalid)
         monkeypatch.setattr(SessionsRepository, "update_status", _raise_db_down)
 
         outcome = _engine(engine_paths, sessions_repo).run(
@@ -151,6 +151,39 @@ class EngineRunStartFailureTests:
         )
 
         assert outcome.errors == ["Failed to record run start in database: db down"]
+
+
+class EngineStartTests:
+    def test_initialize_projection_warning_reaches_run_warnings(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        stub_drive_run: StubDriveRun,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With the run-start session.json write raising OSError("disk full"), the run completes and outcome.warnings contains the projection warning."""
+        blueprint = _catalog_blueprint(engine_paths, "projection-down", [{"id": "a", "run": "true"}])
+        stub_drive_run(None)
+        write_text = Filesystem.atomic_write_text
+        projection_writes: list[Path] = []
+
+        def fail_first_session_json(path: Path, text: str) -> None:
+            if path.name == "session.json":
+                projection_writes.append(path)
+                if len(projection_writes) == 1:
+                    raise OSError("disk full")
+            write_text(path, text)
+
+        monkeypatch.setattr(Filesystem, "atomic_write_text", fail_first_session_json)
+
+        outcome = _engine(engine_paths, sessions_repo).run(
+            blueprint, RunRequest(session_id="start-1", use_worktree=False)
+        )
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert outcome.warnings == [
+            "Failed to write session.json projection: disk full; it will be regenerated on the next load."
+        ]
 
 
 class EngineDispatchTests:
@@ -196,8 +229,7 @@ class EngineDispatchTests:
             steps=[{"id": "a", "run": "true"}, {"id": "b", "run": "exit 1", "on_failure": "prompt_user"}],
             paused_step_id="b",
         )
-        manifest = SessionStateStore(sessions_repo, engine_paths, "paused").load().state
-        assert manifest is not None
+        manifest = SessionStateStore(sessions_repo, engine_paths, "paused").load([])
 
         resumed = engine.resume("paused", failure_prompter=ScriptedFailurePrompter([FailurePromptDecision.CONTINUE]))
 
@@ -212,8 +244,7 @@ class EngineDispatchTests:
             assert row is not None
             assert row.status == SessionStatus.COMPLETED
             assert (row.execution_state_revision or 0) > 0
-        final = SessionStateStore(sessions_repo, engine_paths, "paused").load().state
-        assert final is not None
+        final = SessionStateStore(sessions_repo, engine_paths, "paused").load([])
         assert final.manifest == manifest.manifest
 
     @pytest.mark.parametrize(
@@ -417,10 +448,9 @@ class EngineRunSnapshotsDefinitionsTests:
         session_dir = get_session_dir(engine_paths, "snap-1")
         assert (session_dir / "definitions" / "snap-task.yml").is_file()
         assert (session_dir / "definitions" / "steps" / "lint-check.yml").is_file()
-        loaded = SessionStateStore(sessions_repo, engine_paths, "snap-1").load()
-        assert loaded.state is not None
-        assert loaded.state.manifest.blueprint.ref == "repo:blueprint:snap-task"
-        assert [ref.ref for ref in loaded.state.manifest.steps] == ["repo:step:lint-check"]
+        state = SessionStateStore(sessions_repo, engine_paths, "snap-1").load([])
+        assert state.manifest.blueprint.ref == "repo:blueprint:snap-task"
+        assert [ref.ref for ref in state.manifest.steps] == ["repo:step:lint-check"]
 
     def test_run_persists_initial_state_and_projection_before_first_step(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
@@ -433,15 +463,14 @@ class EngineRunSnapshotsDefinitionsTests:
         def observing_drive_run(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> RunOutcome:
             row = sessions.get(session_id)
             assert row is not None
-            loaded = SessionStateStore(sessions, paths, session_id).load()
-            assert loaded.state is not None
+            state = SessionStateStore(sessions, paths, session_id).load([])
             observed["status"] = row.status
             observed["revision"] = row.execution_state_revision
-            observed["nodes"] = [node.id for node in loaded.state.nodes]
+            observed["nodes"] = [node.id for node in state.nodes]
             observed["projection"] = SessionJsonPayload.model_validate_json(
                 (paths.session_dir(session_id) / "session.json").read_text(encoding="utf-8")
             ).nodes
-            observed["state"] = loaded.state.nodes
+            observed["state"] = state.nodes
             return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=paths.root_dir)
 
         stub_drive_run(observing_drive_run)
@@ -480,14 +509,12 @@ class EngineRunSnapshotsDefinitionsTests:
             ],
             paused_step_id="publish",
         )
-        before = SessionStateStore(sessions_repo, engine_paths, "task_defs").load().state
-        assert before is not None
+        before = SessionStateStore(sessions_repo, engine_paths, "task_defs").load([])
         stub_drive_run(None)
 
         _engine(engine_paths, sessions_repo).resume("task_defs")
 
-        after = SessionStateStore(sessions_repo, engine_paths, "task_defs").load().state
-        assert after is not None
+        after = SessionStateStore(sessions_repo, engine_paths, "task_defs").load([])
         assert after.revision == before.revision + 1
 
 

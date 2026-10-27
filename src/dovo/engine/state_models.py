@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from dovo.common.models import BaseResult, FailurePolicy
+from dovo.common.models import FailurePolicy
 from dovo.common.timing import TimeSpan
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import InteractionRequest
@@ -123,46 +123,3 @@ class SessionJsonPayload(BaseModel):
     nodes: list[ExecutionPlanNode] = Field(default_factory=list)
     lifecycle: SessionLifecycle
     results: list[StepResult] = Field(default_factory=list)
-
-
-class SessionStateWriteStatus(StrEnum):
-    """Classified outcomes for SessionStateStore.initialize and SessionStateStore.save."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    REVISION_CONFLICT = "revision_conflict"
-
-
-class SessionStateWriteResult(BaseResult):
-    """Result of committing an execution-state revision to a session row."""
-
-    status: SessionStateWriteStatus
-    state: ExecutionStateTree | None = None
-
-    @property
-    def ok(self) -> bool:
-        """Return True when the revision was committed."""
-        return self.status == SessionStateWriteStatus.OK
-
-
-class SessionStateLoadStatus(StrEnum):
-    """Classified outcomes for SessionStateStore.load."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    MISSING_STATE = "missing_state"
-    CORRUPT_STATE = "corrupt_state"
-    INCONSISTENT_PROJECTION = "inconsistent_projection"
-    MISSING_SNAPSHOT = "missing_snapshot"
-
-
-class SessionStateLoadResult(BaseResult):
-    """Result of loading and validating a run's execution state."""
-
-    status: SessionStateLoadStatus
-    state: ExecutionStateTree | None = None
-
-    @property
-    def ok(self) -> bool:
-        """Return True when a validated state is available."""
-        return self.status == SessionStateLoadStatus.OK

@@ -4,30 +4,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
+from dovo.common.error_codes import ErrorCode
+from dovo.common.exceptions import DomainError
 from dovo.core.inputs import InputResolveResult
 from dovo.engine.exceptions import EngineError, EngineInputError, EngineSnapshotMissingError
 
 
 class EngineInputErrorTests:
-    @pytest.mark.parametrize(
-        ("result", "expected"),
-        [
-            pytest.param(
-                InputResolveResult(errors=["bad flag"], missing=["target"]), "bad flag", id="first-error-wins"
-            ),
-            pytest.param(
-                InputResolveResult(missing=["target", "env"]), "Missing required input 'target'.", id="first-missing"
-            ),
-            pytest.param(InputResolveResult(), "Failed to resolve blueprint inputs.", id="fallback"),
-        ],
-    )
-    def test_message_is_derived_from_the_resolve_result(self, result: InputResolveResult, expected: str) -> None:
-        error = EngineInputError(result)
+    def test_carries_message_result_and_code(self) -> None:
+        result = InputResolveResult(missing=["target"])
 
-        assert str(error) == expected
+        error = EngineInputError(result, "msg")
+
+        assert str(error) == "msg"
+        assert error.message == "msg"
         assert error.result is result
+        assert error.error_code is ErrorCode.BLUEPRINT_INPUT_INVALID
+        assert isinstance(error, DomainError)
 
 
 class EngineSnapshotMissingErrorTests:
@@ -38,4 +31,6 @@ class EngineSnapshotMissingErrorTests:
 
         assert str(error) == "Snapshot definition file is missing: 'snapshots/lint.yml'."
         assert error.path == path
+        assert error.error_code is ErrorCode.SESSION_SNAPSHOT_MISSING
         assert isinstance(error, EngineError)
+        assert isinstance(error, DomainError)

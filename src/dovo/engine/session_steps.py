@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.redact import SecretRedactor
 from dovo.core.db import SessionRecord
 from dovo.core.sessions import StepRunSummary
-from dovo.engine.models import SessionStepsResult
+from dovo.engine.exceptions import EngineError
 from dovo.engine.state_models import (
     ExecutionLeafNode,
     ExecutionLoopNode,
@@ -18,16 +19,22 @@ from dovo.engine.state_models import (
 NO_STEP_DATA_WARNING = "No step data recorded for this session."
 
 
-def summarize_session_steps(record: SessionRecord, redactor: SecretRedactor) -> SessionStepsResult:
-    """Return one redacted StepRunSummary per execution node in plan order, or a warning when the state is absent or unreadable."""
+def summarize_session_steps(record: SessionRecord, redactor: SecretRedactor) -> list[StepRunSummary]:
+    """Return one redacted StepRunSummary per execution node in plan order.
+
+    Raises:
+        EngineError: SESSION_STATE_MISSING when no state is recorded, SESSION_STATE_CORRUPT when it cannot be parsed.
+    """
     if record.execution_state_json is None:
-        return SessionStepsResult(warnings=[NO_STEP_DATA_WARNING])
+        raise EngineError(ErrorCode.SESSION_STATE_MISSING, NO_STEP_DATA_WARNING)
 
     try:
         state = ExecutionStateTree.model_validate_json(record.execution_state_json)
     except ValidationError as validation_error:
         reason = validation_error.errors(include_url=False, include_input=False)[0]["msg"]
-        return SessionStepsResult(warnings=[f"Step data could not be read: {reason}"])
+        raise EngineError(
+            ErrorCode.SESSION_STATE_CORRUPT, f"Step data could not be read: {reason}"
+        ) from validation_error
 
     steps: list[StepRunSummary] = []
     for node in state.nodes:
@@ -36,7 +43,7 @@ def summarize_session_steps(record: SessionRecord, redactor: SecretRedactor) -> 
         else:
             steps.append(_leaf_summary(node, redactor))
 
-    return SessionStepsResult(steps=steps)
+    return steps
 
 
 def _loop_rows(loop: ExecutionLoopNode, redactor: SecretRedactor) -> list[StepRunSummary]:

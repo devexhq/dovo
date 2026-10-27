@@ -18,7 +18,7 @@ from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidation
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
-from dovo.engine.exceptions import EngineSnapshotMissingError
+from dovo.engine.exceptions import EngineError, EngineSnapshotMissingError
 from dovo.engine.executors import StepExecution
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.ask_step import complete_ask_step, resolve_ask_request
@@ -470,11 +470,10 @@ class RunCoordinator:
     def _start(self) -> bool:
         """Load state, session row, and snapshot definitions and resolve the run settings; append the failure to _errors and return False when unavailable."""
         session_id = self._context.session_id
-        loaded = self._state_store.load()
-        if not loaded.ok or loaded.state is None:
-            self._errors.append(
-                loaded.errors[0] if loaded.errors else f"Session '{session_id}' has no execution state."
-            )
+        try:
+            state = self._state_store.load(self._warnings)
+        except EngineError as error:
+            self._errors.append(error.message)
             return False
 
         row = self._state_store.sessions.get(session_id)
@@ -483,17 +482,16 @@ class RunCoordinator:
             return False
 
         try:
-            blueprint = load_blueprint_from_snapshot(self._context.paths.session_dir(session_id), loaded.state.manifest)
+            blueprint = load_blueprint_from_snapshot(self._context.paths.session_dir(session_id), state.manifest)
         except (EngineSnapshotMissingError, BlueprintLoadError, BlueprintValidationError) as exc:
             self._errors.append(str(exc))
             return False
 
-        structure_errors = validate_loop_structure(loaded.state, blueprint)
+        structure_errors = validate_loop_structure(state, blueprint)
         if structure_errors:
             self._errors.append(f"Execution state for session '{session_id}' is corrupt: {structure_errors[0]}")
             return False
 
-        self._warnings.extend(loaded.warnings)
         settings = RunSettings(
             cwd=self._context.target_dir,
             use_worktree=row.use_worktree,
@@ -512,7 +510,7 @@ class RunCoordinator:
             clock=self._context.clock,
             new_id=self._context.new_id,
         )
-        self._loaded = _LoadedRun(state=loaded.state, blueprint=blueprint, settings=settings)
+        self._loaded = _LoadedRun(state=state, blueprint=blueprint, settings=settings)
         return True
 
     def _recover_interrupted(self) -> bool:
@@ -819,19 +817,19 @@ class RunCoordinator:
         """Save the in-memory state at revision + 1 under the workspace lock; append a boundary-naming error and return False on failure."""
         worktree = self._context.worktree
         with WorkspaceLock(self._context.paths.lock_file):
-            saved = self._state_store.save(
-                self._run.state,
-                run_status=run_status,
-                error_message=error_message,
-                worktree_id=worktree.session_id if worktree is not None else None,
-            )
-        if not saved.ok or saved.state is None:
-            detail = saved.errors[0] if saved.errors else "state was not saved"
-            self._errors.append(f"Failed to persist run state {boundary}: {detail}")
-            return False
+            try:
+                saved = self._state_store.save(
+                    self._run.state,
+                    self._warnings,
+                    run_status=run_status,
+                    error_message=error_message,
+                    worktree_id=worktree.session_id if worktree is not None else None,
+                )
+            except EngineError as error:
+                self._errors.append(f"Failed to persist run state {boundary}: {error.message}")
+                return False
 
-        self._run.state = saved.state
-        self._warnings.extend(saved.warnings)
+        self._run.state = saved
         return True
 
     def _outcome(self, status: SessionStatus) -> RunOutcome:

@@ -101,6 +101,21 @@ class SessionResumeCliIntegrationTests:
         assert result.exit_code == 1
         assert "Resume Failed" in result.stdout
 
+    def test_resume_cli_json_failure_emits_error_panel_and_exits_one(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        """For an unknown session with --format json, exit 1 and emit one ErrorPanelEvent with the message and no error_code key."""
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "session", "resume", "does-not-exist", "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        panels = [event["payload"] for event in events if event["event_type"] == "ErrorPanelEvent"]
+        assert len(panels) == 1
+        assert panels[0]["message"] == "Session 'does-not-exist' not found."
+        assert "error_code" not in panels[0]
+
     def test_resume_cli_json_format_emits_run_success_event(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         _seed_paused_session(
             cli_workspace,

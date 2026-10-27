@@ -9,7 +9,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
-from dovo.cli.ui.formatters.common import build_error_panel
+from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.cli.ui.formatters.session.common import (
     build_metadata_table,
     build_session_summary,
@@ -42,6 +42,18 @@ def _render_show_error_panel(view: SessionShowView) -> Panel | None:
         return _render_show_error(view.errors, view.remediations)
 
     return None
+
+
+def _render_show_body(view: SessionShowView) -> RenderableType:
+    """Render the error panel when there is one, else the session run, else nothing."""
+    error_panel = _render_show_error_panel(view)
+    if error_panel is not None:
+        return error_panel
+
+    if view.session is not None:
+        return _render_show_run(view)
+
+    return Text("")
 
 
 STEP_LOGS_HINT = "Use 'dovo logs {session_id} --step <step_id>' for step output."
@@ -114,13 +126,6 @@ class SessionShowFormatter(ComponentFormatter[HistoryShowResult, SessionShowView
         )
 
     def to_rich(self, data: HistoryShowResult) -> RenderableType:
-        """Render detailed session metadata panel, error panel, and step timeline."""
+        """Render detailed session metadata panel, error panel, and step timeline, followed by diagnostic_lines(view.diagnostics)."""
         view = self.transform(data)
-        error_panel = _render_show_error_panel(view)
-        if error_panel is not None:
-            return error_panel
-
-        if view.session is not None:
-            return _render_show_run(view)
-
-        return Text("")
+        return with_diagnostics(_render_show_body(view), view.diagnostics)

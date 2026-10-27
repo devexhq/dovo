@@ -17,8 +17,10 @@ from dovo.core.catalog.definitions import BlueprintDefinition
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions import Reconciliation
+from dovo.engine import SessionStateStore
 from dovo.engine.models import RunOutcome
 from dovo.engine.services.run import BlueprintRunService
+from dovo.engine.state_models import ExecutionStateTree
 from tests.engine.conftest import StubDriveRun
 from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
@@ -214,14 +216,15 @@ class BlueprintRunServiceLoadTests:
         ]
         assert operations == ["session.reconcile", "catalog.load_definition"]
 
-    def test_execute_missing_required_input_returns_formatted_input_error(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    def test_execute_missing_required_input_returns_blueprint_input_invalid(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, frozen_diagnostic_clock: Path
     ) -> None:
+        """Return error_code BLUEPRINT_INPUT_INVALID and the full missing-input message, with no event file and no session row."""
         write_runnable_blueprint(engine_paths.root_dir, key="needs-input", steps=[{"id": "a", "run": "true"}])
         blueprint_path = engine_paths.root_dir / ".dovo" / "catalog" / "blueprints" / "needs-input.yml"
         blueprint_path.write_text(
             blueprint_path.read_text(encoding="utf-8").replace(
-                "steps:", "inputs:\n- name: target\n  type: string\n  required: true\nsteps:", 1
+                "steps:", "inputs:\n  target:\n    type: string\n    required: true\nsteps:", 1
             ),
             encoding="utf-8",
         )
@@ -237,10 +240,14 @@ class BlueprintRunServiceLoadTests:
             new_id=fixed_new_id,
         ).execute()
 
-        assert not result.ok
         assert result.session_record is None
-        assert len(result.errors) == 1
-        assert "target" in result.errors[0]
+        assert result.error_code == ErrorCode.BLUEPRINT_INPUT_INVALID
+        assert result.errors == [
+            "Missing required input 'target' for 'needs-input'.\n\nUsage:\n  dovo run needs-input -i target=<value>"
+        ]
+        assert result.diagnostics == []
+        assert not frozen_diagnostic_clock.parent.parent.exists()
+        assert sessions_repo.list() == []
 
     def test_execute_reconciliation_warning_is_carried_onto_the_result(
         self,
@@ -287,6 +294,90 @@ class BlueprintRunServiceLoadTests:
 
         monkeypatch.undo()
         assert sessions_repo.list() == []
+
+
+def _lint_service(paths: WorkspacePaths, sessions: SessionsRepository) -> BlueprintRunService:
+    """Return a no-worktree run service for the catalog blueprint `lint`."""
+    write_runnable_blueprint(paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
+    return BlueprintRunService(
+        name="lint",
+        paths=paths,
+        sessions_db=sessions,
+        no_worktree=True,
+        git=GitRunner(),
+        clock=fixed_clock,
+        new_id=fixed_new_id,
+    )
+
+
+class BlueprintRunServiceCatchTests:
+    def test_unexpected_engine_error_returns_internal_error_recorded_under_engine_run(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        stub_drive_run: StubDriveRun,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With drive_run raising TypeError("boom"), return INTERNAL_ERROR, the message, the frozen record, and one engine.run event."""
+
+        def _boom(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> RunOutcome:
+            raise TypeError("boom")
+
+        stub_drive_run(_boom)
+
+        result = _lint_service(engine_paths, sessions_repo).execute()
+
+        assert result.session_record is None
+        assert result.error_code == ErrorCode.INTERNAL_ERROR
+        assert result.errors == ["Unexpected error during engine.run: boom"]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["operation"] == "engine.run"
+        assert event["context"] == {"blueprint": "lint"}
+        assert event["exception_type"] == "TypeError"
+
+    def test_engine_lock_timeout_propagates(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With reconciliation stubbed to Reconciliation() and the first lock timing out, raise LockTimeoutError("lock held") from execute()."""
+        monkeypatch.setattr(
+            "dovo.engine.services.run.reconcile_stale_sessions", lambda sessions_db, *, path: Reconciliation()
+        )
+        service = _lint_service(engine_paths, sessions_repo)
+        time_out_first_lock(monkeypatch)
+
+        with pytest.raises(LockTimeoutError, match="lock held"):
+            service.execute()
+
+    def test_inner_recorded_failure_is_not_recorded_again(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With the finalizing save raising OSError("disk full"), return error_code None and write exactly one event, with operation engine.persist."""
+        original_save = SessionStateStore.save
+
+        def _finalize_disk_full(
+            self: SessionStateStore,
+            state: ExecutionStateTree,
+            warnings: list[str],
+            run_status: SessionStatus | None = None,
+            error_message: str | None = None,
+            worktree_id: str | None = None,
+            worktree_kept: bool | None = None,
+        ) -> ExecutionStateTree:
+            if worktree_kept is not None:
+                raise OSError("disk full")
+            return original_save(self, state, warnings, run_status, error_message, worktree_id)
+
+        monkeypatch.setattr(SessionStateStore, "save", _finalize_disk_full)
+
+        result = _lint_service(engine_paths, sessions_repo).execute()
+
+        assert result.error_code is None
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.persist"
 
 
 class BlueprintRunServiceEnvTests:

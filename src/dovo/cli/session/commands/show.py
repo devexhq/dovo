@@ -6,19 +6,8 @@ from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.cli.ui.events import MessageEvent
 from dovo.common.models import OutputFormatOptions
-from dovo.core.sessions import HistoryShowResult, Session, SessionCollection, history_redactor
-from dovo.engine.session_steps import summarize_session_steps
-
-
-def _attach_steps(context: CliContext, result: HistoryShowResult) -> None:
-    """Populate result.steps and step warnings from the session's persisted execution state."""
-    if result.session is None:
-        return
-
-    redactor = history_redactor(context.paths, context.sensitive_variables)
-    steps_result = summarize_session_steps(result.session, redactor)
-    result.steps = steps_result.steps
-    result.warnings.extend(steps_result.warnings)
+from dovo.core.sessions import HistoryShowResult
+from dovo.engine.services import SessionShowService
 
 
 def session_show_command(
@@ -38,18 +27,16 @@ def session_show_command(
     Returns:
         HistoryShowResult containing session details and errors.
     """
-    if session_id is None:
-        result = SessionCollection(
-            context.paths, db=context.db.sessions, sensitive_variables=context.sensitive_variables
-        ).latest_details(include_logs=logs)
-        if result.session_id is not None and output_format == OutputFormatOptions.TERMINAL:
-            ui_dispatcher.dispatch(MessageEvent(message=f"Session: {result.session_id} (latest)"))
-    else:
-        result = Session(
-            context.paths, session_id, db=context.db.sessions, sensitive_variables=context.sensitive_variables
-        ).details(include_logs=logs)
+    result = SessionShowService(
+        paths=context.paths,
+        sessions_db=context.db.sessions,
+        sensitive_variables=context.sensitive_variables,
+        session_id=session_id,
+        include_logs=logs,
+    ).execute()
 
-    _attach_steps(context, result)
+    if session_id is None and result.session_id is not None and output_format == OutputFormatOptions.TERMINAL:
+        ui_dispatcher.dispatch(MessageEvent(message=f"Session: {result.session_id} (latest)"))
 
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

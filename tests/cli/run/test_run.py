@@ -23,7 +23,7 @@ from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
 from dovo.engine import SessionStateStore
-from dovo.engine.state_models import ExecutionStateTree, SessionStateWriteResult
+from dovo.engine.state_models import ExecutionStateTree
 from tests.harness import FakeAgentRunner, UnfixableAgentRunner
 from tests.harness.builders import init_git_repository
 from tests.harness.catalog import write_runnable_blueprint
@@ -232,14 +232,15 @@ class RunCliIntegrationTests:
         def _finalize_disk_full(
             self: SessionStateStore,
             state: ExecutionStateTree,
+            warnings: list[str],
             run_status: SessionStatus | None = None,
             error_message: str | None = None,
             worktree_id: str | None = None,
             worktree_kept: bool | None = None,
-        ) -> SessionStateWriteResult:
+        ) -> ExecutionStateTree:
             if worktree_kept is not None:
                 raise OSError("disk full")
-            return original_save(self, state, run_status, error_message, worktree_id)
+            return original_save(self, state, warnings, run_status, error_message, worktree_id)
 
         monkeypatch.setattr(SessionStateStore, "save", _finalize_disk_full)
 
@@ -273,6 +274,29 @@ class RunCliIntegrationTests:
         assert output.count(unwrapped("Details logged")) == 1
         assert output.index(unwrapped("Unexpected error during catalog.load_definition: bad")) < output.index(line)
         assert output.index("RunFailed") < output.index(line)
+        assert output.endswith(line)
+
+    def test_run_cli_unexpected_engine_error_exits_one_with_details_line(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With drive_run raising TypeError("boom"), exit 1, print the engine.run message and a 'Details logged:' line naming the frozen event."""
+        write_runnable_blueprint(cli_workspace, key="boom-task", steps=[{"id": "s1", "run": "true"}])
+
+        def _boom(*_args: object, **_kwargs: object) -> None:
+            raise TypeError("boom")
+
+        monkeypatch.setattr("dovo.engine.engine.drive_run", _boom)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "boom-task", "--no-worktree"])
+
+        assert result.exit_code == 1
+        output = unwrapped(result.stdout)
+        line = unwrapped(details_line(frozen_diagnostic_clock))
+        assert unwrapped("Unexpected error during engine.run: boom") in output
         assert output.endswith(line)
 
     def test_run_cli_reconciliation_failure_prints_details_line_not_warning(
