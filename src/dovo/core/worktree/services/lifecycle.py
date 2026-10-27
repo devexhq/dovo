@@ -19,7 +19,7 @@ from dovo.core.config.models import WorktreeConfig
 from dovo.core.db import WorktreeRecord, WorktreesRepository, WorktreeStatus
 from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
-from dovo.core.worktree.exceptions import WorktreeCapacityError, WorktreeError, recorded_cause
+from dovo.core.worktree.exceptions import WorktreeError
 from dovo.core.worktree.models import WorktreeCreation, WorktreeRemoval, WorktreeSession
 from dovo.core.worktree.services.wip import apply_wip_to_worktree
 
@@ -160,11 +160,12 @@ class WorktreeLifecycle:
         """Raise when active worktrees reach configured capacity.
 
         Raises:
-            WorktreeCapacityError: When max_allowed worktrees are active.
+            WorktreeError: WORKTREE_CAPACITY_EXCEEDED when max_allowed worktrees are active.
         """
         active = self.get_active()
         if len(active) >= max_allowed:
-            raise WorktreeCapacityError(
+            raise WorktreeError(
+                ErrorCode.WORKTREE_CAPACITY_EXCEEDED,
                 f"Maximum active worktrees reached ({len(active)}/{max_allowed}).",
                 [
                     Remediation(
@@ -207,7 +208,7 @@ class WorktreeLifecycle:
             try:
                 branch_taken = self.git.branch_exists(self.path, temp_branch)
             except GitError as exc:
-                raise _git_step_error(exc, remediate=True) from recorded_cause(exc)
+                raise _git_step_error(exc, remediate=True) from exc.__cause__
             if not branch_taken:
                 return
         raise WorktreeError(
@@ -281,7 +282,7 @@ class WorktreeLifecycle:
             # Recover then re-raise: catch_failure records an unexpected exc once.
             self._discard_failed_add(worktree_path, temp_branch)
             if isinstance(exc, GitError):
-                raise _git_step_error(exc, remediate=True) from recorded_cause(exc)
+                raise _git_step_error(exc, remediate=True) from exc.__cause__
             raise
 
     def _resolve_base_commit(self, worktree_path: Path, temp_branch: str) -> str:
@@ -296,7 +297,7 @@ class WorktreeLifecycle:
             # Recover then re-raise: catch_failure records an unexpected exc once.
             self.discard_partial(worktree_path, temp_branch, created_dir=True, created_branch=True)
             if isinstance(exc, GitError):
-                raise _git_step_error(exc, remediate=False) from recorded_cause(exc)
+                raise _git_step_error(exc, remediate=False) from exc.__cause__
             raise
 
     def _overlay_wip(self, worktree_path: Path, temp_branch: str) -> list[str]:
@@ -315,13 +316,13 @@ class WorktreeLifecycle:
                     exc.error_code,
                     f"Git timed out while overlaying uncommitted WIP (WORKTREE_GIT_TIMEOUT): {exc}",
                     [_WIP_TIMEOUT_REMEDIATION],
-                ) from recorded_cause(exc)
+                ) from exc.__cause__
             if isinstance(exc, (GitError, WorktreeError)):
                 raise WorktreeError(
                     exc.error_code,
                     f"Failed to overlay uncommitted WIP into worktree (WORKTREE_WIP_FAILED): {exc}",
                     [_WIP_FAILED_REMEDIATION],
-                ) from recorded_cause(exc)
+                ) from exc.__cause__
             raise
 
     def _persist_session(self, session: WorktreeSession) -> tuple[list[str], list[DiagnosticRecord]]:
