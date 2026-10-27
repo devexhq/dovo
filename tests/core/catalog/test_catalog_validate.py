@@ -121,7 +121,7 @@ class CatalogValidateServiceTests:
 
         result = _validate("bad.yml", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
-        assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SYNTAX_ERROR, False)
+        assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SYNTAX_INVALID, False)
         assert result.valid is False
         assert len(result.errors) == 1
         assert result.errors[0].startswith(f"YAML syntax error in '{target_path}' at line 1, column 9: ")
@@ -132,7 +132,7 @@ class CatalogValidateServiceTests:
 
         result = _validate("list.yml", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
-        assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SYNTAX_ERROR, False)
+        assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SYNTAX_INVALID, False)
         assert result.valid is False
         assert result.target == "list.yml"
         assert result.resolved_path == target_path

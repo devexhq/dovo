@@ -24,7 +24,7 @@ def save_rejected_patch(worktree_path: Path, baseline: str, destination: Path) -
         Filesystem.atomic_write_bytes(destination, patch)
     except OSError as exc:
         raise AgentError(
-            ErrorCode.AGENT_MUTATION_GIT_FAILED, f"cannot write {destination}: {exc.strerror or exc}"
+            ErrorCode.AGENT_PATCH_WRITE_FAILED, f"cannot write {destination}: {exc.strerror or exc}"
         ) from exc
 
     return destination

@@ -10,6 +10,7 @@ REPO_ROOT: Final[Path] = Path(__file__).parent.parent.parent
 SRC_ROOT: Final[Path] = REPO_ROOT / "src" / "dovo"
 TESTS_ROOT: Final[Path] = REPO_ROOT / "tests"
 E2E_ROOT: Final[Path] = REPO_ROOT / "e2e"
+NESTED_PACKAGE_ROOTS: Final[frozenset[str]] = frozenset({"core", "cli"})
 
 
 def collect_python_files(directory: Path) -> list[Path]:
@@ -24,6 +25,14 @@ def collect_python_files(directory: Path) -> list[Path]:
     if not directory.exists() or not directory.is_dir():
         return []
     return sorted(p for p in directory.rglob("*.py") if p.is_file())
+
+
+def package_of(rel_path: str) -> str:
+    """Return the package of a path under src/dovo: core/<name>, cli/<name>, or the top-level folder."""
+    parts = Path(rel_path).relative_to("src/dovo").parts
+    if parts[0] in NESTED_PACKAGE_ROOTS and len(parts) > 2:
+        return "/".join(parts[:2])
+    return parts[0]
 
 
 def _is_banned_import(name: str | None, banned_prefix: str) -> bool:

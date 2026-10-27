@@ -94,7 +94,7 @@ class WorktreePruneCliIntegrationTests:
         monkeypatch: pytest.MonkeyPatch,
         case: str,
     ) -> None:
-        """Exit 1 for --format json. partial_failure (git branch -D raising RuntimeError("boom") via use_fake_git on a stale dovo/dovo_x branch) emits status "partial_failure", error_code "WORKTREE_PRUNE_ITEMS_FAILED", errors ["Failed to delete branch 'dovo/dovo_x': boom"] with no hint and one diagnostics entry. unexpected (WorktreeDetector.detect raising TypeError("boom")) emits status null, error_code "INTERNAL_ERROR", errors ["Unexpected error during worktree.prune: boom"] and diagnostics [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]. git_failed (git worktree list raising a GIT_FAILED GitError) emits status null, error_code "GIT_FAILED", its message as the one error, no items and no diagnostics."""
+        """Exit 1 for --format json. partial_failure (git branch -D raising RuntimeError("boom") via use_fake_git on a stale dovo/dovo_x branch) emits status "partial_failure", error_code "WORKTREE_PRUNE_FAILED", errors ["Failed to delete branch 'dovo/dovo_x': boom"] with no hint and one diagnostics entry. unexpected (WorktreeDetector.detect raising TypeError("boom")) emits status null, error_code "INTERNAL_ERROR", errors ["Unexpected error during worktree.prune: boom"] and diagnostics [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]. git_failed (git worktree list raising a GIT_FAILED GitError) emits status null, error_code "GIT_FAILED", its message as the one error, no items and no diagnostics."""
         if case == "partial_failure":
             subprocess.run(["git", "branch", "dovo/dovo_x"], cwd=cli_workspace, check=True, capture_output=True)
             use_fake_git(monkeypatch, FakeGitRunner({("branch", "-D"): RuntimeError("boom")}))
@@ -110,7 +110,7 @@ class WorktreePruneCliIntegrationTests:
         payload = json.loads(result.stdout)["payload"]
         if case == "partial_failure":
             assert payload["status"] == "partial_failure"
-            assert payload["error_code"] == "WORKTREE_PRUNE_ITEMS_FAILED"
+            assert payload["error_code"] == "WORKTREE_PRUNE_FAILED"
             assert payload["errors"] == ["Failed to delete branch 'dovo/dovo_x': boom"]
             assert payload["diagnostics"] == [
                 {"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}

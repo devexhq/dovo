@@ -246,7 +246,7 @@ class InitializeIdentityFailureTests:
     @pytest.mark.parametrize(
         ("failure", "error_code", "logged"),
         [
-            pytest.param("invalid_schema", ErrorCode.PROJECT_IDENTITY_INVALID_SCHEMA, False, id="invalid_schema"),
+            pytest.param("invalid_schema", ErrorCode.PROJECT_IDENTITY_SCHEMA_INVALID, False, id="invalid_schema"),
             pytest.param("unreadable", ErrorCode.PROJECT_IDENTITY_UNREADABLE, True, id="unreadable"),
             pytest.param("write_failed", ErrorCode.PROJECT_IDENTITY_WRITE_FAILED, True, id="write_failed"),
             pytest.param("locked", ErrorCode.PROJECT_IDENTITY_LOCKED, False, id="locked"),

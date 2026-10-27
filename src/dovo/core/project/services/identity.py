@@ -58,7 +58,7 @@ def load_project_identity(path: Path) -> ProjectIdentity:
         return ProjectIdentity.model_validate_json(path.read_text(encoding="utf-8"))
     except ValidationError as exc:
         raise ProjectIdentityError(
-            ErrorCode.PROJECT_IDENTITY_INVALID_SCHEMA,
+            ErrorCode.PROJECT_IDENTITY_SCHEMA_INVALID,
             _sentence(f"Project identity at '{path}' is invalid: {exc}"),
         ) from exc
     except (OSError, UnicodeDecodeError) as exc:

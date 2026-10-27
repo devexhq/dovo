@@ -9,7 +9,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.models import BaseResult, Remediation
 
 ERROR_CODE_VALUE_CASES = [
-    pytest.param(ErrorCode.GIT_NOT_REPO, "GIT_NOT_REPO", id="enum_member"),
+    pytest.param(ErrorCode.GIT_FAILED, "GIT_FAILED", id="enum_member"),
     pytest.param("CUSTOM_CODE", "CUSTOM_CODE", id="plain_string"),
 ]
 

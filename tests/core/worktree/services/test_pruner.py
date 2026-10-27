@@ -430,7 +430,7 @@ class WorktreePrunerFailureTests:
         result = pruner.prune()
 
         assert result.status == WorktreePruneStatus.PARTIAL_FAILURE
-        assert result.error_code == "WORKTREE_PRUNE_ITEMS_FAILED"
+        assert result.error_code == "WORKTREE_PRUNE_FAILED"
         assert len(result.items) == 1
 
         item = result.items[0]

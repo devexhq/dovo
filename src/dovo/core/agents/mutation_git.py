@@ -47,16 +47,16 @@ def _run_git(
         message = f"failed to run git {' '.join(args)}: {exc}"
         if not cwd.is_dir():
             # Chained: a vanished worktree is a broken workspace, so catch_failure records it.
-            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, message) from exc
+            raise AgentError(ErrorCode.GIT_FAILED, message) from exc
         # Not chained: git itself could not start, which the message names, so catch_failure leaves no event file.
-        raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, message) from None
+        raise AgentError(ErrorCode.GIT_FAILED, message) from None
 
 
 def _require_ok(completed: subprocess.CompletedProcess[bytes], *, action: str) -> None:
-    """Verify that subprocess exit code is zero or raise AgentError(AGENT_MUTATION_GIT_FAILED)."""
+    """Verify that subprocess exit code is zero or raise AgentError(GIT_FAILED)."""
     if completed.returncode != 0:
         detail = completed.stderr.decode("utf-8", errors="replace").strip()
-        raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, f"{action} failed: {detail or completed.returncode}")
+        raise AgentError(ErrorCode.GIT_FAILED, f"{action} failed: {detail or completed.returncode}")
 
 
 def resolve_pre_agent_baseline(worktree_path: Path) -> str:

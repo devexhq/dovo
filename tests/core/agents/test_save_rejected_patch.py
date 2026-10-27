@@ -46,5 +46,5 @@ class SaveRejectedPatchTests:
         with pytest.raises(AgentError, match="cannot write") as raised:
             save_rejected_patch(git_repo, baseline, blocker / "code_attempt_1.patch")
 
-        assert raised.value.error_code == ErrorCode.AGENT_MUTATION_GIT_FAILED
+        assert raised.value.error_code == ErrorCode.AGENT_PATCH_WRITE_FAILED
         assert (git_repo / "README.md").read_text(encoding="utf-8") == "agent text\n"

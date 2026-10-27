@@ -65,15 +65,15 @@ class DomainErrorTests:
     ) -> None:
         """Expose error_code, message and remediations as a tuple, with str() equal to message (None means the argument is omitted)."""
         if remediations is None:
-            error = DomainError(ErrorCode.CONFIG_NOT_FOUND, "Config not found.")
+            error = DomainError(ErrorCode.WORKTREE_NOT_FOUND, "Worktree not found.")
         else:
-            error = DomainError(ErrorCode.CONFIG_NOT_FOUND, "Config not found.", remediations)
+            error = DomainError(ErrorCode.WORKTREE_NOT_FOUND, "Worktree not found.", remediations)
 
-        assert error.error_code == ErrorCode.CONFIG_NOT_FOUND
-        assert error.message == "Config not found."
+        assert error.error_code == ErrorCode.WORKTREE_NOT_FOUND
+        assert error.message == "Worktree not found."
         assert error.remediations == expected
         assert error.data is None
-        assert str(error) == "Config not found."
+        assert str(error) == "Worktree not found."
 
     def test_carries_data(self) -> None:
         """Expose the data passed as data= unchanged."""

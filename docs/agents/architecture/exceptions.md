@@ -38,17 +38,17 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 - **Decision:** a package that adds context to another package's `DomainError` re-raises it as its own class, chained to the wrapped error's own cause: `from error.__cause__`.
   - Never `from error`: the cause is then a `DomainError`, so `catch_failure` drops the wrapped `OSError` record.
   - Never `from None` when the wrapped error has a cause: the record is lost.
-  - The new code names the wrapping package (see ErrorCode naming). A package with nothing to add lets the error propagate unchanged.
+  - A wrap that only adds context to the message keeps the wrapped code. A wrap that reports a different failure at its own level raises a code under its own prefix (see ErrorCode naming). A package with nothing to add lets the error propagate unchanged.
   - A re-raise inside one package that adds context, such as an `EngineError` re-raised as an `EngineError` with a "Cannot resume" message, chains the same way.
   - The chain is written at the raise, with no helper.
 - **Why:** only the wrapped error's `OSError` cause is recorded, so the record survives the wrap exactly as it would unwrapped.
 - **Since:** #1214
 - **Example:**
   ```python
-  except GitError as error:
+  except GitError as exc:
       raise WorktreeError(
-          ErrorCode.WORKTREE_CREATION_FAILED, f"Git failed creating worktree '{worktree_id}': {error.message}"
-      ) from error.__cause__
+          exc.error_code, f"Git failed {activity} for worktree '{worktree_id}': {exc}"
+      ) from exc.__cause__
   ```
 
 ## No code tokens in messages
@@ -60,10 +60,13 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 
 ## ErrorCode naming
 
-- **Decision:** `ErrorCode` members are named `<PACKAGE>_<NOUN>_<STATE>`, such as `CATALOG_SCHEMA_INVALID`, `WORKTREE_NOT_FOUND` or `CONFIG_WRITE_FAILED`.
-  - The prefix names the package that raises the code.
+- **Decision:** `ErrorCode` members are named `<PREFIX>_<NOUN>_<STATE>`, such as `CATALOG_SCHEMA_INVALID`, `PROJECT_IDENTITY_WRITE_FAILED` or `SESSION_STATE_CORRUPT`. `INTERNAL_ERROR` is the one exception.
+  - The prefix names what failed as a user sees it. Usually that is the raising package's folder name in the singular (`AGENT`, `CATALOG`, `GIT`, `WORKTREE`). For `engine`, it is what the engine runs (`SESSION`, `BLUEPRINT`, `INTERACTION`). No prefix names a layer such as `ENGINE`.
+  - A package raises a literal code only under its own prefixes, or another package's code for that package's failure, so one failure has one code whichever package finds it: `GIT_FAILED` for any git command that exits non-zero. The lint lists each prefix's packages and each shared code.
+  - The noun is left out when it is the prefix's own subject (`WORKTREE_NOT_FOUND`). The state comes last, from the lint's closed list.
+  - A failed operation is `<VERB>_FAILED` with the verb in its base form: `CREATE_FAILED`, never `CREATION_FAILED`.
   - Every member is referenced in `src/`.
-- **Why:** codes are public JSON that callers branch on; one pattern makes them predictable and stops each issue minting its own shape.
+- **Why:** codes are public JSON that callers branch on; one pattern makes them predictable, and one code per failure lets a caller branch once whichever command reported it.
 - **Since:** #1214
 
 ## Caught once, at the public entrypoint

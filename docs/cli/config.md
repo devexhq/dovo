@@ -18,7 +18,7 @@ dovo config show
 
 Tiers, lowest to highest precedence: Packaged defaults, Global (`$DOVO_HOME/global/config.json`), User (`$DOVO_HOME/user/config.json`), and Repo (`.dovo/config.json`). `DOVO_HOME` defaults to `~/.dovo` when unset. A field set by a higher tier overrides the same field from a lower one; fields no tier sets use the packaged default.
 
-- If the Repo tier is missing, `dovo config show` fails with `CONFIG_NOT_FOUND` and points you to `dovo init`.
+- If the Repo tier is missing, `dovo config show` exits with code 1, prints a "Config Error" panel reading `Configuration file not found at '<path>'.` and points you to `dovo init`. With `--format json`, `status` is `not_found`.
 - `environment.sensitive_variables` is the exception: names from the Global, User and Repo tiers are combined, with duplicates dropped.
 - A malformed or invalid Global or User file produces a "Config Error" panel naming the tier and file path.
 - With `--format json`, `raw` contains the full merged configuration, defaults included.
@@ -107,4 +107,4 @@ Checks `.dovo/config.json` against the schema:
 dovo config validate
 ```
 
-On failure it lists the missing fields or invalid values. A `default_agent` value or `agents` key other than `copilot` or `claude`, and the legacy top-level `agent` key, are reported as `CONFIG_SCHEMA_INVALID`. The file is never modified.
+On failure it lists the missing fields or invalid values. A `default_agent` value or `agents` key other than `copilot` or `claude`, and the legacy top-level `agent` key, are reported as schema validation errors, and the command exits with code 1; with `--format json`, `status` is `invalid` and `errors` lists them. The file is never modified.

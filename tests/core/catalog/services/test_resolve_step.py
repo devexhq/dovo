@@ -148,7 +148,7 @@ class StepLoadingTests:
         ("content", "code", "message_start"),
         [
             pytest.param(None, ErrorCode.CATALOG_NOT_FOUND, "Catalog file not found at '", id="missing"),
-            pytest.param("- a\n", ErrorCode.CATALOG_SYNTAX_ERROR, "Failed to load catalog blueprint '", id="syntax"),
+            pytest.param("- a\n", ErrorCode.CATALOG_SYNTAX_INVALID, "Failed to load catalog blueprint '", id="syntax"),
             pytest.param("id: 3\n", ErrorCode.CATALOG_SCHEMA_INVALID, "Model validation failed for '", id="schema"),
         ],
     )

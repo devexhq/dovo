@@ -247,7 +247,7 @@ class WorktreeCliTests:
         # Fails without --allow-dirty
         res_reject = run_dovo(["worktree", "apply", session_id, "--format", "json"], cwd=initialized_project)
         assert res_reject.exit_code == 1
-        assert json.loads(res_reject.stdout)["payload"]["error_code"] == "GIT_DIRTY_WORKTREE"
+        assert json.loads(res_reject.stdout)["payload"]["error_code"] == "WORKTREE_WORKSPACE_DIRTY"
 
         # Succeeds with --allow-dirty
         res_allow = run_dovo(

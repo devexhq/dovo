@@ -88,7 +88,7 @@ def apply_wip_to_worktree(
         Sorted list of repo-relative paths touched by the overlay.
 
     Raises:
-        WorktreeError: WORKTREE_MISSING when worktree_path is not a directory, or WORKTREE_WIP_FAILED when copying a file fails.
+        WorktreeError: WORKTREE_MISSING when worktree_path is not a directory, or WORKTREE_WIP_COPY_FAILED when copying a file fails.
         GitError: GIT_TIMEOUT when git status times out.
     """
     root = source_root.expanduser().resolve()
@@ -101,5 +101,5 @@ def apply_wip_to_worktree(
         for rel in paths:
             copy_wip_file(root, dest, rel)
     except OSError as exc:
-        raise WorktreeError(ErrorCode.WORKTREE_WIP_FAILED, str(exc)) from exc
+        raise WorktreeError(ErrorCode.WORKTREE_WIP_COPY_FAILED, str(exc)) from exc
     return paths

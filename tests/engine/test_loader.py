@@ -232,7 +232,7 @@ class EngineLoaderTests:
     @pytest.mark.parametrize(
         "worktree_id", [pytest.param(None, id="no-id"), pytest.param("gone", id="deleted-directory")]
     )
-    def test_worktree_run_without_retained_directory_raises_worktree_missing_and_keeps_row(
+    def test_worktree_run_without_retained_directory_raises_session_worktree_missing_and_keeps_row(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, worktree_id: str | None
     ) -> None:
         _seed(engine_paths, sessions_repo, use_worktree=True, worktree_id=worktree_id)
@@ -240,7 +240,7 @@ class EngineLoaderTests:
         with pytest.raises(EngineError) as exc_info:
             EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
 
-        assert exc_info.value.error_code is ErrorCode.WORKTREE_MISSING
+        assert exc_info.value.error_code is ErrorCode.SESSION_WORKTREE_MISSING
         assert "no longer exists" in str(exc_info.value)
         assert sessions_repo.get("paused-1") is not None
 
@@ -418,7 +418,7 @@ class EngineLoaderResolveAnswersTests:
         assert raised.value.error_code is ErrorCode.INTERACTION_ANSWER_INVALID
         assert str(raised.value) == expected_message
 
-    def test_state_without_pending_ask_raises_no_pending_prompt(
+    def test_state_without_pending_ask_raises_prompt_not_pending(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         _seed(engine_paths, sessions_repo)
@@ -427,7 +427,7 @@ class EngineLoaderResolveAnswersTests:
         with pytest.raises(EngineError) as raised:
             EngineLoader.resolve_answers("paused-1", state, [HeadlessAnswerInput(step_id="b", value="x")], [])
 
-        assert raised.value.error_code is ErrorCode.INTERACTION_NO_PENDING_PROMPT
+        assert raised.value.error_code is ErrorCode.INTERACTION_PROMPT_NOT_PENDING
         assert str(raised.value) == "No prompt is pending for session 'paused-1'."
 
     def test_comment_on_disabled_policy_adds_a_warning(

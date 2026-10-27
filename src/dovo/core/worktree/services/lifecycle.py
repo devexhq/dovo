@@ -188,14 +188,14 @@ class WorktreeLifecycle:
         worktree_path must be unresolved, so a dangling symlink at the target name counts as existing.
 
         Raises:
-            WorktreeError: WORKTREE_PATH_CONFLICT for a taken path or branch, WORKTREE_CREATION_FAILED when the path
+            WorktreeError: WORKTREE_PATH_CONFLICT for a taken path or branch, WORKTREE_CREATE_FAILED when the path
                 cannot be checked, or the git failure's code when the branch probe fails.
         """
         try:
             path_taken = worktree_path.exists() or worktree_path.is_symlink()
         except OSError as exc:
             raise WorktreeError(
-                ErrorCode.WORKTREE_CREATION_FAILED,
+                ErrorCode.WORKTREE_CREATE_FAILED,
                 f"Worktree path check failed: {exc}",
                 [Remediation(message=f"Check that '{worktree_path.parent}' is readable, then retry")],
             ) from exc

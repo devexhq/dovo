@@ -515,7 +515,7 @@ class SharedMutationAdapterTests:
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"}))
 
         def _fail_discard(*a: object, **k: object) -> None:
-            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, "git reset failed: index locked")
+            raise AgentError(ErrorCode.GIT_FAILED, "git reset failed: index locked")
 
         monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
 
@@ -552,7 +552,7 @@ class SharedMutationAdapterTests:
     ) -> None:
 
         def _fail_git(*a: object, **k: object) -> None:
-            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, "git broke")
+            raise AgentError(ErrorCode.GIT_FAILED, "git broke")
 
         monkeypatch.setattr(f"dovo.core.agents.cli_mutation.{patched_name}", _fail_git)
         adapter = UnitTestAdapter(run_fn=_fake_run())
@@ -822,7 +822,7 @@ class RejectedPatchSaveTests:
             pytest.param(ErrorCode.PATCH_SIZE_EXCEEDED, id="too-large"),
             pytest.param(ErrorCode.PATCH_FILE_COUNT_EXCEEDED, id="too-many-files"),
             pytest.param(ErrorCode.PATCH_BINARY_DISALLOWED, id="binary-rejected"),
-            pytest.param(ErrorCode.PATCH_UNSAFE_PATH, id="unsafe-path"),
+            pytest.param(ErrorCode.PATCH_PATH_UNSAFE, id="unsafe-path"),
             pytest.param(ErrorCode.PATCH_CORRUPT, id="invalid-diff"),
             pytest.param(ErrorCode.PATCH_WORKTREE_MISSING, id="worktree-missing"),
         ],
@@ -951,7 +951,7 @@ class RejectedPatchDiscardOrderTests:
     ) -> None:
 
         def _fail_discard(*args: object, **kwargs: object) -> None:
-            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, "git reset failed: index locked")
+            raise AgentError(ErrorCode.GIT_FAILED, "git reset failed: index locked")
 
         monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
@@ -1058,7 +1058,7 @@ class UnfixableClassificationTests:
     ) -> None:
 
         def _fail_discard(*args: object, **kwargs: object) -> None:
-            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, "git reset failed: index locked")
+            raise AgentError(ErrorCode.GIT_FAILED, "git reset failed: index locked")
 
         monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
         destination = tmp_path / "rejected" / "code_attempt_1.patch"

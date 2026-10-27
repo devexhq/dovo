@@ -327,7 +327,7 @@ class WorktreePruner:
             dry_run=dry_run,
             force=force,
             items=processed_items,
-            error_code=ErrorCode.WORKTREE_PRUNE_ITEMS_FAILED if errors else None,
+            error_code=ErrorCode.WORKTREE_PRUNE_FAILED if errors else None,
             errors=errors,
             warnings=list(detection.warnings),
             diagnostics=[*detection.diagnostics, *item_diagnostics],

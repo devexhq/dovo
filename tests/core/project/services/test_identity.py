@@ -81,7 +81,7 @@ class ProjectIdentityServiceTests:
             pytest.param('{"id": "Bad", "created_at": "2026-01-02T03:04:05Z"}', id="invalid_identity"),
         ],
     )
-    def test_load_project_identity_invalid_content_raises_invalid_schema(self, tmp_path: Path, contents: str) -> None:
+    def test_load_project_identity_invalid_content_raises_schema_invalid(self, tmp_path: Path, contents: str) -> None:
         path = tmp_path / "project.json"
         path.write_text(contents, encoding="utf-8")
         with pytest.raises(ValidationError) as validation:
@@ -90,7 +90,7 @@ class ProjectIdentityServiceTests:
         with pytest.raises(ProjectIdentityError) as raised:
             load_project_identity(path)
 
-        assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_INVALID_SCHEMA
+        assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_SCHEMA_INVALID
         assert raised.value.message == (f"Project identity at '{path}' is invalid: {validation.value}.")
         assert raised.value.remediations == ()
 
@@ -267,7 +267,7 @@ class ProjectIdentityServiceTests:
             path.write_text("{not-json", encoding="utf-8")
             with pytest.raises(ValidationError) as validation:
                 ProjectIdentity.model_validate_json("{not-json")
-            expected_code = ErrorCode.PROJECT_IDENTITY_INVALID_SCHEMA
+            expected_code = ErrorCode.PROJECT_IDENTITY_SCHEMA_INVALID
             expected_message = f"Project identity at '{path}' is invalid: {validation.value}."
         else:
             _fail_atomic_write(monkeypatch)

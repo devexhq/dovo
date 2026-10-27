@@ -461,10 +461,10 @@ class WorktreeLifecycleCollisionTests:
         assert (paths.worktrees_dir / "dovo_probefail").exists() is False
         assert "dovo/dovo_probefail" not in GitRunner().list_branches(worktree_workspace)
 
-    def test_create_when_path_check_raises_oserror_returns_creation_failed_and_records_cause(
+    def test_create_when_path_check_raises_oserror_returns_create_failed_and_records_cause(
         self, worktree_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return WORKTREE_CREATION_FAILED with the path-check message and remediation, and one error record for the PermissionError in diagnostics."""
+        """Return WORKTREE_CREATE_FAILED with the path-check message and remediation, and one error record for the PermissionError in diagnostics."""
         paths = _paths(worktree_workspace)
         worktree = Worktree(
             paths,
@@ -484,7 +484,7 @@ class WorktreeLifecycleCollisionTests:
 
         result = worktree.create(session_id="dovo_denied")
 
-        assert result.error_code == "WORKTREE_CREATION_FAILED"
+        assert result.error_code == "WORKTREE_CREATE_FAILED"
         assert result.errors == ["Worktree path check failed: permission denied"]
         assert result.remediations == [
             Remediation(message=f"Check that '{paths.worktrees_dir}' is readable, then retry")
@@ -665,9 +665,9 @@ class WorktreeCreateFailureCodeTests:
             ),
             pytest.param(
                 ("status",),
-                GitError(ErrorCode.FS_NOT_FOUND, "status failed"),
+                GitError(ErrorCode.GIT_WORKDIR_MISSING, "status failed"),
                 True,
-                ErrorCode.FS_NOT_FOUND,
+                ErrorCode.GIT_WORKDIR_MISSING,
                 "Failed to overlay uncommitted WIP into worktree: status failed",
                 [_WIP_FAILED_REMEDIATION],
                 id="wip_git_fails",
@@ -702,17 +702,17 @@ class WorktreeCreateFailureCodeTests:
     def test_create_git_error_with_oserror_cause_records_it(
         self, worktree_workspace: Path, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return error_code FS_NOT_FOUND and one diagnostics entry whose event has exception_type FileNotFoundError when git worktree add raises GitError(FS_NOT_FOUND) from FileNotFoundError."""
+        """Return error_code GIT_WORKDIR_MISSING and one diagnostics entry whose event has exception_type FileNotFoundError when git worktree add raises GitError(GIT_WORKDIR_MISSING) from FileNotFoundError."""
         try:
             raise FileNotFoundError("cwd vanished")
         except FileNotFoundError as cause:
-            failure = GitError(ErrorCode.FS_NOT_FOUND, "working directory does not exist")
+            failure = GitError(ErrorCode.GIT_WORKDIR_MISSING, "working directory does not exist")
             failure.__cause__ = cause
         worktree = _worktree(worktree_workspace, FakeGitRunner({("worktree", "add"): failure}))
 
         result = worktree.create(session_id="dovo_vanished")
 
-        assert result.error_code == ErrorCode.FS_NOT_FOUND
+        assert result.error_code == ErrorCode.GIT_WORKDIR_MISSING
         assert result.errors == ["Git worktree operation failed: working directory does not exist"]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
@@ -746,7 +746,7 @@ class WorktreeLifecycleDiagnosticLogTests:
     def test_wip_copy_failure_records_error_in_diagnostics(
         self, worktree_workspace: Path, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return WORKTREE_WIP_FAILED with an unhinted "Failed to overlay uncommitted WIP into worktree: " error and one diagnostics entry for a PermissionError error event, when create(include_wip=True) copies an untracked WIP file chmod 000."""
+        """Return WORKTREE_WIP_COPY_FAILED with an unhinted "Failed to overlay uncommitted WIP into worktree: " error and one diagnostics entry for a PermissionError error event, when create(include_wip=True) copies an untracked WIP file chmod 000."""
         worktree = _worktree(worktree_workspace)
         unreadable = worktree_workspace / "secret.txt"
         unreadable.write_text("wip\n", encoding="utf-8")
@@ -756,7 +756,7 @@ class WorktreeLifecycleDiagnosticLogTests:
         finally:
             unreadable.chmod(0o644)
 
-        assert result.error_code == ErrorCode.WORKTREE_WIP_FAILED
+        assert result.error_code == ErrorCode.WORKTREE_WIP_COPY_FAILED
         assert len(result.errors) == 1
         assert result.errors[0].startswith("Failed to overlay uncommitted WIP into worktree: ")
         assert "Details logged:" not in result.errors[0]
@@ -919,7 +919,7 @@ class WorktreeLifecycleDiagnosticLogTests:
             pytest.param("worktree_prune", "Failed to prune git worktrees: ", id="worktree_prune"),
         ],
     )
-    @pytest.mark.parametrize("code", [ErrorCode.GIT_TIMEOUT, ErrorCode.FS_NOT_FOUND])
+    @pytest.mark.parametrize("code", [ErrorCode.GIT_TIMEOUT, ErrorCode.GIT_WORKDIR_MISSING])
     def test_cleanup_reports_git_codes_it_does_not_ignore(
         self, worktree_workspace: Path, frozen_diagnostic_clock: Path, target: str, prefix: str, code: ErrorCode
     ) -> None:

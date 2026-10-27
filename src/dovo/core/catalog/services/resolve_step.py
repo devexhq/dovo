@@ -65,7 +65,7 @@ def load_step_by_path(path: str | Path) -> StepDefinition:
     """Load a step definition file by path.
 
     Raises:
-        CatalogError: CATALOG_NOT_FOUND or CATALOG_SYNTAX_ERROR from read_yaml, or CATALOG_SCHEMA_INVALID
+        CatalogError: CATALOG_NOT_FOUND or CATALOG_SYNTAX_INVALID from read_yaml, or CATALOG_SCHEMA_INVALID
             ("Model validation failed for '<path>': <exc>") when the file fails StepDefinition validation.
     """
     try:

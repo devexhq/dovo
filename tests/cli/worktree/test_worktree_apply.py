@@ -132,7 +132,7 @@ class WorktreeApplyCliIntegrationTests:
         assert result.exit_code == 1
         assert "target.py" in result.stdout
         assert len(dispatch_spy) == 1
-        assert dispatch_spy[0].error_code == "GIT_DIRTY_WORKTREE"
+        assert dispatch_spy[0].error_code == "WORKTREE_WORKSPACE_DIRTY"
         assert dispatch_spy[0].errors == [
             f"Cannot squash worktree {session.session_id}: the main repository has uncommitted changes in files the "
             "worktree also changes.\nOverlapping files:\n  • target.py"
