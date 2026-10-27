@@ -1,15 +1,17 @@
 """Invariant: every diagnostic operation name in src/dovo starts with the calling module's package folder, and every
 catch_failure operation is `<package>.<entrypoint>` and unique within its module.
 
-Scope: the rule reads every call to `catch_failure` (a bare name or an attribute) whose first argument is a string
-literal, and every call with a string-literal `operation=` keyword, such as `record_exception(...)` or a module's own
-recording helper. The package is the last folder of `package_of` for the module: `agents` for `core/agents`, `engine`
-for `engine`. A catch_failure operation must match `^<package>\\.[a-z_]+$` and appear once per module; an `operation=`
-keyword only has to start with `<package>.`, because a recording site may name the step that records and may repeat.
+Scope: the rule reads every call to `catch_failure` (a bare name or an attribute) whose operation, the first argument
+or the `operation=` keyword, is a string literal, and the string-literal `operation=` keyword of every call to a
+recorder in RECORDERS: `record_exception` and the recording helpers that forward `operation` to it. The package is the
+last folder of `package_of` for a module under `core/`, the top-level folder otherwise, and `cli` for every module under
+`cli/`: `agents` for `core/agents`, `engine` for `engine`, `cli` for `cli/session/commands`. A catch_failure operation
+must match `^<package>\\.[a-z_]+$` and appear once per module; a recorder's operation only has to start with
+`<package>.`, because a recording site may name the step that records and may repeat.
 
-Not detected, and left to review: an operation passed through a variable or built from an f-string, `catch_failure`
-imported under an alias, and whether the part after the package names the entrypoint whose result reports the failure
-rather than a sub-step.
+Not detected, and left to review: an operation passed through a variable or built from an f-string, `catch_failure` or
+a recorder imported under an alias, a new recording helper missing from RECORDERS, and whether the part after the
+package names the entrypoint whose result reports the failure rather than a sub-step.
 """
 
 from __future__ import annotations
@@ -26,6 +28,9 @@ from tests.lint.astlib import REPO_ROOT, SRC_ROOT, collect_python_files, package
 
 ENTRY: Final[str] = "docs/agents/architecture/exceptions.md#catch_failure-operation-names"
 CATCH: Final[str] = "catch_failure"
+RECORDERS: Final[frozenset[str]] = frozenset(
+    {"record_exception", "_record_recovered", "_record_reported", "_require_present"}
+)
 NAME_TAIL: Final[str] = r"\.[a-z_]+$"
 
 _CROSS_PACKAGE_FIXTURE: Final[str] = """
@@ -61,6 +66,31 @@ def reconcile(exc):
     record_exception(exc, level=DiagnosticLevel.DEBUG, operation="engine.persist")
 """
 
+_KEYWORD_CATCH_FIXTURE: Final[str] = """
+def execute(self):
+    with catch_failure(operation="catalog.load_definition") as caught:
+        target = self._target()
+    with catch_failure(operation="catalog.load_definition") as caught:
+        outcome = self._resume(target)
+"""
+
+_HELPER_FIXTURE: Final[str] = """
+def cleanup(self, exc, record):
+    _record_recovered(exc, operation="worktrees.cleanup", context={})
+    self._require_present(record, operation="git.diff", missing_message="missing")
+"""
+
+_UNRELATED_KEYWORD_FIXTURE: Final[str] = """
+def save(client):
+    client.some_api(operation="upsert")
+"""
+
+_CLI_FIXTURE: Final[str] = """
+def run(exc):
+    record_exception(exc, level=DiagnosticLevel.ERROR, operation="cli.run")
+    record_exception(exc, level=DiagnosticLevel.ERROR, operation="session.run")
+"""
+
 _COMPLIANT_FIXTURE: Final[str] = """
 def execute(self, operation):
     with catch_failure("engine.resume_target") as caught:
@@ -73,10 +103,12 @@ def execute(self, operation):
 """
 
 
-def _is_catch(call: ast.Call) -> bool:
-    """Return whether call names catch_failure, bare or as an attribute."""
+def _callee(call: ast.Call) -> str | None:
+    """Return the simple name call invokes, bare or as an attribute."""
     func = call.func
-    return (isinstance(func, ast.Name) and func.id == CATCH) or (isinstance(func, ast.Attribute) and func.attr == CATCH)
+    if isinstance(func, ast.Name):
+        return func.id
+    return func.attr if isinstance(func, ast.Attribute) else None
 
 
 def _literal(node: ast.expr | None) -> str | None:
@@ -84,16 +116,23 @@ def _literal(node: ast.expr | None) -> str | None:
     return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
 
 
-def _catch_operations(calls: list[ast.Call]) -> list[tuple[int, str]]:
-    """Return (line, operation) for each catch_failure call whose first argument is a string literal."""
-    named = ((call.lineno, _literal(call.args[0])) for call in calls if _is_catch(call) and call.args)
+def _operation_arg(call: ast.Call, *, positional: bool) -> str | None:
+    """Return call's literal operation: its first argument when positional and present, else its operation= keyword."""
+    if positional and call.args:
+        return _literal(call.args[0])
+    return next((_literal(kw.value) for kw in call.keywords if kw.arg == "operation"), None)
+
+
+def _operations(calls: list[ast.Call], callees: frozenset[str], *, positional: bool) -> list[tuple[int, str]]:
+    """Return (line, operation) for each call to one of callees whose operation is a string literal."""
+    named = ((call.lineno, _operation_arg(call, positional=positional)) for call in calls if _callee(call) in callees)
     return [(line, name) for line, name in named if name is not None]
 
 
-def _keyword_operations(calls: list[ast.Call]) -> list[tuple[int, str]]:
-    """Return (line, operation) for each string-literal operation= keyword."""
-    named = ((call.lineno, _literal(kw.value)) for call in calls for kw in call.keywords if kw.arg == "operation")
-    return [(line, name) for line, name in named if name is not None]
+def _package(rel_path: str) -> str:
+    """Return the operation package of a src/dovo module: `cli` for all of cli/, else the last folder of package_of."""
+    package = package_of(rel_path)
+    return "cli" if package.startswith("cli") else package.rsplit("/", 1)[-1]
 
 
 def _catch_problems(catches: list[tuple[int, str]], package: str) -> Iterator[tuple[int, str]]:
@@ -109,12 +148,12 @@ def _catch_problems(catches: list[tuple[int, str]], package: str) -> Iterator[tu
 
 def _violations(source: str, rel_path: str) -> list[str]:
     """Return '<rel_path>:<line>: <problem>' for each operation that breaks the naming rule."""
-    package = package_of(rel_path).rsplit("/", 1)[-1]
+    package = _package(rel_path)
     calls = [node for node in ast.walk(ast.parse(source, filename=rel_path)) if isinstance(node, ast.Call)]
-    problems = [*_catch_problems(_catch_operations(calls), package)]
+    problems = [*_catch_problems(_operations(calls, frozenset({CATCH}), positional=True), package)]
     problems += [
         (line, f"operation '{name}' does not start with '{package}.'")
-        for line, name in _keyword_operations(calls)
+        for line, name in _operations(calls, RECORDERS, positional=False)
         if not name.startswith(f"{package}.")
     ]
     return [f"{rel_path}:{line}: {problem}" for line, problem in sorted(problems)]
@@ -181,6 +220,41 @@ class CatchFailureOperationTests:
                     "'sessions.'",
                 ],
                 id="record-exception-package",
+            ),
+            pytest.param(
+                _KEYWORD_CATCH_FIXTURE,
+                "src/dovo/engine/services/fixture.py",
+                [
+                    "src/dovo/engine/services/fixture.py:3: catch_failure operation 'catalog.load_definition' "
+                    "is not 'engine.<entrypoint>'",
+                    "src/dovo/engine/services/fixture.py:3: catch_failure operation 'catalog.load_definition' "
+                    "repeats in this module",
+                    "src/dovo/engine/services/fixture.py:5: catch_failure operation 'catalog.load_definition' "
+                    "is not 'engine.<entrypoint>'",
+                    "src/dovo/engine/services/fixture.py:5: catch_failure operation 'catalog.load_definition' "
+                    "repeats in this module",
+                ],
+                id="keyword-catch",
+            ),
+            pytest.param(
+                _HELPER_FIXTURE,
+                "src/dovo/core/worktree/services/fixture.py",
+                [
+                    "src/dovo/core/worktree/services/fixture.py:3: operation 'worktrees.cleanup' does not start with "
+                    "'worktree.'",
+                    "src/dovo/core/worktree/services/fixture.py:4: operation 'git.diff' does not start with "
+                    "'worktree.'",
+                ],
+                id="recording-helper",
+            ),
+            pytest.param(
+                _UNRELATED_KEYWORD_FIXTURE, "src/dovo/core/db/fixture.py", [], id="unrelated-operation-keyword"
+            ),
+            pytest.param(
+                _CLI_FIXTURE,
+                "src/dovo/cli/session/commands/fixture.py",
+                ["src/dovo/cli/session/commands/fixture.py:4: operation 'session.run' does not start with 'cli.'"],
+                id="cli-command-group",
             ),
             pytest.param(_COMPLIANT_FIXTURE, "src/dovo/engine/services/fixture.py", [], id="compliant"),
         ],
