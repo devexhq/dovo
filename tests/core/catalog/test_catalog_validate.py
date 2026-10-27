@@ -507,24 +507,36 @@ class CatalogValidateFailurePathTests:
     @pytest.mark.parametrize(
         ("content", "expected_code", "expected_warnings"),
         [
-            pytest.param(None, ErrorCode.CATALOG_SCHEMA_INVALID, _SEMANTIC_WARNINGS, id="semantic"),
+            pytest.param(
+                yaml.safe_dump(
+                    {"name": "dup", "steps": [{"id": "s1", "type": "script", "script_path": "scripts/none.sh"}]}
+                ),
+                None,
+                ("Step 's1' script_path 'scripts/none.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND).",),
+                id="valid",
+            ),
+            pytest.param(
+                yaml.safe_dump(_semantic_errors_and_warnings_blueprint()),
+                ErrorCode.CATALOG_SCHEMA_INVALID,
+                _SEMANTIC_WARNINGS,
+                id="semantic",
+            ),
             pytest.param("foo: bar: baz\n", ErrorCode.CATALOG_SYNTAX_INVALID, (), id="syntax"),
         ],
     )
-    def test_duplicate_name_warning_comes_before_failure_warnings(
+    def test_duplicate_name_warning_comes_before_item_warnings(
         self,
         isolated_workspace: Path,
-        content: str | None,
-        expected_code: ErrorCode,
+        content: str,
+        expected_code: ErrorCode | None,
         expected_warnings: tuple[str, ...],
     ) -> None:
-        """For 'dup' in both blueprints/dup.yml and dup.yaml, list the duplicate-name warning first, then the item's own warnings."""
+        """For 'dup' in both blueprints/dup.yml and dup.yaml, list the duplicate-name warning first, then the item's own warnings, whether it passes or fails."""
         initialized_workspace_paths(isolated_workspace)
         blueprints = isolated_workspace / ".dovo" / "catalog" / "blueprints"
         blueprints.mkdir(parents=True, exist_ok=True)
-        text = content if content is not None else yaml.safe_dump(_semantic_errors_and_warnings_blueprint())
         for suffix in ("yml", "yaml"):
-            (blueprints / f"dup.{suffix}").write_text(text, encoding="utf-8")
+            (blueprints / f"dup.{suffix}").write_text(content, encoding="utf-8")
 
         result = _validate("dup", path=isolated_workspace)
 
