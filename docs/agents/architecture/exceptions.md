@@ -112,11 +112,14 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 ## catch_failure operation names
 
 - **Decision:** the `operation` passed to `catch_failure` is `<package>.<entrypoint>`.
-  - The package is written as its folder name, such as `agents`, `sessions` or `diagnostics`, or `engine` for code under `src/dovo/engine/`.
-  - The entrypoint is the method that catches, never a sub-step or another package's call.
-  - Each name is unique per `catch_failure` block.
+  - The package is the calling module's folder name, such as `agents`, `sessions` or `diagnostics`, never its singular or a command name, and `engine` for code under `src/dovo/engine/`.
+  - The entrypoint is the one whose result reports the failure, never a sub-step or another package's call: `engine.run` covers loading the blueprint it runs.
+  - A block behind an entrypoint that reports the failure as a step or agent error, a warning or a check result is named for that unit: `engine.step`, `agents.invoke`, `diagnostics.worktree_refs`.
+  - Each name is unique per `catch_failure` block within a module. An entrypoint that keeps two blocks, because one block would change what is reported or recorded, suffixes one name with what its block finds: `engine.resume_target` and `engine.resume`.
+  - A `record_exception` operation outside `catch_failure` spells its package the same way, and may name the step that records it, such as `engine.persist`.
+  - The operation is part of an unexpected failure's message: `Unexpected error during engine.run: <error>`.
 - **Why:** the name is written to every event file, so it must point at the one entrypoint that reported the failure.
-- **Since:** #1106
+- **Since:** #1214
 
 ## Lock timeouts propagate
 
