@@ -199,12 +199,12 @@ class GitRunnerExecTests:
         assert excinfo.value.error_code == ErrorCode.GIT_TIMEOUT
 
     def test_run_raises_command_error_on_nonzero_exit_when_checked(self, git_repo: Path) -> None:
-        """Raise GitError GIT_FAILED "Git execution failed ('git git rev-parse --verify nope'): fatal: Needed a single revision" from run."""
+        """Raise GitError GIT_FAILED "Git execution failed ('git rev-parse --verify nope'): fatal: Needed a single revision" from run."""
         with pytest.raises(GitError) as excinfo:
             GitRunner().run(["rev-parse", "--verify", "nope"], git_repo)
 
         assert excinfo.value.message == (
-            "Git execution failed ('git git rev-parse --verify nope'): fatal: Needed a single revision"
+            "Git execution failed ('git rev-parse --verify nope'): fatal: Needed a single revision"
         )
         assert excinfo.value.error_code == ErrorCode.GIT_FAILED
 
@@ -223,8 +223,7 @@ class GitRunnerExecTests:
 
         assert excinfo.value.error_code is ErrorCode.GIT_FAILED
         assert (
-            excinfo.value.message
-            == "Git execution failed ('git git show-ref --verify --quiet refs/heads/x'): fatal: bad"
+            excinfo.value.message == "Git execution failed ('git show-ref --verify --quiet refs/heads/x'): fatal: bad"
         )
 
     def test_get_current_branch_propagates_fs_not_found(self, tmp_path: Path) -> None:

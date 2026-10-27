@@ -188,7 +188,7 @@ class GitRunner:
         """
         result = self.exec(args, path, input_text=input_text, env=env)
         if check and result.returncode != 0:
-            raise git_command_error(["git", *args], result.returncode, result.stdout, result.stderr)
+            raise git_command_error(args, result.returncode, result.stdout, result.stderr)
         return result.stdout.rstrip("\r\n")
 
     def get_current_branch(self, path: Path) -> str:
@@ -300,7 +300,7 @@ class GitRunner:
         if result.returncode == 1:
             return False
         if result.returncode != 0:
-            raise git_command_error(["git", *args], result.returncode, result.stdout, result.stderr)
+            raise git_command_error(args, result.returncode, result.stdout, result.stderr)
         return True
 
     def rev_parse(self, path: Path, rev: str = "HEAD") -> str:

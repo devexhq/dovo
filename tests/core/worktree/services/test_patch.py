@@ -677,7 +677,7 @@ class WorktreePatchGitFailureTests:
         ("error", "code"),
         [
             pytest.param(
-                git_command_error(["git", "diff"], 128, "", "fatal: bad revision"),
+                git_command_error(["diff"], 128, "", "fatal: bad revision"),
                 ErrorCode.GIT_FAILED,
                 id="git_failed",
             ),
@@ -756,7 +756,7 @@ class WorktreePatchGitFailureTests:
         ("error", "code"),
         [
             pytest.param(
-                git_command_error(["git", "apply"], 128, "", "fatal: corrupt patch"),
+                git_command_error(["apply"], 128, "", "fatal: corrupt patch"),
                 ErrorCode.GIT_FAILED,
                 id="git_failed",
             ),

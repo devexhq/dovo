@@ -430,7 +430,7 @@ class WorktreeLifecycleCollisionTests:
                 id="probe_timeout",
             ),
             pytest.param(
-                git_command_error(cmd=["git", "show-ref"], returncode=128, stdout="", stderr="fatal"),
+                git_command_error(args=["show-ref"], returncode=128, stdout="", stderr="fatal"),
                 ErrorCode.GIT_FAILED,
                 "Git worktree operation failed (WORKTREE_GIT_FAILED): ",
                 id="probe_fatal_exit_128",
@@ -514,9 +514,9 @@ class WorktreeLifecycleCollisionTests:
                     _, _, _, branch, _, base_ref = args
                     super().exec(["branch", branch, base_ref], path)
                     self.added = True
-                    raise git_command_error(cmd=["git", "worktree", "add"], returncode=128, stdout="", stderr="boom")
+                    raise git_command_error(args=["worktree", "add"], returncode=128, stdout="", stderr="boom")
                 if self.added and args[0] == "show-ref":
-                    raise git_command_error(cmd=["git", "show-ref"], returncode=128, stdout="", stderr="fatal")
+                    raise git_command_error(args=["show-ref"], returncode=128, stdout="", stderr="fatal")
                 return super().exec(args, path, input_text=input_text, env=env)
 
         worktree = Worktree(
@@ -558,7 +558,7 @@ class WorktreeLifecycleCollisionTests:
         self, worktree_workspace: Path
     ) -> None:
         paths = _paths(worktree_workspace)
-        failure = git_command_error(cmd=["git", "rev-parse", "HEAD"], returncode=128, stdout="", stderr="boom")
+        failure = git_command_error(args=["rev-parse", "HEAD"], returncode=128, stdout="", stderr="boom")
         worktree = Worktree(
             paths,
             db=WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
@@ -853,7 +853,7 @@ class WorktreeLifecycleDiagnosticLogTests:
                     raise RuntimeError("boom")
                 return super().exec(args, path, input_text=input_text, env=env)
 
-        failure = git_command_error(cmd=["git", "worktree", "add"], returncode=128, stdout="", stderr="fatal")
+        failure = git_command_error(args=["worktree", "add"], returncode=128, stdout="", stderr="fatal")
         worktree = _worktree(worktree_workspace, _SecondProbeFails({("worktree", "add"): failure}))
 
         result = worktree.create(session_id="dovo_probe")
