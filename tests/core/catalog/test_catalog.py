@@ -604,6 +604,22 @@ class CatalogDeleteConfirmTests:
         assert result.error_code == expected_code
         assert asked == []
 
+    def test_file_removed_after_confirmation_returns_not_found(self, workspace_paths: WorkspacePaths) -> None:
+        """Return CATALOG_NOT_FOUND, errors == ["Catalog blueprint 'demo' not found."] and deleted False when the file is removed after confirm."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "demo")
+        demo_file = workspace_paths.catalog_blueprints_dir / "demo.yml"
+
+        def confirm(item: CatalogRecord) -> bool:
+            demo_file.unlink()
+            return True
+
+        result = catalog.delete("demo", confirm=confirm)
+
+        assert result.error_code == ErrorCode.CATALOG_NOT_FOUND
+        assert result.errors == ["Catalog blueprint 'demo' not found."]
+        assert result.deleted is False
+
     def test_lock_timeout_after_confirmation_propagates(
         self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
     ) -> None:

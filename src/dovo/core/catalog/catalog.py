@@ -195,8 +195,9 @@ class Catalog:
     ) -> CatalogDeleteResult:
         """Resolve, confirm and delete a REPO-tier catalog file, then reindex; confirm=None skips confirmation.
 
-        An unknown name, a dovo/-namespaced template and a non-REPO-tier match fail without being confirmed;
-        confirm runs before the workspace lock is taken, and a declined confirmation returns cancelled True.
+        An unknown name, a dovo/-namespaced template and a non-REPO-tier match fail without being confirmed.
+        No lock is held while the prompt waits; the delete's workspace lock is taken after it. A declined
+        confirmation returns cancelled True, and a file removed after confirmation fails with CATALOG_NOT_FOUND.
 
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
@@ -205,7 +206,7 @@ class Catalog:
             item = resolve_deletable_catalog_item(sha_or_name, self.paths)
             if confirm is not None and not confirm(item):
                 return CatalogDeleteResult(cancelled=True)
-            delete_catalog_item(item, self.paths)
+            delete_catalog_item(sha_or_name, item, self.paths)
         if caught.failure is not None:
             return CatalogDeleteResult(
                 **caught.failure.result_fields(),
