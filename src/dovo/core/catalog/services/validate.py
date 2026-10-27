@@ -14,7 +14,6 @@ from pydantic_core import ErrorDetails
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
 from dovo.common.models import Remediation
-from dovo.core.catalog.exceptions import AskStepInvalidError
 from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult
 
 _PLACEHOLDER_RE = re.compile(r"\$\{\{\s*inputs\.([a-zA-Z0-9_-]+)\s*\}\}")
@@ -123,7 +122,7 @@ def _read_and_parse_target_yaml(
             resolved_path=resolved_path,
             item_type=item_type,
             error_code=ErrorCode.CATALOG_FILE_UNREADABLE,
-            errors=[f"Failed to read '{resolved_path}': {exc} (CATALOG_FILE_UNREADABLE)."],
+            errors=[f"Failed to read '{resolved_path}': {exc}."],
             warnings=[],
             remediations=[Remediation(message=f"Check that '{resolved_path}' exists and is readable.")],
         )
@@ -138,7 +137,7 @@ def _read_and_parse_target_yaml(
             resolved_path=resolved_path,
             item_type=item_type,
             error_code=ErrorCode.CATALOG_SYNTAX_ERROR,
-            errors=[f"YAML syntax error in '{resolved_path}' at {location}: {exc} (CATALOG_YAML_SYNTAX_ERROR)."],
+            errors=[f"YAML syntax error in '{resolved_path}' at {location}: {exc}."],
             warnings=[],
             remediations=[Remediation(message=f"Fix the YAML syntax error at {location} in '{resolved_path}'.")],
         )
@@ -150,7 +149,7 @@ def _read_and_parse_target_yaml(
             resolved_path=resolved_path,
             item_type=item_type,
             error_code=ErrorCode.CATALOG_SYNTAX_ERROR,
-            errors=[f"'{resolved_path}' root content must be a YAML mapping (CATALOG_ROOT_NOT_OBJECT)."],
+            errors=[f"'{resolved_path}' root content must be a YAML mapping."],
             warnings=[],
             remediations=[
                 Remediation(message=f"Rewrite '{resolved_path}' with a top-level YAML mapping (key: value pairs).")
@@ -198,7 +197,12 @@ def _format_schema_exception(
     if pydantic_error is not None:
         messages = [_format_pydantic_error(error) for error in pydantic_error.errors()]
         return messages, [_schema_remediation(key) for _ in messages]
-    return [f"{exc} (CATALOG_SCHEMA_INVALID)."], [_schema_remediation(key)]
+    return [_sentence(str(exc))], [_schema_remediation(key)]
+
+
+def _sentence(text: str) -> str:
+    """Return text ending in exactly one period."""
+    return text if text.endswith(".") else f"{text}."
 
 
 def _schema_remediation(key: str) -> Remediation:
@@ -217,11 +221,9 @@ def _extract_validation_error(exc: Exception) -> ValidationError | None:
 
 
 def _format_pydantic_error(error: ErrorDetails) -> str:
-    """Format one Pydantic error entry as '<dotted.location>: <message> (<CATALOG_ASK_INVALID|CATALOG_SCHEMA_INVALID>).'."""
+    """Format one Pydantic error entry as '<dotted.location>: <message>.'."""
     location = ".".join(str(part) for part in error["loc"]) or "<root>"
-    cause = error.get("ctx", {}).get("error")
-    code = "CATALOG_ASK_INVALID" if isinstance(cause, AskStepInvalidError) else "CATALOG_SCHEMA_INVALID"
-    return f"{location}: {error['msg']} ({code})."
+    return _sentence(f"{location}: {error['msg']}")
 
 
 def _iter_all_steps(steps: list[object]) -> list[object]:
@@ -236,26 +238,24 @@ def _iter_all_steps(steps: list[object]) -> list[object]:
 
 
 def _audit_duplicate_step_ids(flat_steps: list[object]) -> list[str]:
-    """Return one CATALOG_DUPLICATE_STEP_ID error per step id occurring more than once."""
+    """Return one duplicate-step-id error per step id occurring more than once."""
     counts = Counter(getattr(step, "id", "") for step in flat_steps)
     return [
-        f"Step id '{step_id}' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."
+        f"Step id '{step_id}' is used by more than one step."
         for step_id, count in counts.items()
         if step_id and count > 1
     ]
 
 
 def _audit_duplicate_input_aliases(inputs: dict[str, object]) -> list[str]:
-    """Return one CATALOG_DUPLICATE_INPUT_ALIAS error per alias declared by more than one input."""
+    """Return one duplicate-alias error per alias declared by more than one input."""
     owners: dict[str, str] = {}
     errors: list[str] = []
     for input_name, input_def in inputs.items():
         for alias in getattr(input_def, "aliases", None) or []:
             owner = owners.get(alias)
             if owner is not None and owner != input_name:
-                errors.append(
-                    f"Alias '{alias}' is declared by both '{owner}' and '{input_name}' (CATALOG_DUPLICATE_INPUT_ALIAS)."
-                )
+                errors.append(f"Alias '{alias}' is declared by both '{owner}' and '{input_name}'.")
             else:
                 owners[alias] = input_name
     return errors
@@ -314,9 +314,7 @@ def _audit_script_paths(flat_steps: list[object], repo_root: Path) -> tuple[list
             continue
         step_id = getattr(step, "id", "")
         if _is_unsafe_relative_path(script_path):
-            errors.append(
-                f"Step '{step_id}' script_path '{script_path}' is not a safe relative path (CATALOG_UNSAFE_SCRIPT_PATH)."
-            )
+            errors.append(f"Step '{step_id}' script_path '{script_path}' is not a safe relative path.")
             continue
         if not (repo_root / script_path).exists():
             warnings.append(

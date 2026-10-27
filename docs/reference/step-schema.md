@@ -56,7 +56,7 @@ Steps are validated as follows:
    - `type: agent` → requires `prompt`
    - `type: script` → requires `script_path`
    - `type: ask` → requires `interaction`, and cannot be combined with `run`, `uses`, `command`, `prompt`, `script_path`, `tools`, `artifacts` or `assert`
-5. **`interaction` Boundary**: `interaction` is only valid with `type: ask`. Every rule on this page for an ask step is reported as `CATALOG_ASK_INVALID` by `dovo blueprint validate` and `dovo step validate`, with the step id in the message.
+5. **`interaction` Boundary**: `interaction` is only valid with `type: ask`. Every rule on this page for an ask step is reported as `CATALOG_SCHEMA_INVALID` by `dovo blueprint validate` and `dovo step validate`, with the step id in the message.
 
 ---
 

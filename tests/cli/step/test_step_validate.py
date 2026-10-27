@@ -140,7 +140,7 @@ class StepValidateCliTests:
 class StepValidateAskCliIntegrationTests:
     """Typer runner integration tests for dovo step validate over ask steps."""
 
-    def test_unsafe_options_from_path_exits_one_with_ask_invalid_code(
+    def test_unsafe_options_from_path_exits_one_with_schema_invalid_naming_the_step(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
         definition = {
@@ -163,5 +163,6 @@ class StepValidateAskCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", "pick", "--format", "json"])
 
         assert result.exit_code == 1
-        errors = json.loads(result.stdout)["payload"]["errors"]
-        assert errors[0].endswith("(CATALOG_ASK_INVALID).")
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["error_code"] == "CATALOG_SCHEMA_INVALID"
+        assert "Step 'pick'" in payload["errors"][0]

@@ -111,9 +111,7 @@ class CatalogValidateServiceTests:
         assert result.target == "noperm.yml"
         assert result.resolved_path == target_path
         assert result.item_type == "blueprint"
-        assert result.errors == [
-            f"Failed to read '{target_path}': [Errno 13] Permission denied: '{target_path}' (CATALOG_FILE_UNREADABLE)."
-        ]
+        assert result.errors == [f"Failed to read '{target_path}': [Errno 13] Permission denied: '{target_path}'."]
         assert result.warnings == []
         assert result.remediations == [Remediation(message=f"Check that '{target_path}' exists and is readable.")]
 
@@ -126,8 +124,7 @@ class CatalogValidateServiceTests:
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SYNTAX_ERROR, False)
         assert result.valid is False
         assert len(result.errors) == 1
-        assert "CATALOG_YAML_SYNTAX_ERROR" in result.errors[0]
-        assert "line 1, column 9" in result.errors[0]
+        assert result.errors[0].startswith(f"YAML syntax error in '{target_path}' at line 1, column 9: ")
 
     def test_validate_non_mapping_root_returns_invalid(self, isolated_workspace: Path) -> None:
         target_path = isolated_workspace / "list.yml"
@@ -140,7 +137,7 @@ class CatalogValidateServiceTests:
         assert result.target == "list.yml"
         assert result.resolved_path == target_path
         assert result.item_type == "blueprint"
-        assert result.errors == [f"'{target_path}' root content must be a YAML mapping (CATALOG_ROOT_NOT_OBJECT)."]
+        assert result.errors == [f"'{target_path}' root content must be a YAML mapping."]
         assert result.warnings == []
         assert result.remediations == [
             Remediation(message=f"Rewrite '{target_path}' with a top-level YAML mapping (key: value pairs).")
@@ -156,9 +153,9 @@ class CatalogValidateServiceTests:
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
         assert result.valid is False
-        assert len(result.errors) == 1
-        assert "timeout_seconds" in result.errors[0]
-        assert "CATALOG_SCHEMA_INVALID" in result.errors[0]
+        assert result.errors == [
+            "timeout_seconds: Input should be a valid integer, unable to parse string as an integer."
+        ]
 
     def test_validate_step_shape_conflict_surfaces_as_schema_error(self, isolated_workspace: Path) -> None:
         _write_yaml(
@@ -170,10 +167,7 @@ class CatalogValidateServiceTests:
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
         assert result.valid is False
-        assert len(result.errors) == 1
-        assert "run" in result.errors[0]
-        assert "uses" in result.errors[0]
-        assert "CATALOG_SCHEMA_INVALID" in result.errors[0]
+        assert result.errors == ["<root>: Value error, Step 's1': 'run' cannot be combined with uses."]
 
     def test_validate_step_target_uses_step_schema(self, isolated_workspace: Path) -> None:
         _write_yaml(isolated_workspace / "missing_id.yml", {"run": "pytest"})
@@ -185,7 +179,7 @@ class CatalogValidateServiceTests:
         assert result.target == "missing_id.yml"
         assert result.resolved_path == isolated_workspace / "missing_id.yml"
         assert result.item_type == "step"
-        assert result.errors == ["id: Field required (CATALOG_SCHEMA_INVALID)."]
+        assert result.errors == ["id: Field required."]
         assert result.warnings == []
         assert result.remediations == [Remediation(message="Fix the reported schema error for target 'missing_id'.")]
 
@@ -202,12 +196,10 @@ class CatalogValidateServiceTests:
         assert result.target == "dup.yml"
         assert result.resolved_path == isolated_workspace / "dup.yml"
         assert result.item_type == "blueprint"
-        assert result.errors == ["Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."]
+        assert result.errors == ["Step id 'run-tests' is used by more than one step."]
         assert result.warnings == []
         assert result.remediations == [
-            Remediation(
-                message="Resolve: Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."
-            )
+            Remediation(message="Resolve: Step id 'run-tests' is used by more than one step.")
         ]
         assert len(result.remediations) == len(result.errors)
 
@@ -234,7 +226,7 @@ class CatalogValidateServiceTests:
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
         assert result.valid is False
-        assert result.errors == ["Step id 'inner' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."]
+        assert result.errors == ["Step id 'inner' is used by more than one step."]
 
     def test_validate_duplicate_input_alias_reports_error(self, isolated_workspace: Path) -> None:
         _write_yaml(
@@ -256,13 +248,9 @@ class CatalogValidateServiceTests:
         assert result.target == "alias.yml"
         assert result.resolved_path == isolated_workspace / "alias.yml"
         assert result.item_type == "blueprint"
-        assert result.errors == ["Alias '-f' is declared by both 'foo' and 'bar' (CATALOG_DUPLICATE_INPUT_ALIAS)."]
+        assert result.errors == ["Alias '-f' is declared by both 'foo' and 'bar'."]
         assert result.warnings == []
-        assert result.remediations == [
-            Remediation(
-                message="Resolve: Alias '-f' is declared by both 'foo' and 'bar' (CATALOG_DUPLICATE_INPUT_ALIAS)."
-            )
-        ]
+        assert result.remediations == [Remediation(message="Resolve: Alias '-f' is declared by both 'foo' and 'bar'.")]
 
     def test_validate_undeclared_placeholder_reports_warning(self, isolated_workspace: Path) -> None:
         _write_yaml(
@@ -296,14 +284,10 @@ class CatalogValidateServiceTests:
         assert result.target == "script.yml"
         assert result.resolved_path == isolated_workspace / "script.yml"
         assert result.item_type == "blueprint"
-        assert result.errors == [
-            "Step 's1' script_path '../escape.sh' is not a safe relative path (CATALOG_UNSAFE_SCRIPT_PATH)."
-        ]
+        assert result.errors == ["Step 's1' script_path '../escape.sh' is not a safe relative path."]
         assert result.warnings == []
         assert result.remediations == [
-            Remediation(
-                message="Resolve: Step 's1' script_path '../escape.sh' is not a safe relative path (CATALOG_UNSAFE_SCRIPT_PATH)."
-            )
+            Remediation(message="Resolve: Step 's1' script_path '../escape.sh' is not a safe relative path.")
         ]
 
     def test_validate_missing_script_file_reports_warning(self, isolated_workspace: Path) -> None:
@@ -406,7 +390,7 @@ class CatalogValidateServiceTests:
 class CatalogValidateAskTests:
     """Tier 1 integration tests for Catalog.validate over `type: ask` steps."""
 
-    def test_ask_rule_violation_reports_ask_invalid_with_step_id(self, isolated_workspace: Path) -> None:
+    def test_ask_rule_violation_reports_schema_invalid_with_step_id(self, isolated_workspace: Path) -> None:
         target_path = _write_yaml(
             isolated_workspace / "ask.yml", {"name": "ask", "steps": [{"id": "approve", "type": "ask"}]}
         )
@@ -415,7 +399,6 @@ class CatalogValidateAskTests:
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
         assert "Step 'approve'" in result.errors[0]
-        assert result.errors[0].endswith("(CATALOG_ASK_INVALID).")
 
     def test_unknown_interaction_mode_stays_schema_invalid(self, isolated_workspace: Path) -> None:
         steps = [{"id": "approve", "type": "ask", "interaction": {"mode": "dropdown", "message": "Go?"}}]
@@ -424,7 +407,7 @@ class CatalogValidateAskTests:
         result = _validate(str(target_path), path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
-        assert all(error.endswith("(CATALOG_SCHEMA_INVALID).") for error in result.errors)
+        assert result.errors != []
 
 
 class _ExplodingBlueprintDefinition(BlueprintDefinition):

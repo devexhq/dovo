@@ -49,13 +49,9 @@ INVALID_CASE = FormatterCase(
         target="dup.yml",
         resolved_path=Path("/workspace/dup.yml"),
         item_type="blueprint",
-        errors=["Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."],
+        errors=["Step id 'run-tests' is used by more than one step."],
         warnings=["Step 's1' script_path 'scripts/none.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
-        remediations=[
-            Remediation(
-                message="Resolve: Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."
-            )
-        ],
+        remediations=[Remediation(message="Resolve: Step id 'run-tests' is used by more than one step.")],
     ),
     view=CatalogValidateView(
         valid=False,
@@ -64,18 +60,14 @@ INVALID_CASE = FormatterCase(
         target="dup.yml",
         resolved_path="/workspace/dup.yml",
         item_type="blueprint",
-        errors=["Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."],
+        errors=["Step id 'run-tests' is used by more than one step."],
         warnings=["Step 's1' script_path 'scripts/none.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
-        remediations=[
-            Remediation(
-                message="Resolve: Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."
-            )
-        ],
+        remediations=[Remediation(message="Resolve: Step id 'run-tests' is used by more than one step.")],
     ),
     render_expectations=[
         "FAILED",
         "dup.yml",
-        "CATALOG_DUPLICATE_STEP_ID",
+        "CATALOG_SCHEMA_INVALID",
         "run-tests",
         "CATALOG_SCRIPT_NOT_FOUND",
     ],
@@ -89,8 +81,8 @@ MORE_ERRORS_THAN_REMEDIATIONS_CASE = FormatterCase(
         resolved_path=Path("/workspace/two.yml"),
         item_type="blueprint",
         errors=[
-            "Step id 'build' is used by more than one step (CATALOG_DUPLICATE_STEP_ID).",
-            "Alias '-f' is declared by both 'foo' and 'bar' (CATALOG_DUPLICATE_INPUT_ALIAS).",
+            "Step id 'build' is used by more than one step.",
+            "Alias '-f' is declared by both 'foo' and 'bar'.",
         ],
         remediations=[Remediation(message="Rename one of the 'build' steps")],
     ),
@@ -102,15 +94,16 @@ MORE_ERRORS_THAN_REMEDIATIONS_CASE = FormatterCase(
         resolved_path="/workspace/two.yml",
         item_type="blueprint",
         errors=[
-            "Step id 'build' is used by more than one step (CATALOG_DUPLICATE_STEP_ID).",
-            "Alias '-f' is declared by both 'foo' and 'bar' (CATALOG_DUPLICATE_INPUT_ALIAS).",
+            "Step id 'build' is used by more than one step.",
+            "Alias '-f' is declared by both 'foo' and 'bar'.",
         ],
         remediations=[Remediation(message="Rename one of the 'build' steps")],
     ),
     render_expectations=[
         "FAILED",
-        "CATALOG_DUPLICATE_STEP_ID",
-        "CATALOG_DUPLICATE_INPUT_ALIAS",
+        "CATALOG_SCHEMA_INVALID",
+        "Step id 'build' is used by more than one step.",
+        "Alias '-f' is declared by both 'foo' and 'bar'.",
         "Rename one of the 'build' steps",
     ],
 )
@@ -147,11 +140,11 @@ PAYLOAD_CASES = [
             "resolved_path": "/workspace/dup.yml",
             "item_type": "blueprint",
             "error_code": "CATALOG_SCHEMA_INVALID",
-            "errors": ["Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."],
+            "errors": ["Step id 'run-tests' is used by more than one step."],
             "warnings": ["Step 's1' script_path 'scripts/none.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
             "remediations": [
                 {
-                    "message": "Resolve: Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID).",
+                    "message": "Resolve: Step id 'run-tests' is used by more than one step.",
                     "command": None,
                 }
             ],
