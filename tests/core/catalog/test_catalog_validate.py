@@ -388,6 +388,155 @@ class CatalogValidateServiceTests:
         assert frozen_diagnostic_clock.exists() is logged
 
 
+_SEMANTIC_ERRORS: tuple[str, ...] = (
+    "Step id 'a' is used by more than one step.",
+    "Alias '-f' is declared by both 'foo' and 'bar'.",
+)
+_SEMANTIC_WARNINGS: tuple[str, ...] = (
+    "Step 'a' script_path 'nope.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND).",
+    "Placeholder 'inputs.ghost' is not declared in 'inputs:' (CATALOG_UNDECLARED_INPUT_PLACEHOLDER).",
+)
+
+
+def _semantic_errors_and_warnings_blueprint() -> dict[str, object]:
+    """Return a blueprint with a duplicate step id, a duplicate alias, a missing script and an undeclared placeholder."""
+    return {
+        "name": "w",
+        "inputs": {
+            "foo": {"type": "string", "aliases": ["-f"]},
+            "bar": {"type": "string", "aliases": ["-f"]},
+        },
+        "steps": [
+            {"id": "a", "run": "echo ${{ inputs.ghost }}"},
+            {"id": "a", "type": "script", "script_path": "nope.sh"},
+        ],
+    }
+
+
+class CatalogValidateFailurePathTests:
+    """Tier 1 contract tests pinning every field of each failing Catalog.validate result."""
+
+    def test_unreadable_file_records_no_diagnostic(
+        self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return CATALOG_FILE_UNREADABLE with empty diagnostics and write no event file for a mode-000 target."""
+        target_path = _write_yaml(workspace_paths.root_dir / "noperm.yml", {"name": "noperm"})
+        target_path.chmod(0)
+        try:
+            if os.access(target_path, os.R_OK):
+                pytest.skip("filesystem still allows reading unreadable mode")
+            result = _validate(str(target_path), path=workspace_paths.root_dir, catalog=Catalog(workspace_paths))
+        finally:
+            target_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+
+        assert result.error_code == ErrorCode.CATALOG_FILE_UNREADABLE
+        assert result.diagnostics == []
+        assert frozen_diagnostic_clock.exists() is False
+
+    def test_yaml_syntax_error_pins_every_field(self, isolated_workspace: Path) -> None:
+        target_path = isolated_workspace / "bad.yml"
+        target_path.write_text("foo: bar: baz\n", encoding="utf-8")
+
+        result = _validate("bad.yml", path=isolated_workspace)
+
+        assert result.model_dump(exclude={"errors"}) == {
+            "error_code": ErrorCode.CATALOG_SYNTAX_INVALID,
+            "warnings": [],
+            "remediations": [
+                {"message": f"Fix the YAML syntax error at line 1, column 9 in '{target_path}'.", "command": None}
+            ],
+            "diagnostics": [],
+            "valid": False,
+            "target": "bad.yml",
+            "resolved_path": target_path,
+            "item_type": "blueprint",
+        }
+        assert result.errors == [
+            f"YAML syntax error in '{target_path}' at line 1, column 9: mapping values are not allowed here\n"
+            '  in "<unicode string>", line 1, column 9:\n    foo: bar: baz\n            ^.'
+        ]
+
+    def test_several_schema_errors_keep_every_message_and_remediation(self, isolated_workspace: Path) -> None:
+        _write_yaml(
+            isolated_workspace / "multi.yml",
+            {"name": "m", "timeout_seconds": "x", "description": 5, "steps": [{"id": "s1", "run": "echo"}]},
+        )
+
+        result = _validate("multi.yml", path=isolated_workspace)
+
+        assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
+        assert result.valid is False
+        assert result.errors == [
+            "description: Input should be a valid string.",
+            "timeout_seconds: Input should be a valid integer, unable to parse string as an integer.",
+        ]
+        assert result.warnings == []
+        assert result.remediations == [Remediation(message="Fix the reported schema error for target 'multi'.")] * 2
+        assert result.diagnostics == []
+
+    def test_several_semantic_errors_keep_their_warnings(self, isolated_workspace: Path) -> None:
+        _write_yaml(isolated_workspace / "semantic.yml", _semantic_errors_and_warnings_blueprint())
+
+        result = _validate("semantic.yml", path=isolated_workspace)
+
+        assert result.model_dump() == {
+            "error_code": ErrorCode.CATALOG_SCHEMA_INVALID,
+            "errors": list(_SEMANTIC_ERRORS),
+            "warnings": list(_SEMANTIC_WARNINGS),
+            "remediations": [{"message": f"Resolve: {error}", "command": None} for error in _SEMANTIC_ERRORS],
+            "diagnostics": [],
+            "valid": False,
+            "target": "semantic.yml",
+            "resolved_path": isolated_workspace / "semantic.yml",
+            "item_type": "blueprint",
+        }
+
+    def test_step_unsafe_script_path_reports_semantic_error(self, isolated_workspace: Path) -> None:
+        _write_yaml(isolated_workspace / "unsafe.yml", {"id": "s", "type": "script", "script_path": "../x.sh"})
+
+        result = _validate("unsafe.yml", path=isolated_workspace, item_type=CatalogItemType.STEP)
+
+        assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
+        assert result.item_type == "step"
+        assert result.errors == ["Step 's' script_path '../x.sh' is not a safe relative path."]
+        assert result.warnings == []
+        assert result.remediations == [
+            Remediation(message="Resolve: Step 's' script_path '../x.sh' is not a safe relative path.")
+        ]
+
+    @pytest.mark.parametrize(
+        ("content", "expected_code", "expected_warnings"),
+        [
+            pytest.param(None, ErrorCode.CATALOG_SCHEMA_INVALID, _SEMANTIC_WARNINGS, id="semantic"),
+            pytest.param("foo: bar: baz\n", ErrorCode.CATALOG_SYNTAX_INVALID, (), id="syntax"),
+        ],
+    )
+    def test_duplicate_name_warning_comes_before_failure_warnings(
+        self,
+        isolated_workspace: Path,
+        content: str | None,
+        expected_code: ErrorCode,
+        expected_warnings: tuple[str, ...],
+    ) -> None:
+        """For 'dup' in both blueprints/dup.yml and dup.yaml, list the duplicate-name warning first, then the item's own warnings."""
+        initialized_workspace_paths(isolated_workspace)
+        blueprints = isolated_workspace / ".dovo" / "catalog" / "blueprints"
+        blueprints.mkdir(parents=True, exist_ok=True)
+        text = content if content is not None else yaml.safe_dump(_semantic_errors_and_warnings_blueprint())
+        for suffix in ("yml", "yaml"):
+            (blueprints / f"dup.{suffix}").write_text(text, encoding="utf-8")
+
+        result = _validate("dup", path=isolated_workspace)
+
+        assert result.error_code == expected_code
+        assert result.resolved_path == blueprints / "dup.yaml"
+        assert result.warnings == [
+            "Duplicate catalog name 'dup' at tier 'repo'; using 'blueprints/dup.yaml' "
+            "(also found in: blueprints/dup.yml).",
+            *expected_warnings,
+        ]
+
+
 class CatalogValidateAskTests:
     """Tier 1 integration tests for Catalog.validate over `type: ask` steps."""
 
@@ -400,6 +549,32 @@ class CatalogValidateAskTests:
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
         assert "Step 'approve'" in result.errors[0]
+
+    def test_ask_blueprint_reports_every_schema_error(self, isolated_workspace: Path) -> None:
+        _write_yaml(isolated_workspace / "ask.yml", {"name": "ask", "steps": [{"id": "approve", "type": "ask"}]})
+
+        result = _validate("ask.yml", path=isolated_workspace)
+
+        assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
+        assert result.errors == [
+            "steps.0.function-after[validate_step_shape(), StepDefinition]: Value error, "
+            "Step 'approve': 'type: ask' requires 'interaction'.",
+            "steps.0.function-after[validate_on_max_iterations_context(), LoopStepBlock].type: Input should be 'loop'.",
+            "steps.0.function-after[validate_on_max_iterations_context(), LoopStepBlock].until: Field required.",
+            "steps.0.function-after[validate_on_max_iterations_context(), LoopStepBlock].do: Field required.",
+        ]
+        assert result.warnings == []
+        assert result.remediations == [Remediation(message="Fix the reported schema error for target 'ask'.")] * 4
+
+    def test_ask_step_conflict_reports_one_schema_error(self, isolated_workspace: Path) -> None:
+        _write_yaml(isolated_workspace / "ask_step.yml", {"id": "approve", "type": "ask", "run": "x"})
+
+        result = _validate("ask_step.yml", path=isolated_workspace, item_type=CatalogItemType.STEP)
+
+        assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
+        assert result.item_type == "step"
+        assert result.errors == ["<root>: Value error, Step 'approve': 'type: ask' cannot be combined with run."]
+        assert result.remediations == [Remediation(message="Fix the reported schema error for target 'ask_step'.")]
 
 
 class _ExplodingBlueprintDefinition(BlueprintDefinition):

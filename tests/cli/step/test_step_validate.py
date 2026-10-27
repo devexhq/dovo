@@ -166,3 +166,26 @@ class StepValidateAskCliIntegrationTests:
         payload = json.loads(result.stdout)["payload"]
         assert payload["error_code"] == "CATALOG_SCHEMA_INVALID"
         assert "Step 'pick'" in payload["errors"][0]
+
+    def test_ask_conflict_json_payload(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        """Exit 1 with the exact payload for a step file combining 'type: ask' with 'run'."""
+        target = isolated_workspace / "ask_step.yml"
+        target.write_text(yaml.safe_dump({"id": "approve", "type": "ask", "run": "x"}), "utf-8")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "step", "validate", str(target), "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["payload"] == {
+            "error_code": "CATALOG_SCHEMA_INVALID",
+            "errors": ["<root>: Value error, Step 'approve': 'type: ask' cannot be combined with run."],
+            "warnings": [],
+            "remediations": [{"message": "Fix the reported schema error for target 'ask_step'.", "command": None}],
+            "diagnostics": [],
+            "valid": False,
+            "status_label": "FAILED",
+            "target": str(target),
+            "resolved_path": target.as_posix(),
+            "item_type": "step",
+        }
