@@ -56,6 +56,7 @@ class StepExecutionRedactionTests:
                 session_log_dir=log_dir,
                 on_output=lambda stream, line: streamed.append((stream, line)),
                 sensitive_variables=listed,
+                diagnostics=[],
             )
         ).run()
 
@@ -83,7 +84,9 @@ class StepExecutionRedactionTests:
         step = StepBuilder.agent("plan").with_id("plan").build()
 
         StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, session_log_dir=log_dir, agent_runner=_runner)
+            StepExecutionContext(
+                step=step, worktree_path=tmp_path, session_log_dir=log_dir, agent_runner=_runner, diagnostics=[]
+            )
         ).run()
 
         logged = (log_dir / "01_plan_attempt_1.stdout.log").read_text(encoding="utf-8")
@@ -109,6 +112,7 @@ class StepExecutionRedactionTests:
                 worktree_path=tmp_path,
                 on_output=lambda stream, line: streamed.append((stream, line)),
                 sensitive_variables=listed,
+                diagnostics=[],
             )
         ).run()
 
@@ -119,7 +123,9 @@ class StepExecutionRedactionTests:
         (engine_paths.root_dir / ".env").write_text("DB_PASSWORD=hunter2-long\n", encoding="utf-8")
         step = StepBuilder.command("echo hunter2-long").build()
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, paths=engine_paths)).run()
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, paths=engine_paths, diagnostics=[])
+        ).run()
 
         assert result.stdout == "[REDACTED:DB_PASSWORD]\n"
 
@@ -136,7 +142,9 @@ class StepExecutionRedactionTests:
         monkeypatch.setenv(name, value)
         monkeypatch.delenv("UNSET_NAME", raising=False)
         step = StepBuilder.command(f"echo ${name}").assert_output_not_contains(value).build()
-        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, sensitive_variables=listed))
+        execution = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, sensitive_variables=listed, diagnostics=[])
+        )
 
         result = execution.run()
 
@@ -160,7 +168,7 @@ class StepExecutionRedactionTests:
         step = StepBuilder.command(f"echo ${name}").assert_output_contains(value).build()
 
         result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, sensitive_variables=listed)
+            StepExecutionContext(step=step, worktree_path=tmp_path, sensitive_variables=listed, diagnostics=[])
         ).run()
 
         assert result.status == "completed"

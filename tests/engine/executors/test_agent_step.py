@@ -48,7 +48,7 @@ from dovo.engine.executors.models import (
 )
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, RecordingProgressSink, new_file_diff
 from tests.harness.builders import StepBuilder
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
 _NO_OP_SUMMARY = "Inspected the repository; no edits were required."
 _METADATA = ExecutionMetadata(step=StepMetadata(id="plan", name="plan", index=1))
@@ -277,7 +277,7 @@ class ExecuteAgentStepOutputTests:
                 "needs a human",
                 ["Discarded edit saved to /tmp/x.patch."],
                 "Agent reported the task unfixable: needs a human\nDiscarded edit saved to /tmp/x.patch.",
-                id="unfixable-with-diagnostics",
+                id="unfixable-with-errors",
             ),
             pytest.param(
                 AgentResponseStatus.TIMEOUT,
@@ -353,7 +353,7 @@ class ExecuteAgentStepOutputTests:
     def test_callback_failure_fails_attempt_and_drops_success_classification(
         self, git_repo: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Fail with the unhinted callback error, carry the hint in warnings and write one engine.step record."""
+        """Fail with "Agent output callback error: <exc>" and set outcome.diagnostics == [the engine.step record]."""
         _use_provider(monkeypatch, FakeAgentProvider(_patch("a.txt")))
         step = _step()
 
@@ -367,7 +367,7 @@ class ExecuteAgentStepOutputTests:
         assert outcome.error_message == "Agent output callback error: ui down"
         assert _summary(outcome)["status"] == "provider_error"
         assert _summary(outcome)["touched_files"] == ["a.txt"]
-        assert outcome.warnings == [diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")]
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"], event["context"]) == (
             "error",
@@ -375,15 +375,16 @@ class ExecuteAgentStepOutputTests:
             {"session_id": None, "step_id": step.id, "path": str(git_repo)},
         )
 
-    def test_attempt_warnings_carry_into_outcome_warnings(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    def test_attempt_records_carry_into_outcome_diagnostics(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Copy AgentAttempt.warnings ['w'] onto the dispatch outcome's warnings unchanged."""
-        _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, warnings=["w"]))
+        """Copy AgentAttempt.diagnostics [record] onto the dispatch outcome's diagnostics unchanged."""
+        record = diagnostic_record(frozen_diagnostic_clock)
+        _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, diagnostics=[record]))
 
         outcome = _run(tmp_path)
 
-        assert outcome.warnings == ["w"]
+        assert outcome.diagnostics == [record]
 
 
 class ExecuteAgentStepScratchTests:
@@ -453,10 +454,10 @@ class ExecuteAgentStepScratchTests:
         assert outcome.exit_code == 203
         assert "AGENT_SCRATCH_UNAVAILABLE" in (outcome.error_message or "")
         assert (outcome.error_message or "").splitlines()[1:] == [
-            diagnostic_hint(frozen_diagnostic_clock).lstrip("\n"),
             "Fix:",
             "- Restore access to the session temp directory or correct its storage path.",
         ]
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.step"
         assert requested == []
         assert (git_repo / "README.md").read_bytes() == readme_before
@@ -728,7 +729,7 @@ class AgentStepRejectedPatchTests:
             monkeypatch,
             AgentAttempt(
                 status=AgentResponseStatus.PROVIDER_ERROR,
-                diagnostics=["gate said no", "Discarded edit saved to P."],
+                errors=["gate said no", "Discarded edit saved to P."],
                 rejected_patch_path="P",
             ),
         )

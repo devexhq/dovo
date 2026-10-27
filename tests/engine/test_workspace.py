@@ -36,7 +36,7 @@ from dovo.engine.models import RunSettings
 from dovo.engine.workspace import Workspace
 from tests.engine.conftest import WorktreeSetupFactory
 from tests.harness.builders import WorkspaceBuilder
-from tests.harness.diagnostic_log import diagnostic_hint, diagnostic_record, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.git_index import snapshot_index
 from tests.harness.sessions import RecordingRunObserver
@@ -662,7 +662,7 @@ class WorkspaceCaptureAndPersistDiffTests:
         setup = worktree_setup(session_id=session_id)
         warnings: list[str] = []
 
-        setup.workspace.capture_and_persist_diff(setup.session if session_present else None, warnings)
+        setup.workspace.capture_and_persist_diff(setup.session if session_present else None, warnings, [])
 
         assert warnings == []
 
@@ -687,7 +687,7 @@ class WorkspaceCaptureAndPersistDiffTests:
         assert session is not None
         (session.worktree_path / "new_file.txt").write_text("pin=1234\n", encoding="utf-8")
 
-        workspace.capture_and_persist_diff(session, [])
+        workspace.capture_and_persist_diff(session, [], [])
 
         patch_text = (worktree_paths.session_dir("sess-1") / "diff.patch").read_text(encoding="utf-8")
         assert expected_line in patch_text
@@ -702,7 +702,7 @@ class WorkspaceCaptureAndPersistDiffTests:
         (session.worktree_path / "new_file.txt").write_text("token=s3cr3t-value\n", encoding="utf-8")
         warnings: list[str] = []
 
-        workspace.capture_and_persist_diff(session, warnings)
+        workspace.capture_and_persist_diff(session, warnings, [])
 
         patch_text = (worktree_paths.session_dir("sess-1") / "diff.patch").read_text(encoding="utf-8")
         assert "+token=[REDACTED:SVC_TOKEN]" in patch_text
@@ -718,7 +718,7 @@ class WorkspaceCaptureAndPersistDiffTests:
         before = snapshot_index(session.worktree_path)
         warnings: list[str] = []
 
-        workspace.capture_and_persist_diff(session, warnings)
+        workspace.capture_and_persist_diff(session, warnings, [])
 
         patch_text = (worktree_paths.session_dir("sess-1") / "diff.patch").read_text(encoding="utf-8")
         assert "diff --git a/new.txt b/new.txt" in patch_text
@@ -726,10 +726,10 @@ class WorkspaceCaptureAndPersistDiffTests:
         assert snapshot_index(session.worktree_path) == before
         assert "?? new.txt" in before.status.splitlines()
 
-    def test_persist_failure_records_error_and_hints_warning(
+    def test_persist_failure_records_error_into_diagnostics(
         self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Append the hinted persist failure and write one engine.workspace record when writing diff.patch raises."""
+        """Append the persist failure alone and add its engine.workspace record to diagnostics when writing diff.patch raises."""
         workspace, _, _, session, _ = worktree_setup(session_id="sess-1")
         assert session is not None
 
@@ -738,12 +738,12 @@ class WorkspaceCaptureAndPersistDiffTests:
 
         monkeypatch.setattr("dovo.engine.workspace.write_session_diff", _disk_full)
         warnings: list[str] = []
+        diagnostics: list[DiagnosticRecord] = []
 
-        workspace.capture_and_persist_diff(session, warnings)
+        workspace.capture_and_persist_diff(session, warnings, diagnostics)
 
-        assert warnings == [
-            f"Failed to persist session diff artifact: disk full{diagnostic_hint(frozen_diagnostic_clock)}"
-        ]
+        assert warnings == ["Failed to persist session diff artifact: disk full"]
+        assert diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"]) == ("error", "engine.workspace")
         assert event["context"] == {"session_id": "sess-1", "path": str(session.worktree_path)}
@@ -756,13 +756,15 @@ class WorkspaceCaptureAndPersistDiffTests:
         assert session is not None
         unknown_base = session.model_copy(update={"base_commit": "0" * 40})
         warnings: list[str] = []
+        diagnostics: list[DiagnosticRecord] = []
 
-        workspace.capture_and_persist_diff(unknown_base, warnings)
+        workspace.capture_and_persist_diff(unknown_base, warnings, diagnostics)
 
         assert len(warnings) == 1
         assert warnings[0].startswith("Failed to persist session diff artifact: ")
         assert "Details logged:" not in warnings[0]
         assert not (worktree_paths.session_dir("sess-1") / "diff.patch").exists()
+        assert diagnostics == []
         assert not frozen_diagnostic_clock.parent.parent.exists()
 
 
@@ -993,7 +995,7 @@ class WorkspaceSinglePathResolutionTests:
         store = workspace.prepare_session_artifacts()
         assert store is not None
         assert workspace.prepare_session_log_dir(warnings) == paths.logs_dir / "path-snapshot"
-        workspace.capture_and_persist_diff(session, warnings)
+        workspace.capture_and_persist_diff(session, warnings, [])
         assert warnings == []
 
 

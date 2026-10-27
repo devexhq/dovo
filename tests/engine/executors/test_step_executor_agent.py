@@ -58,7 +58,9 @@ def _runner(worktree: Path) -> AgentStepRunner:
 
 
 def _run_agent_step(worktree: Path, step_builder: StepBuilder) -> StepResult:
-    context = StepExecutionContext(step=step_builder.build(), worktree_path=worktree, agent_runner=_runner(worktree))
+    context = StepExecutionContext(
+        step=step_builder.build(), worktree_path=worktree, agent_runner=_runner(worktree), diagnostics=[]
+    )
     return StepExecution(context).run()
 
 
@@ -86,9 +88,13 @@ class AgentRunnerDispatchTests:
         step = StepBuilder.agent("plan").with_id("plan-step").build()
 
         StepExecution(
-            StepExecutionContext(step=step, worktree_path=git_repo, agent_runner=_runner, loop_iteration=3)
+            StepExecutionContext(
+                step=step, worktree_path=git_repo, agent_runner=_runner, loop_iteration=3, diagnostics=[]
+            )
         ).run()
-        StepExecution(StepExecutionContext(step=step, worktree_path=git_repo, agent_runner=_runner)).run()
+        StepExecution(
+            StepExecutionContext(step=step, worktree_path=git_repo, agent_runner=_runner, diagnostics=[])
+        ).run()
 
         assert [(metadata.step.id, metadata.step.attempt, metadata.loop_iteration) for metadata in received] == [
             ("plan-step", 1, 3),
@@ -159,7 +165,7 @@ class StepExecutionAgentRunnerTests:
             engine_workspace, key="planner", definition={"id": "planner", "type": "agent", "prompt": "plan"}
         )
         context = StepExecutionContext(
-            step=StepDefinition(id="s1", uses="planner"), worktree_path=tmp_path, paths=engine_paths
+            step=StepDefinition(id="s1", uses="planner"), worktree_path=tmp_path, paths=engine_paths, diagnostics=[]
         )
 
         with pytest.raises(ValueError, match=r"Step 's1' is an agent step and requires an agent runner\."):
@@ -176,9 +182,13 @@ class AgentRunnerAttemptIdentityTests:
         resumed = StepBuilder.agent("plan").with_id("plan-step").build()
         runner = _runner(git_repo)
 
-        StepExecution(StepExecutionContext(step=retried, worktree_path=git_repo, agent_runner=runner)).run()
         StepExecution(
-            StepExecutionContext(step=resumed, worktree_path=git_repo, agent_runner=runner, initial_attempt=1)
+            StepExecutionContext(step=retried, worktree_path=git_repo, agent_runner=runner, diagnostics=[])
+        ).run()
+        StepExecution(
+            StepExecutionContext(
+                step=resumed, worktree_path=git_repo, agent_runner=runner, initial_attempt=1, diagnostics=[]
+            )
         ).run()
 
         invocations = [request.invocation for request in provider.requests]
@@ -204,6 +214,7 @@ class AgentStepRedactionTests:
             worktree_path=git_repo,
             agent_runner=_runner(git_repo),
             on_output=lambda _stream, line: streamed.append(line),
+            diagnostics=[],
         )
 
         result = StepExecution(context).run()
@@ -248,7 +259,9 @@ class StepExecutorRejectedPatchTests:
 
         step = StepBuilder.agent("plan").build()
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=git_repo, agent_runner=_runner)).run()
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=git_repo, agent_runner=_runner, diagnostics=[])
+        ).run()
 
         assert result.status == "failed"
         assert result.rejected_patch_path == "P"
@@ -283,6 +296,7 @@ class StepExecutorAgentProgressTests:
             loop_id="code-loop",
             loop_iteration=2,
             session_log_dir=log_dir,
+            diagnostics=[],
         )
 
         StepExecution(context).run()
@@ -310,6 +324,7 @@ class StepExecutorAgentProgressTests:
             agent_runner=self._reporting_runner(received),
             on_progress=streamed.append,
             save_attempt_logs=False,
+            diagnostics=[],
         )
 
         StepExecution(context).run()

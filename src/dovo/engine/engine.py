@@ -7,7 +7,7 @@ import os
 from collections.abc import Sequence
 
 from dovo.common.clock import Clock
-from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
@@ -22,7 +22,6 @@ from dovo.core.inputs import InputResolveResult, format_input_error_message
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.core.sessions import current_process_started_at
 from dovo.engine.exceptions import EngineError, EngineInputError
-from dovo.engine.executors.failure_log import logged_failure
 from dovo.engine.loader import EngineLoader
 from dovo.engine.models import (
     DefinitionsManifest,
@@ -69,18 +68,18 @@ class Engine:
         sid = req.session_id or self.new_id("blueprint")
         engine_warnings: list[str] = list(resolved.warnings)
         snapshot_warnings: list[str] = []
-        snapshot_diagnostics: list[DiagnosticRecord] = []
-        manifest = self._snapshot_definitions(blueprint, sid, snapshot_warnings, snapshot_diagnostics)
+        engine_diagnostics: list[DiagnosticRecord] = []
+        manifest = self._snapshot_definitions(blueprint, sid, snapshot_warnings, engine_diagnostics)
         if manifest is None:
-            return self._failed_outcome(sid, snapshot_warnings, engine_warnings, diagnostics=snapshot_diagnostics)
+            return self._failed_outcome(sid, snapshot_warnings, engine_warnings, diagnostics=engine_diagnostics)
 
         engine_warnings.extend(snapshot_warnings)
         caller_worktree = True if req.use_worktree is None else req.use_worktree
         effective_worktree = caller_worktree and blueprint.use_worktree
         config = self._build_start_config(req, resolved.values, effective_worktree, manifest)
-        start_failure = self._start_run(blueprint, sid, config, manifest, engine_warnings)
+        start_failure = self._start_run(blueprint, sid, config, manifest, engine_warnings, engine_diagnostics)
         if start_failure is not None:
-            return self._failed_outcome(sid, [start_failure], engine_warnings)
+            return self._failed_outcome(sid, [start_failure], engine_warnings, diagnostics=engine_diagnostics)
 
         outcome = drive_run(
             self.paths,
@@ -95,9 +94,12 @@ class Engine:
             no_tty=req.no_tty,
             env_overrides=req.env_overrides,
         )
-        self._finish_run(sid, outcome, engine_warnings)
+        finish_diagnostics: list[DiagnosticRecord] = []
+        self._finish_run(sid, outcome, engine_warnings, finish_diagnostics)
 
-        return self._finalize_outcome(outcome, sid, engine_warnings)
+        return self._finalize_outcome(
+            outcome, sid, engine_warnings, prior=engine_diagnostics, finish=finish_diagnostics
+        )
 
     def resume(
         self,
@@ -112,12 +114,13 @@ class Engine:
     ) -> RunOutcome:
         """Load a paused run's durable state and execute it through the same RunCoordinator entry point as run()."""
         engine_warnings: list[str] = []
+        prior_diagnostics: list[DiagnosticRecord] = []
         with WorkspaceLock(self.paths.lock_file):
             _, state, _ = EngineLoader.load_for_resume(self.db, self.paths, session_id)
             if answers:
                 preset = EngineLoader.resolve_answers(session_id, state, answers, engine_warnings)
                 interaction_prompter = PresetInteractionPrompter(preset, interaction_prompter)
-            self._mark_running(session_id, engine_warnings)
+            self._mark_running(session_id, engine_warnings, prior_diagnostics)
 
         outcome = drive_run(
             self.paths,
@@ -132,9 +135,12 @@ class Engine:
             no_tty=no_tty,
             env_overrides=env_overrides,
         )
-        self._finish_run(session_id, outcome, engine_warnings)
+        finish_diagnostics: list[DiagnosticRecord] = []
+        self._finish_run(session_id, outcome, engine_warnings, finish_diagnostics)
 
-        return self._finalize_outcome(outcome, session_id, engine_warnings)
+        return self._finalize_outcome(
+            outcome, session_id, engine_warnings, prior=prior_diagnostics, finish=finish_diagnostics
+        )
 
     def _start_run(
         self,
@@ -143,32 +149,30 @@ class Engine:
         config: RunStartConfig,
         manifest: DefinitionsManifest,
         warnings: list[str],
+        diagnostics: list[DiagnosticRecord],
     ) -> str | None:
-        """Insert the RUNNING row and its initial execution state under the workspace lock; return a failure message or None."""
+        """Insert the RUNNING row and its initial execution state under the workspace lock; return a failure message or None, adding each recorded failure to diagnostics."""
         with WorkspaceLock(self.paths.lock_file):
-            context = {"session_id": session_id}
             try:
                 self._insert_running(blueprint, session_id, config)
             except Exception as exc:
-                return logged_failure(
-                    f"Failed to record run start in database: {exc}", exc, operation="engine.persist", context=context
-                )
+                diagnostics.extend(_record_persist_failure(exc, session_id))
+                return f"Failed to record run start in database: {exc}"
 
             try:
                 SessionStateStore(self.db, self.paths, session_id).initialize(blueprint, manifest, warnings)
             except EngineError as error:
                 message = error.message
             except Exception as exc:
-                message = logged_failure(
-                    f"Failed to initialize run state: {exc}", exc, operation="engine.persist", context=context
-                )
+                message = f"Failed to initialize run state: {exc}"
+                diagnostics.extend(_record_persist_failure(exc, session_id))
             else:
                 return None
 
             try:
                 self.db.update_status(session_id, SessionStatus.FAILED, error_message=message)
             except Exception as exc:
-                message = logged_failure(message, exc, operation="engine.persist", context=context)
+                diagnostics.extend(_record_persist_failure(exc, session_id))
             return message
 
     def _failed_outcome(
@@ -255,13 +259,15 @@ class Engine:
         except EngineError as error:
             warnings.append(error.message)
 
-    def _finish_run(self, session_id: str, outcome: RunOutcome, warnings: list[str]) -> None:
-        """Finalize the row under the workspace lock, recording persistence failures as warnings."""
+    def _finish_run(
+        self, session_id: str, outcome: RunOutcome, warnings: list[str], diagnostics: list[DiagnosticRecord]
+    ) -> None:
+        """Finalize the row under the workspace lock, recording persistence failures as warnings and their records in diagnostics."""
         with WorkspaceLock(self.paths.lock_file):
             try:
                 self._finalize_row(session_id, outcome, warnings)
             except Exception as exc:
-                warnings.append(_status_write_failure(exc, session_id))
+                warnings.append(_status_write_failure(exc, session_id, diagnostics))
 
     def _insert_running(self, blueprint: Blueprint, session_id: str, config: RunStartConfig) -> None:
         """Insert a RUNNING row carrying the resolved run configuration."""
@@ -292,31 +298,47 @@ class Engine:
             )
         return result
 
-    def _finalize_outcome(self, outcome: RunOutcome, session_id: str, extra_warnings: list[str]) -> RunOutcome:
-        """Stamp the session id and append Engine warnings onto ``outcome``."""
-        update: dict[str, object] = {"session_id": session_id}
+    def _finalize_outcome(
+        self,
+        outcome: RunOutcome,
+        session_id: str,
+        extra_warnings: list[str],
+        *,
+        prior: Sequence[DiagnosticRecord],
+        finish: Sequence[DiagnosticRecord],
+    ) -> RunOutcome:
+        """Stamp the session id, append Engine warnings, and set diagnostics to prior, the outcome's records, then finish."""
+        update: dict[str, object] = {
+            "session_id": session_id,
+            "diagnostics": [*prior, *outcome.diagnostics, *finish],
+        }
         if extra_warnings:
             update["warnings"] = [*outcome.warnings, *extra_warnings]
         return outcome.model_copy(update=update)
 
-    def _mark_running(self, session_id: str, warnings: list[str]) -> None:
-        """Set the paused row back to running, or record a persistence warning; the caller holds the workspace lock."""
+    def _mark_running(self, session_id: str, warnings: list[str], diagnostics: list[DiagnosticRecord]) -> None:
+        """Set the paused row back to running, or record a persistence warning and its record; the caller holds the workspace lock."""
         try:
             self.db.update_status(
                 session_id, SessionStatus.RUNNING, pid=os.getpid(), pid_started_at=current_process_started_at()
             )
         except Exception as exc:
-            warnings.append(_status_write_failure(exc, session_id))
+            warnings.append(_status_write_failure(exc, session_id, diagnostics))
 
 
-def _status_write_failure(exc: Exception, session_id: str) -> str:
-    """Record a failed run status write and return its warning with the 'Details logged' line."""
-    return logged_failure(
-        f"Failed to update run status in database: {exc}",
-        exc,
-        operation="engine.persist",
-        context={"session_id": session_id},
+def _record_persist_failure(exc: Exception, session_id: str) -> list[DiagnosticRecord]:
+    """Record exc at error level under engine.persist and return its record as a diagnostics list."""
+    return error_diagnostics(
+        record_exception(
+            exc, level=DiagnosticLevel.ERROR, operation="engine.persist", context={"session_id": session_id}
+        )
     )
+
+
+def _status_write_failure(exc: Exception, session_id: str, diagnostics: list[DiagnosticRecord]) -> str:
+    """Add the failed run status write's record to diagnostics and return its warning, the message alone."""
+    diagnostics.extend(_record_persist_failure(exc, session_id))
+    return f"Failed to update run status in database: {exc}"
 
 
 def _load_for_finalize(store: SessionStateStore, warnings: list[str]) -> ExecutionStateTree | None:

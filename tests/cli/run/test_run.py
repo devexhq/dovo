@@ -28,7 +28,7 @@ from dovo.engine.state_models import ExecutionStateTree
 from tests.harness import FakeAgentRunner, UnfixableAgentRunner
 from tests.harness.builders import init_git_repository
 from tests.harness.catalog import write_runnable_blueprint
-from tests.harness.diagnostic_log import details_line, diagnostic_hint, unwrapped
+from tests.harness.diagnostic_log import details_line, unwrapped
 from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -219,14 +219,14 @@ class RunCliIntegrationTests:
         assert len(success_events) == 1
         assert success_events[0]["payload"]["status"] == "completed"
 
-    def test_run_cli_json_finalization_failure_carries_hint_warning(
+    def test_run_cli_json_finalization_failure_carries_plain_warning(
         self,
         cli_runner: CliRunner,
         cli_workspace: Path,
         frozen_diagnostic_clock: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Exit 0 and emit a WarningEvent carrying the hinted finalization failure under --format json."""
+        """Exit 0 and emit a WarningEvent carrying the finalization failure alone, with no 'Details logged' text, under --format json."""
         write_runnable_blueprint(cli_workspace, key="json-task", steps=[{"id": "s1", "run": "true"}])
         original_save = SessionStateStore.save
 
@@ -249,9 +249,8 @@ class RunCliIntegrationTests:
         assert result.exit_code == 0
         events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
         warnings = [e["payload"]["message"] for e in events if e["event_type"] == "WarningEvent"]
-        assert warnings == [
-            f"Failed to update run status in database: disk full{diagnostic_hint(frozen_diagnostic_clock)}"
-        ]
+        assert warnings == ["Failed to update run status in database: disk full"]
+        assert "Details logged" not in result.stdout
 
     def test_run_cli_renders_diagnostics_after_outcome(
         self,
@@ -316,6 +315,25 @@ class RunCliIntegrationTests:
         assert output.count(unwrapped("Details logged")) == 1
         assert unwrapped("Warning: Details logged") not in output
         assert output.index(unwrapped("Blueprint Run Completed:")) < output.index(line)
+        assert output.endswith(line)
+
+    def test_run_cli_step_output_failure_prints_details_line_not_warning(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With a command step whose stdout cannot be decoded, exit 1, print exactly one 'Details logged: …' line, ending the output, and no 'Warning: Details logged' line."""
+        write_runnable_blueprint(cli_workspace, key="pipe-task", steps=[{"id": "s1", "run": r"printf '\377'"}])
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "pipe-task", "--no-worktree"])
+
+        assert result.exit_code == 1
+        output = unwrapped(result.stdout)
+        line = unwrapped(details_line(frozen_diagnostic_clock))
+        assert unwrapped("Command pipe error: Failed reading stdout stream:") in output
+        assert output.count(unwrapped("Details logged")) == 1
+        assert unwrapped("Warning: Details logged") not in output
         assert output.endswith(line)
 
     def test_run_cli_json_emits_no_diagnostics_event(

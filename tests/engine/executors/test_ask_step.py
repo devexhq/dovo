@@ -46,6 +46,7 @@ def _context(
         paths=paths,
         sensitive_variables=("ASK_TEST_SECRET",),
         loop_iteration=loop_iteration,
+        diagnostics=[],
     )
 
 

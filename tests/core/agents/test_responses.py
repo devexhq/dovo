@@ -11,7 +11,7 @@ from dovo.common.tool_policy import ToolCapability
 from dovo.core.agents.models import AgentDenial, AgentResponse, AgentResponseStatus
 from dovo.core.agents.responses import (
     blocked_response,
-    diagnostics_with_remediations,
+    errors_with_fix_block,
     no_op_response,
     provider_error_response,
     timeout_response,
@@ -205,4 +205,4 @@ class DiagnosticsWithRemediationsTests:
         self, errors: list[str], remediations: list[Remediation], expected: list[str]
     ) -> None:
         """Return errors plus 'Fix:\\n- <m1>\\n- <m2>' only when remediations are present."""
-        assert diagnostics_with_remediations(errors, remediations) == expected
+        assert errors_with_fix_block(errors, remediations) == expected

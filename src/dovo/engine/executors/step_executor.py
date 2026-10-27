@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import IO
 
-from dovo.common.diagnostic_log import append_diagnostic_hint
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.exceptions import catch_failure
 from dovo.common.models import FailurePolicy
 from dovo.common.process import (
@@ -28,7 +28,6 @@ from dovo.core.catalog.services.resolve_step import resolve_step_definition
 from dovo.core.inputs import NamespaceProvider, NamespaceResolutionError, build_providers, interpolate_step_fields
 from dovo.engine.executors.agent_progress import AgentProgressReporter
 from dovo.engine.executors.artifact_namespace import ArtifactNamespaceProvider
-from dovo.engine.executors.failure_log import DiagnosticContext, logged_hint
 from dovo.engine.executors.internal_dispatch import INTERNAL_COMMAND_HANDLERS
 from dovo.engine.executors.metadata import (
     build_execution_metadata,
@@ -37,6 +36,7 @@ from dovo.engine.executors.metadata import (
     resolve_step_temp_paths,
 )
 from dovo.engine.executors.models import (
+    DiagnosticContext,
     ExecutionMetadata,
     InternalCommandContext,
     OutputCallback,
@@ -152,8 +152,9 @@ class StepExecution:
         self.paths = metadata.paths
         self.agent_runner = metadata.agent_runner
         self.log_warnings: list[str] = []
-        # 'Details logged' lines for the run's warnings; kept off the StepResult, which session state persists.
-        self.diagnostic_hints: list[str] = []
+        # The caller's list for the run's diagnostics, extended as each record is written; kept off the
+        # StepResult, which session state persists.
+        self._diagnostics: list[DiagnosticRecord] = metadata.diagnostics
         self.step_scratch_dir: Path | None = None
         self.output_file: Path | None = None
         self.max_attempts = 1
@@ -205,14 +206,15 @@ class StepExecution:
         return None
 
     def _resolve_shorthand(self) -> StepDefinition | str:
-        """Resolve a uses/run step, catching a uses step's catalog load once, or return the step error with any Details logged line."""
+        """Resolve a uses/run step, catching a uses step's catalog load once, or return the step error and add its record to the diagnostics list."""
         if self.step.uses is None:
             return self._resolve_step()
         with catch_failure("catalog.load_definition", step=self.step.uses) as caught:
             resolved = self._resolve_step()
         if caught.failure is None:
             return resolved
-        return append_diagnostic_hint(caught.failure.message, caught.failure.diagnostic)
+        self._diagnostics.extend(error_diagnostics(caught.failure.diagnostic))
+        return caught.failure.message
 
     def _resolve_step(self) -> StepDefinition | str:
         """Resolve the step's shorthand, or return the step error when it cannot be resolved."""
@@ -262,7 +264,7 @@ class StepExecution:
         self._reset_step_output_file()
         outcome = self._dispatch_primitive(metadata).model_copy(update={"attempts": attempt})
         outcome = self._apply_postconditions(outcome, attempt)
-        self.diagnostic_hints.extend(outcome.warnings)
+        self._diagnostics.extend(outcome.diagnostics)
         return outcome
 
     def _apply_postconditions(self, outcome: StepDispatchOutcome, attempt: int) -> StepDispatchOutcome:
@@ -414,10 +416,14 @@ class StepExecution:
         return {"session_id": self.session_id or None, "step_id": self.step.id, "path": str(self.worktree_path)}
 
     def _record_failure(self, exc: Exception) -> None:
-        """Record exc at error level and add its 'Details logged' line to diagnostic_hints, never the step's result."""
-        hint = logged_hint(exc, operation="engine.step", context=self._diagnostic_context())
-        if hint is not None:
-            self.diagnostic_hints.append(hint)
+        """Record exc at error level and add its record to the diagnostics list, never the step's result."""
+        self._diagnostics.extend(
+            error_diagnostics(
+                record_exception(
+                    exc, level=DiagnosticLevel.ERROR, operation="engine.step", context=self._diagnostic_context()
+                )
+            )
+        )
 
     def _dispatch_pipe_line(
         self,

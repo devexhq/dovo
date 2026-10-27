@@ -38,18 +38,18 @@ def provider_error_response(
 ) -> AgentResponse:
     """Build the PROVIDER_ERROR response, prefixing ``detail`` once and placing it before ``errors``.
 
-    ``errors`` are already-classified diagnostics and are copied through unprefixed; the input is never mutated.
+    ``errors`` are already-classified error strings and are copied through unprefixed; the input is never mutated.
     """
-    diagnostics = [*errors]
+    errors_out = [*errors]
     if detail is not None:
-        diagnostics.insert(0, f"Agent provider error (AGENT_PROVIDER_ERROR): {detail}")
+        errors_out.insert(0, f"Agent provider error (AGENT_PROVIDER_ERROR): {detail}")
 
     return AgentResponse(
         status=AgentResponseStatus.PROVIDER_ERROR,
         duration_seconds=duration_seconds,
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
-        errors=diagnostics,
+        errors=errors_out,
     )
 
 
@@ -76,7 +76,7 @@ def unfixable_response(
     raw_text: str | None = None,
     mutation_baseline_ref: str | None = None,
 ) -> AgentResponse:
-    """Build the UNFIXABLE response carrying the agent's reason and any diagnostics from discarding its edit."""
+    """Build the UNFIXABLE response carrying the agent's reason and any errors from discarding its edit."""
     return AgentResponse(
         status=AgentResponseStatus.UNFIXABLE,
         duration_seconds=duration_seconds,
@@ -135,10 +135,10 @@ def blocked_response(
     )
 
 
-def diagnostics_with_remediations(errors: Sequence[str], remediations: Sequence[Remediation]) -> list[str]:
+def errors_with_fix_block(errors: Sequence[str], remediations: Sequence[Remediation]) -> list[str]:
     """Return the errors followed by one trailing Fix: block when remediations are present."""
-    diagnostics = list(errors)
+    errors_out = list(errors)
     if remediations:
-        diagnostics.append(format_remediations(remediations))
+        errors_out.append(format_remediations(remediations))
 
-    return diagnostics
+    return errors_out

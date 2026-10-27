@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dovo.common.diagnostic_log import DiagnosticLevel, diagnostic_hint_line, record_exception
+from dovo.common.diagnostic_log import DiagnosticLevel, error_diagnostics, record_exception
 from dovo.common.tool_policy import ToolPolicy
 from dovo.core.agents.factory import get_agent_adapter
 from dovo.core.agents.models import (
@@ -16,7 +16,7 @@ from dovo.core.agents.models import (
     ResolvedAgentSettings,
 )
 from dovo.core.agents.registry import unsupported_provider_message
-from dovo.core.agents.responses import diagnostics_with_remediations
+from dovo.core.agents.responses import errors_with_fix_block
 from dovo.core.git import GitDiffParser
 
 
@@ -85,7 +85,7 @@ def _run_provider(request: AgentRequest, provider: str) -> AgentAttempt:
         # No record: an unregistered provider is a configuration error the message names.
         return AgentAttempt(
             status=AgentResponseStatus.PROVIDER_ERROR,
-            diagnostics=[f"Agent provider error: {unsupported_provider_message(provider)}"],
+            errors=[f"Agent provider error: {unsupported_provider_message(provider)}"],
         )
 
     try:
@@ -95,18 +95,17 @@ def _run_provider(request: AgentRequest, provider: str) -> AgentAttempt:
 
 
 def _recorded_provider_error(exc: Exception, request: AgentRequest, provider: str) -> AgentAttempt:
-    """Record exc at error level and return the provider_error attempt carrying the hint line as a warning."""
+    """Record exc at error level and return the provider_error attempt carrying its message and its record."""
     record = record_exception(
         exc,
         level=DiagnosticLevel.ERROR,
         operation="agent.run",
         context={"provider": provider, "path": str(request.worktree_path)},
     )
-    line = diagnostic_hint_line(record)
     return AgentAttempt(
         status=AgentResponseStatus.PROVIDER_ERROR,
-        diagnostics=[f"Agent provider error: {exc}"],
-        warnings=[line] if line is not None else [],
+        errors=[f"Agent provider error: {exc}"],
+        diagnostics=error_diagnostics(record),
     )
 
 
@@ -120,14 +119,15 @@ def _settle(response: AgentResponse) -> AgentAttempt:
     if response.status == AgentResponseStatus.PROPOSED_PATCH:
         return _accept_direct_mutation(response)
 
-    diagnostics = diagnostics_with_remediations(response.errors, response.remediations)
+    errors = errors_with_fix_block(response.errors, response.remediations)
     return AgentAttempt(
         status=response.status,
         summary=_response_text(response),
         unfixable_reason=response.unfixable_reason,
-        diagnostics=diagnostics,
+        errors=errors,
         env_withheld=response.env_withheld,
         rejected_patch_path=response.rejected_patch_path,
+        diagnostics=response.diagnostics,
     )
 
 

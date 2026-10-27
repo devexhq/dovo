@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.core.artifacts.models import ArtifactUploadResult
@@ -17,14 +18,14 @@ from dovo.engine.executors.models import OutputCallback, StepExecutionContext
 from dovo.engine.executors.step_executor import StepExecution
 from tests.harness.builders import StepBuilder
 from tests.harness.catalog import write_runnable_step
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
 
 class StepExecutionResolutionTests:
     def test_unresolvable_uses_step_returns_failed_result_with_could_not_resolve_message(self, tmp_path: Path) -> None:
         step = StepDefinition(id="s1", uses="base-step")
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "failed"
         assert result.error_message == "Could not resolve step 's1'."
@@ -32,25 +33,28 @@ class StepExecutionResolutionTests:
     def test_uses_step_failure_fails_step_with_failure_message(
         self, tmp_path: Path, engine_paths: WorkspacePaths
     ) -> None:
-        """Return a failed StepResult with error_message == "Catalog item 'missing-step' not found." for uses: missing-step, and add no diagnostic hint."""
+        """Return a failed StepResult with error_message == "Catalog item 'missing-step' not found." for uses: missing-step, and add no record to the diagnostics list."""
         step = StepDefinition(id="s1", uses="missing-step")
-        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, paths=engine_paths))
+        sink: list[DiagnosticRecord] = []
+        execution = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, paths=engine_paths, diagnostics=sink)
+        )
 
         result = execution.run()
 
         assert result.status == "failed"
         assert result.error_message == "Catalog item 'missing-step' not found."
-        assert execution.diagnostic_hints == []
+        assert sink == []
         assert not resolve_global_paths().logs_dir.exists()
 
-    def test_uses_step_unexpected_error_appends_hint_to_step_error(
+    def test_uses_step_unexpected_error_records_into_diagnostics(
         self,
         tmp_path: Path,
         engine_paths: WorkspacePaths,
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With StepDefinition.model_validate raising RuntimeError("x") during get, fail the step with the unexpected-error message plus hint, leave diagnostic_hints empty, and write one event with context {step: <ref>}."""
+        """With StepDefinition.model_validate raising RuntimeError("x") during get, fail the step with the unexpected-error message alone, leave the diagnostics list == [the catalog.load_definition record], and write one event with context {step: <ref>}."""
         write_runnable_step(engine_paths.root_dir, key="base-step", definition={"id": "base-step", "run": "true"})
         step = StepDefinition(id="s1", uses="base-step")
 
@@ -58,15 +62,16 @@ class StepExecutionResolutionTests:
             raise RuntimeError("x")
 
         monkeypatch.setattr(StepDefinition, "model_validate", classmethod(_explode))
-        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, paths=engine_paths))
+        sink: list[DiagnosticRecord] = []
+        execution = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, paths=engine_paths, diagnostics=sink)
+        )
 
         result = execution.run()
 
         assert result.status == "failed"
-        assert result.error_message == (
-            f"Unexpected error during catalog.load_definition: x{diagnostic_hint(frozen_diagnostic_clock)}"
-        )
-        assert execution.diagnostic_hints == []
+        assert result.error_message == "Unexpected error during catalog.load_definition: x"
+        assert sink == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["operation"] == "catalog.load_definition"
         assert event["context"] == {"step": "base-step"}
@@ -75,7 +80,7 @@ class StepExecutionResolutionTests:
     def test_run_shorthand_step_executes_as_command(self, tmp_path: Path) -> None:
         step = StepDefinition(id="s1", run="echo ok")
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "completed"
         assert "ok" in result.stdout
@@ -99,7 +104,7 @@ class CommandScriptEnvironmentPreservedTests:
             builder = StepBuilder.script("probe.py")
         step = builder.with_id("probe").with_env("DOVO_STEP_NAME", "from-step").build()
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "completed"
         assert result.stdout.strip() == "1|probe|from-step"
@@ -110,7 +115,7 @@ class StepExecutionContextFieldsTests:
         step = StepBuilder.command("echo ${{ inputs.feature }}").with_id("s1").build()
 
         result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, inputs={"feature": "export"})
+            StepExecutionContext(step=step, worktree_path=tmp_path, inputs={"feature": "export"}, diagnostics=[])
         ).run()
 
         assert result.stdout == "export\n"
@@ -118,7 +123,7 @@ class StepExecutionContextFieldsTests:
     def test_missing_input_stays_literal_like_a_run_without_inputs(self, tmp_path: Path) -> None:
         step = StepBuilder.command("echo '${{ inputs.x }}'").with_id("s1").build()
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "completed"
         assert result.stdout == "${{ inputs.x }}\n"
@@ -126,7 +131,9 @@ class StepExecutionContextFieldsTests:
     def test_iteration_index_follows_loop_iteration(self, tmp_path: Path) -> None:
         step = StepBuilder.command("echo $DOVO_ITERATION_INDEX ${{ iteration.index }}").with_id("s1").build()
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, loop_iteration=3)).run()
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, loop_iteration=3, diagnostics=[])
+        ).run()
 
         assert result.stdout == "3 3\n"
 
@@ -144,7 +151,7 @@ class StepExecutionDurationTests:
         monkeypatch.setattr("dovo.common.timing.monotonic", lambda: next(readings))
         step = StepDefinition(id="s1", run="echo ok")
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "completed"
         assert result.duration_seconds == 2.5
@@ -157,10 +164,12 @@ class StepExecutionDurationTests:
         monkeypatch.setattr("dovo.common.timing.monotonic", _unread_clock)
         if failure == "missing_worktree":
             context = StepExecutionContext(
-                step=StepDefinition(id="s1", run="echo ok"), worktree_path=tmp_path / "missing"
+                step=StepDefinition(id="s1", run="echo ok"), worktree_path=tmp_path / "missing", diagnostics=[]
             )
         else:
-            context = StepExecutionContext(step=StepDefinition(id="s1", uses="base-step"), worktree_path=tmp_path)
+            context = StepExecutionContext(
+                step=StepDefinition(id="s1", uses="base-step"), worktree_path=tmp_path, diagnostics=[]
+            )
 
         result = StepExecution(context).run()
 
@@ -221,17 +230,20 @@ def _site_step(site: str, monkeypatch: pytest.MonkeyPatch) -> tuple[StepDefiniti
 
 class StepExecutionDiagnosticLogTests:
     @pytest.mark.parametrize("site", ["launch", "stream-read", "output-callback", "internal-handler"])
-    def test_step_failure_records_error_and_hints_warnings_only(
+    def test_step_failure_records_error_into_diagnostics_only(
         self, tmp_path: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch, site: str
     ) -> None:
-        """Keep the step result unhinted, put exactly one hint in diagnostic_hints and write one engine.step record."""
+        """Keep the step result free of the line and its warnings empty, and leave the diagnostics list == [the engine.step record]."""
         step, on_output, expected_error = _site_step(site, monkeypatch)
-        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, on_output=on_output))
+        sink: list[DiagnosticRecord] = []
+        execution = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, on_output=on_output, diagnostics=sink)
+        )
 
         result = execution.run()
 
         assert (result.status, result.error_message, result.warnings) == ("failed", expected_error, [])
-        assert execution.diagnostic_hints == [diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")]
+        assert sink == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"], event["context"]) == (
             "error",
@@ -258,22 +270,23 @@ class StepExecutionDiagnosticLogTests:
         """Return today's failed result and leave <DOVO_HOME>/logs absent for a nonzero exit and a timeout."""
         monkeypatch.setattr("dovo.engine.executors.step_executor.subprocess.Popen", popen)
         step = StepBuilder.command(command).with_id("s1").with_timeout(1).build()
-        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path))
+        sink: list[DiagnosticRecord] = []
+        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=sink))
 
         result = execution.run()
 
         assert (result.status, result.error_message, result.warnings) == ("failed", expected_error, [])
-        assert execution.diagnostic_hints == []
+        assert sink == []
         assert not frozen_diagnostic_clock.parent.parent.exists()
 
-    def test_publish_failure_hint_reaches_diagnostic_hints_not_step_warnings(
+    def test_publish_failure_record_reaches_diagnostics_not_step_warnings(
         self,
         tmp_path: Path,
         frozen_diagnostic_clock: Path,
         monkeypatch: pytest.MonkeyPatch,
         artifact_store: ArtifactStore,
     ) -> None:
-        """Keep the publish warning on the step result and carry its 'Details logged' line only in diagnostic_hints."""
+        """Keep the publish warning on the step result and put the engine.step record only in the diagnostics list."""
 
         def _raising_publish(*_args: object, **_kwargs: object) -> ArtifactUploadResult:
             raise ValueError("boom")
@@ -286,27 +299,29 @@ class StepExecutionDiagnosticLogTests:
             command="true",
             artifacts=[ArtifactPublishSpec(name="plan", path="PLAN.md", required=False)],
         )
+        sink: list[DiagnosticRecord] = []
         execution = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, artifact_store=artifact_store)
+            StepExecutionContext(step=step, worktree_path=tmp_path, artifact_store=artifact_store, diagnostics=sink)
         )
 
         result = execution.run()
 
         assert (result.status, result.warnings) == ("completed", ["Failed to publish artifact 'plan': boom"])
-        assert execution.diagnostic_hints == [diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")]
+        assert sink == [diagnostic_record(frozen_diagnostic_clock)]
 
     def test_launch_failure_unchanged_when_recorder_cannot_write(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return error_message 'Command execution error: exec format error' and no warnings or hints when <DOVO_HOME>/logs is a regular file."""
+        """Return error_message 'Command execution error: exec format error' and no warnings or records when <DOVO_HOME>/logs is a regular file."""
         monkeypatch.setattr("dovo.engine.executors.step_executor.subprocess.Popen", _raise_exec_format_error)
         logs_dir = resolve_global_paths().logs_dir
         logs_dir.parent.mkdir(parents=True, exist_ok=True)
         logs_dir.write_text("not a directory", encoding="utf-8")
         step = StepBuilder.command("true").with_id("s1").build()
-        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path))
+        sink: list[DiagnosticRecord] = []
+        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=sink))
 
         result = execution.run()
 
         assert (result.error_message, result.warnings) == ("Command execution error: exec format error", [])
-        assert execution.diagnostic_hints == []
+        assert sink == []

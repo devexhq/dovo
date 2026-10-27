@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from uuid import UUID
 
 import psutil
 import pytest
 
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import WorkspacePaths
@@ -25,7 +27,7 @@ from dovo.engine.writer import get_session_dir
 from tests.engine.conftest import StubDriveRun
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
-from tests.harness.diagnostic_log import diagnostic_hint, diagnostic_record, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.fakes import FakeGitRunner, SequentialIds, fixed_clock, fixed_new_id
 from tests.harness.sessions import ScriptedFailurePrompter, seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -69,7 +71,7 @@ class EngineRunStartFailureTests:
         expected_error: str,
         recorded: bool,
     ) -> None:
-        """Fail before any step runs; an unexpected start fault hints its message and writes one engine.persist record."""
+        """Fail before any step runs with the message alone; an unexpected start fault adds its engine.persist record to diagnostics."""
         if fault == "snapshot":
             blueprint = Blueprint(
                 BlueprintBuilder("uncataloged")
@@ -93,11 +95,13 @@ class EngineRunStartFailureTests:
         )
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == [expected_error + (diagnostic_hint(frozen_diagnostic_clock) if recorded else "")]
+        assert outcome.errors == [expected_error]
         assert not (engine_paths.root_dir / "marker").exists()
         row = sessions_repo.get("start-1")
-        assert (row.status if row is not None else None) == (SessionStatus.FAILED if fault == "initialize" else None)
+        expected_row = (SessionStatus.FAILED, expected_error) if fault == "initialize" else None
+        assert ((row.status, row.error_message) if row is not None else None) == expected_row
         if recorded:
+            assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
             event = read_single_event(frozen_diagnostic_clock)
             assert (event["level"], event["operation"], event["context"]) == (
                 "error",
@@ -107,14 +111,14 @@ class EngineRunStartFailureTests:
         else:
             assert not frozen_diagnostic_clock.parent.parent.exists()
 
-    def test_mark_failed_fallback_records_error_and_hints_message(
+    def test_mark_failed_failure_records_into_diagnostics(
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """Hint the start message and write one engine.persist record when marking the row failed raises."""
+        """Return the start message alone and add one engine.persist record to diagnostics when marking the row failed raises."""
         blueprint = _catalog_blueprint(engine_paths, "mark-failed", [{"id": "a", "run": "touch marker"}])
 
         def _initialize_invalid(*_args: object, **_kwargs: object) -> ExecutionStateTree:
@@ -128,7 +132,8 @@ class EngineRunStartFailureTests:
         )
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == [f"state invalid{diagnostic_hint(frozen_diagnostic_clock)}"]
+        assert outcome.errors == ["state invalid"]
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"], event["exception_message"]) == (
             "error",
@@ -139,7 +144,7 @@ class EngineRunStartFailureTests:
     def test_start_failure_unchanged_when_recorder_cannot_write(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return today's unhinted start message when <DOVO_HOME>/logs is a regular file."""
+        """Return the start message and no diagnostics when <DOVO_HOME>/logs is a regular file."""
         blueprint = _catalog_blueprint(engine_paths, "no-log", [{"id": "a", "run": "touch marker"}])
         monkeypatch.setattr(SessionsRepository, "create", _raise_db_down)
         logs_dir = resolve_global_paths().logs_dir
@@ -151,6 +156,42 @@ class EngineRunStartFailureTests:
         )
 
         assert outcome.errors == ["Failed to record run start in database: db down"]
+        assert outcome.diagnostics == []
+
+    def test_state_and_mark_failed_failures_report_two_records_in_order(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With initialize raising RuntimeError("boom"), update_status raising, and uuid4 yielding two ids, return the state message and both engine.persist records in order."""
+        blueprint = _catalog_blueprint(engine_paths, "two-records", [{"id": "a", "run": "touch marker"}])
+        monkeypatch.setattr(
+            "dovo.common.diagnostic_log.services.record.uuid4",
+            iter([UUID("aaaaaaaaaaaa" + "0" * 20), UUID("bbbbbbbbbbbb" + "0" * 20)]).__next__,
+        )
+
+        def raise_boom(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(SessionStateStore, "initialize", raise_boom)
+        monkeypatch.setattr(SessionsRepository, "update_status", _raise_db_down)
+
+        outcome = _engine(engine_paths, sessions_repo).run(
+            blueprint, RunRequest(session_id="start-1", use_worktree=False)
+        )
+
+        day_dir = frozen_diagnostic_clock.parent
+        assert outcome.errors == ["Failed to initialize run state: boom"]
+        assert outcome.diagnostics == [
+            DiagnosticRecord(
+                event_id="exc_aaaaaaaaaaaa", log_path=day_dir / "exc_aaaaaaaaaaaa.json", level=DiagnosticLevel.ERROR
+            ),
+            DiagnosticRecord(
+                event_id="exc_bbbbbbbbbbbb", log_path=day_dir / "exc_bbbbbbbbbbbb.json", level=DiagnosticLevel.ERROR
+            ),
+        ]
 
 
 class EngineStartTests:
@@ -312,7 +353,7 @@ class EngineResumeFinalizationTests:
             pytest.param("mark-running", "update_status", (SessionStatus.COMPLETED, True), id="mark-running"),
         ],
     )
-    def test_status_write_failure_records_error_and_hints_warning(
+    def test_status_write_failure_records_error_into_diagnostics(
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
@@ -323,7 +364,7 @@ class EngineResumeFinalizationTests:
         failing_method: str,
         expected_row: tuple[SessionStatus, bool],
     ) -> None:
-        """Keep resuming, end warnings with the hinted status-write failure and write one engine.persist record."""
+        """Keep resuming, end warnings with the status-write failure alone and add its engine.persist record to diagnostics."""
         self._seed(engine_paths, sessions_repo, site)
         stub_drive_run(None)
 
@@ -334,9 +375,8 @@ class EngineResumeFinalizationTests:
 
         outcome = _engine(engine_paths, sessions_repo).resume(site)
 
-        assert outcome.warnings == [
-            f"Failed to update run status in database: disk full{diagnostic_hint(frozen_diagnostic_clock)}"
-        ]
+        assert outcome.warnings == ["Failed to update run status in database: disk full"]
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         row = sessions_repo.get(site)
         assert row is not None
         assert (row.status, row.completed_at is not None) == expected_row
@@ -346,6 +386,44 @@ class EngineResumeFinalizationTests:
             "engine.persist",
             {"session_id": site},
         )
+
+    def test_mark_running_record_precedes_run_records(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        stub_drive_run: StubDriveRun,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With update_status raising on mark-running and the run returning one record, set diagnostics to the mark-running record, then the run's."""
+        self._seed(engine_paths, sessions_repo, "ordered")
+        day_dir = frozen_diagnostic_clock.parent
+        run_record = DiagnosticRecord(
+            event_id="exc_bbbbbbbbbbbb", log_path=day_dir / "exc_bbbbbbbbbbbb.json", level=DiagnosticLevel.ERROR
+        )
+        stub_drive_run(
+            lambda paths, sessions, session_id: RunOutcome(
+                status=SessionStatus.COMPLETED,
+                worktree_path=paths.root_dir,
+                session_id=session_id,
+                diagnostics=[run_record],
+            )
+        )
+        monkeypatch.setattr("dovo.common.diagnostic_log.services.record.uuid4", lambda: UUID("aaaaaaaaaaaa" + "0" * 20))
+
+        def disk_full(*args: object, **kwargs: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(SessionsRepository, "update_status", disk_full)
+
+        outcome = _engine(engine_paths, sessions_repo).resume("ordered")
+
+        assert outcome.diagnostics == [
+            DiagnosticRecord(
+                event_id="exc_aaaaaaaaaaaa", log_path=day_dir / "exc_aaaaaaaaaaaa.json", level=DiagnosticLevel.ERROR
+            ),
+            run_record,
+        ]
 
 
 class EngineProcessIdentityTests:

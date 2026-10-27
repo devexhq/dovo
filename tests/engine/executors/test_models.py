@@ -79,7 +79,7 @@ class StepExecutionContextTests:
         step = StepBuilder.agent("plan").with_id("plan").build()
 
         with pytest.raises(ValueError, match=r"Step 'plan' is an agent step and requires an agent runner\."):
-            StepExecutionContext(step=step, worktree_path=tmp_path)
+            StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])
 
     @pytest.mark.parametrize("with_runner", [True, False], ids=["with-runner", "without-runner"])
     @pytest.mark.parametrize("kind", ["command", "script", "internal", "ask"])
@@ -88,14 +88,18 @@ class StepExecutionContextTests:
     ) -> None:
         runner = _runner if with_runner else None
 
-        context = StepExecutionContext(step=_non_agent_step(kind), worktree_path=tmp_path, agent_runner=runner)
+        context = StepExecutionContext(
+            step=_non_agent_step(kind), worktree_path=tmp_path, agent_runner=runner, diagnostics=[]
+        )
 
         assert context.agent_runner is runner
 
 
 class FrozenExecutionModelsTests:
     def test_assigning_a_step_execution_context_field_raises_frozen_instance_error(self, tmp_path: Path) -> None:
-        context = StepExecutionContext(step=StepBuilder.command("echo ok").build(), worktree_path=tmp_path)
+        context = StepExecutionContext(
+            step=StepBuilder.command("echo ok").build(), worktree_path=tmp_path, diagnostics=[]
+        )
 
         with pytest.raises(dataclasses.FrozenInstanceError):
             context.step_index = 2  # ty: ignore[invalid-assignment]  # intentional ill-typed test input: frozen-model write

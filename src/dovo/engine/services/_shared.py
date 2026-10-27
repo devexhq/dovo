@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dovo.common.diagnostic_log import DiagnosticRecord, error_diagnostics
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.exceptions import Failure
 from dovo.core.agents.environment import env_passthrough_flag_error
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.db import SessionRecord, SessionsRepository
-from dovo.engine.executors.failure_log import logged_failure
 from dovo.engine.models import BlueprintRunResult, RunOutcome
 
 
@@ -34,17 +33,19 @@ def fail_with(warnings: list[str], diagnostics: list[DiagnosticRecord], failure:
     )
 
 
-def load_record(sessions_db: SessionsRepository, warnings: list[str], session_id: str) -> SessionRecord | None:
-    """Load a SessionRecord by session id, appending a warning and returning None on failure."""
+def load_record(
+    sessions_db: SessionsRepository, warnings: list[str], diagnostics: list[DiagnosticRecord], session_id: str
+) -> SessionRecord | None:
+    """Load a SessionRecord by session id, appending a warning and its record to diagnostics and returning None on failure."""
     try:
         return sessions_db.get(session_id)
     except Exception as exc:
-        warnings.append(
-            logged_failure(
-                f"Failed to load session record for '{session_id}': {exc}",
-                exc,
-                operation="engine.read_run",
-                context={"session_id": session_id},
+        warnings.append(f"Failed to load session record for '{session_id}': {exc}")
+        diagnostics.extend(
+            error_diagnostics(
+                record_exception(
+                    exc, level=DiagnosticLevel.ERROR, operation="engine.read_run", context={"session_id": session_id}
+                )
             )
         )
         return None
@@ -64,7 +65,7 @@ def finalize(
     """
     warnings.extend(run_outcome.warnings)
     diagnostics.extend(run_outcome.diagnostics)
-    record = load_record(sessions_db, warnings, session_id) if session_id else None
+    record = load_record(sessions_db, warnings, diagnostics, session_id) if session_id else None
 
     return BlueprintRunResult(
         session_record=record,

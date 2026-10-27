@@ -11,7 +11,7 @@ from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.engine.executors.artifact_publish import ArtifactPublishOutcome, publish_declared_artifacts
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
 
 def _step(*specs: ArtifactPublishSpec) -> StepDefinition:
@@ -53,7 +53,7 @@ class PublishDeclaredArtifactsTests:
         artifact_store: ArtifactStore,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """Map a raising publish by the required flag, carry the hint in diagnostic_hints and write one engine.step record."""
+        """Map a raising publish by the required flag, carry its engine.step record in diagnostics and write one event."""
 
         def _raising_publish(*_args: object, **_kwargs: object) -> ArtifactUploadResult:
             raise ValueError("boom")
@@ -69,9 +69,8 @@ class PublishDeclaredArtifactsTests:
             loop_iteration=None,
         )
 
-        hint = diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")
         assert outcome == ArtifactPublishOutcome(
-            error_message=error_message, warnings=warnings, diagnostic_hints=[hint]
+            error_message=error_message, warnings=warnings, diagnostics=[diagnostic_record(frozen_diagnostic_clock)]
         )
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"], event["context"]) == (

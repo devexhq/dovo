@@ -7,6 +7,7 @@ import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import ClassVar
 
 import pytest
@@ -48,6 +49,7 @@ from dovo.engine.state_models import (
 )
 from dovo.engine.writer import snapshot_blueprint_path
 from tests.engine.conftest import AgentRunnerBuild, SpySaveExecutionState
+from tests.harness.diagnostic_log import diagnostic_record
 from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.sessions import (
     SEEDED_FAILURE,
@@ -364,6 +366,32 @@ class CoordinatorExecuteTests:
         assert outcome.errors == ["Execution cancelled by user."]
         state = _state(engine_paths, sessions_repo, "ctrl-c")
         assert [node.state for node in state.nodes] == [NodeState.CANCELLED, NodeState.PENDING]
+
+    def test_cancel_during_retry_backoff_keeps_first_attempt_record(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With attempt 1 failing with a recorded stream-read error and the backoff sleep raising KeyboardInterrupt, return CANCELLED with the attempt-1 engine.step record."""
+
+        def interrupted(_seconds: float) -> None:
+            raise KeyboardInterrupt
+
+        # Replace only the executor's time module: subprocess waits elsewhere still sleep for real.
+        monkeypatch.setattr("dovo.engine.executors.step_executor.time", SimpleNamespace(sleep=interrupted))
+
+        outcome = _run_new(
+            engine_paths,
+            sessions_repo,
+            "backoff",
+            [_step("a", r"printf '\377'", on_failure={"action": "retry", "max_retries": 2, "backoff_ms": 50})],
+        )
+
+        assert outcome.status == SessionStatus.CANCELLED
+        assert outcome.errors == ["Execution cancelled by user."]
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
 
     def test_observer_exception_does_not_abort_run(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository

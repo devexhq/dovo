@@ -7,7 +7,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.formatters import format_remediations
 from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
@@ -26,7 +26,6 @@ from dovo.core.worktree import (
     WorktreeCreateResult,
     WorktreeSession,
 )
-from dovo.engine.executors.failure_log import logged_failure
 from dovo.engine.models import RunSettings
 from dovo.engine.notify import safe_notify
 from dovo.engine.storage_bridge import create_storage_bridge, remove_storage_bridge
@@ -226,8 +225,9 @@ class Workspace:
         self,
         session: WorktreeSession | None,
         warnings: list[str],
+        diagnostics: list[DiagnosticRecord],
     ) -> None:
-        """Capture cumulative unified diff from worktree and persist diff.patch."""
+        """Capture cumulative unified diff from worktree and persist diff.patch, adding an unexpected failure's record to diagnostics."""
         if session is None or self.context.session_id is None or not Path(session.worktree_path).is_dir():
             return
 
@@ -238,12 +238,15 @@ class Workspace:
             # No record: git failures diffing the worktree are expected; the warning names the cause.
             warnings.append(f"Failed to persist session diff artifact: {exc}")
         except Exception as exc:
-            warnings.append(
-                logged_failure(
-                    f"Failed to persist session diff artifact: {exc}",
-                    exc,
-                    operation="engine.workspace",
-                    context={"session_id": session_id, "path": str(session.worktree_path)},
+            warnings.append(f"Failed to persist session diff artifact: {exc}")
+            diagnostics.extend(
+                error_diagnostics(
+                    record_exception(
+                        exc,
+                        level=DiagnosticLevel.ERROR,
+                        operation="engine.workspace",
+                        context={"session_id": session_id, "path": str(session.worktree_path)},
+                    )
                 )
             )
 

@@ -25,7 +25,9 @@ class StepExecutionAttemptLogFileTests:
         log_dir.mkdir()
         step = StepBuilder.command("echo one; echo two").with_id("build").build()
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, session_log_dir=log_dir)).run()
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, session_log_dir=log_dir, diagnostics=[])
+        ).run()
 
         assert result.status == "completed"
         assert (log_dir / "01_build_attempt_1.stdout.log").read_text(encoding="utf-8") == "one\ntwo\n"
@@ -37,7 +39,9 @@ class StepExecutionAttemptLogFileTests:
         step = StepBuilder.command("echo one").with_id("build").build()
 
         result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, session_log_dir=log_dir, save_attempt_logs=False)
+            StepExecutionContext(
+                step=step, worktree_path=tmp_path, session_log_dir=log_dir, save_attempt_logs=False, diagnostics=[]
+            )
         ).run()
 
         assert result.status == "completed"
@@ -50,7 +54,9 @@ class StepExecutionAttemptLogFileTests:
         command = f'if [ -f "{marker}" ]; then echo second; else touch "{marker}"; echo first; exit 1; fi'
         step = StepBuilder.command(command).with_id("flaky").with_retry(max_retries=2, backoff_ms=0).build()
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, session_log_dir=log_dir)).run()
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, session_log_dir=log_dir, diagnostics=[])
+        ).run()
 
         assert result.attempts == 2
         assert sorted(p.name for p in log_dir.iterdir()) == [
@@ -69,7 +75,9 @@ class StepExecutionAttemptLogFileTests:
         (log_dir / "01_build_attempt_1.stdout.log").symlink_to("/dev/full")
         step = StepBuilder.command("echo one").with_id("build").build()
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, session_log_dir=log_dir)).run()
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, session_log_dir=log_dir, diagnostics=[])
+        ).run()
 
         assert (result.status, result.exit_code, result.stdout) == ("completed", 0, "one\n")
         assert len(result.warnings) == 1
@@ -111,6 +119,7 @@ class StepExecutionAgentAttemptLogTests:
                 session_log_dir=log_dir,
                 agent_runner=runner,
                 on_output=lambda stream, line: streamed.append((stream, line)),
+                diagnostics=[],
             )
         ).run()
 
@@ -131,6 +140,7 @@ class StepExecutionAgentAttemptLogTests:
                 session_log_dir=log_dir,
                 save_attempt_logs=False,
                 agent_runner=_emitting_agent_runner([("stdout", "a")], received),
+                diagnostics=[],
             )
         ).run()
 
@@ -146,7 +156,9 @@ class StepExecutionAgentAttemptLogTests:
         runner = _emitting_agent_runner([("stdout", "a"), ("stdout", "b")], [])
 
         result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, session_log_dir=log_dir, agent_runner=runner)
+            StepExecutionContext(
+                step=step, worktree_path=tmp_path, session_log_dir=log_dir, agent_runner=runner, diagnostics=[]
+            )
         ).run()
 
         assert result.status == "completed"
