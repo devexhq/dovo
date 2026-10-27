@@ -24,7 +24,7 @@ from dovo.engine.models import (
     RunOutcome,
     RunRequest,
 )
-from dovo.engine.services._shared import fail, fail_with, finalize, resolve_env_overrides
+from dovo.engine.services._shared import fail, finalize, resolve_env_overrides
 
 
 @dataclass
@@ -72,12 +72,20 @@ class BlueprintRunService:
         with catch_failure("catalog.load_definition", blueprint=self.name) as caught:
             blueprint = Blueprint.load(self.name, catalog=catalog)
         if caught.failure is not None:
-            return fail_with(self.warnings, self.diagnostics, caught.failure)
+            return BlueprintRunResult(
+                session_record=None,
+                warnings=self.warnings,
+                **caught.failure.result_fields(prior_diagnostics=self.diagnostics),
+            )
 
         with catch_failure("engine.run", blueprint=self.name) as caught:
             run_outcome = self._run(catalog, blueprint, env_overrides)
         if caught.failure is not None:
-            return fail_with(self.warnings, self.diagnostics, caught.failure)
+            return BlueprintRunResult(
+                session_record=None,
+                warnings=self.warnings,
+                **caught.failure.result_fields(prior_diagnostics=self.diagnostics),
+            )
 
         return finalize(self.sessions_db, self.warnings, self.diagnostics, run_outcome, run_outcome.session_id or "")
 

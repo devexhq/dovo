@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dovo.common.diagnostic_log import error_diagnostics
-from dovo.common.exceptions import Failure, catch_failure
+from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.models import Remediation
@@ -124,12 +123,11 @@ def _provision_identity(
         with catch_failure("bootstrap.validate_project_id", path=str(identity_path)) as caught:
             validate_project_id(project_id)
         if caught.failure is not None:
-            return _identity_failure(
-                bootstrap_result,
-                identity_path,
-                caught.failure,
+            return WorkspaceInitResult(
+                bootstrap_result=bootstrap_result,
+                identity_path=identity_path,
                 failure_mode=InitFailureMode.INVALID_PROJECT_ID,
-                remediations=list(caught.failure.remediations),
+                **caught.failure.result_fields(),
             )
 
     with catch_failure("bootstrap.provision_identity", path=str(identity_path)) as caught:
@@ -137,34 +135,15 @@ def _provision_identity(
             dovo_dir, project_id=project_id, display_name=display_name, force=force
         )
     if caught.failure is not None:
-        return _identity_failure(
-            bootstrap_result,
-            identity_path,
-            caught.failure,
+        fields = caught.failure.result_fields()
+        fields["remediations"] = [_BOOTSTRAP_REMEDIATION]
+        return WorkspaceInitResult(
+            bootstrap_result=bootstrap_result,
+            identity_path=identity_path,
             failure_mode=InitFailureMode.BOOTSTRAP,
-            remediations=[_BOOTSTRAP_REMEDIATION],
+            **fields,
         )
     return provisioned
-
-
-def _identity_failure(
-    bootstrap_result: BootstrapResult,
-    identity_path: Path,
-    failure: Failure,
-    *,
-    failure_mode: InitFailureMode,
-    remediations: list[Remediation],
-) -> WorkspaceInitResult:
-    """Build the init failure for an identity failure: its code, its message, its recorded diagnostic, and remediations."""
-    return WorkspaceInitResult(
-        bootstrap_result=bootstrap_result,
-        identity_path=identity_path,
-        error_code=failure.error_code,
-        errors=[failure.message],
-        remediations=remediations,
-        diagnostics=error_diagnostics(failure.diagnostic),
-        failure_mode=failure_mode,
-    )
 
 
 def auto_initialize_workspace(root: Path | None = None) -> WorkspaceInitResult:
