@@ -52,7 +52,12 @@ class RunRequest:
 
 @dataclass(frozen=True)
 class LifecycleUpdate:
-    """Session row lifecycle fields committed with an execution-state save; None leaves a field unchanged."""
+    """Session row lifecycle fields committed with an execution-state save.
+
+    A None ``run_status``, ``worktree_id`` or ``worktree_kept`` leaves that field unchanged.
+    ``error_message`` is written only with a ``run_status``, which replaces the stored message,
+    clearing it when ``error_message`` is None.
+    """
 
     run_status: SessionStatus | None = None
     error_message: str | None = None
