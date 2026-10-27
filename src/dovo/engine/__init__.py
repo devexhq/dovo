@@ -3,12 +3,7 @@
 from dovo.core.db import SessionStatus
 from dovo.engine.coordinator import RunCoordinator
 from dovo.engine.engine import Engine
-from dovo.engine.exceptions import (
-    EngineError,
-    EngineInputError,
-    EngineResumeError,
-    EngineSnapshotMissingError,
-)
+from dovo.engine.exceptions import EngineError
 from dovo.engine.loader import EngineLoader
 from dovo.engine.models import (
     DefinitionRef,
@@ -41,10 +36,7 @@ __all__ = [
     "DefinitionsManifest",
     "Engine",
     "EngineError",
-    "EngineInputError",
     "EngineLoader",
-    "EngineResumeError",
-    "EngineSnapshotMissingError",
     "ExecutionStateTree",
     "FailurePromptDecision",
     "FailurePrompter",

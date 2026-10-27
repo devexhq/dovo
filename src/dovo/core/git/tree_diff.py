@@ -22,9 +22,7 @@ def diff_work_tree(path: Path, base_commit: str, *, git: GitRunner) -> WorkTreeD
 
     Raises:
         OSError: When the worktree's index cannot be copied.
-        GitNotFoundError: When git binary is not found.
-        GitPlumbingTimeoutError: When a git command times out.
-        GitCommandError: When a git command exits non-zero.
+        GitError: GIT_BINARY_MISSING, GIT_TIMEOUT, or GIT_FAILED when a git command exits non-zero.
     """
     git_dir = _resolve_git_path(path, ["--git-dir"], git=git)
     real_index = _resolve_git_path(path, ["--git-path", "index"], git=git)

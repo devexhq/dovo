@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.git.exceptions import GitCommandError, GitPlumbingTimeoutError
+from dovo.common.error_codes import ErrorCode
+from dovo.core.git.exceptions import GitError
 from dovo.core.git.models import GitProcessOutput, WorkTreeDiff
 from dovo.core.git.runner import GitRunner
 from dovo.core.git.tree_diff import diff_work_tree
@@ -90,8 +91,10 @@ class DiffWorkTreeTests:
         (worktree / "untracked.txt").write_text("untracked\n", encoding="utf-8")
         before = snapshot_index(worktree)
 
-        with pytest.raises(GitCommandError):
+        with pytest.raises(GitError) as excinfo:
             diff_work_tree(worktree, "0" * 40, git=GitRunner())
+
+        assert excinfo.value.error_code is ErrorCode.GIT_FAILED
 
         assert snapshot_index(worktree) == before
         assert temp_index_files(worktree) == []
@@ -146,10 +149,12 @@ class DiffWorkTreeTests:
             ) -> GitProcessOutput:
                 if args[0] == "add" and env is not None:
                     Path(f"{env['GIT_INDEX_FILE']}.lock").write_bytes(b"")
-                    raise GitPlumbingTimeoutError("git add timed out")
+                    raise GitError(ErrorCode.GIT_TIMEOUT, "git add timed out")
                 return super().exec(args, path, input_text=input_text, env=env)
 
-        with pytest.raises(GitPlumbingTimeoutError):
+        with pytest.raises(GitError) as excinfo:
             diff_work_tree(worktree, base_commit, git=_KilledOnAdd())
+
+        assert excinfo.value.error_code is ErrorCode.GIT_TIMEOUT
 
         assert temp_index_files(worktree) == []

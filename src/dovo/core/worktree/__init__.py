@@ -1,9 +1,6 @@
 """Git worktree management and lifecycle."""
 
-from dovo.core.worktree.exceptions import (
-    WorktreeCapacityError,
-    WorktreeError,
-)
+from dovo.core.worktree.exceptions import WorktreeError
 from dovo.core.worktree.models import (
     PruneAction,
     PrunedItem,
@@ -32,7 +29,6 @@ __all__ = [
     "Worktree",
     "WorktreeApplyResult",
     "WorktreeApplyStrategy",
-    "WorktreeCapacityError",
     "WorktreeCleanupResult",
     "WorktreeCreateResult",
     "WorktreeDeleteResult",

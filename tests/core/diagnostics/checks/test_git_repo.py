@@ -5,14 +5,17 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.diagnostics.checks.git_repo import GitRepoCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
-from dovo.core.git import GitNotFoundError
+from dovo.core.git import GitError, GitProcessOutput
 from dovo.core.git.runner import GitRunner
 from tests.harness.fakes import FakeGitRunner
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
+
+_FS_NOT_FOUND = GitError(ErrorCode.FS_NOT_FOUND, "working directory does not exist")
 
 
 class GitRepoCheckTests:
@@ -37,7 +40,9 @@ class GitRepoCheckTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         monkeypatch.setattr("dovo.core.diagnostics.checks.git_repo.shutil.which", lambda _name: "/usr/bin/git")
-        fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): GitNotFoundError("git not found")})
+        fake = FakeGitRunner(
+            {("rev-parse", "--is-inside-work-tree"): GitError(ErrorCode.GIT_BINARY_MISSING, "git not found")}
+        )
         check = GitRepoCheck()
         context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None), git=fake)
 
@@ -48,6 +53,37 @@ class GitRepoCheckTests:
         assert result.status == CheckStatus.FAILED
         assert result.error_code == "DOCTOR_GIT_BINARY_MISSING"
         assert result.errors == ["git binary was not found on PATH."]
+
+    @pytest.mark.parametrize(
+        "responses",
+        [
+            pytest.param({("rev-parse", "--is-inside-work-tree"): _FS_NOT_FOUND}, id="inside_work_tree"),
+            pytest.param(
+                {
+                    ("rev-parse", "--is-inside-work-tree"): GitProcessOutput(0, "true\n", ""),
+                    ("rev-parse", "--show-toplevel"): _FS_NOT_FOUND,
+                },
+                id="show_toplevel",
+            ),
+        ],
+    )
+    def test_execute_propagates_fs_not_found_from_either_probe(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        workspace_paths_factory: WorkspacePathsFactory,
+        responses: dict[tuple[str, ...], GitProcessOutput | Exception],
+    ) -> None:
+        """Raise the GitError(FS_NOT_FOUND) a rev-parse probe raised instead of returning a failed check."""
+        monkeypatch.setattr("dovo.core.diagnostics.checks.git_repo.shutil.which", lambda _name: "/usr/bin/git")
+        context = DiagnosticsContext(
+            cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None), git=FakeGitRunner(responses)
+        )
+
+        with pytest.raises(GitError) as excinfo:
+            GitRepoCheck().execute(context)
+
+        assert excinfo.value is _FS_NOT_FOUND
 
     def test_execute_outside_git_repository_returns_not_repo_failure(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory

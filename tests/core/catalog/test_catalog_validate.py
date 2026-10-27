@@ -13,7 +13,7 @@ import yaml
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import Remediation
-from dovo.core.catalog import Catalog, CatalogWriteError
+from dovo.core.catalog import Catalog, CatalogError
 from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
 from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult
 from tests.harness.catalog import write_runnable_blueprint
@@ -361,7 +361,7 @@ class CatalogValidateServiceTests:
         ("raised", "expected_code", "expected_errors", "logged"),
         [
             pytest.param(
-                CatalogWriteError("boom"),
+                CatalogError(ErrorCode.CATALOG_WRITE_FAILED, "boom"),
                 ErrorCode.CATALOG_WRITE_FAILED,
                 ["boom"],
                 False,

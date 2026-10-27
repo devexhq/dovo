@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
-from dovo.core.git.exceptions import GitError, GitNotFoundError
+from dovo.core.git.exceptions import GitError
 from dovo.core.git.models import GitWorktreeEntry
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
@@ -212,7 +213,7 @@ class WorktreeDetector:
         try:
             worktree_branches = self.git.list_branches(self.path, pattern="dovo/dovo_*")
         except Exception as exc:
-            if not isinstance(exc, GitNotFoundError):
+            if not (isinstance(exc, GitError) and exc.error_code is ErrorCode.GIT_BINARY_MISSING):
                 record_exception(
                     exc, level=DiagnosticLevel.DEBUG, operation="worktree.detect", context={"path": str(self.path)}
                 )

@@ -9,7 +9,7 @@ from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.db import SessionsRepository, WorktreesRepository, WorktreeStatus
-from dovo.core.git.exceptions import GitNotFoundError
+from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
     PruneAction,
@@ -39,8 +39,8 @@ def _record_item_failure(exc: Exception, context: dict[str, str | None]) -> list
 
 
 def _record_recovered(exc: Exception, context: dict[str, str | None]) -> None:
-    """Record exc at debug level for worktree.prune for a failure Dovo recovered from, skipping GitNotFoundError."""
-    if isinstance(exc, GitNotFoundError):
+    """Record exc at debug level for worktree.prune for a failure Dovo recovered from, skipping a GIT_BINARY_MISSING GitError."""
+    if isinstance(exc, GitError) and exc.error_code is ErrorCode.GIT_BINARY_MISSING:
         return
 
     record_exception(exc, level=DiagnosticLevel.DEBUG, operation="worktree.prune", context=context)

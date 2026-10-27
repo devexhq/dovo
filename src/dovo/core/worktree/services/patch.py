@@ -12,10 +12,10 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.core.db import WorktreeRecord, WorktreesRepository, WorktreeStatus
-from dovo.core.git.exceptions import GitError, GitPlumbingTimeoutError
+from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
 from dovo.core.git.tree_diff import diff_work_tree
-from dovo.core.worktree.exceptions import WorktreeApplyConflict, WorktreeError, recorded_cause
+from dovo.core.worktree.exceptions import WorktreeApplyConflict, WorktreeError
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
     WorktreeApplyStrategy,
@@ -47,17 +47,17 @@ def _match_conflict_line(line: str) -> str | None:
 
 @contextmanager
 def _reraise_git(worktree_id: str, activity: str) -> Generator[None]:
-    """Re-raise a GitError from the block as a WorktreeError with its code, chained to recorded_cause(exc).
+    """Re-raise a GitError from the block as a WorktreeError with its code, chained to the GitError's own cause.
 
     The message reads "Git timed out|failed <activity> for worktree '<id>': <exc>".
     """
     try:
         yield
     except GitError as exc:
-        verb = "timed out" if isinstance(exc, GitPlumbingTimeoutError) else "failed"
+        verb = "timed out" if exc.error_code is ErrorCode.GIT_TIMEOUT else "failed"
         raise WorktreeError(
             exc.error_code, f"Git {verb} {activity} for worktree '{worktree_id}': {exc}"
-        ) from recorded_cause(exc)
+        ) from exc.__cause__
 
 
 def extract_conflicts(stderr: str) -> list[str]:

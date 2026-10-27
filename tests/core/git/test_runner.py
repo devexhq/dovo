@@ -9,7 +9,7 @@ import pytest
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import Failure, catch_failure
-from dovo.core.git.exceptions import GitCommandError, GitNotFoundError, GitPlumbingTimeoutError
+from dovo.core.git.exceptions import GitError
 from dovo.core.git.models import GitProcessOutput, GitWorktreeEntry
 from dovo.core.git.runner import GitRunner
 from tests.harness.diagnostic_log import read_single_event
@@ -140,12 +140,12 @@ class GitRunnerExecTests:
     def test_exec_raises_not_found_when_git_is_missing(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """Raise GitNotFoundError("Git execution failed ('git status'): git not found") when PATH holds no git."""
+        """Raise GitError GIT_BINARY_MISSING "Git execution failed ('git status'): git not found" when PATH holds no git."""
         empty_bin = tmp_path / "empty-bin"
         empty_bin.mkdir()
         monkeypatch.setenv("PATH", str(empty_bin))
 
-        with pytest.raises(GitNotFoundError) as excinfo:
+        with pytest.raises(GitError) as excinfo:
             GitRunner().exec(["status"], git_repo)
 
         assert str(excinfo.value) == "Git execution failed ('git status'): git not found"
@@ -185,26 +185,27 @@ class GitRunnerExecTests:
         assert read_single_event(frozen_diagnostic_clock)["operation"] == "worktree.create"
 
     def test_exec_raises_timeout_ending_git_timeout(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Raise GitPlumbingTimeoutError whose message ends "('git status') (GIT_TIMEOUT)" when dovo.core.git.runner.subprocess.run raises TimeoutExpired."""
+        """Raise GitError GIT_TIMEOUT whose message ends "('git status') (GIT_TIMEOUT)" when dovo.core.git.runner.subprocess.run raises TimeoutExpired."""
 
         def _time_out(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
             raise subprocess.TimeoutExpired(cmd=["git", "status"], timeout=1)
 
         monkeypatch.setattr("dovo.core.git.runner.subprocess.run", _time_out)
 
-        with pytest.raises(GitPlumbingTimeoutError) as excinfo:
+        with pytest.raises(GitError) as excinfo:
             GitRunner().exec(["status"], git_repo)
 
         assert str(excinfo.value).endswith("('git status') (GIT_TIMEOUT)")
         assert excinfo.value.error_code == ErrorCode.GIT_TIMEOUT
 
     def test_run_raises_command_error_on_nonzero_exit_when_checked(self, git_repo: Path) -> None:
-        """Raise GitCommandError with cmd ["git", "rev-parse", "--verify", "nope"] and returncode 128 from run."""
-        with pytest.raises(GitCommandError) as excinfo:
+        """Raise GitError GIT_FAILED "Git execution failed ('git git rev-parse --verify nope'): fatal: Needed a single revision" from run."""
+        with pytest.raises(GitError) as excinfo:
             GitRunner().run(["rev-parse", "--verify", "nope"], git_repo)
 
-        assert excinfo.value.cmd == ["git", "rev-parse", "--verify", "nope"]
-        assert excinfo.value.returncode == 128
+        assert excinfo.value.message == (
+            "Git execution failed ('git git rev-parse --verify nope'): fatal: Needed a single revision"
+        )
         assert excinfo.value.error_code == ErrorCode.GIT_FAILED
 
     def test_run_returns_stdout_on_nonzero_exit_when_unchecked(self, git_repo: Path) -> None:
@@ -212,6 +213,42 @@ class GitRunnerExecTests:
         output = GitRunner().run(["show-ref", "--verify", "--quiet", "refs/heads/absent"], git_repo, check=False)
 
         assert output == ""
+
+    def test_branch_exists_raises_git_failed_on_fatal_show_ref(self, tmp_path: Path) -> None:
+        """Raise GitError GIT_FAILED naming the show-ref command and its stderr when show-ref exits 128."""
+        fake = FakeGitRunner({("show-ref",): GitProcessOutput(128, "", "fatal: bad")})
+
+        with pytest.raises(GitError) as excinfo:
+            fake.branch_exists(tmp_path, "x")
+
+        assert excinfo.value.error_code is ErrorCode.GIT_FAILED
+        assert (
+            excinfo.value.message
+            == "Git execution failed ('git git show-ref --verify --quiet refs/heads/x'): fatal: bad"
+        )
+
+    def test_get_current_branch_propagates_fs_not_found(self, tmp_path: Path) -> None:
+        """Raise the GitError(FS_NOT_FOUND) git branch --show-current raised instead of returning "unknown"."""
+        failure = GitError(ErrorCode.FS_NOT_FOUND, "working directory does not exist")
+        fake = FakeGitRunner({("branch", "--show-current"): failure})
+
+        with pytest.raises(GitError) as excinfo:
+            fake.get_current_branch(tmp_path)
+
+        assert excinfo.value is failure
+
+    @pytest.mark.parametrize(
+        "code", [pytest.param(ErrorCode.GIT_TIMEOUT, id="timeout"), pytest.param(ErrorCode.FS_NOT_FOUND, id="fs")]
+    )
+    def test_status_porcelain_propagates_codes_it_does_not_swallow(self, tmp_path: Path, code: ErrorCode) -> None:
+        """Raise the GitError(code) git status raised instead of returning []."""
+        failure = GitError(code, "boom")
+        fake = FakeGitRunner({("status",): failure})
+
+        with pytest.raises(GitError) as excinfo:
+            fake.status_porcelain(tmp_path)
+
+        assert excinfo.value is failure
 
     @pytest.mark.parametrize(
         ("method", "key", "expected_args"),

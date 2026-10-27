@@ -89,7 +89,7 @@ def apply_wip_to_worktree(
 
     Raises:
         WorktreeError: WORKTREE_MISSING when worktree_path is not a directory, or WORKTREE_WIP_FAILED when copying a file fails.
-        GitPlumbingTimeoutError: When git status times out.
+        GitError: GIT_TIMEOUT when git status times out.
     """
     root = source_root.expanduser().resolve()
     dest = worktree_path.expanduser().resolve()

@@ -15,7 +15,7 @@ from dovo.common.filesystem.services import resolve_global_paths
 from dovo.common.models import Remediation
 from dovo.core.db import WorktreesRepository
 from dovo.core.db.models import WorktreeStatus
-from dovo.core.git.exceptions import GitCommandError, GitError, GitNotFoundError, GitPlumbingTimeoutError
+from dovo.core.git.exceptions import GitError, git_command_error
 from dovo.core.git.models import GitProcessOutput
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeApplyStrategy
@@ -660,10 +660,10 @@ class WorktreePatchDiffFailureTests:
 
 class WorktreePatchGitFailureTests:
     def test_diff_git_timeout_reports_git_timeout(self, worktree_workspace_paths: WorkspacePaths) -> None:
-        """Return GIT_TIMEOUT and errors == ["Git timed out while generating the diff for worktree 'dovo_t': <detail>"] when ("diff", "--cached") raises GitPlumbingTimeoutError, writing no event file."""
+        """Return GIT_TIMEOUT and errors == ["Git timed out while generating the diff for worktree 'dovo_t': <detail>"] when ("diff", "--cached") raises a GIT_TIMEOUT GitError, writing no event file."""
         _create_worktree_with_change(worktree_workspace_paths, "dovo_t")
         detail = "Git timed out after 30s ('git diff --cached') (GIT_TIMEOUT)"
-        fake = FakeGitRunner({("diff", "--cached"): GitPlumbingTimeoutError(detail)})
+        fake = FakeGitRunner({("diff", "--cached"): GitError(ErrorCode.GIT_TIMEOUT, detail)})
         worktree = _worktree(worktree_workspace_paths, _repo(worktree_workspace_paths), git=fake)
 
         result = worktree.diff("dovo_t")
@@ -677,10 +677,12 @@ class WorktreePatchGitFailureTests:
         ("error", "code"),
         [
             pytest.param(
-                GitCommandError(["git", "diff"], 128, "", "fatal: bad revision"), ErrorCode.GIT_FAILED, id="git_failed"
+                git_command_error(["git", "diff"], 128, "", "fatal: bad revision"),
+                ErrorCode.GIT_FAILED,
+                id="git_failed",
             ),
             pytest.param(
-                GitNotFoundError("Git execution failed ('git diff'): git not found"),
+                GitError(ErrorCode.GIT_BINARY_MISSING, "Git execution failed ('git diff'): git not found"),
                 ErrorCode.GIT_BINARY_MISSING,
                 id="git_binary_missing",
             ),
@@ -739,7 +741,7 @@ class WorktreePatchGitFailureTests:
         _create_worktree_with_change(worktree_workspace_paths, "dovo_t")
         head_before = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
         detail = f"Git timed out after 30s ('git {' '.join(git_key)}') (GIT_TIMEOUT)"
-        fake = FakeGitRunner({git_key: GitPlumbingTimeoutError(detail)})
+        fake = FakeGitRunner({git_key: GitError(ErrorCode.GIT_TIMEOUT, detail)})
         worktree = _worktree(worktree_workspace_paths, _repo(worktree_workspace_paths), git=fake)
 
         result = worktree.apply("dovo_t", strategy=strategy, allow_dirty=allow_dirty)
@@ -754,12 +756,12 @@ class WorktreePatchGitFailureTests:
         ("error", "code"),
         [
             pytest.param(
-                GitCommandError(["git", "apply"], 128, "", "fatal: corrupt patch"),
+                git_command_error(["git", "apply"], 128, "", "fatal: corrupt patch"),
                 ErrorCode.GIT_FAILED,
                 id="git_failed",
             ),
             pytest.param(
-                GitNotFoundError("Git execution failed ('git apply'): git not found"),
+                GitError(ErrorCode.GIT_BINARY_MISSING, "Git execution failed ('git apply'): git not found"),
                 ErrorCode.GIT_BINARY_MISSING,
                 id="git_binary_missing",
             ),

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.lock import WorkspaceLock
 from dovo.common.models import FailurePolicy
 from dovo.common.process import process_registry
@@ -19,7 +20,7 @@ from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidation
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
-from dovo.engine.exceptions import EngineError, EngineSnapshotMissingError
+from dovo.engine.exceptions import EngineError
 from dovo.engine.executors import StepExecution
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.ask_step import complete_ask_step, resolve_ask_request
@@ -486,7 +487,9 @@ class RunCoordinator:
 
         try:
             blueprint = load_blueprint_from_snapshot(self._context.paths.session_dir(session_id), state.manifest)
-        except (EngineSnapshotMissingError, BlueprintLoadError, BlueprintValidationError) as exc:
+        except (EngineError, BlueprintLoadError, BlueprintValidationError) as exc:
+            if isinstance(exc, EngineError) and exc.error_code is not ErrorCode.SESSION_SNAPSHOT_MISSING:
+                raise
             self._errors.append(str(exc))
             return False
 

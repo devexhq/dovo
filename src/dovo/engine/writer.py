@@ -10,6 +10,7 @@ import yaml
 from pydantic import ValidationError
 
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.redact import SecretRedactor
 from dovo.core.catalog import Catalog
@@ -18,7 +19,7 @@ from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, St
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError, StepValidationError
 from dovo.core.catalog.models import CatalogItemType, CatalogRecord
 from dovo.core.catalog.services.resolve_step import merge_uses_step, resolve_step_definition
-from dovo.engine.exceptions import EngineSnapshotMissingError
+from dovo.engine.exceptions import EngineError
 from dovo.engine.models import DefinitionRef, DefinitionsManifest
 from dovo.engine.state_models import SessionJsonPayload
 
@@ -169,9 +170,9 @@ def snapshot_definitions(
 
 
 def _read_snapshot_yaml(path: Path) -> dict[str, Any]:
-    """Return the parsed YAML mapping at path, or raise EngineSnapshotMissingError / BlueprintLoadError."""
+    """Return the parsed YAML mapping at path, or raise EngineError(SESSION_SNAPSHOT_MISSING) / BlueprintLoadError."""
     if not path.is_file():
-        raise EngineSnapshotMissingError(path)
+        raise EngineError(ErrorCode.SESSION_SNAPSHOT_MISSING, f"Snapshot definition file is missing: '{path}'.")
     yaml_file = Filesystem.read_yaml_file(path)
     if yaml_file.error or not isinstance(yaml_file.parsed, dict):
         raise BlueprintLoadError(
@@ -259,7 +260,6 @@ def write_session_projection(session_dir: Path, payload: SessionJsonPayload) -> 
 __all__ = [
     "DefinitionRef",
     "DefinitionsManifest",
-    "EngineSnapshotMissingError",
     "get_session_dir",
     "load_blueprint_from_snapshot",
     "snapshot_definitions",

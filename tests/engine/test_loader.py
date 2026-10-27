@@ -9,7 +9,7 @@ from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.interaction import HeadlessAnswerInput
-from dovo.engine import EngineLoader, EngineResumeError, SessionStateStore
+from dovo.engine import EngineError, EngineLoader, SessionStateStore
 from dovo.engine.executors.models import StepResult
 from dovo.engine.models import LifecycleUpdate
 from dovo.engine.projection import build_session_json_payload
@@ -203,14 +203,14 @@ class EngineLoaderTests:
         code: ErrorCode,
         message: str,
     ) -> None:
-        """Raise EngineResumeError whose error_code is the Resume failure code and whose message is today's text."""
+        """Raise EngineError whose error_code is the Resume failure code and whose message is today's text."""
         snapshot = snapshot_blueprint_path(engine_paths.session_dir("paused-1"), "paused-1")
         if fault == "no-state":
             sessions_repo.create("paused-1", blueprint_name="x", blueprint_key="x", status=SessionStatus.PAUSED)
         elif fault != "no-row":
             _break_seeded_run(engine_paths, sessions_repo, fault)
 
-        with pytest.raises(EngineResumeError) as exc_info:
+        with pytest.raises(EngineError) as exc_info:
             EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
 
         assert exc_info.value.error_code is code
@@ -237,7 +237,7 @@ class EngineLoaderTests:
     ) -> None:
         _seed(engine_paths, sessions_repo, use_worktree=True, worktree_id=worktree_id)
 
-        with pytest.raises(EngineResumeError) as exc_info:
+        with pytest.raises(EngineError) as exc_info:
             EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
 
         assert exc_info.value.error_code is ErrorCode.WORKTREE_MISSING
@@ -268,7 +268,7 @@ class EngineLoaderPausedBodyLeafTests:
         paused.attempts[-1] = paused.attempts[-1].model_copy(update={"result": None})
         store.save(state, [])
 
-        with pytest.raises(EngineResumeError) as exc_info:
+        with pytest.raises(EngineError) as exc_info:
             EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
 
         assert exc_info.value.error_code is ErrorCode.SESSION_STATE_CORRUPT
@@ -287,7 +287,7 @@ class EngineLoaderCorruptLoopStateTests:
         loop.iterations[0].steps.reverse()
         store.save(state, [])
 
-        with pytest.raises(EngineResumeError) as exc_info:
+        with pytest.raises(EngineError) as exc_info:
             EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
 
         assert exc_info.value.error_code is ErrorCode.SESSION_STATE_CORRUPT
@@ -347,7 +347,7 @@ class EngineLoaderPausedAskTests:
         leaf.pending_ask = None
         store.save(state, [])
 
-        with pytest.raises(EngineResumeError) as raised:
+        with pytest.raises(EngineError) as raised:
             EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
 
         assert raised.value.error_code is ErrorCode.SESSION_STATE_CORRUPT
@@ -412,7 +412,7 @@ class EngineLoaderResolveAnswersTests:
         )
         _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
 
-        with pytest.raises(EngineResumeError) as raised:
+        with pytest.raises(EngineError) as raised:
             EngineLoader.resolve_answers("paused-1", state, [supplied], [])
 
         assert raised.value.error_code is ErrorCode.INTERACTION_ANSWER_INVALID
@@ -424,7 +424,7 @@ class EngineLoaderResolveAnswersTests:
         _seed(engine_paths, sessions_repo)
         _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
 
-        with pytest.raises(EngineResumeError) as raised:
+        with pytest.raises(EngineError) as raised:
             EngineLoader.resolve_answers("paused-1", state, [HeadlessAnswerInput(step_id="b", value="x")], [])
 
         assert raised.value.error_code is ErrorCode.INTERACTION_NO_PENDING_PROMPT

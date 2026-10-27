@@ -21,7 +21,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.inputs import InputResolveResult, format_input_error_message
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.core.sessions import current_process_started_at
-from dovo.engine.exceptions import EngineError, EngineInputError
+from dovo.engine.exceptions import EngineError
 from dovo.engine.loader import EngineLoader
 from dovo.engine.models import (
     DefinitionsManifest,
@@ -293,8 +293,9 @@ class Engine:
         """Apply defaults and required checks; raise before a session row is inserted."""
         result = blueprint.resolve_inputs(request.cli_args, overrides=request.inputs)
         if not result.ok:
-            raise EngineInputError(
-                result, format_input_error_message(name=blueprint.key, result=result, declarations=blueprint.inputs)
+            raise EngineError(
+                ErrorCode.BLUEPRINT_INPUT_INVALID,
+                format_input_error_message(name=blueprint.key, result=result, declarations=blueprint.inputs),
             )
         return result
 

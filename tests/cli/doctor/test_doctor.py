@@ -13,7 +13,7 @@ from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.models import DEFAULT_AGENT
 from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
 from dovo.core.diagnostics.checks.git_repo import GitRepoCheck
-from dovo.core.git import GitCommandError
+from dovo.core.git import git_command_error
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
 from tests.harness.fakes import FakeGitRunner, use_fake_git
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -134,8 +134,10 @@ class DoctorCliIntegrationTests:
     def test_doctor_cli_json_reports_not_repo_from_injected_git(
         self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Exit 1 for `doctor --category git --format json` with use_fake_git raising GitCommandError for rev-parse --is-inside-work-tree, and report git.repo error_code "DOCTOR_GIT_NOT_REPO"."""
-        failure = GitCommandError(["git", "rev-parse", "--is-inside-work-tree"], 128, "", "fatal: not a git repository")
+        """Exit 1 for `doctor --category git --format json` with use_fake_git raising a GIT_FAILED GitError for rev-parse --is-inside-work-tree, and report git.repo error_code "DOCTOR_GIT_NOT_REPO"."""
+        failure = git_command_error(
+            ["git", "rev-parse", "--is-inside-work-tree"], 128, "", "fatal: not a git repository"
+        )
         use_fake_git(monkeypatch, FakeGitRunner({("rev-parse", "--is-inside-work-tree"): failure}))
 
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "doctor", "--category", "git", "--format", "json"])

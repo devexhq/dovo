@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.db import SessionsRepository
-from dovo.core.git import GitCommandError, GitNotFoundError, GitPlumbingTimeoutError, GitProcessOutput, GitRunner
+from dovo.core.git import GitError, GitProcessOutput, GitRunner, git_command_error
 from dovo.core.status import Status
 from tests.harness.fakes import FakeGitRunner
 from tests.harness.status_workspace import BuildStatusWorkspace
@@ -73,8 +74,8 @@ class GitProbeTests:
     @pytest.mark.parametrize(
         "git_error",
         [
-            pytest.param(GitNotFoundError("git not found"), id="not_found"),
-            pytest.param(GitPlumbingTimeoutError("git timed out"), id="timeout"),
+            pytest.param(GitError(ErrorCode.GIT_BINARY_MISSING, "git not found"), id="not_found"),
+            pytest.param(GitError(ErrorCode.GIT_TIMEOUT, "git timed out"), id="timeout"),
         ],
     )
     def test_collect_git_error_reports_unknown_branch(
@@ -95,9 +96,11 @@ class GitProbeTests:
         ]
 
     def test_collect_git_command_error_reports_no_branch(self, status_workspace: BuildStatusWorkspace) -> None:
-        """Return is_git_repo False and branch "none" when the fake raises GitCommandError for rev-parse --is-inside-work-tree."""
+        """Return is_git_repo False and branch "none" when the fake raises a GIT_FAILED GitError for rev-parse --is-inside-work-tree."""
         workspace = status_workspace()
-        failure = GitCommandError(["git", "rev-parse", "--is-inside-work-tree"], 128, "", "fatal: not a git repository")
+        failure = git_command_error(
+            ["git", "rev-parse", "--is-inside-work-tree"], 128, "", "fatal: not a git repository"
+        )
         fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): failure})
 
         result = Status(
@@ -106,6 +109,20 @@ class GitProbeTests:
 
         assert result.git.is_git_repo is False
         assert result.git.branch == "none"
+
+    def test_collect_propagates_fs_not_found(self, status_workspace: BuildStatusWorkspace) -> None:
+        """Raise the GitError(FS_NOT_FOUND) rev-parse --is-inside-work-tree raised instead of reporting a git status."""
+        workspace = status_workspace()
+        failure = GitError(ErrorCode.FS_NOT_FOUND, "working directory does not exist")
+        fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): failure})
+        status = Status(
+            initialized_workspace_paths(workspace), git=fake, sessions_db=initialized_workspace_db(workspace).sessions
+        )
+
+        with pytest.raises(GitError) as excinfo:
+            status.collect()
+
+        assert excinfo.value is failure
 
     def test_collect_rev_parse_not_true_reports_not_a_repo(self, status_workspace: BuildStatusWorkspace) -> None:
         workspace = status_workspace()
