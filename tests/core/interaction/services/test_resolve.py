@@ -171,7 +171,7 @@ class ResolveRequestTests:
 
         assert result.status == status
         assert result.error_code == code
-        assert f"({code})" in result.errors[0]
+        assert len(result.errors) == 1
         assert result.request is None
 
     def test_duplicate_option_values_name_the_value(
@@ -202,7 +202,7 @@ class ResolveRequestTests:
 
         assert result.status == InteractionResolveStatus.ARTIFACT_NOT_FOUND
         assert result.error_code == "ASK_ARTIFACT_NOT_FOUND"
-        assert result.errors == ["Artifact 'missing' was not found (ASK_ARTIFACT_NOT_FOUND)."]
+        assert result.errors == ["Artifact 'missing' was not found."]
 
     @pytest.mark.parametrize(
         ("line_count", "expected_tail"),

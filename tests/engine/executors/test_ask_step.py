@@ -102,7 +102,7 @@ class AskStepExecutorTests:
         assert resolution.request is None
         assert resolution.result is not None
         assert (resolution.result.status, resolution.result.exit_code) == ("failed", 1)
-        assert "(ASK_OPTIONS_ARTIFACT_NOT_FOUND)" in (resolution.result.error_message or "")
+        assert "for options_from was not found." in (resolution.result.error_message or "")
 
     def test_empty_multiselect_settles_completed_without_a_request(
         self, engine_paths: WorkspacePaths, artifact_store: ArtifactStore, publish_artifact: PublishArtifact

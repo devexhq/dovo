@@ -64,7 +64,7 @@ def resolve_artifact_references(
         if reason is not None:
             return ArtifactReferencesResult(
                 status=ArtifactReferencesStatus.CONTENT_UNAVAILABLE,
-                errors=[f"Artifact '{name}' cannot be inlined (ARTIFACT_CONTENT_UNAVAILABLE): {reason}"],
+                errors=[f"Artifact '{name}' cannot be inlined: {reason}"],
             )
         references[name] = values
 

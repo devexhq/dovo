@@ -71,6 +71,5 @@ class ArtifactNamespaceProviderTests:
             ArtifactNamespaceProvider(artifact_store).resolve("artifacts.plan.content")
 
         assert str(raised.value) == (
-            "Artifact 'plan' cannot be inlined (ARTIFACT_CONTENT_UNAVAILABLE): "
-            "artifact has 2 files, content needs exactly one"
+            "Artifact 'plan' cannot be inlined: artifact has 2 files, content needs exactly one"
         )

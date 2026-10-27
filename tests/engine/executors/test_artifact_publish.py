@@ -36,7 +36,7 @@ class PublishDeclaredArtifactsTests:
         [
             pytest.param(
                 True,
-                "Failed to publish artifact 'plan': boom (ARTIFACT_PUBLISH_FAILED)",
+                "Failed to publish artifact 'plan': boom",
                 [],
                 id="required-fails-step",
             ),
@@ -95,7 +95,7 @@ class PublishDeclaredArtifactsTests:
             loop_iteration=None,
         )
 
-        assert outcome.error_message == "Failed to publish artifact 'plan': publish failed (ARTIFACT_PUBLISH_FAILED)"
+        assert outcome.error_message == "Failed to publish artifact 'plan': publish failed"
 
     def test_no_session_returns_empty_outcome(self, tmp_path: Path) -> None:
         outcome = publish_declared_artifacts(
@@ -126,6 +126,6 @@ class PublishDeclaredArtifactsTests:
             loop_iteration=None,
         )
 
-        assert outcome.error_message == ("Artifact 'second' matched no files at 'missing.txt' (ARTIFACT_NOT_PRODUCED).")
+        assert outcome.error_message == ("Artifact 'second' matched no files at 'missing.txt'.")
         stored = {record.name: record.revision for record in artifacts_repository.list(session_id="wf_1")}
         assert stored == {"first": 1}

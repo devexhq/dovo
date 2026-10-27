@@ -97,7 +97,7 @@ def _failed_publish(
         return ArtifactPublishOutcome(error_message=detail, warnings=warnings, diagnostics=diagnostics)
 
     return ArtifactPublishOutcome(
-        error_message=f"Failed to publish artifact '{spec.name}': {detail} (ARTIFACT_PUBLISH_FAILED)",
+        error_message=f"Failed to publish artifact '{spec.name}': {detail}",
         warnings=warnings,
         diagnostics=diagnostics,
     )

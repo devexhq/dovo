@@ -43,7 +43,7 @@ def resolve_request(
             return _failed(
                 InteractionResolveStatus.ARTIFACT_NOT_FOUND,
                 "ASK_ARTIFACT_NOT_FOUND",
-                f"Artifact '{spec.artifact}' was not found (ASK_ARTIFACT_NOT_FOUND).",
+                f"Artifact '{spec.artifact}' was not found.",
             )
         artifact = RequestArtifact(
             name=spec.artifact,
@@ -79,8 +79,7 @@ def _classify(request: InteractionRequest, spec: InteractionSpec) -> Interaction
         return _failed(
             InteractionResolveStatus.OPTIONS_EMPTY,
             "ASK_OPTIONS_EMPTY",
-            f"Prompt '{request.step_id}' needs at least 2 options but options_from produced "
-            f"{len(request.options)} (ASK_OPTIONS_EMPTY).",
+            f"Prompt '{request.step_id}' needs at least 2 options but options_from produced {len(request.options)}.",
         )
     return InteractionResolveResult(status=InteractionResolveStatus.OK, request=request)
 
@@ -157,7 +156,7 @@ def _options_from_artifact(
         return [], _failed(
             InteractionResolveStatus.OPTIONS_ARTIFACT_NOT_FOUND,
             "ASK_OPTIONS_ARTIFACT_NOT_FOUND",
-            f"Artifact '{options_from.artifact}' for options_from was not found (ASK_OPTIONS_ARTIFACT_NOT_FOUND).",
+            f"Artifact '{options_from.artifact}' for options_from was not found.",
         )
 
     items_or_reason = _load_items(options_from, located)
@@ -165,8 +164,7 @@ def _options_from_artifact(
         return [], _failed(
             InteractionResolveStatus.OPTIONS_INVALID,
             "ASK_OPTIONS_INVALID",
-            f"Cannot read options from '{options_from.file}' in artifact '{options_from.artifact}': "
-            f"{items_or_reason} (ASK_OPTIONS_INVALID).",
+            f"Cannot read options from '{options_from.file}' in artifact '{options_from.artifact}': {items_or_reason}.",
         )
 
     options = [RequestOption(value=value, label=label, comment=default_policy) for value, label in items_or_reason]
@@ -176,7 +174,7 @@ def _options_from_artifact(
             return [], _failed(
                 InteractionResolveStatus.OPTIONS_DUPLICATE,
                 "ASK_OPTIONS_DUPLICATE",
-                f"Option value '{option.value}' appears more than once (ASK_OPTIONS_DUPLICATE).",
+                f"Option value '{option.value}' appears more than once.",
             )
         seen.add(option.value)
     return options, None

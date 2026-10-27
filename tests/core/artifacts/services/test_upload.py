@@ -55,7 +55,7 @@ class UploadServiceTests:
         result = _publish(worktree_path, artifacts_dir, artifacts_repository)
 
         assert result.status == ArtifactUploadStatus.NO_MATCHING_FILES
-        assert result.errors == ["Artifact 'dist-packages' matched no files at 'dist/*.whl' (ARTIFACT_NOT_PRODUCED)."]
+        assert result.errors == ["Artifact 'dist-packages' matched no files at 'dist/*.whl'."]
         assert not (artifacts_dir / "wf_abc123" / "dist-packages").exists()
         assert artifacts_repository.get("wf_abc123", "dist-packages") is None
 

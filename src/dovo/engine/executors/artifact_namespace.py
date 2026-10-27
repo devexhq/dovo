@@ -27,7 +27,7 @@ class ArtifactNamespaceProvider:
     def resolve(self, path: str) -> str | None:
         """Return the field value, '' for an unknown artifact, field or missing store, None for a non-artifact path.
 
-        Raises NamespaceResolutionError carrying the ARTIFACT_CONTENT_UNAVAILABLE message when content cannot be inlined.
+        Raises NamespaceResolutionError carrying the cannot-be-inlined message when content cannot be inlined.
         """
         parsed = _parse_artifact_key(path)
         if parsed is None:

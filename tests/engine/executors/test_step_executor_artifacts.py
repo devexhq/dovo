@@ -13,7 +13,7 @@ from dovo.engine.executors.models import StepExecutionContext, StepResult
 from dovo.engine.executors.step_executor import StepExecution
 from tests.conftest import PublishArtifact
 
-_NOT_PRODUCED = "Artifact 'plan' matched no files at 'PLAN.md' (ARTIFACT_NOT_PRODUCED)."
+_NOT_PRODUCED = "Artifact 'plan' matched no files at 'PLAN.md'."
 
 
 def _command_step(command: str, **extra: object) -> StepDefinition:
@@ -174,8 +174,7 @@ class StepExecutionArtifactReferencesTests:
 
         assert result.status == "failed"
         assert result.error_message == (
-            "Artifact 'plan' cannot be inlined (ARTIFACT_CONTENT_UNAVAILABLE): "
-            "artifact has 2 files, content needs exactly one"
+            "Artifact 'plan' cannot be inlined: artifact has 2 files, content needs exactly one"
         )
         assert not (worktree_path / "ran.marker").exists()
 
