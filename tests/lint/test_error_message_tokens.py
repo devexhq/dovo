@@ -1,12 +1,19 @@
 """Invariant: no error message built in src/dovo carries a code token such as `(WORKTREE_NOT_FOUND)`.
 
-Scope: the rule reads every string literal and literal f-string part inside an error-message site and flags text
-matching `\\([A-Z][A-Z_]{3,}\\)`. An error-message site is any argument of a call to a name ending in `Error`
-(`WorktreeError(...)`, `errors.GitError(...)`, `ValueError(...)`), the value of an `errors=` or `error_message=`
-keyword, the arguments of `.append` or `.insert` on a name containing `errors`, and the value assigned to such a name.
+Scope: the rule reads every string literal and literal f-string part inside an error-message site. It flags a
+parenthesised token anywhere in the text (`\\([A-Z][A-Z_]{3,}\\)`) and a bare token with an underscore that opens it
+(`^[A-Z]+_[A-Z_]+( at |: )`, as in `CONFIG_WRITE_FAILED at <path>`, so `HEAD at <sha>` is not one). An error-message site is:
+
+- any argument of a call to a name ending in `Error` (`WorktreeError(...)`, `errors.GitError(...)`, `ValueError(...)`);
+- the value of an `errors=`, `error_message=` or `error_detail=` keyword;
+- the arguments of `.append`, `.extend` or `.insert` on a name containing `errors`;
+- the value assigned to such a name with `=`, an annotated `=` or `+=`.
+
 Warnings are not error messages and are not read. Not detected: a message built in a helper or variable and passed
-to the site by name (`_failed(status, code, message)`, `message = f"..."; raise X(message)`), and a token formatted
-from a variable (`f"({code})"`).
+to the site by name (`_failed(status, code, message)`, `message = f"..."; raise X(message)`), a message a helper
+returns for its caller to place (`return [f"..."], []`), a message passed to an
+exception class whose name does not end in `Error` (`Exception("... (FOO).")`), a token formatted from a variable
+(`f"({code})"`), and a bare token anywhere but at the start of a literal part.
 """
 
 from __future__ import annotations
@@ -22,8 +29,9 @@ from tests.lint.astlib import REPO_ROOT, SRC_ROOT, collect_python_files
 
 ENTRY: Final[str] = "docs/agents/architecture/exceptions.md#no-code-tokens-in-messages"
 TOKEN: Final[re.Pattern[str]] = re.compile(r"\([A-Z][A-Z_]{3,}\)")
-MESSAGE_KEYWORDS: Final[frozenset[str]] = frozenset({"errors", "error_message"})
-LIST_METHODS: Final[frozenset[str]] = frozenset({"append", "insert"})
+BARE_TOKEN: Final[re.Pattern[str]] = re.compile(r"^([A-Z]+_[A-Z_]+)(?: at |: )")
+MESSAGE_KEYWORDS: Final[frozenset[str]] = frozenset({"errors", "error_message", "error_detail"})
+LIST_METHODS: Final[frozenset[str]] = frozenset({"append", "extend", "insert"})
 
 _RAISE_FIXTURE: Final[str] = """
 def load(path):
@@ -31,15 +39,31 @@ def load(path):
 """
 
 _ERRORS_KEYWORD_FIXTURE: Final[str] = """
-def read(path):
+def read(path, detail):
+    if detail:
+        return Outcome(status="error", error_detail=f"Provider failed (AGENT_PROVIDER_ERROR): {detail}")
     return LoadResult(errors=["\\n".join(["Schema validation failed (CONFIG_SCHEMA_INVALID):", "- detail"])])
 """
 
 _ERRORS_LIST_FIXTURE: Final[str] = """
-def audit(errors_out, detail):
+def audit(errors_out, detail, result):
     errors = [f"Blocked (AGENT_PERMISSION_BLOCKED): {detail}"]
     errors_out.insert(0, f"Provider error (AGENT_PROVIDER_ERROR): {detail}")
+    result.errors.extend([f"Invalid (CONFIG_SCHEMA_INVALID): {detail}"])
     return errors
+"""
+
+_ERRORS_ASSIGN_FIXTURE: Final[str] = """
+def audit(detail):
+    errors: list[str] = [f"Locked (PROJECT_IDENTITY_LOCKED): {detail}"]
+    errors += [f"Missing (CONFIG_NOT_FOUND): {detail}"]
+    return errors
+"""
+
+_BARE_TOKEN_FIXTURE: Final[str] = """
+def write(result, path, exc):
+    result.errors.append(f"CONFIG_WRITE_FAILED at {path}: {exc}")
+    result.errors.append("CONFIG_INVALID_JSON: root must be a JSON object")
 """
 
 _CLEAN_FIXTURE: Final[str] = """
@@ -47,7 +71,7 @@ def load(path, detail):
     warnings = [f"'{path}' exceeds 10 (CONFIG_WARN_WORKTREE_LIMIT)."]
     if detail:
         raise WorktreeError(ErrorCode.WORKTREE_NOT_FOUND, f"Worktree '{path}' not found.")
-    return LoadResult(errors=[f"Unable to read '{path}': {detail}"], warnings=warnings)
+    return LoadResult(errors=[f"Unable to read '{path}': {detail}", f"HEAD at {path}"], warnings=warnings)
 """
 
 
@@ -78,13 +102,24 @@ def _call_message_parts(call: ast.Call) -> list[ast.expr]:
     return keyword_values
 
 
+def _assigned_message(node: ast.AST) -> ast.expr | None:
+    """Return the value node assigns to a name containing `errors` with =, an annotated = or +=, else None."""
+    if isinstance(node, ast.Assign) and any(_is_errors_name(target) for target in node.targets):
+        return node.value
+    if isinstance(node, (ast.AnnAssign, ast.AugAssign)) and _is_errors_name(node.target):
+        return node.value
+    return None
+
+
 def _message_parts(tree: ast.Module) -> Iterator[ast.expr]:
     """Yield every expression in tree that is, or builds, an error message."""
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
             yield from _call_message_parts(node)
-        elif isinstance(node, ast.Assign) and any(_is_errors_name(target) for target in node.targets):
-            yield node.value
+            continue
+        value = _assigned_message(node)
+        if value is not None:
+            yield value
 
 
 def _literal_texts(expr: ast.expr) -> Iterator[ast.Constant]:
@@ -94,13 +129,20 @@ def _literal_texts(expr: ast.expr) -> Iterator[ast.Constant]:
             yield node
 
 
+def _tokens(text: str) -> list[str]:
+    """Return every parenthesised code token in text, plus a bare one that opens it."""
+    tokens = [match.group(0) for match in TOKEN.finditer(text)]
+    bare = BARE_TOKEN.match(text)
+    return [*tokens, bare.group(1)] if bare else tokens
+
+
 def _token_violations(source: str, rel_path: str) -> list[str]:
     """Return '<rel_path>:<line>: <token>' for each code token in an error-message literal, sorted and unique."""
     found = {
-        f"{rel_path}:{constant.lineno}: {match.group(0)}"
+        f"{rel_path}:{constant.lineno}: {token}"
         for part in _message_parts(ast.parse(source, filename=rel_path))
         for constant in _literal_texts(part)
-        for match in TOKEN.finditer(str(constant.value))
+        for token in _tokens(str(constant.value))
     }
     return sorted(found)
 
@@ -124,12 +166,28 @@ class ErrorMessageTokenTests:
         [
             pytest.param(_RAISE_FIXTURE, ["src/dovo/fixture.py:3: (WORKTREE_NOT_FOUND)"], id="error-call"),
             pytest.param(
-                _ERRORS_KEYWORD_FIXTURE, ["src/dovo/fixture.py:3: (CONFIG_SCHEMA_INVALID)"], id="errors-keyword"
+                _ERRORS_KEYWORD_FIXTURE,
+                ["src/dovo/fixture.py:4: (AGENT_PROVIDER_ERROR)", "src/dovo/fixture.py:5: (CONFIG_SCHEMA_INVALID)"],
+                id="errors-and-error-detail-keywords",
             ),
             pytest.param(
                 _ERRORS_LIST_FIXTURE,
-                ["src/dovo/fixture.py:3: (AGENT_PERMISSION_BLOCKED)", "src/dovo/fixture.py:4: (AGENT_PROVIDER_ERROR)"],
-                id="errors-list",
+                [
+                    "src/dovo/fixture.py:3: (AGENT_PERMISSION_BLOCKED)",
+                    "src/dovo/fixture.py:4: (AGENT_PROVIDER_ERROR)",
+                    "src/dovo/fixture.py:5: (CONFIG_SCHEMA_INVALID)",
+                ],
+                id="errors-list-insert-extend",
+            ),
+            pytest.param(
+                _ERRORS_ASSIGN_FIXTURE,
+                ["src/dovo/fixture.py:3: (PROJECT_IDENTITY_LOCKED)", "src/dovo/fixture.py:4: (CONFIG_NOT_FOUND)"],
+                id="annotated-and-augmented-assignment",
+            ),
+            pytest.param(
+                _BARE_TOKEN_FIXTURE,
+                ["src/dovo/fixture.py:3: CONFIG_WRITE_FAILED", "src/dovo/fixture.py:4: CONFIG_INVALID_JSON"],
+                id="bare-token",
             ),
             pytest.param(_CLEAN_FIXTURE, [], id="clean-and-warnings"),
         ],
