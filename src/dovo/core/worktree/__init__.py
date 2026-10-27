@@ -1,7 +1,6 @@
 """Git worktree management and lifecycle."""
 
 from dovo.core.worktree.exceptions import (
-    WorktreeApplyConflictError,
     WorktreeCapacityError,
     WorktreeError,
 )
@@ -31,7 +30,6 @@ __all__ = [
     "StaleWorktreeCategory",
     "StaleWorktreeItem",
     "Worktree",
-    "WorktreeApplyConflictError",
     "WorktreeApplyResult",
     "WorktreeApplyStrategy",
     "WorktreeCapacityError",

@@ -6,7 +6,6 @@ from collections.abc import Callable
 from contextlib import nullcontext
 
 from dovo.common.clock import Clock
-from dovo.common.diagnostic_log import error_diagnostics
 from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
@@ -14,7 +13,7 @@ from dovo.common.session_id import SessionIdFactory
 from dovo.core.config import Config
 from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
-from dovo.core.worktree.exceptions import WorktreeApplyConflictError
+from dovo.core.worktree.exceptions import WorktreeApplyConflict
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
     WorktreeApplyStrategy,
@@ -71,10 +70,7 @@ class Worktree:
             listed = collect_worktree_list(self.paths, self.db, status)
         if caught.failure is not None:
             return WorktreeListResult(
-                error_code=caught.failure.error_code,
-                errors=[caught.failure.message],
-                remediations=list(caught.failure.remediations),
-                diagnostics=error_diagnostics(caught.failure.diagnostic),
+                **caught.failure.result_fields(),
             )
         return listed
 
@@ -84,10 +80,7 @@ class Worktree:
             shown = collect_worktree_show(self.paths, self.db, worktree_id)
         if caught.failure is not None:
             return WorktreeShowResult(
-                error_code=caught.failure.error_code,
-                errors=[caught.failure.message],
-                remediations=list(caught.failure.remediations),
-                diagnostics=error_diagnostics(caught.failure.diagnostic),
+                **caught.failure.result_fields(),
             )
         return shown
 
@@ -114,10 +107,7 @@ class Worktree:
             return WorktreeDeleteResult(
                 worktree_id=worktree_id,
                 worktree=row,
-                error_code=caught.failure.error_code,
-                errors=[caught.failure.message],
-                remediations=list(caught.failure.remediations),
-                diagnostics=error_diagnostics(caught.failure.diagnostic),
+                **caught.failure.result_fields(),
             )
         return WorktreeDeleteResult(
             worktree_id=worktree_id,
@@ -149,10 +139,7 @@ class Worktree:
                 )
         if caught.failure is not None:
             return WorktreeCreateResult(
-                error_code=caught.failure.error_code,
-                errors=[caught.failure.message],
-                remediations=list(caught.failure.remediations),
-                diagnostics=error_diagnostics(caught.failure.diagnostic),
+                **caught.failure.result_fields(),
             )
         return WorktreeCreateResult(
             session=created.session, warnings=list(created.warnings), diagnostics=list(created.diagnostics)
@@ -178,10 +165,7 @@ class Worktree:
         if caught.failure is not None:
             return WorktreeCleanupResult(
                 worktree_id=worktree_id,
-                error_code=caught.failure.error_code,
-                errors=[caught.failure.message],
-                remediations=list(caught.failure.remediations),
-                diagnostics=error_diagnostics(caught.failure.diagnostic),
+                **caught.failure.result_fields(),
             )
         return WorktreeCleanupResult(
             worktree_id=worktree_id, warnings=list(removal.warnings), diagnostics=list(removal.diagnostics)
@@ -207,10 +191,7 @@ class Worktree:
                 status=None,
                 dry_run=dry_run,
                 force=force,
-                error_code=caught.failure.error_code,
-                errors=[caught.failure.message],
-                remediations=list(caught.failure.remediations),
-                diagnostics=error_diagnostics(caught.failure.diagnostic),
+                **caught.failure.result_fields(),
             )
         return pruned
 
@@ -229,29 +210,24 @@ class Worktree:
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
         """
-        conflicting_files: list[str] = []
         with WorkspaceLock(self.paths.lock_file), catch_failure("worktree.apply", worktree_id=worktree_id) as caught:
-            try:
-                applied = self.patch.apply(
-                    worktree_id,
-                    strategy=strategy,
-                    allow_dirty=allow_dirty,
-                    dry_run=dry_run,
-                    delete=delete,
-                    message=message,
-                )
-            except WorktreeApplyConflictError as conflict:
-                conflicting_files = list(conflict.conflicting_files)
-                raise
+            applied = self.patch.apply(
+                worktree_id,
+                strategy=strategy,
+                allow_dirty=allow_dirty,
+                dry_run=dry_run,
+                delete=delete,
+                message=message,
+            )
         if caught.failure is not None:
+            conflict = caught.failure.data
             return WorktreeApplyResult(
                 worktree_id=worktree_id,
                 strategy=strategy,
-                conflicting_files=conflicting_files,
-                error_code=caught.failure.error_code,
-                errors=[caught.failure.message],
-                remediations=list(caught.failure.remediations),
-                diagnostics=error_diagnostics(caught.failure.diagnostic),
+                conflicting_files=list(conflict.conflicting_files)
+                if isinstance(conflict, WorktreeApplyConflict)
+                else [],
+                **caught.failure.result_fields(),
             )
         return applied
 
@@ -262,9 +238,6 @@ class Worktree:
         if caught.failure is not None:
             return WorktreeDiffResult(
                 worktree_id=worktree_id,
-                error_code=caught.failure.error_code,
-                errors=[caught.failure.message],
-                remediations=list(caught.failure.remediations),
-                diagnostics=error_diagnostics(caught.failure.diagnostic),
+                **caught.failure.result_fields(),
             )
         return diffed

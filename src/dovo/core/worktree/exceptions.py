@@ -1,9 +1,10 @@
-"""The worktree package's domain error, its fixed-code capacity and apply-conflict subclasses, and the cause helper for chaining a re-raised error."""
+"""The worktree package's domain error, its fixed-code capacity subclass, its apply-conflict failure data, and the cause helper for chaining a re-raised error."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from dovo.common.error_codes import ErrorCode
-from dovo.common.exceptions import DomainError
+from dovo.common.exceptions import DomainError, FailureData
 from dovo.common.models import Remediation
 
 
@@ -18,14 +19,11 @@ class WorktreeCapacityError(WorktreeError):
         super().__init__(ErrorCode.WORKTREE_CAPACITY_EXCEEDED, message, remediations)
 
 
-class WorktreeApplyConflictError(WorktreeError):
-    """Raised when git apply --check reports conflicts; carries the conflicting paths."""
+@dataclass(frozen=True, slots=True)
+class WorktreeApplyConflict(FailureData):
+    """A WORKTREE_APPLY_CONFLICT failure's data: the paths git apply --check reported as conflicting."""
 
-    def __init__(
-        self, message: str, remediations: Sequence[Remediation] = (), conflicting_files: Sequence[str] = ()
-    ) -> None:
-        super().__init__(ErrorCode.WORKTREE_APPLY_CONFLICT, message, remediations)
-        self.conflicting_files: tuple[str, ...] = tuple(conflicting_files)
+    conflicting_files: tuple[str, ...]
 
 
 def recorded_cause(exc: DomainError) -> BaseException:

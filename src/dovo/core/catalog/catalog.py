@@ -8,7 +8,6 @@ from typing import Any, Protocol, Self
 
 from pydantic import ValidationError
 
-from dovo.common.diagnostic_log import error_diagnostics
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError, Failure, catch_failure
 from dovo.common.filesystem import Filesystem, WorkspacePaths
@@ -77,10 +76,7 @@ class Catalog:
             listed = self._list(filter_value)
         if caught.failure is not None:
             return CatalogListResult(
-                error_code=caught.failure.error_code,
-                errors=[caught.failure.message],
-                remediations=list(caught.failure.remediations),
-                diagnostics=error_diagnostics(caught.failure.diagnostic),
+                **caught.failure.result_fields(),
             )
         return listed
 
@@ -128,10 +124,7 @@ class Catalog:
             shown = self._show(sha_or_name, item_type)
         if caught.failure is not None:
             return CatalogShowResult(
-                error_code=caught.failure.error_code,
-                errors=[caught.failure.message],
-                remediations=list(caught.failure.remediations),
-                diagnostics=error_diagnostics(caught.failure.diagnostic),
+                **caught.failure.result_fields(),
             )
         return shown
 
@@ -189,10 +182,7 @@ class Catalog:
             created = self._create(item_type, name, tier)
         if caught.failure is not None:
             return CatalogCreateResult(
-                error_code=caught.failure.error_code,
-                errors=[caught.failure.message],
-                remediations=list(caught.failure.remediations),
-                diagnostics=error_diagnostics(caught.failure.diagnostic),
+                **caught.failure.result_fields(),
             )
         return created
 
@@ -212,10 +202,7 @@ class Catalog:
             deleted_item = delete_catalog_item_by_sha_or_name(sha_or_name, self.paths)
         if caught.failure is not None:
             return CatalogDeleteResult(
-                error_code=caught.failure.error_code,
-                errors=[caught.failure.message],
-                remediations=list(caught.failure.remediations),
-                diagnostics=error_diagnostics(caught.failure.diagnostic),
+                **caught.failure.result_fields(),
             )
         return CatalogDeleteResult(item=deleted_item, deleted=True)
 
@@ -266,11 +253,8 @@ class Catalog:
                 target=target,
                 resolved_path=resolved_path,
                 item_type=item_type_value,
-                error_code=caught.failure.error_code,
-                errors=[caught.failure.message],
                 warnings=warnings,
-                remediations=list(caught.failure.remediations),
-                diagnostics=error_diagnostics(caught.failure.diagnostic),
+                **caught.failure.result_fields(),
             )
         return validated
 
@@ -364,19 +348,11 @@ def _duplicate_name_warnings(key_or_sha: str, resolution: CatalogResolution) -> 
 
 def _target_lookup_failure(target: str, item_type: CatalogItemType, failure: Failure) -> CatalogValidateResult:
     """Build the failed validate result from a failed target lookup: its code, message, remediations and recorded diagnostic, or the item_type-scoped catalog-name remediation for CATALOG_NOT_FOUND."""
-    remediations = (
-        [Remediation(message=f"Check that '{target}' names an indexed {item_type.value}, or pass a file path instead.")]
-        if failure.error_code is ErrorCode.CATALOG_NOT_FOUND
-        else list(failure.remediations)
-    )
-    return CatalogValidateResult(
-        valid=False,
-        target=target,
-        resolved_path=None,
-        item_type=None,
-        error_code=failure.error_code,
-        errors=[failure.message],
-        warnings=[],
-        remediations=remediations,
-        diagnostics=error_diagnostics(failure.diagnostic),
-    )
+    fields = failure.result_fields()
+    if failure.error_code is ErrorCode.CATALOG_NOT_FOUND:
+        fields["remediations"] = [
+            Remediation(
+                message=f"Check that '{target}' names an indexed {item_type.value}, or pass a file path instead."
+            )
+        ]
+    return CatalogValidateResult(valid=False, target=target, resolved_path=None, item_type=None, warnings=[], **fields)

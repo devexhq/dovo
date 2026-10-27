@@ -15,7 +15,7 @@ from dovo.core.db import WorktreeRecord, WorktreesRepository, WorktreeStatus
 from dovo.core.git.exceptions import GitError, GitPlumbingTimeoutError
 from dovo.core.git.runner import GitRunner
 from dovo.core.git.tree_diff import diff_work_tree
-from dovo.core.worktree.exceptions import WorktreeApplyConflictError, WorktreeError, recorded_cause
+from dovo.core.worktree.exceptions import WorktreeApplyConflict, WorktreeError, recorded_cause
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
     WorktreeApplyStrategy,
@@ -205,9 +205,9 @@ class WorktreePatch:
         """Dry-run the patch with git apply --check, marking the worktree conflicted when it names conflicting paths.
 
         Raises:
-            WorktreeApplyConflictError: When the check fails and its stderr names conflicting paths.
-            WorktreeError: GIT_FAILED when the check exits non-zero without naming a conflicting path,
-                or a git code during the conflict check.
+            WorktreeError: WORKTREE_APPLY_CONFLICT with WorktreeApplyConflict data when the check fails and its
+                stderr names conflicting paths; GIT_FAILED when the check exits non-zero without naming a
+                conflicting path, or a git code during the conflict check.
         """
         with _reraise_git(worktree_id, "during conflict check"):
             returncode, _, stderr = self.git.apply_check(self.path, diff_text, binary=True)
@@ -228,7 +228,8 @@ class WorktreePatch:
                 exc, level=DiagnosticLevel.DEBUG, operation="worktree.apply", context={"worktree_id": worktree_id}
             )
         conflict_bullets = "\n".join(f"  • {f}" for f in conflicts)
-        raise WorktreeApplyConflictError(
+        raise WorktreeError(
+            ErrorCode.WORKTREE_APPLY_CONFLICT,
             f"Cannot apply worktree {worktree_id}: conflicts detected.\nConflicting files:\n{conflict_bullets}",
             [
                 Remediation(
@@ -237,7 +238,7 @@ class WorktreePatch:
                 ),
                 Remediation(message="Resolve conflicts in the main workspace or worktree"),
             ],
-            conflicting_files=conflicts,
+            data=WorktreeApplyConflict(conflicting_files=tuple(conflicts)),
         )
 
     def _apply_patch_strategy(
@@ -308,8 +309,8 @@ class WorktreePatch:
         """Apply worktree changes back to the main workspace and return the applied or dry-run result.
 
         Raises:
-            WorktreeApplyConflictError: WORKTREE_APPLY_CONFLICT when the patch does not apply cleanly.
-            WorktreeError: WORKTREE_NOT_FOUND, WORKTREE_ALREADY_MERGED, WORKTREE_MISSING, GIT_DIRTY_WORKTREE,
+            WorktreeError: WORKTREE_APPLY_CONFLICT with WorktreeApplyConflict data when the patch does not apply
+                cleanly, WORKTREE_NOT_FOUND, WORKTREE_ALREADY_MERGED, WORKTREE_MISSING, GIT_DIRTY_WORKTREE,
                 PATCH_EMPTY, or a git failure's code (GIT_FAILED, GIT_TIMEOUT, GIT_BINARY_MISSING, FS_NOT_FOUND).
         """
         record = find_worktree(self.db, worktree_id)

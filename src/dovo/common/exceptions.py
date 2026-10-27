@@ -1,12 +1,13 @@
-"""Shared exceptions: catalog definition errors, the DomainError base, and catch_failure for entrypoints."""
+"""Shared exceptions: catalog definition errors, the DomainError base, Failure and its data, and catch_failure for entrypoints."""
 
 from __future__ import annotations
 
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import TypedDict
 
-from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, record_exception
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.error_codes import ErrorCode
 from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
@@ -30,14 +31,36 @@ class DefinitionValidationError(DefinitionError):
     """Raised when definition schema or model validation fails."""
 
 
+@dataclass(frozen=True, slots=True)
+class FailureData:
+    """Base for the typed extra data a package attaches to a failure, such as an apply conflict's paths."""
+
+
 class DomainError(Exception):
     """Base for each package's one business-failure exception."""
 
-    def __init__(self, error_code: ErrorCode, message: str, remediations: Sequence[Remediation] = ()) -> None:
+    def __init__(
+        self,
+        error_code: ErrorCode,
+        message: str,
+        remediations: Sequence[Remediation] = (),
+        *,
+        data: FailureData | None = None,
+    ) -> None:
         super().__init__(message)
         self.error_code = error_code
         self.message = message
         self.remediations: tuple[Remediation, ...] = tuple(remediations)
+        self.data = data
+
+
+class FailureFields(TypedDict):
+    """The result header fields a failure fills, spread into a result constructor."""
+
+    error_code: ErrorCode
+    errors: list[str]
+    remediations: list[Remediation]
+    diagnostics: list[DiagnosticRecord]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +71,16 @@ class Failure:
     message: str
     remediations: tuple[Remediation, ...]
     diagnostic: DiagnosticRecord | None
+    data: FailureData | None = None
+
+    def result_fields(self, *, prior_diagnostics: Sequence[DiagnosticRecord] = ()) -> FailureFields:
+        """Return the code, the message as errors, the remediations, and prior_diagnostics followed by the error-level record."""
+        return FailureFields(
+            error_code=self.error_code,
+            errors=[self.message],
+            remediations=list(self.remediations),
+            diagnostics=[*prior_diagnostics, *error_diagnostics(self.diagnostic)],
+        )
 
 
 @dataclass(slots=True)
@@ -84,6 +117,7 @@ def _domain_failure(error: DomainError, operation: str, context: Mapping[str, _C
         message=error.message,
         remediations=error.remediations,
         diagnostic=diagnostic,
+        data=error.data,
     )
 
 

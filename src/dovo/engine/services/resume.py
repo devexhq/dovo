@@ -16,7 +16,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.engine.engine import Engine
 from dovo.engine.models import BlueprintRunResult, FailurePrompter, InteractionPrompter, RunObserver, RunOutcome
-from dovo.engine.services._shared import fail, fail_with, finalize, load_record, resolve_env_overrides
+from dovo.engine.services._shared import fail, finalize, load_record, resolve_env_overrides
 
 
 @dataclass
@@ -52,14 +52,22 @@ class BlueprintResumeService:
         with catch_failure("engine.resume", session_id=self.session_id) as caught:
             target_session_id = self._target_session_id()
         if caught.failure is not None:
-            return fail_with(self.warnings, self.diagnostics, caught.failure)
+            return BlueprintRunResult(
+                session_record=None,
+                warnings=self.warnings,
+                **caught.failure.result_fields(prior_diagnostics=self.diagnostics),
+            )
         if target_session_id is None:
             return fail(self.warnings, self.diagnostics, "No paused session found to resume.")
 
         with catch_failure("engine.resume", session_id=target_session_id) as caught:
             run_outcome = self._resume(Catalog(self.paths), target_session_id, env_overrides)
         if caught.failure is not None:
-            return fail_with(self.warnings, self.diagnostics, caught.failure)
+            return BlueprintRunResult(
+                session_record=None,
+                warnings=self.warnings,
+                **caught.failure.result_fields(prior_diagnostics=self.diagnostics),
+            )
 
         return finalize(self.db, self.warnings, self.diagnostics, run_outcome, target_session_id)
 

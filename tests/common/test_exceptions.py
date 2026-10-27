@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import traceback
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -11,12 +12,22 @@ import pytest
 
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
-from dovo.common.exceptions import DomainError, Failure, catch_failure
+from dovo.common.exceptions import DomainError, Failure, FailureData, FailureFields, catch_failure
 from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID, FROZEN_TIMESTAMP, read_single_event
 
 REMEDIATION: Final[Remediation] = Remediation(message="Run dovo worktree list.", command="dovo worktree list")
+
+
+@dataclass(frozen=True, slots=True)
+class _Conflict(FailureData):
+    """A package's typed failure data: the paths that conflicted."""
+
+    paths: tuple[str, ...]
+
+
+CONFLICT: Final[_Conflict] = _Conflict(paths=("a.py",))
 
 
 def _raise_domain_error_from_os_error() -> None:
@@ -61,7 +72,14 @@ class DomainErrorTests:
         assert error.error_code == ErrorCode.CONFIG_NOT_FOUND
         assert error.message == "Config not found."
         assert error.remediations == expected
+        assert error.data is None
         assert str(error) == "Config not found."
+
+    def test_carries_data(self) -> None:
+        """Expose the data passed as data= unchanged."""
+        error = DomainError(ErrorCode.WORKTREE_APPLY_CONFLICT, "Conflicts detected.", data=CONFLICT)
+
+        assert error.data == CONFLICT
 
 
 class CatchFailureTests:
@@ -85,6 +103,13 @@ class CatchFailureTests:
 
         assert caught.failure == Failure(ErrorCode.WORKTREE_NOT_FOUND, "Worktree 'x' not found.", (REMEDIATION,), None)
         assert not frozen_diagnostic_clock.parent.parent.exists()
+
+    def test_domain_error_data_is_carried_onto_the_failure(self, frozen_diagnostic_clock: Path) -> None:
+        """Set caught.failure.data to the data the DomainError was raised with."""
+        with catch_failure("worktree.apply") as caught:
+            raise DomainError(ErrorCode.WORKTREE_APPLY_CONFLICT, "Conflicts detected.", data=CONFLICT)
+
+        assert caught.failure == Failure(ErrorCode.WORKTREE_APPLY_CONFLICT, "Conflicts detected.", (), None, CONFLICT)
 
     def test_domain_error_from_os_error_records_the_cause(self, frozen_diagnostic_clock: Path) -> None:
         """Write one error-level event for the FileNotFoundError cause with operation worktree.apply and context {"worktree_id": "wt1"}, and set caught.failure.diagnostic to its DiagnosticRecord."""
@@ -184,3 +209,42 @@ class CatchFailureTests:
 
         assert caught.failure == expected
         assert logs_dir.read_text(encoding="utf-8") == "not a directory"
+
+
+ERROR_RECORD: Final[DiagnosticRecord] = DiagnosticRecord(
+    event_id="exc_error", log_path=Path("/logs/exc_error.json"), level=DiagnosticLevel.ERROR
+)
+PRIOR_RECORD: Final[DiagnosticRecord] = DiagnosticRecord(
+    event_id="exc_prior", log_path=Path("/logs/exc_prior.json"), level=DiagnosticLevel.ERROR
+)
+DEBUG_RECORD: Final[DiagnosticRecord] = DiagnosticRecord(
+    event_id="exc_debug", log_path=Path("/logs/exc_debug.json"), level=DiagnosticLevel.DEBUG
+)
+
+
+class FailureResultFieldsTests:
+    @pytest.mark.parametrize(
+        ("diagnostic", "prior", "expected_diagnostics"),
+        [
+            pytest.param(None, (), [], id="no_record"),
+            pytest.param(ERROR_RECORD, (), [ERROR_RECORD], id="error_record"),
+            pytest.param(DEBUG_RECORD, (), [], id="debug_record_dropped"),
+            pytest.param(ERROR_RECORD, (PRIOR_RECORD,), [PRIOR_RECORD, ERROR_RECORD], id="prior_first"),
+            pytest.param(None, (PRIOR_RECORD,), [PRIOR_RECORD], id="prior_only"),
+        ],
+    )
+    def test_returns_code_message_remediations_and_diagnostics(
+        self,
+        diagnostic: DiagnosticRecord | None,
+        prior: tuple[DiagnosticRecord, ...],
+        expected_diagnostics: list[DiagnosticRecord],
+    ) -> None:
+        """Return the code, [message], the remediations as a list, and prior_diagnostics followed by the record only when it is error-level."""
+        failure = Failure(ErrorCode.WORKTREE_NOT_FOUND, "Worktree 'x' not found.", (REMEDIATION,), diagnostic)
+
+        assert failure.result_fields(prior_diagnostics=prior) == FailureFields(
+            error_code=ErrorCode.WORKTREE_NOT_FOUND,
+            errors=["Worktree 'x' not found."],
+            remediations=[REMEDIATION],
+            diagnostics=expected_diagnostics,
+        )
