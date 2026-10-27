@@ -291,7 +291,7 @@ def _parse_and_check_limits(
 
 
 def _check_worktree_paths(touched: list[str], worktree_path: Path) -> None:
-    """Raise PATCH_WORKTREE_MISSING for a missing worktree and PATCH_UNSAFE_PATH for a path that escapes it."""
+    """Raise PATCH_WORKTREE_MISSING for a missing worktree and PATCH_PATH_UNSAFE for a path that escapes it."""
     try:
         worktree_ok = worktree_path.is_dir()
     except OSError:
@@ -305,7 +305,7 @@ def _check_worktree_paths(touched: list[str], worktree_path: Path) -> None:
     for rel in touched:
         if _is_unsafe_path(rel, worktree_path):
             raise GitError(
-                ErrorCode.PATCH_UNSAFE_PATH,
+                ErrorCode.PATCH_PATH_UNSAFE,
                 f"Patch path is absolute or escapes the worktree: '{rel}'.",
                 [Remediation(message="Use worktree-relative paths only (no absolute paths or '..' segments)")],
             )

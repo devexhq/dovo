@@ -64,14 +64,14 @@ class EngineLoader:
         supplied: Sequence[HeadlessAnswerInput],
         warnings: list[str],
     ) -> dict[str, InteractionAnswer]:
-        """Validate supplied answers against the single pending ask; raise EngineError(INTERACTION_NO_PENDING_PROMPT | INTERACTION_ANSWER_INVALID)."""
+        """Validate supplied answers against the single pending ask; raise EngineError(INTERACTION_PROMPT_NOT_PENDING | INTERACTION_ANSWER_INVALID)."""
         pending = next(
             (leaf.pending_ask for leaf in iter_leaves(state) if leaf.state is NodeState.PAUSED and leaf.pending_ask),
             None,
         )
         if pending is None:
             raise EngineError(
-                ErrorCode.INTERACTION_NO_PENDING_PROMPT, f"No prompt is pending for session '{session_id}'."
+                ErrorCode.INTERACTION_PROMPT_NOT_PENDING, f"No prompt is pending for session '{session_id}'."
             )
 
         answers: dict[str, InteractionAnswer] = {}

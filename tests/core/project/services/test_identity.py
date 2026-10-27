@@ -90,7 +90,7 @@ class ProjectIdentityServiceTests:
         with pytest.raises(ProjectIdentityError) as raised:
             load_project_identity(path)
 
-        assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_INVALID_SCHEMA
+        assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_SCHEMA_INVALID
         assert raised.value.message == (f"Project identity at '{path}' is invalid: {validation.value}.")
         assert raised.value.remediations == ()
 
@@ -267,7 +267,7 @@ class ProjectIdentityServiceTests:
             path.write_text("{not-json", encoding="utf-8")
             with pytest.raises(ValidationError) as validation:
                 ProjectIdentity.model_validate_json("{not-json")
-            expected_code = ErrorCode.PROJECT_IDENTITY_INVALID_SCHEMA
+            expected_code = ErrorCode.PROJECT_IDENTITY_SCHEMA_INVALID
             expected_message = f"Project identity at '{path}' is invalid: {validation.value}."
         else:
             _fail_atomic_write(monkeypatch)

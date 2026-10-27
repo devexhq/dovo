@@ -822,7 +822,7 @@ class RejectedPatchSaveTests:
             pytest.param(ErrorCode.PATCH_SIZE_EXCEEDED, id="too-large"),
             pytest.param(ErrorCode.PATCH_FILE_COUNT_EXCEEDED, id="too-many-files"),
             pytest.param(ErrorCode.PATCH_BINARY_DISALLOWED, id="binary-rejected"),
-            pytest.param(ErrorCode.PATCH_UNSAFE_PATH, id="unsafe-path"),
+            pytest.param(ErrorCode.PATCH_PATH_UNSAFE, id="unsafe-path"),
             pytest.param(ErrorCode.PATCH_CORRUPT, id="invalid-diff"),
             pytest.param(ErrorCode.PATCH_WORKTREE_MISSING, id="worktree-missing"),
         ],

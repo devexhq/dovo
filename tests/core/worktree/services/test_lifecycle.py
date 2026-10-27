@@ -464,7 +464,7 @@ class WorktreeLifecycleCollisionTests:
     def test_create_when_path_check_raises_oserror_returns_creation_failed_and_records_cause(
         self, worktree_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return WORKTREE_CREATION_FAILED with the path-check message and remediation, and one error record for the PermissionError in diagnostics."""
+        """Return WORKTREE_CREATE_FAILED with the path-check message and remediation, and one error record for the PermissionError in diagnostics."""
         paths = _paths(worktree_workspace)
         worktree = Worktree(
             paths,
@@ -484,7 +484,7 @@ class WorktreeLifecycleCollisionTests:
 
         result = worktree.create(session_id="dovo_denied")
 
-        assert result.error_code == "WORKTREE_CREATION_FAILED"
+        assert result.error_code == "WORKTREE_CREATE_FAILED"
         assert result.errors == ["Worktree path check failed: permission denied"]
         assert result.remediations == [
             Remediation(message=f"Check that '{paths.worktrees_dir}' is readable, then retry")
@@ -746,7 +746,7 @@ class WorktreeLifecycleDiagnosticLogTests:
     def test_wip_copy_failure_records_error_in_diagnostics(
         self, worktree_workspace: Path, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return WORKTREE_WIP_FAILED with an unhinted "Failed to overlay uncommitted WIP into worktree: " error and one diagnostics entry for a PermissionError error event, when create(include_wip=True) copies an untracked WIP file chmod 000."""
+        """Return WORKTREE_WIP_COPY_FAILED with an unhinted "Failed to overlay uncommitted WIP into worktree: " error and one diagnostics entry for a PermissionError error event, when create(include_wip=True) copies an untracked WIP file chmod 000."""
         worktree = _worktree(worktree_workspace)
         unreadable = worktree_workspace / "secret.txt"
         unreadable.write_text("wip\n", encoding="utf-8")
@@ -756,7 +756,7 @@ class WorktreeLifecycleDiagnosticLogTests:
         finally:
             unreadable.chmod(0o644)
 
-        assert result.error_code == ErrorCode.WORKTREE_WIP_FAILED
+        assert result.error_code == ErrorCode.WORKTREE_WIP_COPY_FAILED
         assert len(result.errors) == 1
         assert result.errors[0].startswith("Failed to overlay uncommitted WIP into worktree: ")
         assert "Details logged:" not in result.errors[0]

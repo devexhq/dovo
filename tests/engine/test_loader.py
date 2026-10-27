@@ -427,7 +427,7 @@ class EngineLoaderResolveAnswersTests:
         with pytest.raises(EngineError) as raised:
             EngineLoader.resolve_answers("paused-1", state, [HeadlessAnswerInput(step_id="b", value="x")], [])
 
-        assert raised.value.error_code is ErrorCode.INTERACTION_NO_PENDING_PROMPT
+        assert raised.value.error_code is ErrorCode.INTERACTION_PROMPT_NOT_PENDING
         assert str(raised.value) == "No prompt is pending for session 'paused-1'."
 
     def test_comment_on_disabled_policy_adds_a_warning(

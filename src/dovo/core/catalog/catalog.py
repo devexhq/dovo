@@ -148,7 +148,7 @@ class Catalog:
 
         Raises:
             CatalogError: CATALOG_NOT_FOUND when nothing matches ("Catalog item '<key>' not found."),
-                CATALOG_SYNTAX_ERROR or CATALOG_SCHEMA_INVALID when the winner cannot be loaded into
+                CATALOG_SYNTAX_INVALID or CATALOG_SCHEMA_INVALID when the winner cannot be loaded into
                 definition_cls, CATALOG_WRITE_FAILED when reindexing fails, CATALOG_TYPE_INVALID for an
                 unknown item_type.
         """
@@ -289,7 +289,7 @@ class Catalog:
         yaml_file = Filesystem.read_yaml_file(path)
         if yaml_file.error or yaml_file.parsed is None or not isinstance(yaml_file.parsed, dict):
             detail = yaml_file.error or "invalid or non-object YAML content."
-            raise CatalogError(ErrorCode.CATALOG_SYNTAX_ERROR, f"Failed to load catalog blueprint '{path}': {detail}")
+            raise CatalogError(ErrorCode.CATALOG_SYNTAX_INVALID, f"Failed to load catalog blueprint '{path}': {detail}")
         return yaml_file.parsed
 
     def _read_and_parse_yaml(self, file_path: Path, rel_path: Path) -> YamlParseOutcome:
@@ -311,12 +311,12 @@ class Catalog:
         """Read record's YAML and build definition_cls from it.
 
         Raises:
-            CatalogError: CATALOG_SYNTAX_ERROR when the YAML is unreadable or not an object, CATALOG_SCHEMA_INVALID
+            CatalogError: CATALOG_SYNTAX_INVALID when the YAML is unreadable or not an object, CATALOG_SCHEMA_INVALID
                 ("Model validation failed for '<key_or_sha>': <exc>") when the definition fails validation.
         """
         parse_outcome = self._read_and_parse_yaml(resolve_catalog_record_path(record, self.paths), record.path)
         if parse_outcome.errors or parse_outcome.parsed_data is None:
-            raise CatalogError(ErrorCode.CATALOG_SYNTAX_ERROR, parse_outcome.errors[0])
+            raise CatalogError(ErrorCode.CATALOG_SYNTAX_INVALID, parse_outcome.errors[0])
 
         from_document = getattr(definition_cls, "from_document", None)
         try:

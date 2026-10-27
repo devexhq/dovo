@@ -136,7 +136,7 @@ def _read_and_parse_target_yaml(
             target=target,
             resolved_path=resolved_path,
             item_type=item_type,
-            error_code=ErrorCode.CATALOG_SYNTAX_ERROR,
+            error_code=ErrorCode.CATALOG_SYNTAX_INVALID,
             errors=[f"YAML syntax error in '{resolved_path}' at {location}: {exc}."],
             warnings=[],
             remediations=[Remediation(message=f"Fix the YAML syntax error at {location} in '{resolved_path}'.")],
@@ -148,7 +148,7 @@ def _read_and_parse_target_yaml(
             target=target,
             resolved_path=resolved_path,
             item_type=item_type,
-            error_code=ErrorCode.CATALOG_SYNTAX_ERROR,
+            error_code=ErrorCode.CATALOG_SYNTAX_INVALID,
             errors=[f"'{resolved_path}' root content must be a YAML mapping."],
             warnings=[],
             remediations=[

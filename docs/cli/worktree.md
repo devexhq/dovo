@@ -24,7 +24,7 @@ Create a new isolated Git worktree:
 dovo worktree create [--name <name>] [--base-ref <ref>] [--wip/--no-wip] [--format terminal|json]
 ```
 
-A failure exits with code 1 and reports its `error_code`: `WORKTREE_PATH_CONFLICT` when the worktree directory or branch already exists, `WORKTREE_CAPACITY_EXCEEDED` when `worktree.max_active_worktrees` worktrees are active, `WORKTREE_CREATION_FAILED` when the target path cannot be checked, the git failure's code (`GIT_FAILED`, `GIT_BINARY_MISSING` or `GIT_TIMEOUT`) when a git command fails, including while `--wip` overlays your uncommitted changes, `FS_NOT_FOUND` when the working directory disappeared while git ran, `WORKTREE_WIP_FAILED` or `WORKTREE_MISSING` when `--wip` otherwise cannot overlay your uncommitted changes, and `INTERNAL_ERROR` for an unexpected error. A partly created worktree is removed first.
+A failure exits with code 1 and reports its `error_code`: `WORKTREE_PATH_CONFLICT` when the worktree directory or branch already exists, `WORKTREE_CAPACITY_EXCEEDED` when `worktree.max_active_worktrees` worktrees are active, `WORKTREE_CREATE_FAILED` when the target path cannot be checked, the git failure's code (`GIT_FAILED`, `GIT_BINARY_MISSING` or `GIT_TIMEOUT`) when a git command fails, including while `--wip` overlays your uncommitted changes, `FS_NOT_FOUND` when the working directory disappeared while git ran, `WORKTREE_WIP_COPY_FAILED` or `WORKTREE_MISSING` when `--wip` otherwise cannot overlay your uncommitted changes, and `INTERNAL_ERROR` for an unexpected error. A partly created worktree is removed first.
 
 ### `dovo worktree show`
 
@@ -44,7 +44,7 @@ Safely prune stale worktrees, orphaned directories, and temporary branches:
 dovo worktree prune [--dry-run] [--force] [--format terminal|json]
 ```
 
-With `--format json`, `status` is `ok`, or `partial_failure` when at least one item could not be pruned; that run reports `error_code` `WORKTREE_PRUNE_ITEMS_FAILED` and lists one error per failed item. A failure that stops the scan reports `status` `null` and its `error_code`, for example `GIT_FAILED` when `git worktree list` fails, or `INTERNAL_ERROR` for an unexpected error. Either exits with code 1.
+With `--format json`, `status` is `ok`, or `partial_failure` when at least one item could not be pruned; that run reports `error_code` `WORKTREE_PRUNE_FAILED` and lists one error per failed item. A failure that stops the scan reports `status` `null` and its `error_code`, for example `GIT_FAILED` when `git worktree list` fails, or `INTERNAL_ERROR` for an unexpected error. Either exits with code 1.
 
 When an unexpected error stops prune, or an item cannot be pruned, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record and prints a `Details logged: <path> (event <event_id>)` line after the output; with `--format json` the record is listed in `diagnostics`. Without `--dry-run`, prune waits for the workspace lock and exits with code 1 if another `dovo` process holds it too long.
 

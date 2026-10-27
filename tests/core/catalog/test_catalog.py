@@ -236,13 +236,13 @@ class CatalogGetTests:
         [
             pytest.param(
                 "- a\n- b\n",
-                ErrorCode.CATALOG_SYNTAX_ERROR,
+                ErrorCode.CATALOG_SYNTAX_INVALID,
                 "Failed to load catalog blueprint 'blueprints/bad.yml': invalid or non-object YAML content.",
                 id="non_mapping",
             ),
             pytest.param(
                 "name: bad\nsteps: [\n",
-                ErrorCode.CATALOG_SYNTAX_ERROR,
+                ErrorCode.CATALOG_SYNTAX_INVALID,
                 "Failed to load catalog blueprint 'blueprints/bad.yml'",
                 id="syntax",
             ),

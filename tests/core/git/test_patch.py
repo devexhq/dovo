@@ -203,7 +203,7 @@ class ValidatePatchTextTests:
                 new_file_diff("../escape.txt"),
                 _Limits(),
                 None,
-                ErrorCode.PATCH_UNSAFE_PATH,
+                ErrorCode.PATCH_PATH_UNSAFE,
                 "Patch path is absolute or escapes the worktree: '../escape.txt'.",
                 (Remediation(message="Use worktree-relative paths only (no absolute paths or '..' segments)"),),
                 id="unsafe",

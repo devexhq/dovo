@@ -25,9 +25,7 @@ class WorktreePruneResultOkTests:
         ("status", "error_code", "ok"),
         [
             pytest.param(WorktreePruneStatus.OK, None, True, id="ok"),
-            pytest.param(
-                WorktreePruneStatus.PARTIAL_FAILURE, "WORKTREE_PRUNE_ITEMS_FAILED", False, id="partial_failure"
-            ),
+            pytest.param(WorktreePruneStatus.PARTIAL_FAILURE, "WORKTREE_PRUNE_FAILED", False, id="partial_failure"),
             pytest.param(None, "GIT_FAILED", False, id="stopped"),
         ],
     )
