@@ -55,9 +55,14 @@ mkdir -p .agentic
 
   - <Key technical decision or implementation detail, 1-2 sentences.>
   - <...>
+  - **Phases:** <one line per plan phase and what it ships, or "no plan">
+  - **Departures from #<n>:** <each, and the ticket edit or comment that records it, or "none">
 
   Fixes #<n>
   ```
+
+  The Phases and Departures lines follow "In the pull request" in
+  `docs/agents/planning.md`.
 
   Omit the `Fixes #N` line entirely when there is no related issue — never
   invent one.

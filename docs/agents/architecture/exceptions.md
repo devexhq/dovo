@@ -19,7 +19,6 @@ How business failures are raised, caught and classified behind an entrypoint. R4
   - Dovo's own state: `.dovo/`, `.dovo/project.json`, the session directory and its temp directory.
   - A failure of an external tool or the environment that the code and message already name (git missing or failing to start) is raised `from None`.
 - **Why:** `catch_failure` records a `DomainError` only when its `__cause__` is an `OSError`, so the cause alone decides whether an event file is written.
-- **Exemplar:** `src/dovo/core/agents/mutation_git.py`
 - **Enforced by:** review only
 - **Since:** #1109
 
@@ -56,7 +55,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 
 - **Decision:** a `DomainError` is caught once, with `catch_failure`, by the public entrypoint or by a caller in another package.
   - The catcher copies the failure's `error_code`, its message into `errors`, its `remediations`, and its diagnostic through `error_diagnostics` into `diagnostics`.
-  - Code behind an entrypoint catches only to recover, or to collect per-item failures and continue, and records what it caught with `record_exception` (see [diagnostics.md](diagnostics.md)).
+  - Code behind an entrypoint catches only to recover, or to collect per-item failures and continue, and records what it caught with `record_exception`, at the level [diagnostics.md](diagnostics.md) sets (which records no expected failure its message already names).
   - `catch_failure` re-raises `LockTimeoutError` and records unexpected exceptions, so no helper catches broad `Exception` to report it.
 - **Why:** one catch site means one copy into the result, one diagnostic record and one place a caller looks.
 - **Exemplar:** `src/dovo/core/worktree/worktree.py`
@@ -71,7 +70,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
   - Each name is unique per `catch_failure` block.
 - **Why:** the name is written to every event file, so it must point at the one entrypoint that reported the failure.
 - **Enforced by:** pending #1214 (phase 7)
-  - Sub-step or other-package names remain in `src/dovo/core/bootstrap/services/initialize.py`, `src/dovo/core/agents/cli_mutation.py`, `src/dovo/engine/services/run.py`, `src/dovo/engine/services/session_show.py` and `src/dovo/core/diagnostics/checks/worktree_refs.py`.
+  - Sub-step or other-package names remain in `src/dovo/core/bootstrap/services/initialize.py`, `src/dovo/core/agents/cli_mutation.py`, `src/dovo/engine/services/run.py`, `src/dovo/engine/services/session_show.py`, `src/dovo/engine/executors/agent_step.py`, `src/dovo/engine/executors/step_executor.py` and `src/dovo/core/diagnostics/checks/worktree_refs.py`.
   - Names repeat across blocks in `src/dovo/core/catalog/catalog.py` and `src/dovo/engine/services/resume.py`.
 - **Since:** #1106
 

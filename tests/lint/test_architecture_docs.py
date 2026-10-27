@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,15 +25,17 @@ FIELDS: Final = ("Decision", "Why", "Exemplar", "Enforced by", "Since")
 REQUIRED_FIELDS: Final = ("Decision", "Why", "Enforced by")
 PATH_PREFIXES: Final = ("src/", "tests/", "docs/", "e2e/", "scripts/", ".agents/")
 ROOT_FILES: Final = frozenset({"AGENTS.md", "README.md", "mkdocs.yml", "pyproject.toml"})
+FENCES: Final = ("```", "~~~")
 
 HEADING: Final = re.compile(r"^(?P<marks>#+)\s+(?P<title>.+)$")
 BULLET: Final = re.compile(r"^(?:[-*+]|\d+\.)\s")
 FIELD: Final = re.compile(r"^- \*\*(?P<name>[^*]+):\*\*\s*(?P<value>.*)$")
 BACKTICKED: Final = re.compile(r"`([^`]+)`")
 LINK_TARGET: Final = re.compile(r"\]\((?P<target>[^)#\s]+)(?:#[^)]*)?\)")
-LINE_SUFFIX: Final = re.compile(r"(?::\d+(?:-\d+)?|::\S+)$")
+LINE_NUMBER: Final = re.compile(r":\d+(?:-\d+)?$")
+PARAMETRIZE_ID: Final = re.compile(r"\[.*\]$")
 PENDING: Final = re.compile(r"^pending #\d+(?: \(phase \d+\))?$")
-TEST_PATHS: Final = re.compile(r"^`tests/[^`]+\.py`(?:, `tests/[^`]+\.py`)*$")
+TEST_PATHS: Final = re.compile(r"^`tests/[^`]+\.py(?:::[^`]+)?`(?:, `tests/[^`]+\.py(?:::[^`]+)?`)*$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +64,11 @@ class Block:
     words: int
 
 
+def _doc_params(docs: list[Path]) -> list[object]:
+    """Return one pytest.param per doc, identified by its file name."""
+    return [pytest.param(doc, id=doc.name) for doc in docs]
+
+
 def _relative(doc: Path) -> str:
     """Return doc's path relative to the repository root."""
     return str(doc.relative_to(REPO_ROOT))
@@ -71,33 +79,40 @@ def _doc_lines(doc: Path) -> list[str]:
     return doc.read_text(encoding="utf-8").splitlines()
 
 
-def _prose_lines(lines: list[str]) -> list[Line]:
-    """Return lines outside code fences, keeping each opening fence as a one-line marker."""
-    kept: list[Line] = []
-    in_fence = False
-    for number, text in enumerate(lines, start=1):
-        if text.startswith("```"):
-            if not in_fence:
-                kept.append(Line(number, "```"))
-            in_fence = not in_fence
-        elif not in_fence:
-            kept.append(Line(number, text))
-    return kept
+def _fence(text: str) -> str | None:
+    """Return the fence marker a line opens or closes with, at any indentation, or None."""
+    stripped = text.lstrip()
+    return next((marker for marker in FENCES if stripped.startswith(marker)), None)
 
 
-def _code_block_lengths(lines: list[str]) -> list[tuple[int, int]]:
-    """Return (opening line number, content line count) for each fenced code block."""
-    blocks: list[tuple[int, int]] = []
-    opened: int | None = None
+def _fenced_blocks(lines: list[str]) -> list[tuple[int, int, int]]:
+    """Return (opening line, closing line, content line count) for each fenced code block; an unclosed one ends the doc."""
+    blocks: list[tuple[int, int, int]] = []
+    opened: tuple[int, str] | None = None
     for number, text in enumerate(lines, start=1):
-        if not text.startswith("```"):
+        marker = _fence(text)
+        if marker is None:
             continue
         if opened is None:
-            opened = number
-        else:
-            blocks.append((opened, number - opened - 1))
+            opened = (number, marker)
+        elif marker == opened[1]:
+            blocks.append((opened[0], number, number - opened[0] - 1))
             opened = None
+    if opened is not None:
+        blocks.append((opened[0], len(lines) + 1, len(lines) - opened[0]))
     return blocks
+
+
+def _prose_lines(lines: list[str]) -> list[Line]:
+    """Return lines outside code fences, keeping each opening fence, with its indentation, as a one-line marker."""
+    fenced = {number for start, end, _ in _fenced_blocks(lines) for number in range(start + 1, end + 1)}
+    kept: list[Line] = []
+    for number, text in enumerate(lines, start=1):
+        if number in fenced:
+            continue
+        indent = text[: len(text) - len(text.lstrip())]
+        kept.append(Line(number, f"{indent}```" if _fence(text) else text))
+    return kept
 
 
 def _sections(doc: Path) -> list[Section]:
@@ -115,15 +130,17 @@ def _sections(doc: Path) -> list[Section]:
     return sections
 
 
-def _kind(text: str) -> str:
-    """Classify one body line as blank, continuation, list, code or paragraph."""
+def _kind(text: str, previous: str) -> str:
+    """Classify one body line; an unindented line straight after a list item continues it."""
     if not text.strip():
         return "blank"
     if text.startswith((" ", "\t")):
         return "continuation"
     if BULLET.match(text):
         return "list"
-    return "code" if text == "```" else "paragraph"
+    if text == "```":
+        return "code"
+    return "continuation" if previous == "list" else "paragraph"
 
 
 def _blocks(section: Section) -> list[Block]:
@@ -131,7 +148,7 @@ def _blocks(section: Section) -> list[Block]:
     blocks: list[Block] = []
     previous = "blank"
     for line in section.body:
-        kind = _kind(line.text)
+        kind = _kind(line.text, previous)
         if kind == "continuation":
             continue
         words = len(line.text.split())
@@ -157,65 +174,108 @@ def _prose_violations(doc: Path, section: Section) -> list[str]:
     return violations
 
 
-def _fields(section: Section) -> tuple[dict[str, str], list[Line]]:
-    """Return a decision entry's field values by name, and its top-level bullets that are not a known field."""
-    fields: dict[str, str] = {}
+def _fields(section: Section) -> tuple[list[tuple[str, str]], list[Line]]:
+    """Return a decision entry's (field, value) pairs in order, and its top-level bullets that are not a known field."""
+    fields: list[tuple[str, str]] = []
     strays: list[Line] = []
     for line in section.body:
         match = FIELD.match(line.text)
         if match is not None and match["name"] in FIELDS:
-            fields[match["name"]] = match["value"].strip()
+            fields.append((match["name"], match["value"].strip()))
         elif BULLET.match(line.text):
             strays.append(line)
     return fields, strays
 
 
+def _field_order_violations(where: str, names: list[str]) -> list[str]:
+    """Return a violation for each repeated field and for fields out of the README's order."""
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    violations = [f"{where}: **{name}:** appears more than once" for name in repeated]
+    positions = [FIELDS.index(name) for name in names]
+    if positions != sorted(positions):
+        violations.append(f"{where}: fields out of order ({', '.join(names)}); use {', '.join(FIELDS)}")
+    return violations
+
+
 def _entry_violations(doc: Path, section: Section) -> list[str]:
-    """Return a violation for each missing required field or stray top-level bullet in one decision entry."""
+    """Return a violation for each missing, repeated or misordered field, or stray top-level bullet, in one entry."""
     fields, strays = _fields(section)
+    names = [name for name, _ in fields]
     where = f"{_relative(doc)} ({section.title})"
-    missing = [f"{where}: missing **{name}:**" for name in REQUIRED_FIELDS if name not in fields]
+    missing = [f"{where}: missing **{name}:**" for name in REQUIRED_FIELDS if name not in names]
     stray = [f"{_relative(doc)}:{line.number} ({section.title}): top-level bullet is not a field" for line in strays]
-    return [*missing, *stray]
+    return [*missing, *_field_order_violations(where, names), *stray]
+
+
+def _names_exist(source: Path, names: list[str]) -> bool:
+    """Return whether the nested class or function names exist in a Python file, ignoring a [parametrize-id]."""
+    if source.suffix != ".py":
+        return False
+    scope: list[ast.stmt] = ast.parse(source.read_text(encoding="utf-8")).body
+    for name in (PARAMETRIZE_ID.sub("", part) for part in names):
+        found = next(
+            (
+                node
+                for node in scope
+                if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef) and node.name == name
+            ),
+            None,
+        )
+        if found is None:
+            return False
+        scope = found.body
+    return True
+
+
+def _is_repo_path(path: str) -> bool:
+    """Return whether path names a file or folder in this repository by its prefix."""
+    return path in ROOT_FILES or path.startswith(PATH_PREFIXES)
+
+
+def _reference_problem(span: str) -> str | None:
+    """Return why a backticked repository reference is invalid: a line suffix, a missing path or a missing test name."""
+    if " " in span or any(mark in span for mark in "<>*{}"):
+        return None
+    path, _, names = span.partition("::")
+    if LINE_NUMBER.search(path):
+        return f"{span}: drop the line number" if _is_repo_path(LINE_NUMBER.sub("", path)) else None
+    if not _is_repo_path(path):
+        return None
+    target = REPO_ROOT / path
+    if not target.exists():
+        return f"{span}: no such path"
+    if names and not _names_exist(target, names.split("::")):
+        return f"{span}: no such class or test"
+    return None
 
 
 def _enforced_by_is_valid(value: str) -> bool:
-    """Return whether an Enforced by value is review only, pending #<n>, or existing backticked test paths."""
+    """Return whether an Enforced by value is review only, pending #<n>, or existing backticked tests."""
     if value == "review only" or PENDING.match(value):
         return True
     if not TEST_PATHS.match(value):
         return False
-    return all((REPO_ROOT / path).is_file() for path in BACKTICKED.findall(value))
-
-
-def _cited_path(span: str) -> str | None:
-    """Return span as a repository path to check, or None when it is not a concrete repository path."""
-    if " " in span or any(mark in span for mark in "<>*{}"):
-        return None
-    path = LINE_SUFFIX.sub("", span)
-    if path in ROOT_FILES or path.startswith(PATH_PREFIXES):
-        return path
-    return None
-
-
-def _missing_paths(text: str) -> list[str]:
-    """Return each backticked repository path in text that does not exist."""
-    paths = [path for span in BACKTICKED.findall(text) if (path := _cited_path(span)) is not None]
-    return [path for path in paths if not (REPO_ROOT / path).exists()]
+    return all(_reference_problem(span) is None for span in BACKTICKED.findall(value))
 
 
 def _missing_links(doc: Path, text: str) -> list[str]:
     """Return each relative link target in text that does not exist next to doc."""
     links = [match["target"] for match in LINK_TARGET.finditer(text) if "://" not in match["target"]]
-    return [link for link in links if not (doc.parent / link).exists()]
+    return [f"{link}: no such file" for link in links if not (doc.parent / link).exists()]
+
+
+def _reference_problems(text: str) -> list[str]:
+    """Return the problem with each invalid backticked repository reference in text."""
+    problems = [_reference_problem(span) for span in BACKTICKED.findall(text)]
+    return [problem for problem in problems if problem is not None]
 
 
 def _unresolved_references(doc: Path) -> list[str]:
-    """Return `path:line: reference` for each backticked repository path or relative link in doc that does not exist."""
+    """Return `path:line: problem` for each invalid backticked repository reference or relative link in doc."""
     return [
-        f"{_relative(doc)}:{line.number}: {reference}"
+        f"{_relative(doc)}:{line.number}: {problem}"
         for line in _prose_lines(_doc_lines(doc))
-        for reference in [*_missing_paths(line.text), *_missing_links(doc, line.text)]
+        for problem in [*_reference_problems(line.text), *_missing_links(doc, line.text)]
     ]
 
 
@@ -228,38 +288,33 @@ def _heading_violations(doc: Path) -> list[str]:
     ]
 
 
-def _doc_id(doc: Path) -> str:
-    """Return a parametrize id naming doc."""
-    return doc.name
-
-
 class ArchitectureDocsTests:
     def test_folder_has_area_files_so_the_rules_cannot_pass_vacuously(self) -> None:
         assert INDEX.is_file()
         assert AREA_DOCS, f"no area files in {_relative(ARCHITECTURE_DIR)}"
 
-    @pytest.mark.parametrize("doc", ARCHITECTURE_DOCS, ids=_doc_id)
+    @pytest.mark.parametrize("doc", _doc_params(ARCHITECTURE_DOCS))
     def test_headings_stay_within_levels_one_to_three(self, doc: Path) -> None:
         assert _heading_violations(doc) == []
 
-    @pytest.mark.parametrize("doc", ARCHITECTURE_DOCS, ids=_doc_id)
+    @pytest.mark.parametrize("doc", _doc_params(ARCHITECTURE_DOCS))
     def test_sections_open_with_at_most_one_short_paragraph_then_bullets(self, doc: Path) -> None:
         violations = [found for section in _sections(doc) for found in _prose_violations(doc, section)]
 
         assert violations == []
 
-    @pytest.mark.parametrize("doc", ARCHITECTURE_DOCS, ids=_doc_id)
-    def test_code_blocks_stay_within_line_limit(self, doc: Path) -> None:
+    @pytest.mark.parametrize("doc", _doc_params(ARCHITECTURE_DOCS))
+    def test_code_blocks_including_nested_stay_within_line_limit(self, doc: Path) -> None:
         long_blocks = [
             f"{_relative(doc)}:{opened}: code block has {count} lines, over {MAX_CODE_BLOCK_LINES}"
-            for opened, count in _code_block_lengths(_doc_lines(doc))
+            for opened, _, count in _fenced_blocks(_doc_lines(doc))
             if count > MAX_CODE_BLOCK_LINES
         ]
 
         assert long_blocks == []
 
-    @pytest.mark.parametrize("doc", AREA_DOCS, ids=_doc_id)
-    def test_decision_entries_carry_required_fields_only_as_fields(self, doc: Path) -> None:
+    @pytest.mark.parametrize("doc", _doc_params(AREA_DOCS))
+    def test_decision_entries_hold_required_fields_once_in_order(self, doc: Path) -> None:
         entries = [section for section in _sections(doc) if section.level == 2]
         assert entries, f"{_relative(doc)} has no decision entries"
 
@@ -267,23 +322,23 @@ class ArchitectureDocsTests:
 
         assert violations == []
 
-    @pytest.mark.parametrize("doc", AREA_DOCS, ids=_doc_id)
+    @pytest.mark.parametrize("doc", _doc_params(AREA_DOCS))
     def test_enforced_by_names_existing_tests_review_only_or_pending_issue(self, doc: Path) -> None:
         invalid = [
-            f"{_relative(doc)} ({section.title}): Enforced by `{value}`"
+            f"{_relative(doc)} ({section.title}): Enforced by {value}"
             for section in _sections(doc)
             if section.level == 2
-            and (value := _fields(section)[0].get("Enforced by")) is not None
+            and (value := dict(_fields(section)[0]).get("Enforced by")) is not None
             and not _enforced_by_is_valid(value)
         ]
 
-        assert invalid == [], "use backticked test paths that exist, `review only`, or `pending #<issue>`"
+        assert invalid == [], "use backticked tests that exist, `review only`, or `pending #<issue>`"
 
-    @pytest.mark.parametrize("doc", ARCHITECTURE_DOCS, ids=_doc_id)
-    def test_cited_paths_and_links_resolve(self, doc: Path) -> None:
+    @pytest.mark.parametrize("doc", _doc_params(ARCHITECTURE_DOCS))
+    def test_cited_paths_tests_and_links_resolve_without_line_numbers(self, doc: Path) -> None:
         assert _unresolved_references(doc) == []
 
-    @pytest.mark.parametrize("doc", ARCHITECTURE_DOCS, ids=_doc_id)
+    @pytest.mark.parametrize("doc", _doc_params(ARCHITECTURE_DOCS))
     def test_file_stays_under_line_limit(self, doc: Path) -> None:
         count = len(_doc_lines(doc))
 

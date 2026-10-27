@@ -58,6 +58,8 @@ What a public entrypoint returns and what a caller branches on. This holds #925'
 - **Exemplar:** `src/dovo/core/worktree/models.py`
 - **Enforced by:** pending #1131
   - Sessions and artifacts compute `ok` from `status` (#1197), catalog list and show from `errors`, and the run result from its session record and `errors` (#1132).
+  - Config computes it from `status` or `errors` in `src/dovo/core/config/loader.py`, `src/dovo/core/config/mutate.py`, `src/dovo/core/config/validate.py` and `src/dovo/core/config/models.py` (#1118, #1120).
+  - `dovo init` computes it from `errors` in `src/dovo/core/bootstrap/models.py` (#1112), and `dovo doctor` from check statuses in `src/dovo/core/diagnostics/models.py` (#1131).
 - **Since:** #925
 
 ## errors and error_code agree
@@ -70,7 +72,8 @@ What a public entrypoint returns and what a caller branches on. This holds #925'
 
 ## A declined confirmation is a success
 
-- **Decision:** declining a confirmation prompt returns `ok: true`, `cancelled: true`, no `error_code`, empty `errors`, and exits 0. Where the prompt runs is in [exceptions.md](exceptions.md).
+- **Decision:** declining a confirmation prompt returns `cancelled: true`, no `error_code`, empty `errors`, and exits 0. Where the prompt runs is in [exceptions.md](exceptions.md).
+  - The JSON `ok: true` key arrives with the header (#1131).
 - **Why:** the user chose not to proceed, so nothing failed and `dovo ... && next` should continue.
 - **Exemplar:** `src/dovo/core/worktree/worktree.py`
 - **Enforced by:** `tests/cli/worktree/test_worktree_delete.py`, `tests/cli/blueprint/test_blueprint_delete.py`, `tests/cli/step/test_step_delete.py`

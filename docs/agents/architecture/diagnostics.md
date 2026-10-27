@@ -10,10 +10,17 @@ How caught exceptions are recorded in the diagnostic log (`<DOVO_HOME>/logs/`) a
   - A record that could not be written adds nothing.
 - **Why:** text references cannot be parsed by JSON callers, and persisted text keeps a path that outlives the log's retention.
 - **Exemplar:** `src/dovo/engine/workspace.py`
-- **Enforced by:** `tests/cli/ui/formatters/test_result_diagnostics.py`
-  - Run and resume JSON payloads carry no records yet (pending #1132).
-  - The top-level `Fatal Error` panel in `src/dovo/cli/cli.py` appends the line to its message (pending #1135).
+- **Enforced by:** review only
+  - Run and resume JSON payloads carry no records yet (#1132).
+  - The top-level `Fatal Error` panel in `src/dovo/cli/cli.py` appends the line to its message (#1135).
 - **Since:** #1196
+
+## Every result payload carries its diagnostics
+
+- **Decision:** every registered formatter whose input is a `BaseResult` publishes the result's own `diagnostics` in JSON, after `remediations`, and renders one `Details logged:` line per entry.
+- **Why:** a record the formatter drops is invisible to both JSON callers and the terminal.
+- **Enforced by:** `tests/cli/ui/formatters/test_result_diagnostics.py`
+- **Since:** #1133
 
 ## Recording levels
 

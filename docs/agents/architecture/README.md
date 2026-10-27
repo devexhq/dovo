@@ -12,13 +12,13 @@ Settled design decisions the code cannot show, one file per area. Companion to [
 
 ## Entry format
 
-Every level-2 heading in an area file is one decision. Its body is a bullet list of these fields, in this order.
+Every level-2 heading in an area file is one decision. Its body is a bullet list of these fields, each at most once, in this order.
 
 - `- **Decision:**` the rule. Nested bullets may list its parts. Required.
 - `- **Why:**` the reason, in one or two sentences. Required.
-- `- **Exemplar:**` a backticked repo path that follows the rule, where one exists.
+- `- **Exemplar:**` a backticked repo path that fully follows the entry, or no field when none does.
 - `- **Enforced by:**` exactly one of: one or more backticked test paths, `review only`, or `pending #<issue>` with an optional `(phase <n>)`. Required.
-  - Nested bullets under it may name code on `main` that still departs, and the issue that fixes it.
+  - Nested bullets under it may name code on `main` that still departs, and the issue that fixes it, or "not yet owned".
 - `- **Since:**` the issue that set or last changed the decision.
 
 ## Format limits
@@ -27,8 +27,10 @@ Every level-2 heading in an area file is one decision. Its body is a bullet list
 
 - Headings use levels 1 to 3.
 - A section opens with at most one paragraph of 40 words or fewer; after it come only bullets, sub-headings and code blocks.
-- No code block is longer than 10 lines.
-- Every backticked repo path and every relative link resolves. Cite paths without line numbers, which rot.
+- No code block, nested ones included, is longer than 10 lines.
+- Decision entries hold only the fields above, each once and in order.
+- Every backticked repo path and every relative link resolves, and a `path::Class::test` citation names an existing class and test.
+- Paths carry no `:<line>` suffix, because line numbers rot.
 - Each file is under 150 lines.
 - Every area file is listed in the index below.
 
