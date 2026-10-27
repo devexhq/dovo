@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol, Self
 
@@ -29,11 +30,12 @@ from dovo.core.catalog.models import (
 from dovo.core.catalog.services.inventory import (
     coerce_catalog_item_type,
     create_catalog_item,
-    delete_catalog_item_by_sha_or_name,
+    delete_catalog_item,
     find_catalog_record_matches,
     list_packaged_template_defaults,
     resolve_catalog_record_path,
     resolve_catalog_records,
+    resolve_deletable_catalog_item,
     scan_and_index_catalog,
 )
 from dovo.core.catalog.services.validate import validate_catalog_item
@@ -188,19 +190,28 @@ class Catalog:
         resolved_path = resolve_catalog_record_path(record, self.paths)
         return CatalogCreateResult(item=record, resolved_path=resolved_path)
 
-    def delete(self, sha_or_name: str) -> CatalogDeleteResult:
-        """Delete a REPO-tier catalog blueprint file and reindex, refusing dovo/-namespaced or non-REPO-tier matches.
+    def delete(
+        self, sha_or_name: str, *, confirm: Callable[[CatalogRecord], bool] | None = None
+    ) -> CatalogDeleteResult:
+        """Resolve, confirm and delete a REPO-tier catalog file, then reindex; confirm=None skips confirmation.
+
+        An unknown name, a dovo/-namespaced template and a non-REPO-tier match fail without being confirmed.
+        No lock is held while the prompt waits; the delete's workspace lock is taken after it. A declined
+        confirmation returns cancelled True, and a file removed after confirmation fails with CATALOG_NOT_FOUND.
 
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
         """
         with catch_failure("catalog.delete", name=sha_or_name) as caught:
-            deleted_item = delete_catalog_item_by_sha_or_name(sha_or_name, self.paths)
+            item = resolve_deletable_catalog_item(sha_or_name, self.paths)
+            if confirm is not None and not confirm(item):
+                return CatalogDeleteResult(cancelled=True)
+            delete_catalog_item(sha_or_name, item, self.paths)
         if caught.failure is not None:
             return CatalogDeleteResult(
                 **caught.failure.result_fields(),
             )
-        return CatalogDeleteResult(item=deleted_item, deleted=True)
+        return CatalogDeleteResult(item=item, deleted=True)
 
     def sync(self) -> CatalogScan:
         """Synchronize each disk-backed tier's index.json with its on-disk YAML blueprints.
