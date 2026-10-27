@@ -122,7 +122,7 @@ class ConfigCliTests:
 
         invalid_result = run_dovo(["config", "validate"], cwd=initialized_project)
         assert invalid_result.exit_code == 1
-        assert "Config Validation Failed" in invalid_result.stdout or "CONFIG_SCHEMA_INVALID" in invalid_result.stdout
+        assert "Config Validation Failed" in invalid_result.stdout
 
     def test_config_show_masks_configured_sensitive_variables(
         self, run_dovo: DovoRunner, initialized_project: Path
