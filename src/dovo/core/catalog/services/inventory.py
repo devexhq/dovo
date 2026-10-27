@@ -10,12 +10,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths, YamlFile
 from dovo.common.filesystem.services.operations import delete_file
 from dovo.common.lock import WorkspaceLock, resolve_lock_file_path
-from dovo.core.catalog.exceptions import (
-    CatalogError,
-    CatalogProtectionError,
-    CatalogTierDeleteError,
-    CatalogWriteError,
-)
+from dovo.core.catalog.exceptions import CatalogError
 from dovo.core.catalog.models import (
     CatalogIndex,
     CatalogIndexEntry,
@@ -93,13 +88,15 @@ def write_catalog_index(tier_dir: Path, index: CatalogIndex) -> None:
     """Atomically overwrite tier_dir/index.json with index's full contents.
 
     Raises:
-        CatalogWriteError: If the index cannot be written.
+        CatalogError: CATALOG_WRITE_FAILED if the index cannot be written.
     """
     index_path = tier_dir / "index.json"
     try:
         Filesystem.atomic_write_json(index_path, index.model_dump(mode="json"))
     except OSError as exc:
-        raise CatalogWriteError(f"Failed to write catalog index '{index_path}': {exc}") from exc
+        raise CatalogError(
+            ErrorCode.CATALOG_WRITE_FAILED, f"Failed to write catalog index '{index_path}': {exc}"
+        ) from exc
 
 
 def _index_entry_for_file(
@@ -156,7 +153,7 @@ def scan_and_index_tier(tier: CatalogTier, paths: WorkspacePaths) -> CatalogScan
     """Walk one tier's blueprints/steps directories, compute SHAs, and rewrite that tier's index.json wholesale.
 
     Raises:
-        CatalogWriteError: If the tier's index.json cannot be written.
+        CatalogError: CATALOG_WRITE_FAILED if the tier's index.json cannot be written.
     """
     tier_dir = tier_root(tier, paths)
     tier_dir.mkdir(parents=True, exist_ok=True)
@@ -174,7 +171,7 @@ def scan_and_index_catalog(paths: WorkspacePaths) -> CatalogScan:
     """Scan and reindex the GLOBAL, USER, and REPO catalog tiers in precedence order, aggregating skipped files.
 
     Raises:
-        CatalogWriteError: If any tier's index.json cannot be written.
+        CatalogError: CATALOG_WRITE_FAILED if any tier's index.json cannot be written.
     """
     records: list[CatalogRecord] = []
     skipped: list[str] = []
@@ -374,13 +371,17 @@ def create_catalog_item(
         try:
             Filesystem.atomic_write_text(target_path, content)
         except OSError as exc:
-            raise CatalogWriteError(f"Failed to write catalog item '{target_path}': {exc}") from exc
+            raise CatalogError(
+                ErrorCode.CATALOG_WRITE_FAILED, f"Failed to write catalog item '{target_path}': {exc}"
+            ) from exc
 
         scan = scan_and_index_tier(tier, paths)
         rel_path = target_path.relative_to(tier_dir)
         record = next((r for r in scan.records if r.path == rel_path), None)
         if record is None:
-            raise CatalogWriteError(f"Failed to reindex newly created catalog blueprint '{rel_path}'.")
+            raise CatalogError(
+                ErrorCode.CATALOG_WRITE_FAILED, f"Failed to reindex newly created catalog blueprint '{rel_path}'."
+            )
         return record
 
 
@@ -388,13 +389,13 @@ def delete_catalog_item_by_sha_or_name(sha_or_name: str, paths: WorkspacePaths) 
     """Delete a REPO-tier catalog file and reindex, returning the deleted record.
 
     Raises:
-        CatalogError: CATALOG_NOT_FOUND when nothing matches sha_or_name.
-        CatalogTierDeleteError: If the resolved match is not indexed at the REPO tier.
-        CatalogProtectionError: If attempting to delete a template in the protected 'dovo/' namespace.
-        CatalogWriteError: If removing the file or reindexing fails.
+        CatalogError: CATALOG_NOT_FOUND when nothing matches sha_or_name,
+            CATALOG_TIER_DELETE_FORBIDDEN if the resolved match is not indexed at the REPO tier,
+            CATALOG_PROTECTED if attempting to delete a template in the protected 'dovo/' namespace,
+            CATALOG_WRITE_FAILED if removing the file or reindexing fails.
     """
     if sha_or_name.startswith("dovo/"):
-        raise CatalogProtectionError(f"Cannot delete bundled catalog template '{sha_or_name}'.")
+        raise CatalogError(ErrorCode.CATALOG_PROTECTED, f"Cannot delete bundled catalog template '{sha_or_name}'.")
 
     catalog_dir = paths.catalog_dir
     with WorkspaceLock(paths.lock_file):
@@ -405,18 +406,21 @@ def delete_catalog_item_by_sha_or_name(sha_or_name: str, paths: WorkspacePaths) 
 
         item = matches[0]
         if item.tier != CatalogTier.REPO:
-            raise CatalogTierDeleteError(
-                f"Catalog item '{item.key}' resolved from tier '{item.tier.value}'; only repo-tier items can be deleted."
+            raise CatalogError(
+                ErrorCode.CATALOG_TIER_DELETE_FORBIDDEN,
+                f"Catalog item '{item.key}' resolved from tier '{item.tier.value}'; only repo-tier items can be deleted.",
             )
 
         if item.namespace == "dovo":
-            raise CatalogProtectionError(f"Cannot delete bundled catalog template '{item.key}'.")
+            raise CatalogError(ErrorCode.CATALOG_PROTECTED, f"Cannot delete bundled catalog template '{item.key}'.")
 
         file_path = catalog_dir / item.path
         try:
             delete_file(file_path)
         except OSError as exc:
-            raise CatalogWriteError(f"Failed to delete catalog item '{file_path}': {exc}") from exc
+            raise CatalogError(
+                ErrorCode.CATALOG_WRITE_FAILED, f"Failed to delete catalog item '{file_path}': {exc}"
+            ) from exc
 
         scan_and_index_tier(CatalogTier.REPO, paths)
         return item

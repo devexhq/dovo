@@ -12,11 +12,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError, Failure, catch_failure
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.models import Remediation
-from dovo.core.catalog.exceptions import (
-    CatalogError,
-    CatalogFileNotFoundError,
-    CatalogYamlError,
-)
+from dovo.core.catalog.exceptions import CatalogError
 from dovo.core.catalog.models import (
     CatalogCreateResult,
     CatalogDeleteResult,
@@ -289,11 +285,11 @@ class Catalog:
     def read_yaml(path: Path) -> dict[str, Any]:
         """Load a YAML object from path or raise a classified catalog error."""
         if not path.exists():
-            raise CatalogFileNotFoundError(f"Catalog file not found at '{path}'.")
+            raise CatalogError(ErrorCode.CATALOG_NOT_FOUND, f"Catalog file not found at '{path}'.")
         yaml_file = Filesystem.read_yaml_file(path)
         if yaml_file.error or yaml_file.parsed is None or not isinstance(yaml_file.parsed, dict):
             detail = yaml_file.error or "invalid or non-object YAML content."
-            raise CatalogYamlError(f"Failed to load catalog blueprint '{path}': {detail}")
+            raise CatalogError(ErrorCode.CATALOG_SYNTAX_ERROR, f"Failed to load catalog blueprint '{path}': {detail}")
         return yaml_file.parsed
 
     def _read_and_parse_yaml(self, file_path: Path, rel_path: Path) -> YamlParseOutcome:
@@ -320,7 +316,7 @@ class Catalog:
         """
         parse_outcome = self._read_and_parse_yaml(resolve_catalog_record_path(record, self.paths), record.path)
         if parse_outcome.errors or parse_outcome.parsed_data is None:
-            raise CatalogYamlError(parse_outcome.errors[0])
+            raise CatalogError(ErrorCode.CATALOG_SYNTAX_ERROR, parse_outcome.errors[0])
 
         from_document = getattr(definition_cls, "from_document", None)
         try:
