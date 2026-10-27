@@ -13,16 +13,14 @@ from __future__ import annotations
 import ast
 from collections import defaultdict
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Final
 
 import pytest
 
-from tests.lint.astlib import REPO_ROOT, SRC_ROOT, collect_python_files
+from tests.lint.astlib import REPO_ROOT, SRC_ROOT, collect_python_files, package_of
 
 ENTRY: Final[str] = "docs/agents/architecture/exceptions.md#one-domainerror-class-per-package"
 ROOT_CLASS: Final[str] = "DomainError"
-NESTED_PACKAGE_ROOTS: Final[frozenset[str]] = frozenset({"core", "cli"})
 
 _DERIVED_FIXTURE: Final[str] = """
 class GitError(DomainError):
@@ -56,14 +54,6 @@ def _base_name(base: ast.expr) -> str | None:
     if isinstance(base, ast.Attribute):
         return base.attr
     return None
-
-
-def _package(rel_path: str) -> str:
-    """Return the package of a path under src/dovo: core/<name>, cli/<name>, or the top-level folder."""
-    parts = Path(rel_path).relative_to("src/dovo").parts
-    if parts[0] in NESTED_PACKAGE_ROOTS and len(parts) > 2:
-        return "/".join(parts[:2])
-    return parts[0]
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,7 +101,7 @@ def _package_violations(classes: list[_ClassDef], derived: set[str]) -> list[str
     per_package: dict[str, list[_ClassDef]] = defaultdict(list)
     for cls in classes:
         if cls.name in derived:
-            per_package[_package(cls.rel_path)].append(cls)
+            per_package[package_of(cls.rel_path)].append(cls)
     return [
         f"{extra.rel_path}:{extra.line}: {package} defines {len(defined)} DomainError classes "
         f"({', '.join(cls.name for cls in defined)})"
