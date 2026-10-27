@@ -41,7 +41,7 @@ dovo blueprint show <sha_or_name> [--format terminal|json]
 
 ### `dovo blueprint delete`
 
-Deletes a REPO-tier blueprint file and reindexes that tier. A match resolved from USER or GLOBAL tier is refused with a "not deletable from this tier" error. Bundled templates in the `dovo/` namespace (e.g. `dovo/fix-tests`) are protected and cannot be deleted regardless of tier. Without `--force`, it asks for confirmation first. Declining, or closing the prompt without an answer, deletes nothing, exits `0` and prints `Deletion cancelled.`; with `--format json`, the payload has `cancelled: true`.
+Deletes a REPO-tier blueprint file and reindexes that tier. A match resolved from USER or GLOBAL tier is refused with an "only repo-tier items can be deleted" error. Bundled templates in the `dovo/` namespace (e.g. `dovo/fix-tests`) are protected and cannot be deleted regardless of tier. Without `--force`, it asks for confirmation once the name resolves to a blueprint it can delete; an unknown name, a protected template or a USER or GLOBAL match fails with exit `1` without asking. Declining, or closing the prompt without an answer, deletes nothing, exits `0` and prints `Deletion cancelled.`; with `--format json`, the payload has `cancelled: true`.
 
 ```bash
 dovo blueprint delete <sha_or_name> [--force] [--format terminal|json]
