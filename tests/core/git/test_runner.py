@@ -9,7 +9,7 @@ import pytest
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import Failure, catch_failure
-from dovo.core.git.exceptions import GitCommandError, GitNotFoundError, GitPlumbingTimeoutError
+from dovo.core.git.exceptions import GitCommandError, GitError, GitNotFoundError, GitPlumbingTimeoutError
 from dovo.core.git.models import GitProcessOutput, GitWorktreeEntry
 from dovo.core.git.runner import GitRunner
 from tests.harness.diagnostic_log import read_single_event
@@ -212,6 +212,29 @@ class GitRunnerExecTests:
         output = GitRunner().run(["show-ref", "--verify", "--quiet", "refs/heads/absent"], git_repo, check=False)
 
         assert output == ""
+
+    def test_get_current_branch_propagates_fs_not_found(self, tmp_path: Path) -> None:
+        """Raise the GitError(FS_NOT_FOUND) git branch --show-current raised instead of returning "unknown"."""
+        failure = GitError(ErrorCode.FS_NOT_FOUND, "working directory does not exist")
+        fake = FakeGitRunner({("branch", "--show-current"): failure})
+
+        with pytest.raises(GitError) as excinfo:
+            fake.get_current_branch(tmp_path)
+
+        assert excinfo.value is failure
+
+    @pytest.mark.parametrize(
+        "code", [pytest.param(ErrorCode.GIT_TIMEOUT, id="timeout"), pytest.param(ErrorCode.FS_NOT_FOUND, id="fs")]
+    )
+    def test_status_porcelain_propagates_codes_it_does_not_swallow(self, tmp_path: Path, code: ErrorCode) -> None:
+        """Raise the GitError(code) git status raised instead of returning []."""
+        failure = GitError(code, "boom")
+        fake = FakeGitRunner({("status",): failure})
+
+        with pytest.raises(GitError) as excinfo:
+            fake.status_porcelain(tmp_path)
+
+        assert excinfo.value is failure
 
     @pytest.mark.parametrize(
         ("method", "key", "expected_args"),

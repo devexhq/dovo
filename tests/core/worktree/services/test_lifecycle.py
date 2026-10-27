@@ -916,6 +916,31 @@ class WorktreeLifecycleDiagnosticLogTests:
                 "path": str(session.worktree_path),
             }
 
+    @pytest.mark.parametrize(
+        ("target", "prefix"),
+        [
+            pytest.param("branch_delete", "Failed to delete branch 'dovo/dovo_clean': ", id="branch_delete"),
+            pytest.param("worktree_prune", "Failed to prune git worktrees: ", id="worktree_prune"),
+        ],
+    )
+    @pytest.mark.parametrize("code", [ErrorCode.GIT_TIMEOUT, ErrorCode.FS_NOT_FOUND])
+    def test_cleanup_reports_git_codes_it_does_not_ignore(
+        self, worktree_workspace: Path, frozen_diagnostic_clock: Path, target: str, prefix: str, code: ErrorCode
+    ) -> None:
+        """Return ok with warnings == [prefix + "boom"], diagnostics == [] and no <DOVO_HOME>/logs when the step raises GitError(code, "boom") with no cause."""
+        fake = FakeGitRunner()
+        worktree = _worktree(worktree_workspace, fake)
+        session = worktree.create(session_id="dovo_clean").session
+        assert session is not None
+        fake.responses[_GIT_KEYS[target]] = GitError(code, "boom")
+
+        result = worktree.cleanup(session)
+
+        assert result.ok
+        assert result.warnings == [f"{prefix}boom"]
+        assert result.diagnostics == []
+        assert not resolve_global_paths(None).logs_dir.exists()
+
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permission bits")
     @pytest.mark.parametrize(
         "rmtree_fails", [pytest.param(False, id="rmtree_succeeds"), pytest.param(True, id="rmtree_fails")]
