@@ -71,7 +71,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
   - Each name is unique per `catch_failure` block.
 - **Why:** the name is written to every event file, so it must point at the one entrypoint that reported the failure.
 - **Enforced by:** pending #1214 (phase 7)
-  - Sub-step or other-package names remain in `src/dovo/core/bootstrap/services/initialize.py`, `src/dovo/core/agents/cli_mutation.py`, `src/dovo/engine/services/run.py` and `src/dovo/core/diagnostics/checks/worktree_refs.py`.
+  - Sub-step or other-package names remain in `src/dovo/core/bootstrap/services/initialize.py`, `src/dovo/core/agents/cli_mutation.py`, `src/dovo/engine/services/run.py`, `src/dovo/engine/services/session_show.py` and `src/dovo/core/diagnostics/checks/worktree_refs.py`.
   - Names repeat across blocks in `src/dovo/core/catalog/catalog.py` and `src/dovo/engine/services/resume.py`.
 - **Since:** #1106
 
