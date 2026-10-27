@@ -297,7 +297,9 @@ def _to_outcome(
     callback_error = _emit_output(on_output, "stdout", line)
     callback_records = (
         error_diagnostics(
-            record_exception(callback_error, level=DiagnosticLevel.ERROR, operation="engine.step", context=context)
+            record_exception(
+                callback_error, level=DiagnosticLevel.ERROR, operation="engine.agent_step", context=context
+            )
         )
         if callback_error is not None
         else []
