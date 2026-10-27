@@ -137,14 +137,14 @@ class BlueprintRunServiceExecuteTests:
 
 
 class BlueprintRunServiceLoadTests:
-    def test_unexpected_definition_error_is_recorded_under_load_definition(
+    def test_unexpected_definition_error_is_recorded_under_engine_run(
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With BlueprintDefinition.from_document raising TypeError("bad"), return INTERNAL_ERROR with the message alone and its record in diagnostics, one catalog.load_definition event naming the blueprint, and no session row."""
+        """With BlueprintDefinition.from_document raising TypeError("bad"), return INTERNAL_ERROR with the message alone and its record in diagnostics, one engine.run event naming the blueprint, and no session row."""
         write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
 
         def _explode(cls: type[BlueprintDefinition], raw: dict[str, object], *, key: str) -> BlueprintDefinition:
@@ -163,10 +163,10 @@ class BlueprintRunServiceLoadTests:
 
         assert result.session_record is None
         assert result.error_code == ErrorCode.INTERNAL_ERROR
-        assert result.errors == ["Unexpected error during catalog.load_definition: bad"]
+        assert result.errors == ["Unexpected error during engine.run: bad"]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
-        assert event["operation"] == "catalog.load_definition"
+        assert event["operation"] == "engine.run"
         assert event["context"] == {"blueprint": "lint"}
         assert event["exception_type"] == "TypeError"
         assert sessions_repo.list() == []
@@ -257,12 +257,12 @@ class BlueprintRunServiceLoadTests:
             ),
         ]
         assert result.warnings == []
-        assert result.errors == ["Unexpected error during catalog.load_definition: bad"]
+        assert result.errors == ["Unexpected error during engine.run: bad"]
         operations = [
             json.loads((day_dir / f"{event_id}.json").read_text(encoding="utf-8"))["operation"]
             for event_id in ("exc_aaaaaaaaaaaa", "exc_bbbbbbbbbbbb")
         ]
-        assert operations == ["session.reconcile", "catalog.load_definition"]
+        assert operations == ["session.reconcile", "engine.run"]
 
     def test_execute_missing_required_input_returns_blueprint_input_invalid(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, frozen_diagnostic_clock: Path

@@ -69,16 +69,8 @@ class BlueprintRunService:
         self.diagnostics.extend(error_diagnostics(reconciliation.diagnostic))
 
         catalog = Catalog(self.paths)
-        with catch_failure("catalog.load_definition", blueprint=self.name) as caught:
-            blueprint = Blueprint.load(self.name, catalog=catalog)
-        if caught.failure is not None:
-            return BlueprintRunResult(
-                session_record=None,
-                warnings=self.warnings,
-                **caught.failure.result_fields(prior_diagnostics=self.diagnostics),
-            )
-
         with catch_failure("engine.run", blueprint=self.name) as caught:
+            blueprint = Blueprint.load(self.name, catalog=catalog)
             run_outcome = self._run(catalog, blueprint, env_overrides)
         if caught.failure is not None:
             return BlueprintRunResult(

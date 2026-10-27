@@ -269,7 +269,7 @@ class RunCliIntegrationTests:
         output = unwrapped(result.stdout)
         line = unwrapped(details_line(frozen_diagnostic_clock))
         assert output.count(unwrapped("Details logged")) == 1
-        assert output.index(unwrapped("Unexpected error during catalog.load_definition: bad")) < output.index(line)
+        assert output.index(unwrapped("Unexpected error during engine.run: bad")) < output.index(line)
         assert output.index("RunFailed") < output.index(line)
         assert output.endswith(line)
 
@@ -356,7 +356,7 @@ class RunCliIntegrationTests:
         assert [event["payload"] for event in events if event["event_type"] == "ErrorPanelEvent"] == [
             {
                 "title": "Run Failed",
-                "message": "Unexpected error during catalog.load_definition: bad",
+                "message": "Unexpected error during engine.run: bad",
                 "border_style": "red",
             }
         ]
