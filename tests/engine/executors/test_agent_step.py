@@ -458,7 +458,7 @@ class ExecuteAgentStepScratchTests:
             "- Restore access to the session temp directory or correct its storage path.",
         ]
         assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
-        assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.step"
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.agent_step"
         assert requested == []
         assert (git_repo / "README.md").read_bytes() == readme_before
         assert not (git_repo / "a.txt").exists()

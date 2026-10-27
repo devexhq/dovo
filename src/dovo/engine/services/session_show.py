@@ -38,7 +38,7 @@ class SessionShowService:
             return result
 
         redactor = history_redactor(self.paths, self.sensitive_variables)
-        with catch_failure("session.show", session_id=result.session_id) as caught:
+        with catch_failure("engine.session_show", session_id=result.session_id) as caught:
             result.steps = summarize_session_steps(result.session, redactor)
         if caught.failure is not None:
             result.warnings.append(caught.failure.message)

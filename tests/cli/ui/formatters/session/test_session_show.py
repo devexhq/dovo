@@ -178,7 +178,7 @@ RUN_WITHOUT_STEP_DATA = FormatterCase(
     render_expectations=["sess-12345678", _NO_STEP_DATA_WARNING],
 )
 
-_STEP_READ_WARNING = "Unexpected error during session.show: boom"
+_STEP_READ_WARNING = "Unexpected error during engine.session_show: boom"
 _STEP_READ_RECORD = DiagnosticRecord(
     event_id="exc_3f9a1c07b2de",
     log_path=Path("/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json"),
@@ -345,7 +345,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "worktree_kept": None,
             "worktree_path": None,
             "errors": [],
-            "warnings": ["Unexpected error during session.show: boom"],
+            "warnings": ["Unexpected error during engine.session_show: boom"],
             "remediations": [],
             "diagnostics": [
                 {

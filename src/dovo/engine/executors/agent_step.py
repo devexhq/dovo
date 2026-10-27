@@ -128,7 +128,7 @@ def _allocate_scratch(
     context: DiagnosticContext,
 ) -> AgentInvocationContext | AgentAttempt:
     """Return the attempt's private paths, or the provider_error attempt carrying the failure's message, its Fix: block, and its record."""
-    with catch_failure("engine.step", **context) as caught:
+    with catch_failure("engine.agent_step", **context) as caught:
         invocation = allocate_invocation_paths(
             invocation_id=new_invocation_id(),
             session_tmp_dir=session_tmp_dir,

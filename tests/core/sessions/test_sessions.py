@@ -399,7 +399,7 @@ class SessionCollectionListTests:
     def test_list_copies_reconciliation_record(
         self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """With SessionsRepository.list raising only under the reconcile lock, return OK sessions, no warning for it and diagnostics [the session.reconcile record]."""
+        """With SessionsRepository.list raising only under the reconcile lock, return OK sessions, no warning for it and diagnostics [the sessions.reconcile record]."""
         sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
         session_first = _create(sessions.db, "session-001")
         fail_reconciliation_list(monkeypatch)
@@ -410,7 +410,7 @@ class SessionCollectionListTests:
         assert result.sessions == [_as_expected_record(session_first)]
         assert result.warnings == []
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
-        assert read_single_event(frozen_diagnostic_clock)["operation"] == "session.reconcile"
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "sessions.reconcile"
 
     def test_list_propagates_reconciliation_lock_timeout(
         self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch

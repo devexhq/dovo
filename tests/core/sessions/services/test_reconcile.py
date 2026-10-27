@@ -292,7 +292,7 @@ class ReconcileStaleRunsTests:
     def test_repository_failure_records_error_in_diagnostic(
         self, isolated_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return Reconciliation(diagnostic=diagnostic_record(frozen_diagnostic_clock)) and write one session.reconcile error event with context {"path": <workspace>}."""
+        """Return Reconciliation(diagnostic=diagnostic_record(frozen_diagnostic_clock)) and write one sessions.reconcile error event with context {"path": <workspace>}."""
         sessions = _sessions_for(isolated_workspace)
         monkeypatch.setattr(SessionsRepository, "list", _raise_db_unavailable)
 
@@ -301,7 +301,7 @@ class ReconcileStaleRunsTests:
         assert result == Reconciliation(diagnostic=diagnostic_record(frozen_diagnostic_clock))
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "error"
-        assert event["operation"] == "session.reconcile"
+        assert event["operation"] == "sessions.reconcile"
         assert event["context"] == {"path": str(isolated_workspace)}
         assert event["exception_message"] == "db unavailable"
 

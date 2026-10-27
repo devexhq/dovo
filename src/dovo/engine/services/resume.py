@@ -49,7 +49,7 @@ class BlueprintResumeService:
         if env_error is not None:
             return fail(self.warnings, self.diagnostics, env_error)
 
-        with catch_failure("engine.resume", session_id=self.session_id) as caught:
+        with catch_failure("engine.resume_target", session_id=self.session_id) as caught:
             target_session_id = self._target_session_id()
         if caught.failure is not None:
             return BlueprintRunResult(

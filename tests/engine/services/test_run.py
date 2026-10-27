@@ -262,7 +262,7 @@ class BlueprintRunServiceLoadTests:
             json.loads((day_dir / f"{event_id}.json").read_text(encoding="utf-8"))["operation"]
             for event_id in ("exc_aaaaaaaaaaaa", "exc_bbbbbbbbbbbb")
         ]
-        assert operations == ["session.reconcile", "engine.run"]
+        assert operations == ["sessions.reconcile", "engine.run"]
 
     def test_execute_missing_required_input_returns_blueprint_input_invalid(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, frozen_diagnostic_clock: Path

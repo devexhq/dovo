@@ -54,7 +54,7 @@ class StepExecutionResolutionTests:
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With StepDefinition.model_validate raising RuntimeError("x") during get, fail the step with the unexpected-error message alone, leave the diagnostics list == [the catalog.load_definition record], and write one event with context {step: <ref>}."""
+        """With StepDefinition.model_validate raising RuntimeError("x") during get, fail the step with the unexpected-error message alone, leave the diagnostics list == [the engine.step record], and write one event with context {step: <ref>}."""
         write_runnable_step(engine_paths.root_dir, key="base-step", definition={"id": "base-step", "run": "true"})
         step = StepDefinition(id="s1", uses="base-step")
 
@@ -70,10 +70,10 @@ class StepExecutionResolutionTests:
         result = execution.run()
 
         assert result.status == "failed"
-        assert result.error_message == "Unexpected error during catalog.load_definition: x"
+        assert result.error_message == "Unexpected error during engine.step: x"
         assert sink == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
-        assert event["operation"] == "catalog.load_definition"
+        assert event["operation"] == "engine.step"
         assert event["context"] == {"step": "base-step"}
         assert event["exception_type"] == "RuntimeError"
 

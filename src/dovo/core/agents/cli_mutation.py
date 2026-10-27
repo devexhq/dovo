@@ -358,7 +358,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 duration_seconds=duration_seconds, raw_text=outcome.result_text, mutation_baseline_ref=baseline
             )
 
-        with catch_failure("agent.validate_patch", path=str(request.worktree_path)) as caught:
+        with catch_failure("agents.invoke", path=str(request.worktree_path)) as caught:
             validate_request_patch(request, diff)
         if caught.failure is not None:
             return self._reject_gated_edit(request, caught.failure, outcome, baseline, duration_seconds)

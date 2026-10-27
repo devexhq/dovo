@@ -117,7 +117,7 @@ def reconcile_stale_sessions(db: SessionsRepository, path: Path | None = None) -
         raise
     except Exception as exc:
         record = record_exception(
-            exc, level=DiagnosticLevel.ERROR, operation="session.reconcile", context={"path": str(root_dir)}
+            exc, level=DiagnosticLevel.ERROR, operation="sessions.reconcile", context={"path": str(root_dir)}
         )
         return Reconciliation(diagnostic=record)
 

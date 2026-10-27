@@ -124,7 +124,7 @@ class DiagnosticsCoordinatorTests:
     def test_config_load_exception_records_debug_and_runs_with_no_config(
         self, tmp_path: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Run checks with config None and write one doctor.check debug record when Config.load raises."""
+        """Run checks with config None and write one diagnostics.check debug record when Config.load raises."""
 
         def _broken(_self: Config) -> None:
             raise RuntimeError("broken")
@@ -141,7 +141,7 @@ class DiagnosticsCoordinatorTests:
         assert check.captured_context.config is None
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "debug"
-        assert event["operation"] == "doctor.check"
+        assert event["operation"] == "diagnostics.check"
         assert event["context"] == {"path": str(tmp_path.resolve())}
 
 

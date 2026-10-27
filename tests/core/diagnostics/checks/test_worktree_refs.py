@@ -206,7 +206,7 @@ class WorktreeRefsCheckTests:
         monkeypatch: pytest.MonkeyPatch,
         case: str,
     ) -> None:
-        """Return WARNING with error_code None. git_failed (FakeGitRunner raising git_command_error(["worktree", "list"], 1, "", "fatal error") for ("worktree", "list")) gives message "Worktree detection could not complete (GIT_FAILED): Git execution failed ('git worktree list'): fatal error", details {"error_code": "GIT_FAILED"} and diagnostics []. unexpected (WorktreesRepository.list raising RuntimeError("boom")) gives message "Worktree detection could not complete (INTERNAL_ERROR): Unexpected error during worktree.detect: boom", details {"error_code": "INTERNAL_ERROR"}, diagnostics [diagnostic_record(frozen_diagnostic_clock)] and one error event with operation worktree.detect."""
+        """Return WARNING with error_code None. git_failed (FakeGitRunner raising git_command_error(["worktree", "list"], 1, "", "fatal error") for ("worktree", "list")) gives message "Worktree detection could not complete (GIT_FAILED): Git execution failed ('git worktree list'): fatal error", details {"error_code": "GIT_FAILED"} and diagnostics []. unexpected (WorktreesRepository.list raising RuntimeError("boom")) gives message "Worktree detection could not complete (INTERNAL_ERROR): Unexpected error during diagnostics.worktree_refs: boom", details {"error_code": "INTERNAL_ERROR"}, diagnostics [diagnostic_record(frozen_diagnostic_clock)] and one error event with operation diagnostics.worktree_refs."""
         git: GitRunner
         if case == "git_failed":
             git = FakeGitRunner({("worktree", "list"): git_command_error(["worktree", "list"], 1, "", "fatal error")})
@@ -216,7 +216,7 @@ class WorktreeRefsCheckTests:
             git = GitRunner()
             monkeypatch.setattr(WorktreesRepository, "list", _raise_boom)
             code = "INTERNAL_ERROR"
-            detail = "Unexpected error during worktree.detect: boom"
+            detail = "Unexpected error during diagnostics.worktree_refs: boom"
         context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths, git=git)
 
         result = WorktreeRefsCheck().execute(context)
@@ -235,7 +235,7 @@ class WorktreeRefsCheckTests:
             assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
             event = read_single_event(frozen_diagnostic_clock)
             assert event["level"] == "error"
-            assert event["operation"] == "worktree.detect"
+            assert event["operation"] == "diagnostics.worktree_refs"
 
     def test_execute_carries_detection_diagnostics(
         self,

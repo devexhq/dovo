@@ -93,7 +93,7 @@ class SessionShowServiceTests:
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With summarize_session_steps raising TypeError("boom"), return the unexpected-error warning and one session.show record."""
+        """With summarize_session_steps raising TypeError("boom"), return the unexpected-error warning and one engine.session_show record."""
         _seed(engine_paths, sessions_repo, "session-failed")
 
         def _boom(record: SessionRecord, redactor: SecretRedactor) -> list[StepRunSummary]:
@@ -107,8 +107,8 @@ class SessionShowServiceTests:
 
         assert result.status is HistoryShowStatus.OK
         assert result.steps == []
-        assert result.warnings == ["Unexpected error during session.show: boom"]
+        assert result.warnings == ["Unexpected error during engine.session_show: boom"]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
-        assert event["operation"] == "session.show"
+        assert event["operation"] == "engine.session_show"
         assert event["context"] == {"session_id": "session-failed"}

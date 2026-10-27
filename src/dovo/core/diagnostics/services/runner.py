@@ -58,7 +58,7 @@ def execute_single_check(
         record = record_exception(
             exc,
             level=DiagnosticLevel.ERROR,
-            operation="doctor.check",
+            operation="diagnostics.check",
             context={"check": check.check_id, "path": str(context.cwd)},
         )
         result = _crash_result(check, exc, record)

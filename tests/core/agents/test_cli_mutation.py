@@ -849,7 +849,7 @@ class RejectedPatchSaveTests:
     def test_unexpected_validation_error_saves_then_discards_with_record(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return errors[0] == "Unexpected error during agent.validate_patch: boom" and diagnostics == [the agent.validate_patch record], then save and discard the edit."""
+        """Return errors[0] == "Unexpected error during agents.invoke: boom" and diagnostics == [the agents.invoke record], then save and discard the edit."""
 
         def _boom(request: AgentRequest, diff: str) -> list[str]:
             raise RuntimeError("boom")
@@ -865,11 +865,11 @@ class RejectedPatchSaveTests:
         assert response.rejected_patch_path == str(destination)
         assert not (git_repo / "agent.txt").exists()
         assert response.errors == [
-            "Unexpected error during agent.validate_patch: boom",
+            "Unexpected error during agents.invoke: boom",
             f"Discarded edit saved to {destination}.",
         ]
         assert response.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
-        assert read_single_event(frozen_diagnostic_clock)["operation"] == "agent.validate_patch"
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "agents.invoke"
 
     def test_saved_rejection_errors_are_gate_error_then_discarded_line(self, git_repo: Path, tmp_path: Path) -> None:
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
