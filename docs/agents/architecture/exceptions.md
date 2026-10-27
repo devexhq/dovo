@@ -131,7 +131,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 - **Decision:** a delete that asks for confirmation takes the confirm callback in its core entrypoint.
   - The entrypoint resolves the target first; an unknown or already-removed target fails or returns without a prompt.
   - Every check that can refuse the delete, such as a protected or wrong-tier target, also runs before the prompt; only failures of the delete itself can follow it.
-  - The prompt runs before the workspace lock is taken.
+  - No lock is held while the prompt waits; the delete's workspace lock is taken after it.
   - A declined prompt returns a success with `cancelled` set (see [results.md](results.md)).
   - The handler makes one call and sets no result field (R2).
 - **Why:** prompting in the CLI asks to confirm deleting a target that does not exist, and splits one outcome across two layers.
