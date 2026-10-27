@@ -54,10 +54,10 @@ _IGNORED_CLEANUP_CODES: Final = frozenset({ErrorCode.GIT_FAILED, ErrorCode.GIT_B
 def _git_step_error(exc: GitError, *, remediate: bool) -> WorktreeError:
     """Return a WorktreeError with exc's code and today's timed-out or failed message, with its remediation when remediate."""
     if exc.error_code is ErrorCode.GIT_TIMEOUT:
-        message = f"Git worktree operation timed out (WORKTREE_GIT_TIMEOUT): {exc}"
+        message = f"Git worktree operation timed out: {exc}"
         remediation = _GIT_TIMEOUT_REMEDIATION
     else:
-        message = f"Git worktree operation failed (WORKTREE_GIT_FAILED): {exc}"
+        message = f"Git worktree operation failed: {exc}"
         remediation = _GIT_FAILED_REMEDIATION
     return WorktreeError(exc.error_code, message, [remediation] if remediate else [])
 
@@ -196,7 +196,7 @@ class WorktreeLifecycle:
         except OSError as exc:
             raise WorktreeError(
                 ErrorCode.WORKTREE_CREATION_FAILED,
-                f"Worktree path check failed (WORKTREE_GIT_FAILED): {exc}",
+                f"Worktree path check failed: {exc}",
                 [Remediation(message=f"Check that '{worktree_path.parent}' is readable, then retry")],
             ) from exc
         if not path_taken:
@@ -208,7 +208,7 @@ class WorktreeLifecycle:
                 return
         raise WorktreeError(
             ErrorCode.WORKTREE_PATH_CONFLICT,
-            f"Worktree '{worktree_path.name}' already exists (WORKTREE_PATH_CONFLICT).",
+            f"Worktree '{worktree_path.name}' already exists.",
             self._collision_remediations(worktree_path, temp_branch, path_taken=path_taken),
         )
 
@@ -309,13 +309,13 @@ class WorktreeLifecycle:
             if isinstance(exc, GitError) and exc.error_code is ErrorCode.GIT_TIMEOUT:
                 raise WorktreeError(
                     exc.error_code,
-                    f"Git timed out while overlaying uncommitted WIP (WORKTREE_GIT_TIMEOUT): {exc}",
+                    f"Git timed out while overlaying uncommitted WIP: {exc}",
                     [_WIP_TIMEOUT_REMEDIATION],
                 ) from exc.__cause__
             if isinstance(exc, (GitError, WorktreeError)):
                 raise WorktreeError(
                     exc.error_code,
-                    f"Failed to overlay uncommitted WIP into worktree (WORKTREE_WIP_FAILED): {exc}",
+                    f"Failed to overlay uncommitted WIP into worktree: {exc}",
                     [_WIP_FAILED_REMEDIATION],
                 ) from exc.__cause__
             raise

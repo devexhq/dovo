@@ -316,7 +316,7 @@ class WorktreeLifecycleCollisionTests:
         result = worktree.create(session_id="dovo_keep")
 
         assert result.error_code == "WORKTREE_PATH_CONFLICT"
-        assert result.errors == ["Worktree 'dovo_keep' already exists (WORKTREE_PATH_CONFLICT)."]
+        assert result.errors == ["Worktree 'dovo_keep' already exists."]
         assert result.remediations == [
             Remediation(
                 message="Inspect it with 'dovo worktree show dovo_keep'", command="dovo worktree show dovo_keep"
@@ -426,13 +426,13 @@ class WorktreeLifecycleCollisionTests:
             pytest.param(
                 GitError(ErrorCode.GIT_TIMEOUT, "show-ref timed out"),
                 ErrorCode.GIT_TIMEOUT,
-                "Git worktree operation timed out (WORKTREE_GIT_TIMEOUT): show-ref timed out",
+                "Git worktree operation timed out: show-ref timed out",
                 id="probe_timeout",
             ),
             pytest.param(
                 git_command_error(args=["show-ref"], returncode=128, stdout="", stderr="fatal"),
                 ErrorCode.GIT_FAILED,
-                "Git worktree operation failed (WORKTREE_GIT_FAILED): ",
+                "Git worktree operation failed: ",
                 id="probe_fatal_exit_128",
             ),
         ],
@@ -485,7 +485,7 @@ class WorktreeLifecycleCollisionTests:
         result = worktree.create(session_id="dovo_denied")
 
         assert result.error_code == "WORKTREE_CREATION_FAILED"
-        assert result.errors == ["Worktree path check failed (WORKTREE_GIT_FAILED): permission denied"]
+        assert result.errors == ["Worktree path check failed: permission denied"]
         assert result.remediations == [
             Remediation(message=f"Check that '{paths.worktrees_dir}' is readable, then retry")
         ]
@@ -641,7 +641,7 @@ class WorktreeCreateFailureCodeTests:
                 git_command_error(["worktree", "add"], 128, "", "fatal: bad ref"),
                 False,
                 ErrorCode.GIT_FAILED,
-                "Git worktree operation failed (WORKTREE_GIT_FAILED): Git execution failed ('git worktree add'): fatal: bad ref",
+                "Git worktree operation failed: Git execution failed ('git worktree add'): fatal: bad ref",
                 [_GIT_FAILED_REMEDIATION],
                 id="add_fails",
             ),
@@ -650,7 +650,7 @@ class WorktreeCreateFailureCodeTests:
                 GitError(ErrorCode.GIT_TIMEOUT, "add timed out"),
                 False,
                 ErrorCode.GIT_TIMEOUT,
-                "Git worktree operation timed out (WORKTREE_GIT_TIMEOUT): add timed out",
+                "Git worktree operation timed out: add timed out",
                 [_GIT_TIMEOUT_REMEDIATION],
                 id="add_timeout",
             ),
@@ -659,7 +659,7 @@ class WorktreeCreateFailureCodeTests:
                 git_command_error(["rev-parse", "HEAD"], 128, "", "boom"),
                 False,
                 ErrorCode.GIT_FAILED,
-                "Git worktree operation failed (WORKTREE_GIT_FAILED): Git execution failed ('git rev-parse HEAD'): boom",
+                "Git worktree operation failed: Git execution failed ('git rev-parse HEAD'): boom",
                 [],
                 id="rev_parse_fails",
             ),
@@ -668,7 +668,7 @@ class WorktreeCreateFailureCodeTests:
                 GitError(ErrorCode.FS_NOT_FOUND, "status failed"),
                 True,
                 ErrorCode.FS_NOT_FOUND,
-                "Failed to overlay uncommitted WIP into worktree (WORKTREE_WIP_FAILED): status failed",
+                "Failed to overlay uncommitted WIP into worktree: status failed",
                 [_WIP_FAILED_REMEDIATION],
                 id="wip_git_fails",
             ),
@@ -713,9 +713,7 @@ class WorktreeCreateFailureCodeTests:
         result = worktree.create(session_id="dovo_vanished")
 
         assert result.error_code == ErrorCode.FS_NOT_FOUND
-        assert result.errors == [
-            "Git worktree operation failed (WORKTREE_GIT_FAILED): working directory does not exist"
-        ]
+        assert result.errors == ["Git worktree operation failed: working directory does not exist"]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "error"
@@ -748,7 +746,7 @@ class WorktreeLifecycleDiagnosticLogTests:
     def test_wip_copy_failure_records_error_in_diagnostics(
         self, worktree_workspace: Path, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return WORKTREE_WIP_FAILED with an unhinted "Failed to overlay uncommitted WIP into worktree (WORKTREE_WIP_FAILED): " error and one diagnostics entry for a PermissionError error event, when create(include_wip=True) copies an untracked WIP file chmod 000."""
+        """Return WORKTREE_WIP_FAILED with an unhinted "Failed to overlay uncommitted WIP into worktree: " error and one diagnostics entry for a PermissionError error event, when create(include_wip=True) copies an untracked WIP file chmod 000."""
         worktree = _worktree(worktree_workspace)
         unreadable = worktree_workspace / "secret.txt"
         unreadable.write_text("wip\n", encoding="utf-8")
@@ -760,7 +758,7 @@ class WorktreeLifecycleDiagnosticLogTests:
 
         assert result.error_code == ErrorCode.WORKTREE_WIP_FAILED
         assert len(result.errors) == 1
-        assert result.errors[0].startswith("Failed to overlay uncommitted WIP into worktree (WORKTREE_WIP_FAILED): ")
+        assert result.errors[0].startswith("Failed to overlay uncommitted WIP into worktree: ")
         assert "Details logged:" not in result.errors[0]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
@@ -782,9 +780,7 @@ class WorktreeLifecycleDiagnosticLogTests:
         result = worktree.create(session_id="dovo_wipdomain", include_wip=True)
 
         assert result.error_code == ErrorCode.WORKTREE_MISSING
-        assert result.errors == [
-            "Failed to overlay uncommitted WIP into worktree (WORKTREE_WIP_FAILED): worktree path does not exist: x"
-        ]
+        assert result.errors == ["Failed to overlay uncommitted WIP into worktree: worktree path does not exist: x"]
         assert result.diagnostics == []
         assert not resolve_global_paths(None).logs_dir.exists()
 
@@ -860,7 +856,7 @@ class WorktreeLifecycleDiagnosticLogTests:
 
         assert result.error_code == ErrorCode.GIT_FAILED
         assert len(result.errors) == 1
-        assert result.errors[0].startswith("Git worktree operation failed (WORKTREE_GIT_FAILED): ")
+        assert result.errors[0].startswith("Git worktree operation failed: ")
         assert "Details logged:" not in result.errors[0]
         assert result.diagnostics == []
         event = read_single_event(frozen_diagnostic_clock)
