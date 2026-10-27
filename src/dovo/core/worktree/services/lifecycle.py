@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Final, TypeGuard
+from typing import Final
 
 from dovo.common.clock import Clock
 from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
@@ -51,11 +51,6 @@ _WIP_FAILED_REMEDIATION: Final = Remediation(message="Resolve local conflicts an
 _IGNORED_CLEANUP_CODES: Final = frozenset({ErrorCode.GIT_FAILED, ErrorCode.GIT_BINARY_MISSING})
 
 
-def _is_git_code(exc: Exception, code: ErrorCode) -> TypeGuard[GitError]:
-    """Return whether exc is a GitError carrying code."""
-    return isinstance(exc, GitError) and exc.error_code is code
-
-
 def _git_step_error(exc: GitError, *, remediate: bool) -> WorktreeError:
     """Return a WorktreeError with exc's code and today's timed-out or failed message, with its remediation when remediate."""
     if exc.error_code is ErrorCode.GIT_TIMEOUT:
@@ -69,7 +64,7 @@ def _git_step_error(exc: GitError, *, remediate: bool) -> WorktreeError:
 
 def _record_recovered(exc: Exception, *, operation: str, context: Mapping[str, str | None]) -> None:
     """Record exc at debug level for a failure Dovo recovered from, skipping a GIT_BINARY_MISSING GitError."""
-    if _is_git_code(exc, ErrorCode.GIT_BINARY_MISSING):
+    if isinstance(exc, GitError) and exc.error_code is ErrorCode.GIT_BINARY_MISSING:
         return
 
     record_exception(exc, level=DiagnosticLevel.DEBUG, operation=operation, context=context)
@@ -311,7 +306,7 @@ class WorktreeLifecycle:
         except Exception as exc:
             # Recover then re-raise: catch_failure records an unexpected exc once.
             self.discard_partial(worktree_path, temp_branch, created_dir=True, created_branch=True)
-            if _is_git_code(exc, ErrorCode.GIT_TIMEOUT):
+            if isinstance(exc, GitError) and exc.error_code is ErrorCode.GIT_TIMEOUT:
                 raise WorktreeError(
                     exc.error_code,
                     f"Git timed out while overlaying uncommitted WIP (WORKTREE_GIT_TIMEOUT): {exc}",
