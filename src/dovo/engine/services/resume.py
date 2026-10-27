@@ -49,32 +49,34 @@ class BlueprintResumeService:
         if env_error is not None:
             return fail(self.warnings, self.diagnostics, env_error)
 
-        catalog = Catalog(self.paths)
         with catch_failure("engine.resume", session_id=self.session_id) as caught:
-            outcome = self._resume(catalog, env_overrides)
+            target_session_id = self._target_session_id()
         if caught.failure is not None:
             return fail_with(self.warnings, self.diagnostics, caught.failure)
-        if isinstance(outcome, str):
-            return fail(self.warnings, self.diagnostics, outcome)
+        if target_session_id is None:
+            return fail(self.warnings, self.diagnostics, "No paused session found to resume.")
 
-        target_session_id, run_outcome = outcome
+        with catch_failure("engine.resume", session_id=target_session_id) as caught:
+            run_outcome = self._resume(Catalog(self.paths), target_session_id, env_overrides)
+        if caught.failure is not None:
+            return fail_with(self.warnings, self.diagnostics, caught.failure)
+
         return finalize(self.db, self.warnings, self.diagnostics, run_outcome, target_session_id)
 
-    def _resume(self, catalog: Catalog, env_overrides: AgentEnvOverrides | None) -> tuple[str, RunOutcome] | str:
-        """Resume session_id, or the latest paused session when it is omitted; return the no-paused-session message when there is none."""
+    def _target_session_id(self) -> str | None:
+        """Return session_id after loading its record, or the latest paused session's id, or None when nothing is paused."""
         if self.session_id:
             load_record(self.db, self.warnings, self.session_id)
-            target_session_id = self.session_id
-        else:
-            record = self.db.get_latest_paused()
-            if record is None:
-                return "No paused session found to resume."
-            target_session_id = record.session_id
+            return self.session_id
+        record = self.db.get_latest_paused()
+        return record.session_id if record is not None else None
 
-        run_outcome = Engine(
+    def _resume(self, catalog: Catalog, session_id: str, env_overrides: AgentEnvOverrides | None) -> RunOutcome:
+        """Resume session_id through Engine and return its outcome."""
+        return Engine(
             self.paths, db=self.db, catalog=catalog, git=self.git, clock=self.clock, new_id=self.new_id
         ).resume(
-            target_session_id,
+            session_id,
             observer=self.observer,
             failure_prompter=self.failure_prompter,
             interaction_prompter=self.interaction_prompter,
@@ -82,4 +84,3 @@ class BlueprintResumeService:
             no_tty=self.no_tty,
             env_overrides=env_overrides,
         )
-        return target_session_id, run_outcome
