@@ -125,6 +125,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 - **Decision:** every `LockTimeoutError` propagates to the top-level `Workspace Lock Timeout` handler.
   - No package turns it into an error code, a warning or a status.
   - `catch_failure` re-raises it, so an entrypoint needs no handler of its own.
+  - An entrypoint that rolls back a failed attempt, such as `auto_initialize_workspace`, rolls back before re-raising it.
 - **Why:** this is what R6's "report it" means: one handler reports contention the same way for every command.
 - **Since:** #1214
 
