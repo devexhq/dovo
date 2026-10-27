@@ -14,7 +14,8 @@ from pydantic_core import ErrorDetails
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
 from dovo.common.models import Remediation
-from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult
+from dovo.core.catalog.exceptions import CatalogError, CatalogValidateFindings
+from dovo.core.catalog.models import CatalogItemType
 
 _PLACEHOLDER_RE = re.compile(r"\$\{\{\s*inputs\.([a-zA-Z0-9_-]+)\s*\}\}")
 _PLACEHOLDER_FIELDS: Final[tuple[str, ...]] = ("run", "command", "prompt", "script_path")
@@ -31,129 +32,70 @@ class _PydanticModel(Protocol):
 
 
 def validate_catalog_item(
-    target: str,
-    *,
-    repo_root: Path,
-    resolved: tuple[Path, str, str, list[str]],
-    blueprint_cls: type[_PydanticModel],
-    step_cls: type[_PydanticModel],
-) -> CatalogValidateResult:
-    """Validate one already-resolved catalog blueprint or step definition file, without executing it.
-
-    ``resolved`` (``resolved_path``, ``item_type``, ``key``, ``resolution_warnings``) comes from
-    ``Catalog._resolve_validate_target``: target resolution lives on ``Catalog`` itself, not here, so
-    this module never needs to import ``Catalog`` (which would create an import cycle, since ``catalog.py``
-    already imports this module).
-    """
-    resolved_path, item_type, key, resolution_warnings = resolved
-    result = _validate_resolved_target(
-        target, repo_root, resolved_path, item_type, key, blueprint_cls=blueprint_cls, step_cls=step_cls
-    )
-    if not resolution_warnings:
-        return result
-    return result.model_copy(update={"warnings": [*resolution_warnings, *result.warnings]})
-
-
-def _validate_resolved_target(
-    target: str,
-    repo_root: Path,
     resolved_path: Path,
     item_type: str,
     key: str,
     *,
+    repo_root: Path,
     blueprint_cls: type[_PydanticModel],
     step_cls: type[_PydanticModel],
-) -> CatalogValidateResult:
-    """Read, schema-validate, and semantically audit an already-resolved catalog definition file."""
-    parse_outcome = _read_and_parse_target_yaml(target, resolved_path, item_type)
-    if isinstance(parse_outcome, CatalogValidateResult):
-        return parse_outcome
+) -> list[str]:
+    """Read, schema-check and audit one already-resolved catalog definition file without executing it; return its warnings.
 
-    definition, schema_errors, schema_remediations = _validate_schema(
-        item_type, parse_outcome, key, blueprint_cls=blueprint_cls, step_cls=step_cls
-    )
-    if schema_errors:
-        return CatalogValidateResult(
-            valid=False,
-            target=target,
-            resolved_path=resolved_path,
-            item_type=item_type,
-            error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
-            errors=schema_errors,
-            warnings=[],
-            remediations=schema_remediations,
-        )
+    Target resolution lives on ``Catalog._resolve_validate_target``, not here, so this module never imports
+    ``Catalog`` (which would create an import cycle, since ``catalog.py`` already imports this module).
 
-    semantic_errors, semantic_remediations, warnings = _run_semantic_audits(item_type, definition, repo_root)
-    if semantic_errors:
-        return CatalogValidateResult(
-            valid=False,
-            target=target,
-            resolved_path=resolved_path,
-            item_type=item_type,
-            error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
-            errors=semantic_errors,
-            warnings=warnings,
-            remediations=semantic_remediations,
-        )
+    Raises:
+        CatalogError: CATALOG_FILE_UNREADABLE or CATALOG_SYNTAX_INVALID when the file cannot be read or parsed,
+            and CATALOG_SCHEMA_INVALID, carrying every message and warning in ``CatalogValidateFindings``,
+            when the schema check or an audit fails.
+    """
+    parsed = _read_and_parse_target_yaml(resolved_path)
+    definition = _validate_schema(item_type, parsed, key, blueprint_cls=blueprint_cls, step_cls=step_cls)
+    return _run_semantic_audits(item_type, definition, repo_root)
 
-    return CatalogValidateResult(
-        valid=True,
-        target=target,
-        resolved_path=resolved_path,
-        item_type=item_type,
-        errors=[],
-        warnings=warnings,
+
+def _schema_invalid(errors: list[str], remediations: list[Remediation], warnings: list[str]) -> CatalogError:
+    """Return the CATALOG_SCHEMA_INVALID error: the first message as its own, every message and warning as its data."""
+    return CatalogError(
+        ErrorCode.CATALOG_SCHEMA_INVALID,
+        errors[0],
+        remediations,
+        data=CatalogValidateFindings(errors=tuple(errors), warnings=tuple(warnings)),
     )
 
 
-def _read_and_parse_target_yaml(
-    target: str,
-    resolved_path: Path,
-    item_type: str,
-) -> CatalogValidateResult | dict[str, Any]:
-    """Read and YAML-parse resolved_path, or return a terminal unreadable, syntax-error or non-mapping-root result."""
+def _read_and_parse_target_yaml(resolved_path: Path) -> dict[str, Any]:
+    """Read and YAML-parse resolved_path into its top-level mapping.
+
+    Raises:
+        CatalogError: CATALOG_FILE_UNREADABLE when the file cannot be read, CATALOG_SYNTAX_INVALID when it is
+            not valid YAML or its root is not a mapping.
+    """
     try:
         content = resolved_path.read_text(encoding="utf-8")
     except OSError as exc:
-        return CatalogValidateResult(
-            valid=False,
-            target=target,
-            resolved_path=resolved_path,
-            item_type=item_type,
-            error_code=ErrorCode.CATALOG_FILE_UNREADABLE,
-            errors=[f"Failed to read '{resolved_path}': {exc}."],
-            warnings=[],
-            remediations=[Remediation(message=f"Check that '{resolved_path}' exists and is readable.")],
-        )
+        raise CatalogError(
+            ErrorCode.CATALOG_FILE_UNREADABLE,
+            f"Failed to read '{resolved_path}': {exc}.",
+            [Remediation(message=f"Check that '{resolved_path}' exists and is readable.")],
+        ) from None
 
     try:
         parsed = yaml.safe_load(content)
     except yaml.YAMLError as exc:
         location = _format_yaml_error_location(exc)
-        return CatalogValidateResult(
-            valid=False,
-            target=target,
-            resolved_path=resolved_path,
-            item_type=item_type,
-            error_code=ErrorCode.CATALOG_SYNTAX_INVALID,
-            errors=[f"YAML syntax error in '{resolved_path}' at {location}: {exc}."],
-            warnings=[],
-            remediations=[Remediation(message=f"Fix the YAML syntax error at {location} in '{resolved_path}'.")],
-        )
+        raise CatalogError(
+            ErrorCode.CATALOG_SYNTAX_INVALID,
+            f"YAML syntax error in '{resolved_path}' at {location}: {exc}.",
+            [Remediation(message=f"Fix the YAML syntax error at {location} in '{resolved_path}'.")],
+        ) from None
 
     if not isinstance(parsed, dict):
-        return CatalogValidateResult(
-            valid=False,
-            target=target,
-            resolved_path=resolved_path,
-            item_type=item_type,
-            error_code=ErrorCode.CATALOG_SYNTAX_INVALID,
-            errors=[f"'{resolved_path}' root content must be a YAML mapping."],
-            warnings=[],
-            remediations=[
-                Remediation(message=f"Rewrite '{resolved_path}' with a top-level YAML mapping (key: value pairs).")
-            ],
+        raise CatalogError(
+            ErrorCode.CATALOG_SYNTAX_INVALID,
+            f"'{resolved_path}' root content must be a YAML mapping.",
+            [Remediation(message=f"Rewrite '{resolved_path}' with a top-level YAML mapping (key: value pairs).")],
         )
 
     return parsed
@@ -174,19 +116,19 @@ def _validate_schema(
     *,
     blueprint_cls: type[_PydanticModel],
     step_cls: type[_PydanticModel],
-) -> tuple[object | None, list[str], list[Remediation]]:
-    """Validate parsed against the already-known schema class for item_type; return (definition, errors, remediations)."""
+) -> object:
+    """Validate parsed against the already-known schema class for item_type and return the definition.
+
+    Raises:
+        CatalogError: CATALOG_SCHEMA_INVALID with one message and remediation per schema error.
+    """
     definition_cls = step_cls if item_type == CatalogItemType.STEP.value else blueprint_cls
     try:
         from_document = getattr(definition_cls, "from_document", None)
-        definition = (
-            from_document(parsed, key=key) if callable(from_document) else definition_cls.model_validate(parsed)
-        )
+        return from_document(parsed, key=key) if callable(from_document) else definition_cls.model_validate(parsed)
     except (DefinitionLoadError, DefinitionValidationError, ValidationError) as exc:
         errors, remediations = _format_schema_exception(exc, key)
-        return None, errors, remediations
-
-    return definition, [], []
+        raise _schema_invalid(errors, remediations, []) from exc
 
 
 def _format_schema_exception(
@@ -323,13 +265,23 @@ def _audit_script_paths(flat_steps: list[object], repo_root: Path) -> tuple[list
     return errors, warnings
 
 
-def _run_semantic_audits(
-    item_type: str, definition: object, repo_root: Path
-) -> tuple[list[str], list[Remediation], list[str]]:
-    """Run the FR-4 + Scope semantic audits appropriate to item_type; return (errors, remediations, warnings)."""
+def _run_semantic_audits(item_type: str, definition: object, repo_root: Path) -> list[str]:
+    """Run the semantic audits appropriate to item_type and return their warnings.
+
+    Raises:
+        CatalogError: CATALOG_SCHEMA_INVALID with every audit error, one 'Resolve: <error>' remediation per
+            error, and the audit warnings.
+    """
+    errors, warnings = _semantic_findings(item_type, definition, repo_root)
+    if errors:
+        raise _schema_invalid(errors, _resolve_remediations(errors), warnings)
+    return warnings
+
+
+def _semantic_findings(item_type: str, definition: object, repo_root: Path) -> tuple[list[str], list[str]]:
+    """Return (errors, warnings) from the semantic audits appropriate to item_type."""
     if item_type == CatalogItemType.STEP.value:
-        script_errors, script_warnings = _audit_script_paths([definition], repo_root)
-        return script_errors, _resolve_remediations(script_errors), script_warnings
+        return _audit_script_paths([definition], repo_root)
 
     steps = getattr(definition, "steps", None) or []
     inputs = getattr(definition, "inputs", None) or {}
@@ -342,7 +294,7 @@ def _run_semantic_audits(
     referenced = _collect_placeholder_references(flat_steps)
     warnings.extend(_audit_undeclared_placeholders(referenced, set(inputs)))
 
-    return errors, _resolve_remediations(errors), warnings
+    return errors, warnings
 
 
 def _resolve_remediations(errors: list[str]) -> list[Remediation]:

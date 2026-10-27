@@ -2,16 +2,27 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from dovo.common.exceptions import (
     DefinitionLoadError,
     DefinitionNotFoundError,
     DefinitionValidationError,
     DomainError,
+    FailureData,
 )
 
 
 class CatalogError(DomainError):
-    """Business failure resolving, reading, scanning, creating or deleting a catalog item."""
+    """Business failure resolving, reading, scanning, creating, deleting or validating a catalog item."""
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogValidateFindings(FailureData):
+    """Every error message a failed definition check found, and the warnings found alongside them."""
+
+    errors: tuple[str, ...]
+    warnings: tuple[str, ...]
 
 
 class BlueprintLoadError(DefinitionLoadError):
