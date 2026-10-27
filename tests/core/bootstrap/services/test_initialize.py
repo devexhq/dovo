@@ -13,7 +13,7 @@ from dovo.common.constants import BOOTSTRAP_META_REL
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.common.lock import LockTimeoutError
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.models import Remediation
 from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
 from dovo.core.bootstrap.services.initialize import auto_initialize_workspace, initialize_workspace
@@ -23,6 +23,7 @@ from dovo.core.project.models import PROJECT_ID_REGEX, ProjectIdentity, ProjectI
 from dovo.core.project.services.identity import generate_project_identity, save_project_identity
 from tests.harness.builders import WorkspaceBuilder, init_git_repository
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
+from tests.harness.lock import raise_lock_timeout
 
 
 class InitializeWorkspaceGlobalHomeTests:
@@ -314,6 +315,40 @@ class InitializeIdentityFailureTests:
             "Rerun with --id <new-id> --force to replace it.",
             "repair ignored when overwrite=True",
         ]
+
+
+class InitializeIdentityLockTimeoutTests:
+    """Contract tests for a workspace lock timeout while provisioning the project identity."""
+
+    def test_initialize_workspace_identity_lock_timeout_keeps_bootstrap_tree(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return the identity failure and leave the bootstrapped .dovo/ in place with no project.json or config.json."""
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        result = initialize_workspace(git_repo)
+
+        assert result.ok is False
+        dovo_dir = git_repo / ".dovo"
+        assert (dovo_dir / ".gitignore").is_file()
+        assert (dovo_dir / BOOTSTRAP_META_REL).is_file()
+        assert not (dovo_dir / "project.json").exists()
+        assert not (dovo_dir / "config.json").exists()
+
+    def test_auto_initialize_workspace_identity_lock_timeout_restores_preexisting_dovo_dir(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return the identity failure and restore a pre-existing .dovo/ byte for byte."""
+        dovo_dir = git_repo / ".dovo"
+        dovo_dir.mkdir()
+        (dovo_dir / "notes.txt").write_text("mine\n", encoding="utf-8")
+        before = _tree_bytes(dovo_dir)
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        result = auto_initialize_workspace(git_repo)
+
+        assert result.ok is False
+        assert _tree_bytes(dovo_dir) == before
 
 
 class AutoInitializeWorkspaceTests:
