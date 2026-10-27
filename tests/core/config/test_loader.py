@@ -19,7 +19,7 @@ from dovo.core.config.models import DovoConfig
 SCHEMA_VIOLATION_PAYLOADS = [
     pytest.param(
         {"version": 1},
-        ("Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"),
+        ("Config schema validation failed:\n- (root): 'project' is a required property"),
         id="missing_sections",
     ),
     pytest.param(
@@ -28,10 +28,7 @@ SCHEMA_VIOLATION_PAYLOADS = [
             "project": {"name": "test-project"},
             "worktree": {"max_active_worktrees": "five"},
         },
-        (
-            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n"
-            "- worktree.max_active_worktrees: 'five' is not of type 'integer'"
-        ),
+        ("Config schema validation failed:\n- worktree.max_active_worktrees: 'five' is not of type 'integer'"),
         id="invalid_types",
     ),
     pytest.param(
@@ -39,7 +36,7 @@ SCHEMA_VIOLATION_PAYLOADS = [
             **build_default_config("test-project"),
             "version": 99,
         },
-        "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- version: 1 was expected",
+        "Config schema validation failed:\n- version: 1 was expected",
         id="unsupported_version",
     ),
 ]
@@ -72,7 +69,7 @@ class ConfigLoaderTests:
         assert result.config_path == config_path
         assert result.raw is None
         assert result.config is None
-        assert result.errors == [f"Configuration file not found at '{config_path}' (CONFIG_NOT_FOUND)."]
+        assert result.errors == [f"Configuration file not found at '{config_path}'."]
         assert result.warnings == []
         assert result.remediations == [
             Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")

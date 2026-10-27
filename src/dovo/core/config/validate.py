@@ -85,10 +85,7 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
             config_path=loaded.config_path,
             raw=loaded.raw,
             config=None,
-            errors=[
-                f"Configuration loaded from '{loaded.config_path}' but the parsed config is missing "
-                f"(CONFIG_INTERNAL_INVARIANT)."
-            ],
+            errors=[f"Configuration loaded from '{loaded.config_path}' but the parsed config is missing."],
             warnings=[],
         )
 

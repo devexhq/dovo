@@ -1010,7 +1010,7 @@ class DriveRunAgentSettingsTests:
         outcome = _drive(engine_paths, sessions_repo, "bad-config", observer=observer)
 
         assert outcome.status == SessionStatus.FAILED
-        assert "CONFIG_MALFORMED_JSON" in outcome.errors[0]
+        assert "Malformed config.json at" in outcome.errors[0]
         assert outcome.step_results == []
         assert [call[0] for call in observer.calls] == ["run_completed"]
 

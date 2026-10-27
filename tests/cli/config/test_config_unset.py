@@ -60,7 +60,7 @@ class ConfigUnsetCliIntegrationTests:
 
         assert res.exit_code == 1
         assert "Config Error" in res.stdout
-        assert "CONFIG_SCHEMA_INVALID" in res.stdout
+        assert "Config schema validation failed" in res.stdout
 
     def test_config_unset_cli_format_json_emits_event(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"

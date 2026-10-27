@@ -117,9 +117,7 @@ class ConfigSemanticValidationTests:
         assert result.config_path == config_path
         assert result.raw == payload
         assert result.config is None
-        assert result.errors == [
-            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"
-        ]
+        assert result.errors == ["Config schema validation failed:\n- (root): 'project' is a required property"]
         assert result.warnings == []
         assert result.remediations == [
             Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
@@ -173,8 +171,8 @@ class ConfigProviderRegistryValidationTests:
         result = validate_config_result(self._write_config(tmp_path, "bogus"))
 
         assert result.status == ConfigValidationStatus.INVALID
-        assert "CONFIG_SCHEMA_INVALID" in result.errors[0]
-        assert not any("AGENT_PROVIDER_UNSUPPORTED" in error for error in result.errors)
+        assert result.errors[0].startswith("Config schema validation failed:")
+        assert not any("Unsupported agent provider" in error for error in result.errors)
 
 
 class AgentSettingsEnvTests:

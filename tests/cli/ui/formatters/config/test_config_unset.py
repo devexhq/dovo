@@ -36,7 +36,7 @@ SCHEMA_INVALID = FormatterCase.identity(
         key="project",
         existed=True,
         previous_value={"name": "demo-workspace", "initialized_at": None},
-        errors=["Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"],
+        errors=["Config schema validation failed:\n- (root): 'project' is a required property"],
         remediations=[
             Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
             Remediation(
@@ -79,9 +79,7 @@ CONFIG_UNSET_PAYLOAD_CASES = [
             "existed": True,
             "previous_value": {"name": "demo-workspace", "initialized_at": None},
             "warnings": [],
-            "errors": [
-                "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"
-            ],
+            "errors": ["Config schema validation failed:\n- (root): 'project' is a required property"],
             "error_code": None,
             "remediations": [
                 {"message": "Run 'dovo config validate' for details", "command": "dovo config validate"},

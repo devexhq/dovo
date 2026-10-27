@@ -162,7 +162,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
             status=ConfigSetStatus.PATH_IS_DIRECTORY,
             config_path=path,
             key=key,
-            errors=[f"Config path is a directory, not a file: '{path}' (CONFIG_PATH_IS_DIRECTORY)."],
+            errors=[f"Config path is a directory, not a file: '{path}'."],
             remediations=[Remediation(message="Remove the directory or point config_path at a file")],
         )
 
@@ -171,7 +171,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
             status=ConfigSetStatus.NOT_FOUND,
             config_path=path,
             key=key,
-            errors=[f"Configuration file not found at '{path}' (CONFIG_NOT_FOUND)."],
+            errors=[f"Configuration file not found at '{path}'."],
             remediations=[Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")],
         )
 
@@ -182,7 +182,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
             status=ConfigSetStatus.UNREADABLE,
             config_path=path,
             key=key,
-            errors=[f"Unable to read config.json at '{path}': {exc} (CONFIG_UNREADABLE)."],
+            errors=[f"Unable to read config.json at '{path}': {exc}."],
             remediations=[Remediation(message="Check file permissions and that the path is readable")],
         )
 
@@ -196,7 +196,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
             status=ConfigSetStatus.MALFORMED_JSON,
             config_path=path,
             key=key,
-            errors=[f"Malformed config.json at '{path}': {detail} (CONFIG_MALFORMED_JSON)."],
+            errors=[f"Malformed config.json at '{path}': {detail}."],
             remediations=[Remediation(message="Repair JSON syntax, or restore from backup")],
         )
 
@@ -205,7 +205,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
             status=ConfigSetStatus.ROOT_NOT_OBJECT,
             config_path=path,
             key=key,
-            errors=[f"Malformed config.json at '{path}': root must be an object (CONFIG_ROOT_NOT_OBJECT)."],
+            errors=[f"Malformed config.json at '{path}': root must be an object."],
             remediations=[Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")],
         )
 
@@ -229,7 +229,7 @@ def _validate_mutated_config(
             errors=[
                 "\n".join(
                     [
-                        "Config schema validation failed (CONFIG_SCHEMA_INVALID):",
+                        "Config schema validation failed:",
                         *(f"- {msg}" for msg in validation.errors),
                     ]
                 )
@@ -254,7 +254,7 @@ def _validate_mutated_config(
             errors=[
                 "\n".join(
                     [
-                        "Config schema validation failed (CONFIG_SCHEMA_INVALID):",
+                        "Config schema validation failed:",
                         *(f"- {msg}" for msg in [str(exc)]),
                     ]
                 )
@@ -324,7 +324,7 @@ def set_config_value_result(
             config_path=config_path,
             key=key,
             value=parsed_value,
-            errors=[f"Unable to write config.json at '{config_path}': {exc} (CONFIG_WRITE_FAILED)."],
+            errors=[f"Unable to write config.json at '{config_path}': {exc}."],
             remediations=[Remediation(message="Check file permissions and free disk space")],
         )
 
@@ -416,7 +416,7 @@ def unset_config_value_result(
             key=key,
             existed=True,
             previous_value=previous_value,
-            errors=[f"Unable to write config.json at '{config_path}': {exc} (CONFIG_WRITE_FAILED)."],
+            errors=[f"Unable to write config.json at '{config_path}': {exc}."],
             remediations=[Remediation(message="Check file permissions and free disk space")],
         )
 

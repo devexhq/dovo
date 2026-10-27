@@ -83,7 +83,7 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
         return ConfigLoadResult(
             status=ConfigLoadStatus.UNREADABLE,
             config_path=target_path,
-            errors=[f"Unable to read config.json at '{target_path}': {exc} (CONFIG_UNREADABLE)."],
+            errors=[f"Unable to read config.json at '{target_path}': {exc}."],
             remediations=[Remediation(message="Check file permissions and that the path is readable")],
         )
 
@@ -96,7 +96,7 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
         return ConfigLoadResult(
             status=ConfigLoadStatus.MALFORMED_JSON,
             config_path=target_path,
-            errors=[f"Malformed config.json at '{target_path}': {detail} (CONFIG_MALFORMED_JSON)."],
+            errors=[f"Malformed config.json at '{target_path}': {detail}."],
             remediations=[Remediation(message="Repair JSON syntax, or restore from backup")],
         )
 
@@ -104,7 +104,7 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
         return ConfigLoadResult(
             status=ConfigLoadStatus.ROOT_NOT_OBJECT,
             config_path=target_path,
-            errors=[f"Malformed config.json at '{target_path}': root must be an object (CONFIG_ROOT_NOT_OBJECT)."],
+            errors=[f"Malformed config.json at '{target_path}': root must be an object."],
             remediations=[Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")],
         )
 
@@ -117,7 +117,7 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
             errors=[
                 "\n".join(
                     [
-                        "Config schema validation failed (CONFIG_SCHEMA_INVALID):",
+                        "Config schema validation failed:",
                         *(f"- {msg}" for msg in validation.errors),
                     ]
                 )
@@ -141,7 +141,7 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
             errors=[
                 "\n".join(
                     [
-                        "Config schema validation failed (CONFIG_SCHEMA_INVALID):",
+                        "Config schema validation failed:",
                         *(f"- {msg}" for msg in [str(exc)]),
                     ]
                 )
@@ -171,7 +171,7 @@ def _check_path_existence(target_path: Path) -> ConfigLoadResult | None:
         return ConfigLoadResult(
             status=ConfigLoadStatus.PATH_IS_DIRECTORY,
             config_path=target_path,
-            errors=[f"Config path is a directory, not a file: '{target_path}' (CONFIG_PATH_IS_DIRECTORY)."],
+            errors=[f"Config path is a directory, not a file: '{target_path}'."],
             remediations=[Remediation(message="Remove the directory or point config_path at a file")],
         )
 
@@ -180,7 +180,7 @@ def _check_path_existence(target_path: Path) -> ConfigLoadResult | None:
         return ConfigLoadResult(
             status=ConfigLoadStatus.NOT_FOUND,
             config_path=target_path,
-            errors=[f"Configuration file not found at '{target_path}' (CONFIG_NOT_FOUND)."],
+            errors=[f"Configuration file not found at '{target_path}'."],
             remediations=[Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")],
         )
     return None
@@ -293,7 +293,7 @@ def parse_and_validate_config(raw: dict[str, Any]) -> DovoConfig:
         raise ValueError(
             "\n".join(
                 [
-                    "Config schema validation failed (CONFIG_SCHEMA_INVALID):",
+                    "Config schema validation failed:",
                     *(f"- {msg}" for msg in validation.errors),
                     "Fix:",
                     "- run `dovo config validate` for details",
@@ -307,7 +307,7 @@ def parse_and_validate_config(raw: dict[str, Any]) -> DovoConfig:
         raise ValueError(
             "\n".join(
                 [
-                    "Config schema validation failed (CONFIG_SCHEMA_INVALID):",
+                    "Config schema validation failed:",
                     f"- {exc}",
                     "Fix:",
                     "- run `dovo config validate` for details",
