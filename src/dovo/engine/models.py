@@ -21,7 +21,6 @@ from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import InteractionAnswer, InteractionRequest
-from dovo.core.sessions import StepRunSummary
 from dovo.core.worktree import WorktreeSession
 from dovo.engine.executors.models import (
     AgentProgressUpdate,
@@ -30,20 +29,6 @@ from dovo.engine.executors.models import (
     PreviousStepMetadata,
     StepResult,
 )
-
-
-class EngineResumeStatus(StrEnum):
-    """Classified outcomes for ``EngineLoader.load_for_resume`` / ``Engine.resume``."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    WRONG_STATUS = "wrong_status"
-    MISSING_WORKTREE = "missing_worktree"
-    CORRUPT_STATE = "corrupt_state"
-    MISSING_SNAPSHOT = "missing_snapshot"
-    INVALID_ANSWER = "invalid_answer"
-    NO_PENDING_PROMPT = "no_pending_prompt"
-    FAILED = "failed"
 
 
 @dataclass(frozen=True)
@@ -63,6 +48,21 @@ class RunRequest:
     no_tty: bool = False
     auto_apply: bool = False
     env_overrides: AgentEnvOverrides | None = None
+
+
+@dataclass(frozen=True)
+class LifecycleUpdate:
+    """Session row lifecycle fields committed with an execution-state save.
+
+    A None ``run_status``, ``worktree_id`` or ``worktree_kept`` leaves that field unchanged.
+    ``error_message`` is written only with a ``run_status``, which replaces the stored message,
+    clearing it when ``error_message`` is None.
+    """
+
+    run_status: SessionStatus | None = None
+    error_message: str | None = None
+    worktree_id: str | None = None
+    worktree_kept: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -331,9 +331,3 @@ class BlueprintRunResult(BaseResult):
     def ok(self) -> bool:
         """Return True if run completed without fatal errors."""
         return self.session_record is not None and len(self.errors) == 0
-
-
-class SessionStepsResult(BaseResult):
-    """Step summaries derived from a session's persisted execution state."""
-
-    steps: list[StepRunSummary] = Field(default_factory=list)

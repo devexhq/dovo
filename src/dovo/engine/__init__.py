@@ -7,14 +7,12 @@ from dovo.engine.exceptions import (
     EngineError,
     EngineInputError,
     EngineResumeError,
-    EngineRuntimeError,
     EngineSnapshotMissingError,
 )
 from dovo.engine.loader import EngineLoader
 from dovo.engine.models import (
     DefinitionRef,
     DefinitionsManifest,
-    EngineResumeStatus,
     FailurePromptDecision,
     FailurePrompter,
     InteractionPrompter,
@@ -46,8 +44,6 @@ __all__ = [
     "EngineInputError",
     "EngineLoader",
     "EngineResumeError",
-    "EngineResumeStatus",
-    "EngineRuntimeError",
     "EngineSnapshotMissingError",
     "ExecutionStateTree",
     "FailurePromptDecision",

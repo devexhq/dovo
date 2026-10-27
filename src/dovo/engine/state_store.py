@@ -6,11 +6,13 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
-from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
-from dovo.engine.models import DefinitionsManifest
+from dovo.core.db import SessionRecord, SessionsRepository
+from dovo.engine.exceptions import EngineError
+from dovo.engine.models import DefinitionsManifest, LifecycleUpdate
 from dovo.engine.projection import build_session_json_payload
 from dovo.engine.state_models import (
     ExecutionIterationRecord,
@@ -18,10 +20,6 @@ from dovo.engine.state_models import (
     ExecutionLoopNode,
     ExecutionStateTree,
     SessionJsonPayload,
-    SessionStateLoadResult,
-    SessionStateLoadStatus,
-    SessionStateWriteResult,
-    SessionStateWriteStatus,
 )
 from dovo.engine.writer import snapshot_blueprint_path, snapshot_step_path, write_session_projection
 
@@ -74,8 +72,14 @@ class SessionStateStore:
         self.paths = paths
         self.session_id = session_id
 
-    def initialize(self, blueprint: Blueprint, manifest: DefinitionsManifest) -> SessionStateWriteResult:
-        """Build the revision 0 tree, commit it to the session row, and write the session.json projection."""
+    def initialize(
+        self, blueprint: Blueprint, manifest: DefinitionsManifest, warnings: list[str]
+    ) -> ExecutionStateTree:
+        """Build the revision 0 tree, commit it to the session row and return it, appending any session.json projection warning.
+
+        Raises:
+            EngineError: SESSION_NOT_FOUND or SESSION_STATE_REVISION_CONFLICT, leaving the row and projection untouched.
+        """
         state = ExecutionStateTree(manifest=manifest, nodes=list(_plan_nodes(blueprint.steps)))
         row = self.sessions.save_execution_state(
             self.session_id,
@@ -84,101 +88,89 @@ class SessionStateStore:
             next_revision=0,
         )
         if row is None:
-            return self._classify_write_failure()
+            raise self._write_failure()
 
-        return SessionStateWriteResult(
-            status=SessionStateWriteStatus.OK,
-            state=state,
-            warnings=self._sync_projection(state, row),
-        )
+        warnings.extend(self._sync_projection(state, row))
+        return state
 
-    def load(self) -> SessionStateLoadResult:
-        """Load the run's state from its row, validate it and its snapshot files, and reconcile the session.json projection."""
+    def load(self, warnings: list[str]) -> ExecutionStateTree:
+        """Return the run's validated state from its row, appending any session.json projection warning to warnings.
+
+        Raises:
+            EngineError: SESSION_NOT_FOUND, SESSION_STATE_MISSING, SESSION_STATE_CORRUPT,
+                SESSION_SNAPSHOT_MISSING or SESSION_STATE_INCONSISTENT.
+        """
         row = self.sessions.get(self.session_id)
         if row is None:
-            return SessionStateLoadResult(
-                status=SessionStateLoadStatus.NOT_FOUND,
-                errors=[f"Session '{self.session_id}' not found."],
-            )
+            raise EngineError(ErrorCode.SESSION_NOT_FOUND, f"Session '{self.session_id}' not found.")
 
         if row.execution_state_json is None:
-            return SessionStateLoadResult(
-                status=SessionStateLoadStatus.MISSING_STATE,
-                errors=[f"Session '{self.session_id}' has no execution state."],
-            )
+            raise EngineError(ErrorCode.SESSION_STATE_MISSING, f"Session '{self.session_id}' has no execution state.")
 
         state = self._parse_state(row)
         if state is None:
-            return SessionStateLoadResult(
-                status=SessionStateLoadStatus.CORRUPT_STATE,
-                errors=[f"Execution state for session '{self.session_id}' is corrupt."],
+            raise EngineError(
+                ErrorCode.SESSION_STATE_CORRUPT, f"Execution state for session '{self.session_id}' is corrupt."
             )
 
         missing = _missing_snapshot_paths(self.paths.session_dir(self.session_id), state.manifest)
         if missing:
-            return SessionStateLoadResult(
-                status=SessionStateLoadStatus.MISSING_SNAPSHOT,
-                errors=[f"Definition snapshot file missing: {path}" for path in missing],
-            )
+            raise EngineError(ErrorCode.SESSION_SNAPSHOT_MISSING, f"Definition snapshot file missing: {missing[0]}")
 
         projected = self._read_projection()
         if projected is not None and projected.revision > state.revision:
-            return SessionStateLoadResult(
-                status=SessionStateLoadStatus.INCONSISTENT_PROJECTION,
-                errors=[
-                    f"session.json for session '{self.session_id}' is at revision {projected.revision}, "
-                    f"newer than the database revision {state.revision}."
-                ],
+            raise EngineError(
+                ErrorCode.SESSION_STATE_INCONSISTENT,
+                f"session.json for session '{self.session_id}' is at revision {projected.revision}, "
+                f"newer than the database revision {state.revision}.",
             )
 
-        warnings = self._sync_projection(state, row) if _projection_stale(projected, state, row) else []
-        return SessionStateLoadResult(status=SessionStateLoadStatus.OK, state=state, warnings=warnings)
+        if _projection_stale(projected, state, row):
+            warnings.extend(self._sync_projection(state, row))
+        return state
 
     def save(
         self,
         state: ExecutionStateTree,
-        run_status: SessionStatus | None = None,
-        error_message: str | None = None,
-        worktree_id: str | None = None,
-        worktree_kept: bool | None = None,
-    ) -> SessionStateWriteResult:
-        """Commit state at revision + 1 with optional lifecycle fields and worktree id, then sync the session.json projection."""
+        warnings: list[str],
+        lifecycle: LifecycleUpdate | None = None,
+    ) -> ExecutionStateTree:
+        """Commit state at revision + 1 with optional lifecycle fields and return it, appending any session.json projection warning.
+
+        Raises:
+            EngineError: SESSION_NOT_FOUND or SESSION_STATE_REVISION_CONFLICT, leaving the row and projection untouched.
+        """
+        update = lifecycle or LifecycleUpdate()
         next_state = state.model_copy(update={"revision": state.revision + 1})
         row = self.sessions.save_execution_state(
             self.session_id,
             next_state.model_dump_json(),
             expected_revision=state.revision,
             next_revision=next_state.revision,
-            status=run_status,
-            error_message=error_message,
-            worktree_id=worktree_id,
-            worktree_kept=worktree_kept,
+            status=update.run_status,
+            error_message=update.error_message,
+            worktree_id=update.worktree_id,
+            worktree_kept=update.worktree_kept,
         )
         if row is None:
-            return self._classify_write_failure()
+            raise self._write_failure()
 
-        return SessionStateWriteResult(
-            status=SessionStateWriteStatus.OK,
-            state=next_state,
-            warnings=self._sync_projection(next_state, row),
-        )
+        warnings.extend(self._sync_projection(next_state, row))
+        return next_state
 
     def regenerate_projection(self, state: ExecutionStateTree, row: SessionRecord) -> Path:
         """Atomically write the session.json projection of state and its session row and return that path."""
         payload = build_session_json_payload(state, row)
         return write_session_projection(self.paths.session_dir(self.session_id), payload)
 
-    def _classify_write_failure(self) -> SessionStateWriteResult:
-        """Return NOT_FOUND when the session row is missing, else REVISION_CONFLICT, without touching the row or projection."""
+    def _write_failure(self) -> EngineError:
+        """Return SESSION_NOT_FOUND when the session row is missing, else SESSION_STATE_REVISION_CONFLICT."""
         if self.sessions.get(self.session_id) is None:
-            return SessionStateWriteResult(
-                status=SessionStateWriteStatus.NOT_FOUND,
-                errors=[f"Session '{self.session_id}' not found."],
-            )
+            return EngineError(ErrorCode.SESSION_NOT_FOUND, f"Session '{self.session_id}' not found.")
 
-        return SessionStateWriteResult(
-            status=SessionStateWriteStatus.REVISION_CONFLICT,
-            errors=[f"Execution state for session '{self.session_id}' was changed by another writer."],
+        return EngineError(
+            ErrorCode.SESSION_STATE_REVISION_CONFLICT,
+            f"Execution state for session '{self.session_id}' was changed by another writer.",
         )
 
     def _sync_projection(self, state: ExecutionStateTree, row: SessionRecord) -> list[str]:

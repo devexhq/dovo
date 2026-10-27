@@ -274,7 +274,7 @@ class SessionRunner:
         try:
             outcome = self._apply_worktree_changes(self._execute())
         except BaseException:
-            # No record: cleanup before re-raising; an uncaught exception is reported by the CLI catch-all.
+            # No record here: the runner's catch_failure records an unexpected exception after cleanup.
             closed = self._close(RunOutcome(status=SessionStatus.FAILED, worktree_path=self._context.target_dir))
             safe_notify(self._observer, "on_run_completed", closed)
             raise

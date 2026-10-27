@@ -10,6 +10,7 @@ import pytest
 from dovo.cli.ui.formatters.session.common import format_session_duration
 from dovo.cli.ui.formatters.session.session_show import SessionShowFormatter
 from dovo.cli.ui.formatters.session.session_views import SessionShowView
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.core.db import SessionStatus
 from dovo.core.sessions import HistoryShowResult, HistoryShowStatus, StepRunSummary
 from tests.harness.builders.sessions import session_record, session_summary_view
@@ -177,6 +178,28 @@ RUN_WITHOUT_STEP_DATA = FormatterCase(
     render_expectations=["sess-12345678", _NO_STEP_DATA_WARNING],
 )
 
+_STEP_READ_WARNING = "Unexpected error during session.show: boom"
+_STEP_READ_RECORD = DiagnosticRecord(
+    event_id="exc_3f9a1c07b2de",
+    log_path=Path("/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json"),
+    level=DiagnosticLevel.ERROR,
+)
+RUN_WITH_STEP_READ_FAILURE = FormatterCase(
+    data=HistoryShowResult(
+        status=HistoryShowStatus.OK,
+        session_id="sess-12345678",
+        session=session_record(),
+        warnings=[_STEP_READ_WARNING],
+        diagnostics=[_STEP_READ_RECORD],
+    ),
+    view=_make_session_show_view(warnings=[_STEP_READ_WARNING], diagnostics=[_STEP_READ_RECORD]),
+    render_expectations=[
+        "sess-12345678",
+        _STEP_READ_WARNING,
+        "Details logged: /home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json (event exc_3f9a1c07b2de)",
+    ],
+)
+
 NOT_FOUND = FormatterCase(
     data=HistoryShowResult(status=HistoryShowStatus.NOT_FOUND, session_id="nonexistent-sess"),
     view=_make_session_show_view(status=HistoryShowStatus.NOT_FOUND, session_id="nonexistent-sess", session=None),
@@ -197,6 +220,7 @@ HISTORY_SHOW_CASES = [
     pytest.param(RUN_WITH_LOGS, id="run_with_logs"),
     pytest.param(RUN_WITH_STEPS, id="run_with_steps"),
     pytest.param(RUN_WITHOUT_STEP_DATA, id="run_without_step_data"),
+    pytest.param(RUN_WITH_STEP_READ_FAILURE, id="run_with_step_read_failure"),
     pytest.param(NOT_FOUND, id="not_found"),
     pytest.param(SHOW_ERROR, id="show_error"),
 ]
@@ -299,6 +323,38 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "diagnostics": [],
         },
         id="run_with_steps",
+    ),
+    pytest.param(
+        RUN_WITH_STEP_READ_FAILURE,
+        {
+            "status": "ok",
+            "session_id": "sess-12345678",
+            "session": {
+                "session_id": "sess-12345678",
+                "blueprint_name": "deploy-blueprint",
+                "status": "completed",
+                "branch_name": "feature/test",
+                "started_at": "2026-08-19 01:00:00",
+                "completed_at": "2026-08-19 01:00:10",
+                "duration_seconds": 10.0,
+                "error_message": None,
+            },
+            "log_files": [],
+            "log_snippet": [],
+            "steps": [],
+            "worktree_kept": None,
+            "worktree_path": None,
+            "errors": [],
+            "warnings": ["Unexpected error during session.show: boom"],
+            "remediations": [],
+            "diagnostics": [
+                {
+                    "event_id": "exc_3f9a1c07b2de",
+                    "log_path": "/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json",
+                }
+            ],
+        },
+        id="run_with_step_read_failure",
     ),
     pytest.param(
         NOT_FOUND,

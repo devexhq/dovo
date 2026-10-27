@@ -201,8 +201,7 @@ def _run_new(
 
 
 def _state(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> ExecutionStateTree:
-    state = SessionStateStore(sessions, paths, session_id).load().state
-    assert state is not None
+    state = SessionStateStore(sessions, paths, session_id).load([])
     return state
 
 
@@ -309,7 +308,7 @@ class CoordinatorExecuteTests:
         interrupted = _leaf(state, "a")
         interrupted.state = NodeState.RUNNING
         interrupted.attempts = [StepAttemptRecord(number=1, span=TimeSpan(started_at=_SEEDED_START))]
-        assert store.save(state).ok
+        store.save(state, [])
 
         outcome = _coordinator(engine_paths, sessions_repo, "crash").execute()
 
@@ -1153,7 +1152,7 @@ class CoordinatorLoopResumeTests:
         leaf = loop.iterations[0].steps[0]
         leaf.state = NodeState.RUNNING
         leaf.attempts = [StepAttemptRecord(number=1, span=TimeSpan(started_at=_SEEDED_START))]
-        assert SessionStateStore(sessions_repo, engine_paths, "loop-crashed").save(state).ok
+        SessionStateStore(sessions_repo, engine_paths, "loop-crashed").save(state, [])
         prompter = ScriptedFailurePrompter([FailurePromptDecision.CONTINUE])
 
         outcome = _coordinator(engine_paths, sessions_repo, "loop-crashed", prompter=prompter).execute()
@@ -1433,7 +1432,7 @@ class CoordinatorCorruptLoopStateTests:
         store = SessionStateStore(sessions_repo, engine_paths, "corrupt-loop")
         state = _state(engine_paths, sessions_repo, "corrupt-loop")
         _loop_node(state, "fix").iterations[0].steps.reverse()
-        assert store.save(state).ok
+        store.save(state, [])
         revision = _state(engine_paths, sessions_repo, "corrupt-loop").revision
 
         outcome = _coordinator(engine_paths, sessions_repo, "corrupt-loop").execute()
@@ -1514,7 +1513,7 @@ class CoordinatorInvalidStateTests:
         store = SessionStateStore(sessions_repo, engine_paths, "ghost-def")
         state = _state(engine_paths, sessions_repo, "ghost-def")
         _leaf(state, "a").id = "ghost"
-        assert store.save(state).ok
+        store.save(state, [])
 
         outcome = _coordinator(engine_paths, sessions_repo, "ghost-def").execute()
 
@@ -1535,7 +1534,7 @@ class CoordinatorInvalidStateTests:
         state = _state(engine_paths, sessions_repo, "no-result")
         leaf = _leaf(state, "b")
         leaf.attempts[-1] = leaf.attempts[-1].model_copy(update={"result": None})
-        assert SessionStateStore(sessions_repo, engine_paths, "no-result").save(state).ok
+        SessionStateStore(sessions_repo, engine_paths, "no-result").save(state, [])
 
         outcome = _coordinator(engine_paths, sessions_repo, "no-result").execute()
 
@@ -1679,8 +1678,7 @@ class AskRun:
 
     def state(self) -> ExecutionStateTree:
         """Load the persisted execution state."""
-        state = SessionStateStore(self.sessions, self.paths, _SESSION_ID).load().state
-        assert state is not None
+        state = SessionStateStore(self.sessions, self.paths, _SESSION_ID).load([])
         return state
 
     def leaf(self, step_id: str) -> ExecutionLeafNode:
@@ -1850,7 +1848,7 @@ class CoordinatorAskTests:
         assert isinstance(leaf, ExecutionLeafNode)
         assert leaf.pending_ask is not None
         leaf.pending_ask = leaf.pending_ask.model_copy(update={"options": [RequestOption(value="only", label="Only")]})
-        assert SessionStateStore(ask_run.sessions, ask_run.paths, _SESSION_ID).save(state).ok
+        SessionStateStore(ask_run.sessions, ask_run.paths, _SESSION_ID).save(state, [])
 
         outcome = ask_run.execute(_ScriptedPrompter([]))
 

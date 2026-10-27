@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import FailurePolicy
 from dovo.common.redact import SecretRedactor
 from dovo.common.timing import TimeSpan
 from dovo.core.db import SessionRecord, SessionsRepository
 from dovo.core.sessions import StepRunSummary
+from dovo.engine.exceptions import EngineError
 from dovo.engine.executors.models import StepResult
-from dovo.engine.models import DefinitionRef, DefinitionsManifest, SessionStepsResult
+from dovo.engine.models import DefinitionRef, DefinitionsManifest
 from dovo.engine.session_steps import NO_STEP_DATA_WARNING, summarize_session_steps
 from dovo.engine.state_models import (
     ExecutionIterationRecord,
@@ -65,9 +67,9 @@ class SummarizeSessionStepsTests:
     def test_every_node_state_value_is_reported_verbatim(self) -> None:
         record = _record([ExecutionLeafNode(id=f"step-{state.value}", state=state) for state in NodeState])
 
-        result = summarize_session_steps(record, _REDACTOR)
+        steps = summarize_session_steps(record, _REDACTOR)
 
-        assert [(row.step_id, row.state) for row in result.steps] == [
+        assert [(row.step_id, row.state) for row in steps] == [
             (f"step-{state.value}", state.value) for state in NodeState
         ]
 
@@ -82,9 +84,9 @@ class SummarizeSessionStepsTests:
             ],
         )
 
-        result = summarize_session_steps(_record([leaf]), _REDACTOR)
+        steps = summarize_session_steps(_record([leaf]), _REDACTOR)
 
-        assert result.steps == [
+        assert steps == [
             StepRunSummary(
                 kind="step",
                 step_id="flaky",
@@ -113,11 +115,9 @@ class SummarizeSessionStepsTests:
     ) -> None:
         leaf = ExecutionLeafNode(id="waiting", attempts=attempts)
 
-        result = summarize_session_steps(_record([leaf]), _REDACTOR)
+        steps = summarize_session_steps(_record([leaf]), _REDACTOR)
 
-        assert result.steps == [
-            StepRunSummary(kind="step", step_id="waiting", state="pending", attempts=expected_attempts)
-        ]
+        assert steps == [StepRunSummary(kind="step", step_id="waiting", state="pending", attempts=expected_attempts)]
 
     def test_loop_with_multiple_iterations_flattens_in_plan_order(self) -> None:
 
@@ -137,9 +137,9 @@ class SummarizeSessionStepsTests:
             ],
         )
 
-        result = summarize_session_steps(_record([ExecutionLeafNode(id="setup"), loop]), _REDACTOR)
+        steps = summarize_session_steps(_record([ExecutionLeafNode(id="setup"), loop]), _REDACTOR)
 
-        assert [(row.kind, row.step_id, row.loop_id, row.iteration, row.iterations) for row in result.steps] == [
+        assert [(row.kind, row.step_id, row.loop_id, row.iteration, row.iterations) for row in steps] == [
             ("step", "setup", None, None, None),
             ("loop", "build-loop", None, None, 2),
             ("step", "code", "build-loop", 1, None),
@@ -147,7 +147,7 @@ class SummarizeSessionStepsTests:
             ("step", "code", "build-loop", 2, None),
             ("step", "review", "build-loop", 2, None),
         ]
-        loop_row = result.steps[1]
+        loop_row = steps[1]
         assert (loop_row.attempts, loop_row.exit_code, loop_row.duration_seconds, loop_row.error_message) == (
             None,
             None,
@@ -163,33 +163,39 @@ class SummarizeSessionStepsTests:
             attempts=[_attempt(1, exit_code=1, duration_seconds=1.0, error_message="login with pin 1234 failed")],
         )
 
-        result = summarize_session_steps(_record([leaf]), redactor)
+        steps = summarize_session_steps(_record([leaf]), redactor)
 
-        assert result.steps[0].error_message == "login with pin [REDACTED:DB_PIN] failed"
-        dumped = result.model_dump_json()
+        assert steps[0].error_message == "login with pin [REDACTED:DB_PIN] failed"
+        dumped = "".join(step.model_dump_json() for step in steps)
         assert all(text not in dumped for text in ("STDOUT-TEXT", "STDERR-TEXT", "OUTPUT-TEXT", "1234"))
 
-    def test_missing_state_returns_warning_and_no_steps(self) -> None:
-        record = SessionRecord(project_id="proj-a", session_id="s", blueprint_name="bp", blueprint_key="bp")
-
-        result = summarize_session_steps(record, _REDACTOR)
-
-        assert result == SessionStepsResult(steps=[], warnings=[NO_STEP_DATA_WARNING])
-
-    def test_unparseable_state_returns_reason_warning(self) -> None:
+    @pytest.mark.parametrize(
+        ("state_json", "code", "message"),
+        [
+            pytest.param(None, ErrorCode.SESSION_STATE_MISSING, NO_STEP_DATA_WARNING, id="no-state"),
+            pytest.param(
+                "{not json",
+                ErrorCode.SESSION_STATE_CORRUPT,
+                "Step data could not be read: Invalid JSON: key must be a string at line 1 column 2",
+                id="corrupt",
+            ),
+        ],
+    )
+    def test_unreadable_state_raises_engine_error(self, state_json: str | None, code: ErrorCode, message: str) -> None:
+        """Raise EngineError with that error_code and exact message."""
         record = SessionRecord(
             project_id="proj-a",
             session_id="s",
             blueprint_name="bp",
             blueprint_key="bp",
-            execution_state_json="not json",
+            execution_state_json=state_json,
         )
 
-        result = summarize_session_steps(record, _REDACTOR)
+        with pytest.raises(EngineError) as raised:
+            summarize_session_steps(record, _REDACTOR)
 
-        assert result.steps == []
-        assert len(result.warnings) == 1
-        assert result.warnings[0].startswith("Step data could not be read: ")
+        assert raised.value.error_code is code
+        assert raised.value.message == message
 
     def test_summarizing_writes_nothing(self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository) -> None:
         row = seed_failed_session(
@@ -206,10 +212,10 @@ class SummarizeSessionStepsTests:
             return files, sessions_repo.get("failed-session")
 
         before = snapshot()
-        result = summarize_session_steps(row, _REDACTOR)
+        steps = summarize_session_steps(row, _REDACTOR)
 
         assert before[0]
-        assert [(step.step_id, step.state, step.error_message) for step in result.steps] == [
+        assert [(step.step_id, step.state, step.error_message) for step in steps] == [
             ("format", "completed", None),
             ("tests", "failed", SEEDED_FAILURE),
         ]
@@ -230,6 +236,6 @@ class SummarizeSessionStepsRejectedPatchTests:
             id="legacy", state=NodeState.FAILED, attempts=[_attempt(1, exit_code=1, duration_seconds=1.0)]
         )
 
-        result = summarize_session_steps(_record([saved, legacy]), _REDACTOR)
+        steps = summarize_session_steps(_record([saved, legacy]), _REDACTOR)
 
-        assert [(row.step_id, row.rejected_patch_path) for row in result.steps] == [("saved", "P"), ("legacy", None)]
+        assert [(row.step_id, row.rejected_patch_path) for row in steps] == [("saved", "P"), ("legacy", None)]

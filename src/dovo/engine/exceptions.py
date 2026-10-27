@@ -2,38 +2,25 @@
 
 from pathlib import Path
 
+from dovo.common.error_codes import ErrorCode
+from dovo.common.exceptions import DomainError
 from dovo.core.inputs import InputResolveResult
-from dovo.engine.models import EngineResumeStatus
 
 
-class EngineError(Exception):
-    """Base class for engine errors."""
-
-
-class EngineRuntimeError(EngineError):
-    """Raised when Engine cannot start a run."""
+class EngineError(DomainError):
+    """The engine package's business failure: an ErrorCode, a message and remediations."""
 
 
 class EngineInputError(EngineError):
-    """Raised when Engine cannot resolve blueprint inputs."""
+    """Raised when Engine cannot resolve blueprint inputs; message is the user-facing input error."""
 
-    def __init__(self, result: InputResolveResult) -> None:
+    def __init__(self, result: InputResolveResult, message: str) -> None:
         self.result = result
-        if result.errors:
-            message = result.errors[0]
-        elif result.missing:
-            message = f"Missing required input '{result.missing[0]}'."
-        else:
-            message = "Failed to resolve blueprint inputs."
-        super().__init__(message)
+        super().__init__(ErrorCode.BLUEPRINT_INPUT_INVALID, message)
 
 
 class EngineResumeError(EngineError):
     """Raised when Engine cannot start a resume."""
-
-    def __init__(self, status: EngineResumeStatus, message: str) -> None:
-        self.status = status
-        super().__init__(message)
 
 
 class EngineSnapshotMissingError(EngineError):
@@ -41,4 +28,4 @@ class EngineSnapshotMissingError(EngineError):
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        super().__init__(f"Snapshot definition file is missing: '{path}'.")
+        super().__init__(ErrorCode.SESSION_SNAPSHOT_MISSING, f"Snapshot definition file is missing: '{path}'.")

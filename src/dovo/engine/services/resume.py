@@ -6,17 +6,17 @@ from dataclasses import dataclass, field
 
 from dovo.common.clock import Clock
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.session_id import SessionIdFactory
-from dovo.core.agents.models import AgentEnvMode
+from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.catalog import Catalog
 from dovo.core.db import SessionsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.engine.engine import Engine
-from dovo.engine.exceptions import EngineResumeError, EngineRuntimeError
-from dovo.engine.models import BlueprintRunResult, FailurePrompter, InteractionPrompter, RunObserver
-from dovo.engine.services._shared import fail, finalize, load_record, resolve_env_overrides
+from dovo.engine.models import BlueprintRunResult, FailurePrompter, InteractionPrompter, RunObserver, RunOutcome
+from dovo.engine.services._shared import fail, fail_with, finalize, load_record, resolve_env_overrides
 
 
 @dataclass
@@ -40,41 +40,47 @@ class BlueprintResumeService:
     diagnostics: list[DiagnosticRecord] = field(default_factory=list)
 
     def execute(self) -> BlueprintRunResult:
-        """Find session if omitted, classify and resume via Engine."""
+        """Find the session if omitted and resume it via Engine, reporting any failure behind the engine.resume catch.
+
+        Raises:
+            LockTimeoutError: If another process holds the workspace lock.
+        """
         env_overrides, env_error = resolve_env_overrides(self.env_mode, self.env_passthrough)
         if env_error is not None:
             return fail(self.warnings, self.diagnostics, env_error)
 
-        target_session_id, resolve_error = self._resolve_target_session()
-        if resolve_error is not None or not target_session_id:
-            return fail(self.warnings, self.diagnostics, resolve_error or "No paused session found to resume.")
+        with catch_failure("engine.resume", session_id=self.session_id) as caught:
+            target_session_id = self._target_session_id()
+        if caught.failure is not None:
+            return fail_with(self.warnings, self.diagnostics, caught.failure)
+        if target_session_id is None:
+            return fail(self.warnings, self.diagnostics, "No paused session found to resume.")
 
-        catalog = Catalog(self.paths)
-
-        try:
-            run_outcome = Engine(
-                self.paths, db=self.db, catalog=catalog, git=self.git, clock=self.clock, new_id=self.new_id
-            ).resume(
-                target_session_id,
-                observer=self.observer,
-                failure_prompter=self.failure_prompter,
-                interaction_prompter=self.interaction_prompter,
-                answers=self.answers,
-                no_tty=self.no_tty,
-                env_overrides=env_overrides,
-            )
-        except (EngineResumeError, EngineRuntimeError) as exc:
-            return fail(self.warnings, self.diagnostics, str(exc))
+        with catch_failure("engine.resume", session_id=target_session_id) as caught:
+            run_outcome = self._resume(Catalog(self.paths), target_session_id, env_overrides)
+        if caught.failure is not None:
+            return fail_with(self.warnings, self.diagnostics, caught.failure)
 
         return finalize(self.db, self.warnings, self.diagnostics, run_outcome, target_session_id)
 
-    def _resolve_target_session(self) -> tuple[str, str | None]:
-        """Resolve session ID to resume, defaulting to latest paused session."""
-        if not self.session_id:
-            record = self.db.get_latest_paused()
-            if record is None:
-                return "", "No paused session found to resume."
-            return record.session_id, None
+    def _target_session_id(self) -> str | None:
+        """Return session_id after loading its record, or the latest paused session's id, or None when nothing is paused."""
+        if self.session_id:
+            load_record(self.db, self.warnings, self.session_id)
+            return self.session_id
+        record = self.db.get_latest_paused()
+        return record.session_id if record is not None else None
 
-        record = load_record(self.db, self.warnings, self.session_id)
-        return self.session_id, None
+    def _resume(self, catalog: Catalog, session_id: str, env_overrides: AgentEnvOverrides | None) -> RunOutcome:
+        """Resume session_id through Engine and return its outcome."""
+        return Engine(
+            self.paths, db=self.db, catalog=catalog, git=self.git, clock=self.clock, new_id=self.new_id
+        ).resume(
+            session_id,
+            observer=self.observer,
+            failure_prompter=self.failure_prompter,
+            interaction_prompter=self.interaction_prompter,
+            answers=self.answers,
+            no_tty=self.no_tty,
+            env_overrides=env_overrides,
+        )
