@@ -34,7 +34,6 @@ from dovo.engine.writer import (
 )
 from tests.harness.builders import BlueprintBuilder, StepBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
-from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
@@ -138,10 +137,10 @@ class SnapshotDefinitionsTests:
         assert not (session_dir / "definitions").exists()
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
-    def test_snapshot_definitions_unreadable_uses_step_records_cause_in_diagnostics(
+    def test_snapshot_definitions_unreadable_uses_step_warns_without_diagnostic(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """For a uses: step whose indexed file is 0o000, return None, warn with show's read error alone and add show's catalog.show error record to diagnostics."""
+        """For a uses: step whose indexed file is 0o000, return None, warn with show's read error alone, add no diagnostic and write no event file."""
         workspace = tmp_path / "workspace"
         write_runnable_step(workspace, key="locked-step", definition={"id": "locked-step", "run": "echo hi"})
         write_runnable_blueprint(workspace, key="locked-task", steps=[{"id": "s1", "uses": "locked-step"}])
@@ -163,15 +162,12 @@ class SnapshotDefinitionsTests:
             step_file.chmod(0o644)
 
         assert manifest is None
-        event = read_single_event(frozen_diagnostic_clock)
         assert warnings == [
             "Failed to snapshot run definitions: Failed to read file for catalog blueprint 'locked-step': "
-            f"{event['exception_message']}"
+            f"[Errno 13] Permission denied: '{step_file}'"
         ]
-        assert diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
-        assert event["level"] == "error"
-        assert event["operation"] == "catalog.show"
-        assert event["context"] == {"name": "locked-step"}
+        assert diagnostics == []
+        assert frozen_diagnostic_clock.exists() is False
 
 
 class LoadBlueprintFromSnapshotTests:

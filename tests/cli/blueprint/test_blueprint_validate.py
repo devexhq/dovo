@@ -20,6 +20,23 @@ from tests.harness.workspace_paths import initialized_workspace_paths
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
 
+_SEMANTIC_BLUEPRINT: dict[str, object] = {
+    "name": "w",
+    "inputs": {"foo": {"type": "string", "aliases": ["-f"]}, "bar": {"type": "string", "aliases": ["-f"]}},
+    "steps": [
+        {"id": "a", "run": "echo ${{ inputs.ghost }}"},
+        {"id": "a", "type": "script", "script_path": "nope.sh"},
+    ],
+}
+_SEMANTIC_ERRORS: tuple[str, ...] = (
+    "Step id 'a' is used by more than one step.",
+    "Alias '-f' is declared by both 'foo' and 'bar'.",
+)
+_SEMANTIC_WARNINGS: tuple[str, ...] = (
+    "Step 'a' script_path 'nope.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND).",
+    "Placeholder 'inputs.ghost' is not declared in 'inputs:' (CATALOG_UNDECLARED_INPUT_PLACEHOLDER).",
+)
+
 
 class BlueprintValidateCliIntegrationTests:
     """Typer runner integration tests for dovo blueprint validate."""
@@ -133,6 +150,46 @@ class BlueprintValidateCliTests:
             "remediations",
             "diagnostics",
         }
+
+    def test_semantic_errors_and_warnings_json_payload(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        """Exit 1 with the exact payload for a file target with two semantic errors and two warnings."""
+        target = isolated_workspace / "semantic.yml"
+        target.write_text(yaml.safe_dump(_SEMANTIC_BLUEPRINT, sort_keys=False), "utf-8")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "blueprint", "validate", str(target), "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["payload"] == {
+            "error_code": "CATALOG_SCHEMA_INVALID",
+            "errors": list(_SEMANTIC_ERRORS),
+            "warnings": list(_SEMANTIC_WARNINGS),
+            "remediations": [{"message": f"Resolve: {error}", "command": None} for error in _SEMANTIC_ERRORS],
+            "diagnostics": [],
+            "valid": False,
+            "status_label": "FAILED",
+            "target": str(target),
+            "resolved_path": target.as_posix(),
+            "item_type": "blueprint",
+        }
+
+    def test_semantic_errors_and_warnings_render_codes(self, isolated_workspace: Path) -> None:
+        """Exit 1 and show FAILED, the error_code beside each error, each error's remediation and each warning's own code."""
+        target = isolated_workspace / "semantic.yml"
+        target.write_text(yaml.safe_dump(_SEMANTIC_BLUEPRINT, sort_keys=False), "utf-8")
+        wide_runner = CliRunner(env={"NO_COLOR": "1", "COLUMNS": "400"})
+
+        result = wide_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "validate", str(target)])
+
+        assert result.exit_code == 1
+        assert "FAILED" in result.stdout
+        assert result.stdout.count("CATALOG_SCHEMA_INVALID") == len(_SEMANTIC_ERRORS)
+        for error in _SEMANTIC_ERRORS:
+            assert error in result.stdout
+            assert f"Resolve: {error}" in result.stdout
+        assert "CATALOG_SCRIPT_NOT_FOUND" in result.stdout
+        assert "CATALOG_UNDECLARED_INPUT_PLACEHOLDER" in result.stdout
 
     def test_unexpected_definition_error_reports_internal_error_json(
         self,

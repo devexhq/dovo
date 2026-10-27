@@ -12,7 +12,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError, Failure, catch_failure
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.models import Remediation
-from dovo.core.catalog.exceptions import CatalogError
+from dovo.core.catalog.exceptions import CatalogError, CatalogValidateFindings
 from dovo.core.catalog.models import (
     CatalogCreateResult,
     CatalogDeleteResult,
@@ -133,7 +133,7 @@ class Catalog:
         except OSError as exc:
             raise CatalogError(
                 ErrorCode.CATALOG_FILE_UNREADABLE, f"Failed to read file for catalog blueprint '{sha_or_name}': {exc}"
-            ) from exc
+            ) from None
 
         template_matches = [(item.path.as_posix(), content)] if item.tier == CatalogTier.PACKAGED else []
         return CatalogShowResult(item=item, content=content, template_matches=template_matches)
@@ -228,31 +228,32 @@ class Catalog:
 
         A catalog-name target is resolved via ``get()`` among items of item_type only, which re-syncs
         the index first, like every other name-based lookup on this class (see ``sync()``). A file-path
-        target is inspected directly as item_type and never touches the index.
+        target is inspected directly as item_type and never touches the index. Resolution warnings come
+        before the definition's own, on success and failure alike.
         """
+        resolution: tuple[Path, str, str, builtins.list[str]] | None = None
         with catch_failure("catalog.validate", target=target) as caught:
             resolution = self._resolve_validate_target(target, item_type=item_type)
-        if caught.failure is not None:
-            return _target_lookup_failure(target, item_type, caught.failure)
-        with catch_failure("catalog.validate", target=target) as caught:
-            validated = validate_catalog_item(
-                target,
+            resolved_path, item_type_value, key, resolution_warnings = resolution
+            item_warnings = validate_catalog_item(
+                resolved_path,
+                item_type_value,
+                key,
                 repo_root=self.path,
-                resolved=resolution,
                 blueprint_cls=blueprint_cls,
                 step_cls=step_cls,
             )
         if caught.failure is not None:
-            resolved_path, item_type_value, _, warnings = resolution
-            return CatalogValidateResult(
-                valid=False,
-                target=target,
-                resolved_path=resolved_path,
-                item_type=item_type_value,
-                warnings=warnings,
-                **caught.failure.result_fields(),
-            )
-        return validated
+            if resolution is None:
+                return _target_lookup_failure(target, item_type, caught.failure)
+            return _definition_failure(target, resolution, caught.failure)
+        return CatalogValidateResult(
+            valid=True,
+            target=target,
+            resolved_path=resolved_path,
+            item_type=item_type_value,
+            warnings=[*resolution_warnings, *item_warnings],
+        )
 
     def _resolve_validate_target(
         self,
@@ -352,3 +353,18 @@ def _target_lookup_failure(target: str, item_type: CatalogItemType, failure: Fai
             )
         ]
     return CatalogValidateResult(valid=False, target=target, resolved_path=None, item_type=None, warnings=[], **fields)
+
+
+def _definition_failure(
+    target: str, resolution: tuple[Path, str, str, builtins.list[str]], failure: Failure
+) -> CatalogValidateResult:
+    """Build the failed validate result for a resolved target: the failure's fields with every error its findings carry, and the resolution warnings followed by the findings' warnings."""
+    resolved_path, item_type_value, _, warnings = resolution
+    fields = failure.result_fields()
+    findings = failure.data
+    if isinstance(findings, CatalogValidateFindings):
+        fields["errors"] = builtins.list(findings.errors)
+        warnings = [*warnings, *findings.warnings]
+    return CatalogValidateResult(
+        valid=False, target=target, resolved_path=resolved_path, item_type=item_type_value, warnings=warnings, **fields
+    )

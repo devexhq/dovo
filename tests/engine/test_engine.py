@@ -481,7 +481,7 @@ class EngineRunSnapshotsDefinitionsTests:
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With the uses: step file unreadable, return a FAILED outcome whose errors hold 'Failed to snapshot run definitions: <message>' without the line and whose diagnostics hold the catalog.show record."""
+        """With the uses: step file unreadable, return a FAILED outcome whose errors hold 'Failed to snapshot run definitions: <message>', with empty diagnostics and no event file."""
         write_runnable_step(
             engine_paths.root_dir, key="locked-step", definition={"id": "locked-step", "run": "echo hi"}
         )
@@ -500,14 +500,13 @@ class EngineRunSnapshotsDefinitionsTests:
         finally:
             step_file.chmod(0o644)
 
-        event = read_single_event(frozen_diagnostic_clock)
         assert outcome.status == SessionStatus.FAILED
         assert outcome.errors == [
             "Failed to snapshot run definitions: Failed to read file for catalog blueprint 'locked-step': "
-            f"{event['exception_message']}"
+            f"[Errno 13] Permission denied: '{step_file}'"
         ]
-        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
-        assert event["operation"] == "catalog.show"
+        assert outcome.diagnostics == []
+        assert frozen_diagnostic_clock.exists() is False
 
     def test_run_writes_snapshot_files_and_records_manifest_in_state(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun

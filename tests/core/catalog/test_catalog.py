@@ -293,10 +293,10 @@ class CatalogShowTests:
         assert result.ok is False
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
-    def test_show_unreadable_file_records_cause_in_diagnostics(
+    def test_show_unreadable_file_records_no_diagnostic(
         self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return error_code CATALOG_FILE_UNREADABLE, the read error alone and its record in diagnostics, with one error event under operation catalog.show."""
+        """Return error_code CATALOG_FILE_UNREADABLE and the read error alone, with empty diagnostics and no event file."""
         catalog = Catalog(workspace_paths)
         catalog.create(CatalogItemType.BLUEPRINT, "demo")
         # Keep the index written by create, so demo stays indexed after its file becomes unreadable.
@@ -311,14 +311,12 @@ class CatalogShowTests:
         finally:
             blueprint_file.chmod(0o644)
 
-        event = read_single_event(frozen_diagnostic_clock)
         assert result.error_code == ErrorCode.CATALOG_FILE_UNREADABLE
-        assert result.errors == [f"Failed to read file for catalog blueprint 'demo': {event['exception_message']}"]
-        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
-        assert event["level"] == "error"
-        assert event["operation"] == "catalog.show"
-        assert event["context"] == {"name": "demo"}
-        assert event["exception_type"] == "PermissionError"
+        assert result.errors == [
+            f"Failed to read file for catalog blueprint 'demo': [Errno 13] Permission denied: '{blueprint_file}'"
+        ]
+        assert result.diagnostics == []
+        assert frozen_diagnostic_clock.exists() is False
 
 
 class CatalogDeleteTierGuardTests:
