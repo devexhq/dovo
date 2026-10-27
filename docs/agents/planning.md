@@ -67,9 +67,18 @@ The issue's contract is not repeated here; read it on #<n>. This plan covers how
 **Open questions:**
 
 > **OQ-1: <one-line question>**
-> Assumed: **<answer>.** <1-2 sentences: why, and what the other answer changes.> Reply "<word>" to change.
+> - **Assumed:** <answer>. Reply "<word>" for <the other answer>.
+> - **Why:** <one fact per bullet, each with its `path:line`>
+> - **If changed:** <what the other answer changes, and in which phases>
+> - **Challenged (C<n>):** <the challenge's alternative>, because:
+>   - <one bullet per piece of the challenge's evidence and failure, each with its `path:line`>
+> - **Turns on:** <the one fact or preference the choice depends on>
+> - **Recommended:** <assumed | challenged | none>, because <one clause>. Strongest point for the other side: <one clause>.
+> - **Note:** <an issue sentence the choice reverses, a follow-up it needs, or the test that pins it>
 
 <Or "None.">
+
+Write one fact per bullet. **Challenged**, **Turns on** and **Recommended** appear only on a question a challenge or a conflicting review finding raised, and are added when the findings are folded in (see `fold-findings` in `.dovo/catalog/blueprints/feature-dev.yml`). **Note** appears only when there is one.
 
 **Changes to existing behaviour:**
 

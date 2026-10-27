@@ -87,10 +87,24 @@ steps:
         - For every challenge routed "ask", add an open question, or rewrite the one it
           concerns, that keeps the plan's current answer as the assumed answer and lists the
           challenge's alternative under alternatives. End its summary with
-          "(assumed: <plan's answer>; challenged: <alternative>)" and cite the challenge id
-          and its evidence in why.
+          "(assumed: <plan's answer>; challenged: <alternative>; recommended: <assumed |
+          challenged | none>)" and cite the challenge id and its evidence in why.
         - When a challenge contradicts a review finding, fold neither: raise one open question
           that states both positions with their ids.
+        - Write every open question in the bulleted form of the plan template in
+          docs/agents/planning.md, one fact per bullet. On each question a challenge or a
+          conflicting finding raised, add its Challenged, Turns on and Recommended bullets:
+            - Re-read the code at every `path:line` the plan and the challenge cite, and the
+              issue and its comments, before you weigh them. Base the recommendation only on
+              what you confirmed, and drop any evidence that does not hold.
+            - Turns on names the one fact or preference the choice depends on, so the human
+              can dispute the premise rather than the verdict.
+            - Recommend "assumed" or "challenged", or "none" when the choice depends on a
+              preference the code cannot settle. Give the strongest point for the side you
+              do not recommend. The plan being written against its answer is no reason to
+              recommend it.
+            - Add a Note for an issue sentence the choice reverses, a follow-up it needs, or
+              the test that would pin it.
         - Addressing a finding or challenge may make an open question moot, change its assumed
           answer or raise a new one: remove, rewrite or add entries under Open questions to match.
         - Keep .agentic/plan.json in the shape the dovo-plan skill defines
