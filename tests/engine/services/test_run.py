@@ -13,6 +13,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
+from dovo.core.catalog import Catalog
 from dovo.core.catalog.definitions import BlueprintDefinition
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
@@ -339,11 +340,13 @@ class BlueprintRunServiceCatchTests:
     def test_engine_lock_timeout_propagates(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """With reconciliation stubbed to Reconciliation() and the first lock timing out, raise LockTimeoutError("lock held") from execute()."""
+        """With reconciliation stubbed and the catalog indexed up front, time out the engine's run-start lock and raise LockTimeoutError("lock held") from execute()."""
         monkeypatch.setattr(
             "dovo.engine.services.run.reconcile_stale_sessions", lambda sessions_db, *, path: Reconciliation()
         )
         service = _lint_service(engine_paths, sessions_repo)
+        scan = Catalog(engine_paths).sync()
+        monkeypatch.setattr(Catalog, "sync", lambda self: scan)
         time_out_first_lock(monkeypatch)
 
         with pytest.raises(LockTimeoutError, match="lock held"):
