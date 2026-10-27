@@ -112,11 +112,13 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 ## catch_failure operation names
 
 - **Decision:** the `operation` passed to `catch_failure` is `<package>.<entrypoint>`.
-  - The package is written as its folder name, such as `agents`, `sessions` or `diagnostics`, or `engine` for code under `src/dovo/engine/`.
-  - The entrypoint is the method that catches, never a sub-step or another package's call.
-  - Each name is unique per `catch_failure` block.
+  - The package is the calling module's folder name, such as `agents`, `sessions` or `diagnostics`, never its singular: `engine` for code under `src/dovo/engine/`, and `cli` for all of `src/dovo/cli/`, never a command group.
+  - The entrypoint is the one whose result reports the failure, never a sub-step or another package's call: `engine.run` covers loading the blueprint it runs.
+  - A per-step, per-attempt or per-check block behind an entrypoint is the collect-and-continue case of "Caught once": it reports the failure as a step or agent error, a warning or a check result, and it and any `record_exception` for that unit share the unit's name: `engine.step`, `engine.agent_step`, `agents.invoke`, `diagnostics.worktree_refs`.
+  - Each name is unique per block within a module. An entrypoint keeps at most two blocks, and only when one block would change what is reported or recorded: one keeps the entrypoint's name, the other is `<entrypoint>_<input>` after the input it resolves or validates, such as `engine.resume_target`.
+  - A `record_exception` operation spells its package the same way and may name the step that records it, such as `engine.persist`. An unexpected failure's message carries the operation: `Unexpected error during engine.run: <error>`.
 - **Why:** the name is written to every event file, so it must point at the one entrypoint that reported the failure.
-- **Since:** #1106
+- **Since:** #1214
 
 ## Lock timeouts propagate
 

@@ -293,12 +293,12 @@ class InitializeIdentityFailureTests:
         assert result.ok is False
         assert result.failure_mode == InitFailureMode.BOOTSTRAP
         assert result.error_code == ErrorCode.INTERNAL_ERROR
-        assert result.errors == ["Unexpected error during bootstrap.provision_identity: boom"]
+        assert result.errors == ["Unexpected error during bootstrap.initialize: boom"]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         assert result.remediations == [Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")]
         assert result.identity_path == identity_path
         event = read_single_event(frozen_diagnostic_clock)
-        assert event["operation"] == "bootstrap.provision_identity"
+        assert event["operation"] == "bootstrap.initialize"
         assert event["exception_type"] == "TypeError"
 
     def test_overwrite_repair_rerun_orders_identity_warning_first(self, git_repo: Path) -> None:
@@ -433,7 +433,7 @@ class AutoInitializeWorkspaceTests:
         assert result.ok is False
         assert result.failure_mode == InitFailureMode.BOOTSTRAP
         assert result.error_code == ErrorCode.INTERNAL_ERROR
-        assert result.errors[0].startswith("Unexpected error during bootstrap.provision_identity: boom")
+        assert result.errors[0].startswith("Unexpected error during bootstrap.initialize: boom")
         assert not (git_repo / ".dovo").exists()
 
     def test_auto_initialize_workspace_raised_failure_removes_new_dovo_dir_and_reraises(

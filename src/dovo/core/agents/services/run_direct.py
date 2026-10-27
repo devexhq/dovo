@@ -99,7 +99,7 @@ def _recorded_provider_error(exc: Exception, request: AgentRequest, provider: st
     record = record_exception(
         exc,
         level=DiagnosticLevel.ERROR,
-        operation="agent.run",
+        operation="agents.run",
         context={"provider": provider, "path": str(request.worktree_path)},
     )
     return AgentAttempt(

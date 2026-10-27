@@ -40,7 +40,7 @@ class BlueprintResumeService:
     diagnostics: list[DiagnosticRecord] = field(default_factory=list)
 
     def execute(self) -> BlueprintRunResult:
-        """Find the session if omitted and resume it via Engine, reporting any failure behind the engine.resume catch.
+        """Find the session if omitted and resume it via Engine, reporting any failure behind the engine.resume_target or engine.resume catch.
 
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
@@ -49,7 +49,7 @@ class BlueprintResumeService:
         if env_error is not None:
             return fail(self.warnings, self.diagnostics, env_error)
 
-        with catch_failure("engine.resume", session_id=self.session_id) as caught:
+        with catch_failure("engine.resume_target", session_id=self.session_id) as caught:
             target_session_id = self._target_session_id()
         if caught.failure is not None:
             return BlueprintRunResult(

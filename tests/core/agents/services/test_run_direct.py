@@ -156,7 +156,7 @@ class RunDirectAttemptRequestTests:
     def test_provider_exception_returns_provider_error_attempt(
         self, git_repo: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return provider_error with errors == ["Agent provider error: boom"] and diagnostics == [the agent.run record]."""
+        """Return provider_error with errors == ["Agent provider error: boom"] and diagnostics == [the agents.run record]."""
 
         class _Exploding(BaseAgentProvider):
             def _invoke(self, request: AgentRequest) -> AgentResponse:
@@ -172,7 +172,7 @@ class RunDirectAttemptRequestTests:
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"], event["context"]) == (
             "error",
-            "agent.run",
+            "agents.run",
             {"provider": "copilot", "path": str(git_repo)},
         )
 
@@ -184,7 +184,7 @@ class RunDirectAttemptRequestTests:
         monkeypatch: pytest.MonkeyPatch,
         error_type: type[Exception],
     ) -> None:
-        """Return provider_error with errors == ["Agent provider error: build failed"] and diagnostics == [the agent.run record] when the spec's build raises."""
+        """Return provider_error with errors == ["Agent provider error: build failed"] and diagnostics == [the agents.run record] when the spec's build raises."""
 
         def _build_failed() -> BaseAgentProvider:
             raise error_type("build failed")
@@ -197,7 +197,7 @@ class RunDirectAttemptRequestTests:
         assert attempt.errors == ["Agent provider error: build failed"]
         assert attempt.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
-        assert (event["level"], event["operation"]) == ("error", "agent.run")
+        assert (event["level"], event["operation"]) == ("error", "agents.run")
 
 
 class RunDirectToolsTests:
@@ -258,14 +258,14 @@ class RunDirectAttemptSettleTests:
         record = diagnostic_record(frozen_diagnostic_clock)
         response = AgentResponse(
             status=AgentResponseStatus.PROVIDER_ERROR,
-            errors=["Unexpected error during agent.validate_patch: boom"],
+            errors=["Unexpected error during agents.invoke: boom"],
             diagnostics=[record],
         )
         _use_provider(monkeypatch, FakeAgentProvider(response))
 
         attempt = _attempt(git_repo)
 
-        assert attempt.errors == ["Unexpected error during agent.validate_patch: boom"]
+        assert attempt.errors == ["Unexpected error during agents.invoke: boom"]
         assert attempt.diagnostics == [record]
 
 

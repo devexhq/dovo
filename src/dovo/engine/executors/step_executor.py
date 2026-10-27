@@ -209,7 +209,7 @@ class StepExecution:
         """Resolve a uses/run step, catching a uses step's catalog load once, or return the step error and add its record to the diagnostics list."""
         if self.step.uses is None:
             return self._resolve_step()
-        with catch_failure("catalog.load_definition", step=self.step.uses) as caught:
+        with catch_failure("engine.step", step=self.step.uses) as caught:
             resolved = self._resolve_step()
         if caught.failure is None:
             return resolved

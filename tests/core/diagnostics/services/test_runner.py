@@ -233,7 +233,7 @@ class DiagnosticRunnerContainmentTests:
     def test_crashing_check_records_error_in_diagnostics(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory, frozen_diagnostic_clock: Path
     ) -> None:
-        """Keep message and errors[0] without a line, carry the record in diagnostics and write one doctor.check error record naming the check."""
+        """Keep message and errors[0] without a line, carry the record in diagnostics and write one diagnostics.check error record naming the check."""
         check = StubCheck(check_id="crashing.check", crash=RuntimeError("boom"))
         context = DiagnosticsContext(
             cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
@@ -247,7 +247,7 @@ class DiagnosticRunnerContainmentTests:
         assert result.details == {"exception": "boom", "type": "RuntimeError"}
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "error"
-        assert event["operation"] == "doctor.check"
+        assert event["operation"] == "diagnostics.check"
         assert event["context"] == {"check": "crashing.check", "path": str(tmp_path)}
 
     def test_crashing_check_unchanged_when_recorder_cannot_write(

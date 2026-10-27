@@ -39,7 +39,7 @@ class Diagnostics:
                 record_exception(
                     exc,
                     level=DiagnosticLevel.DEBUG,
-                    operation="doctor.check",
+                    operation="diagnostics.check",
                     context={"path": str(self.paths.root_dir)},
                 )
                 active_config = None

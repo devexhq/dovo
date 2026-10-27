@@ -635,9 +635,9 @@ class SessionRunnerDiagnosticLogTests:
                 raise RuntimeError("boom")
 
             monkeypatch.setattr("dovo.engine.executors.agent_step.allocate_invocation_paths", _boom)
-            expected_error = "Unexpected error during engine.step: boom"
+            expected_error = "Unexpected error during engine.agent_step: boom"
         else:
-            expected_error = "Unexpected error during agent.validate_patch: boom"
+            expected_error = "Unexpected error during agents.invoke: boom"
         provider = FakeAgentProvider(
             AgentResponse(status=AgentResponseStatus.PROVIDER_ERROR, errors=[expected_error], diagnostics=[record])
         )

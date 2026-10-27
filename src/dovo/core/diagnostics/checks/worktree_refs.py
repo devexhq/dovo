@@ -26,7 +26,7 @@ class WorktreeRefsCheck:
             return _ok_result(self.check_id, self.name, self.category, verified_count=0, diagnostics=[])
 
         db = WorktreesRepository(db_path=db_path, project_id=context.paths.project_id, auto_init=False)
-        with catch_failure("worktree.detect", path=str(context.paths.root_dir)) as caught:
+        with catch_failure("diagnostics.worktree_refs", path=str(context.paths.root_dir)) as caught:
             detection = detect_stale_worktrees(context.paths, db, git=context.git)
         if caught.failure is not None:
             return _detection_unavailable_result(self.check_id, self.name, self.category, caught.failure)

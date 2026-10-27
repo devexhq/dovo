@@ -191,7 +191,7 @@ class InitCliIntegrationTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["failure_mode"] == "bootstrap"
-        assert payload["errors"] == ["Unexpected error during bootstrap.provision_identity: boom"]
+        assert payload["errors"] == ["Unexpected error during bootstrap.initialize: boom"]
         assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]
         assert "Traceback" not in result.stdout
 

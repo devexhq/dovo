@@ -137,14 +137,14 @@ class BlueprintRunServiceExecuteTests:
 
 
 class BlueprintRunServiceLoadTests:
-    def test_unexpected_definition_error_is_recorded_under_load_definition(
+    def test_unexpected_definition_error_is_recorded_under_engine_run(
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With BlueprintDefinition.from_document raising TypeError("bad"), return INTERNAL_ERROR with the message alone and its record in diagnostics, one catalog.load_definition event naming the blueprint, and no session row."""
+        """With BlueprintDefinition.from_document raising TypeError("bad"), return INTERNAL_ERROR with the message alone and its record in diagnostics, one engine.run event naming the blueprint, and no session row."""
         write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
 
         def _explode(cls: type[BlueprintDefinition], raw: dict[str, object], *, key: str) -> BlueprintDefinition:
@@ -163,12 +163,59 @@ class BlueprintRunServiceLoadTests:
 
         assert result.session_record is None
         assert result.error_code == ErrorCode.INTERNAL_ERROR
-        assert result.errors == ["Unexpected error during catalog.load_definition: bad"]
+        assert result.errors == ["Unexpected error during engine.run: bad"]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
-        assert event["operation"] == "catalog.load_definition"
+        assert event["operation"] == "engine.run"
         assert event["context"] == {"blueprint": "lint"}
         assert event["exception_type"] == "TypeError"
+        assert sessions_repo.list() == []
+
+    def test_load_domain_failure_keeps_prior_records_and_writes_no_event(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With reconciliation returning a record and an unknown blueprint, return CATALOG_NOT_FOUND with diagnostics == [the reconciliation record], write no event file and add no session row."""
+        prior = DiagnosticRecord(
+            event_id="exc_000000000001", log_path=Path("/logs/exc_000000000001.json"), level=DiagnosticLevel.ERROR
+        )
+        monkeypatch.setattr(
+            "dovo.engine.services.run.reconcile_stale_sessions",
+            lambda sessions_db, *, path: Reconciliation(diagnostic=prior),
+        )
+
+        result = BlueprintRunService(
+            name="nope",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        ).execute()
+
+        assert result.error_code == ErrorCode.CATALOG_NOT_FOUND
+        assert result.errors == ["Catalog item 'nope' not found."]
+        assert result.diagnostics == [prior]
+        assert not frozen_diagnostic_clock.parent.exists()
+        assert sessions_repo.list() == []
+
+    def test_load_lock_timeout_propagates(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With reconciliation stubbed and the catalog index's lock timing out while the blueprint loads, raise LockTimeoutError("lock held") and add no session row."""
+        monkeypatch.setattr(
+            "dovo.engine.services.run.reconcile_stale_sessions", lambda sessions_db, *, path: Reconciliation()
+        )
+        service = _lint_service(engine_paths, sessions_repo)
+        time_out_first_lock(monkeypatch)
+
+        with pytest.raises(LockTimeoutError, match="lock held"):
+            service.execute()
+
+        monkeypatch.undo()
         assert sessions_repo.list() == []
 
     def test_reconciliation_record_precedes_catalog_record(
@@ -210,12 +257,12 @@ class BlueprintRunServiceLoadTests:
             ),
         ]
         assert result.warnings == []
-        assert result.errors == ["Unexpected error during catalog.load_definition: bad"]
+        assert result.errors == ["Unexpected error during engine.run: bad"]
         operations = [
             json.loads((day_dir / f"{event_id}.json").read_text(encoding="utf-8"))["operation"]
             for event_id in ("exc_aaaaaaaaaaaa", "exc_bbbbbbbbbbbb")
         ]
-        assert operations == ["session.reconcile", "catalog.load_definition"]
+        assert operations == ["sessions.reconcile", "engine.run"]
 
     def test_execute_missing_required_input_returns_blueprint_input_invalid(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, frozen_diagnostic_clock: Path

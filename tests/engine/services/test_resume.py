@@ -234,7 +234,7 @@ class BlueprintResumeServiceCatchTests:
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With no session id and get_latest_paused raising TypeError("boom"), return INTERNAL_ERROR and one engine.resume event."""
+        """With no session id and get_latest_paused raising TypeError("boom"), return INTERNAL_ERROR and one engine.resume_target event."""
 
         def _boom(self: SessionsRepository) -> SessionRecord | None:
             raise TypeError("boom")
@@ -246,8 +246,8 @@ class BlueprintResumeServiceCatchTests:
         ).execute()
 
         assert result.error_code == ErrorCode.INTERNAL_ERROR
-        assert result.errors == ["Unexpected error during engine.resume: boom"]
-        assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.resume"
+        assert result.errors == ["Unexpected error during engine.resume_target: boom"]
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.resume_target"
 
     def test_lock_timeout_propagates(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch

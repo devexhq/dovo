@@ -353,7 +353,7 @@ class ExecuteAgentStepOutputTests:
     def test_callback_failure_fails_attempt_and_drops_success_classification(
         self, git_repo: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Fail with "Agent output callback error: <exc>" and set outcome.diagnostics == [the engine.step record]."""
+        """Fail with "Agent output callback error: <exc>" and set outcome.diagnostics == [the engine.agent_step record]."""
         _use_provider(monkeypatch, FakeAgentProvider(_patch("a.txt")))
         step = _step()
 
@@ -371,7 +371,7 @@ class ExecuteAgentStepOutputTests:
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"], event["context"]) == (
             "error",
-            "engine.step",
+            "engine.agent_step",
             {"session_id": None, "step_id": step.id, "path": str(git_repo)},
         )
 
@@ -458,7 +458,7 @@ class ExecuteAgentStepScratchTests:
             "- Restore access to the session temp directory or correct its storage path.",
         ]
         assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
-        assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.step"
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.agent_step"
         assert requested == []
         assert (git_repo / "README.md").read_bytes() == readme_before
         assert not (git_repo / "a.txt").exists()

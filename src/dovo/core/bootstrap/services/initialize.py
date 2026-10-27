@@ -120,7 +120,7 @@ def _provision_identity(
     """Validate --id, then provision the identity, each in its own catch_failure block; return the identity or the init failure."""
     identity_path = dovo_dir / "project.json"
     if project_id is not None:
-        with catch_failure("bootstrap.validate_project_id", path=str(identity_path)) as caught:
+        with catch_failure("bootstrap.initialize_project_id", path=str(identity_path)) as caught:
             validate_project_id(project_id)
         if caught.failure is not None:
             return WorkspaceInitResult(
@@ -130,7 +130,7 @@ def _provision_identity(
                 **caught.failure.result_fields(),
             )
 
-    with catch_failure("bootstrap.provision_identity", path=str(identity_path)) as caught:
+    with catch_failure("bootstrap.initialize", path=str(identity_path)) as caught:
         provisioned = provision_project_identity(
             dovo_dir, project_id=project_id, display_name=display_name, force=force
         )
