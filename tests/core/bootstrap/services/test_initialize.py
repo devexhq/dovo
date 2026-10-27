@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
@@ -215,11 +214,6 @@ def _fail_identity_io(monkeypatch: pytest.MonkeyPatch, repo: Path, failure: str)
             real_write(path, data, mode=mode)
 
         monkeypatch.setattr("dovo.core.project.services.identity.Filesystem.atomic_write_json", _full_disk)
-    elif failure == "locked":
-        monkeypatch.setattr(
-            "dovo.core.project.services.identity.WorkspaceLock.__enter__",
-            MagicMock(side_effect=LockTimeoutError("lock held")),
-        )
     else:
 
         def _boom(*_args: object, **_kwargs: object) -> None:
@@ -236,9 +230,7 @@ def _expected_identity_message(identity_path: Path, failure: str) -> str:
         return f"Project identity at '{identity_path}' is invalid: {validation.value}."
     if failure == "unreadable":
         return f"Unable to read project identity at '{identity_path}': denied."
-    if failure == "write_failed":
-        return f"Unable to write project identity at '{identity_path}': disk full."
-    return f"Unable to acquire project identity lock at '{identity_path}': lock held."
+    return f"Unable to write project identity at '{identity_path}': disk full."
 
 
 class InitializeIdentityFailureTests:
@@ -250,7 +242,6 @@ class InitializeIdentityFailureTests:
             pytest.param("invalid_schema", ErrorCode.PROJECT_IDENTITY_SCHEMA_INVALID, False, id="invalid_schema"),
             pytest.param("unreadable", ErrorCode.PROJECT_IDENTITY_UNREADABLE, True, id="unreadable"),
             pytest.param("write_failed", ErrorCode.PROJECT_IDENTITY_WRITE_FAILED, True, id="write_failed"),
-            pytest.param("locked", ErrorCode.PROJECT_IDENTITY_LOCKED, False, id="locked"),
         ],
     )
     def test_identity_domain_failure_is_reported_as_bootstrap(
@@ -320,15 +311,16 @@ class InitializeIdentityFailureTests:
 class InitializeIdentityLockTimeoutTests:
     """Contract tests for a workspace lock timeout while provisioning the project identity."""
 
-    def test_initialize_workspace_identity_lock_timeout_keeps_bootstrap_tree(
+    def test_initialize_workspace_identity_lock_timeout_propagates_and_keeps_bootstrap_tree(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return the identity failure and leave the bootstrapped .dovo/ in place with no project.json or config.json."""
+        """Raise LockTimeoutError("lock held") unchanged, leave <DOVO_HOME>/logs absent, and keep the bootstrapped .dovo/ with no project.json or config.json."""
         monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
-        result = initialize_workspace(git_repo)
+        with pytest.raises(LockTimeoutError, match=r"^lock held$"):
+            initialize_workspace(git_repo)
 
-        assert result.ok is False
+        assert not resolve_global_paths().logs_dir.exists()
         dovo_dir = git_repo / ".dovo"
         assert (dovo_dir / ".gitignore").is_file()
         assert (dovo_dir / BOOTSTRAP_META_REL).is_file()
@@ -338,16 +330,17 @@ class InitializeIdentityLockTimeoutTests:
     def test_auto_initialize_workspace_identity_lock_timeout_restores_preexisting_dovo_dir(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return the identity failure and restore a pre-existing .dovo/ byte for byte."""
+        """Re-raise LockTimeoutError("lock held") with no note and restore a pre-existing .dovo/ byte for byte."""
         dovo_dir = git_repo / ".dovo"
         dovo_dir.mkdir()
         (dovo_dir / "notes.txt").write_text("mine\n", encoding="utf-8")
         before = _tree_bytes(dovo_dir)
         monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
-        result = auto_initialize_workspace(git_repo)
+        with pytest.raises(LockTimeoutError, match=r"^lock held$") as raised:
+            auto_initialize_workspace(git_repo)
 
-        assert result.ok is False
+        assert getattr(raised.value, "__notes__", []) == []
         assert _tree_bytes(dovo_dir) == before
 
 

@@ -14,10 +14,12 @@ from dovo.cli import app
 from dovo.common.constants import DOVO_GITIGNORE_TRACKED_ENTRIES
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.core.bootstrap.models import BootstrapOutcome
 from dovo.core.project.models import PROJECT_ID_REGEX, ProjectIdentity
 from tests.harness.builders import init_git_repository
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
+from tests.harness.lock import raise_lock_timeout
 
 
 def _dovo_dir(workspace: Path) -> Path:
@@ -194,6 +196,29 @@ class InitCliIntegrationTests:
         assert payload["errors"] == ["Unexpected error during bootstrap.initialize: boom"]
         assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]
         assert "Traceback" not in result.stdout
+
+    @pytest.mark.parametrize(
+        "format_args", [pytest.param([], id="terminal"), pytest.param(["--format", "json"], id="json")]
+    )
+    def test_init_cli_identity_lock_timeout_raises_and_dispatches_no_result(
+        self,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        dispatch_spy: list[object],
+        format_args: list[str],
+    ) -> None:
+        """Exit 1 with result.exception the LockTimeoutError, no WorkspaceInitResult dispatched, and no project.json."""
+        init_git_repository(tmp_path)
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        result = cli_runner.invoke(app, ["-p", str(tmp_path), "init", *format_args])
+
+        assert result.exit_code == 1
+        assert isinstance(result.exception, LockTimeoutError)
+        assert str(result.exception) == "lock held"
+        assert dispatch_spy == []
+        assert not (_dovo_dir(tmp_path) / "project.json").exists()
 
     def test_init_cli_overwrite_repair_rerun_orders_warnings(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         """Exit 0 for a second `init --overwrite --repair --format json` with the preserve warning first."""

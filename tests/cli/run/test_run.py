@@ -14,6 +14,7 @@ from dovo.cli import app
 from dovo.cli.ui.dispatcher import UiDispatcher, ui_dispatcher
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.models import OutputFormatOptions
 from dovo.core.bootstrap import InitFailureMode, WorkspaceInitResult
 from dovo.core.catalog.blueprint import Blueprint
@@ -30,6 +31,7 @@ from tests.harness.builders import init_git_repository
 from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.diagnostic_log import details_line, unwrapped
 from tests.harness.fakes import fixed_clock, fixed_new_id
+from tests.harness.lock import raise_lock_timeout
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -529,6 +531,20 @@ class RunCliAutoInitTests:
         assert isinstance(init_result, WorkspaceInitResult)
         assert init_result.errors == ["boom"]
         assert init_result.failure_mode is None
+        assert not (git_repo / ".dovo").exists()
+
+    def test_run_cli_identity_lock_timeout_during_auto_init_raises_and_rolls_back(
+        self, cli_runner: CliRunner, git_repo: Path, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
+    ) -> None:
+        """Exit 1 with result.exception the LockTimeoutError, nothing dispatched, and the new .dovo/ removed."""
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        result = cli_runner.invoke(app, ["-p", str(git_repo), "run", "tests"])
+
+        assert result.exit_code == 1
+        assert isinstance(result.exception, LockTimeoutError)
+        assert str(result.exception) == "lock held"
+        assert dispatch_spy == []
         assert not (git_repo / ".dovo").exists()
 
     def test_run_cli_initialized_workspace_does_not_attempt_initialization(

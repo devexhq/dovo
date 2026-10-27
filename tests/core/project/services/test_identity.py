@@ -4,14 +4,13 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from freezegun import freeze_time
 from pydantic import ValidationError
 
 from dovo.common.error_codes import ErrorCode
-from dovo.common.lock import LockTimeoutError
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.models import Remediation
 from dovo.core.project.exceptions import ProjectIdentityError
 from dovo.core.project.models import PROJECT_ID_REGEX, ProjectIdentity, ProjectIdentityOutcome
@@ -23,6 +22,7 @@ from dovo.core.project.services.identity import (
     save_project_identity,
     validate_project_id,
 )
+from tests.harness.lock import raise_lock_timeout
 
 UTC_TIMESTAMP = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
@@ -133,22 +133,17 @@ class ProjectIdentityServiceTests:
         assert contents.endswith("\n")
         assert not (tmp_path / "project.json.tmp").exists()
 
-    def test_save_project_identity_lock_timeout_raises_locked_and_writes_nothing(self, tmp_path: Path) -> None:
+    def test_save_project_identity_lock_timeout_propagates_and_writes_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Raise the LockTimeoutError("lock held") unchanged and leave project.json absent."""
         path = tmp_path / "project.json"
         identity = ProjectIdentity(id="project-624", display_name="Project 624", created_at=UTC_TIMESTAMP)
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
-        with (
-            patch(
-                "dovo.core.project.services.identity.WorkspaceLock.__enter__",
-                side_effect=LockTimeoutError("lock held."),
-            ),
-            pytest.raises(ProjectIdentityError) as raised,
-        ):
+        with pytest.raises(LockTimeoutError, match=r"^lock held$"):
             save_project_identity(path, identity)
 
-        assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_LOCKED
-        assert raised.value.message == (f"Unable to acquire project identity lock at '{path}': lock held.")
-        assert raised.value.remediations == ()
         assert not path.exists()
 
     def test_save_project_identity_write_oserror_raises_write_failed_from_cause(

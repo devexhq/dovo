@@ -55,7 +55,7 @@ def audit(errors_out, detail, result):
 
 _ERRORS_ASSIGN_FIXTURE: Final[str] = """
 def audit(detail):
-    errors: list[str] = [f"Locked (PROJECT_IDENTITY_LOCKED): {detail}"]
+    errors: list[str] = [f"Unreadable (PROJECT_IDENTITY_UNREADABLE): {detail}"]
     errors += [f"Missing (CONFIG_NOT_FOUND): {detail}"]
     return errors
 """
@@ -181,7 +181,7 @@ class ErrorMessageTokenTests:
             ),
             pytest.param(
                 _ERRORS_ASSIGN_FIXTURE,
-                ["src/dovo/fixture.py:3: (PROJECT_IDENTITY_LOCKED)", "src/dovo/fixture.py:4: (CONFIG_NOT_FOUND)"],
+                ["src/dovo/fixture.py:3: (PROJECT_IDENTITY_UNREADABLE)", "src/dovo/fixture.py:4: (CONFIG_NOT_FOUND)"],
                 id="annotated-and-augmented-assignment",
             ),
             pytest.param(
