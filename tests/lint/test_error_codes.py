@@ -2,12 +2,18 @@
 the packages its prefix names or the packages listed as sharing it.
 
 Scope: the name check reads the real `ErrorCode` enum. The reference check collects every `ErrorCode.<NAME>` attribute
-in src/dovo outside `common/error_codes.py`. The raising check reads every call in src/dovo whose first positional
-argument, or whose `error_code=` keyword, is an `ErrorCode.<NAME>` attribute, and maps its file to a package with
-`package_of`. Not detected: a code passed through a variable (`WorktreeError(exc.error_code, ...)`, the intended
+in src/dovo outside `common/error_codes.py`. The raising check reads every call in src/dovo to a failure constructor
+whose first positional argument, or whose `error_code=` keyword, is an `ErrorCode.<NAME>` attribute, and maps its file
+to a package with `package_of`. A failure constructor is a callee whose simple name ends in `Error`, `_error` or
+`Result`, or is `Failure` (`WorktreeError(...)`, `git_command_error(...)`, `CatalogValidateResult(...)`); any other
+call taking a code, such as `_LABELS.get(ErrorCode.X)`, is a lookup, not a raise.
+
+Not detected, and left to review: a code passed through a variable (`WorktreeError(exc.error_code, ...)`, the intended
 pass-through of a wrapped failure), a code built from a string, a code that is neither a call's first argument nor its
-`error_code=` value (`error_code=ErrorCode.X if errors else None`), and whether a listed sharer raises a shared code
-for that package's own failure, which stays a review question.
+`error_code=` value (`error_code=ErrorCode.X if errors else None`), a code raised through a callee named otherwise,
+an `ErrorCode` imported under an alias (`from dovo.common.error_codes import ErrorCode as EC`), whether a `_FAILED`
+name uses the verb's base form (`WORKTREE_CREATION_FAILED` would pass the name check), and whether a listed sharer
+raises a shared code for that package's own failure.
 """
 
 from __future__ import annotations
@@ -90,6 +96,13 @@ def check(completed):
     return Failure(error_code=ErrorCode.AGENT_SCRATCH_UNAVAILABLE, message="no scratch")
 """
 
+_LOOKUP_FIXTURE: Final[str] = """
+def label(status):
+    if status is None:
+        return _LABELS.get(ErrorCode.WORKTREE_MISSING)
+    return describe(ErrorCode.GIT_FAILED, error_code=ErrorCode.SESSION_NOT_FOUND)
+"""
+
 
 def _name_violation(name: str, value: str) -> str | None:
     """Return the reason name breaks the naming pattern, or None when it follows it."""
@@ -118,8 +131,17 @@ def _code_name(node: ast.expr) -> str | None:
     return None
 
 
+def _is_failure_constructor(call: ast.Call) -> bool:
+    """Return whether call's callee is named like a failure constructor: *Error, *_error, *Result or Failure."""
+    func = call.func
+    name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
+    return name == "Failure" or name.endswith(("Error", "_error", "Result"))
+
+
 def _literal_codes(call: ast.Call) -> Iterator[str]:
-    """Yield the ErrorCode member names call passes as its first argument or as error_code=."""
+    """Yield the ErrorCode member names a failure constructor call passes as its first argument or as error_code=."""
+    if not _is_failure_constructor(call):
+        return
     candidates = [*call.args[:1], *(keyword.value for keyword in call.keywords if keyword.arg == "error_code")]
     for candidate in candidates:
         name = _code_name(candidate)
@@ -245,6 +267,7 @@ class ErrorCodeRaiserTests:
                 ],
                 id="unlisted-sharer",
             ),
+            pytest.param("src/dovo/cli/ui/formatters/labels.py", _LOOKUP_FIXTURE, [], id="lookup-not-raise"),
         ],
     )
     def test_rule_flags_foreign_literal_raises(self, rel_path: str, source: str, expected: list[str]) -> None:
