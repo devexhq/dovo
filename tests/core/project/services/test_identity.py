@@ -140,7 +140,7 @@ class ProjectIdentityServiceTests:
         with (
             patch(
                 "dovo.core.project.services.identity.WorkspaceLock.__enter__",
-                side_effect=LockTimeoutError("lock held"),
+                side_effect=LockTimeoutError("lock held."),
             ),
             pytest.raises(ProjectIdentityError) as raised,
         ):
