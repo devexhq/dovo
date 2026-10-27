@@ -385,36 +385,44 @@ def create_catalog_item(
         return record
 
 
-def delete_catalog_item_by_sha_or_name(sha_or_name: str, paths: WorkspacePaths) -> CatalogRecord:
-    """Delete a REPO-tier catalog file and reindex, returning the deleted record.
+def resolve_deletable_catalog_item(sha_or_name: str, paths: WorkspacePaths) -> CatalogRecord:
+    """Re-sync every tier and return the REPO-tier record a delete of sha_or_name would remove.
 
     Raises:
         CatalogError: CATALOG_NOT_FOUND when nothing matches sha_or_name,
             CATALOG_TIER_DELETE_FORBIDDEN if the resolved match is not indexed at the REPO tier,
             CATALOG_PROTECTED if attempting to delete a template in the protected 'dovo/' namespace,
-            CATALOG_WRITE_FAILED if removing the file or reindexing fails.
+            CATALOG_WRITE_FAILED if an index cannot be written while re-syncing.
     """
     if sha_or_name.startswith("dovo/"):
         raise CatalogError(ErrorCode.CATALOG_PROTECTED, f"Cannot delete bundled catalog template '{sha_or_name}'.")
 
-    catalog_dir = paths.catalog_dir
+    scan_and_index_catalog(paths)
+    matches = find_catalog_record_matches(sha_or_name, None, paths)
+    if not matches:
+        raise CatalogError(ErrorCode.CATALOG_NOT_FOUND, f"Catalog blueprint '{sha_or_name}' not found.")
+
+    item = matches[0]
+    if item.tier != CatalogTier.REPO:
+        raise CatalogError(
+            ErrorCode.CATALOG_TIER_DELETE_FORBIDDEN,
+            f"Catalog item '{item.key}' resolved from tier '{item.tier.value}'; only repo-tier items can be deleted.",
+        )
+
+    if item.namespace == "dovo":
+        raise CatalogError(ErrorCode.CATALOG_PROTECTED, f"Cannot delete bundled catalog template '{item.key}'.")
+    return item
+
+
+def delete_catalog_item(item: CatalogRecord, paths: WorkspacePaths) -> None:
+    """Remove a resolved REPO-tier item's file and reindex the REPO tier under the workspace lock.
+
+    Raises:
+        CatalogError: CATALOG_WRITE_FAILED if removing the file or reindexing fails.
+        LockTimeoutError: If another process holds the workspace lock.
+    """
+    file_path = paths.catalog_dir / item.path
     with WorkspaceLock(paths.lock_file):
-        scan_and_index_catalog(paths)
-        matches = find_catalog_record_matches(sha_or_name, None, paths)
-        if not matches:
-            raise CatalogError(ErrorCode.CATALOG_NOT_FOUND, f"Catalog blueprint '{sha_or_name}' not found.")
-
-        item = matches[0]
-        if item.tier != CatalogTier.REPO:
-            raise CatalogError(
-                ErrorCode.CATALOG_TIER_DELETE_FORBIDDEN,
-                f"Catalog item '{item.key}' resolved from tier '{item.tier.value}'; only repo-tier items can be deleted.",
-            )
-
-        if item.namespace == "dovo":
-            raise CatalogError(ErrorCode.CATALOG_PROTECTED, f"Cannot delete bundled catalog template '{item.key}'.")
-
-        file_path = catalog_dir / item.path
         try:
             delete_file(file_path)
         except OSError as exc:
@@ -423,4 +431,3 @@ def delete_catalog_item_by_sha_or_name(sha_or_name: str, paths: WorkspacePaths) 
             ) from exc
 
         scan_and_index_tier(CatalogTier.REPO, paths)
-        return item

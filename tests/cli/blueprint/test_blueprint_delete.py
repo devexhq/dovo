@@ -188,29 +188,23 @@ class BlueprintDeleteCliTests:
         }
         assert not (isolated_workspace / ".dovo" / "catalog" / "blueprints" / "gone-blueprint.yml").exists()
 
-    def test_unknown_name_accepted_prompts_then_fails_json(
-        self, cli_runner: CliRunner, isolated_workspace: Path
+    @pytest.mark.parametrize(
+        "invoke_input",
+        [pytest.param("y\n", id="yes"), pytest.param("n\n", id="no"), pytest.param(None, id="unanswered")],
+    )
+    def test_unknown_name_fails_without_prompt_json(
+        self, cli_runner: CliRunner, isolated_workspace: Path, invoke_input: str | None
     ) -> None:
-        """Exit 1 with CATALOG_NOT_FOUND after prompting for an unknown name when stdin answers 'y'."""
+        """Exit 1 with the CATALOG_NOT_FOUND JSON and no prompt for an unknown name, whatever stdin holds."""
         result = cli_runner.invoke(
-            app, ["-p", str(isolated_workspace), "blueprint", "delete", "ghost", "--format", "json"], input="y\n"
+            app,
+            ["-p", str(isolated_workspace), "blueprint", "delete", "ghost", "--format", "json"],
+            input=invoke_input,
         )
 
         assert result.exit_code == 1
-        assert _PROMPT.format(name="ghost") in result.stdout
+        assert _PROMPT.format(name="ghost") not in result.stdout
         assert _payload(result.stdout) == _NOT_FOUND_PAYLOAD
-
-    def test_unknown_name_declined_returns_cancelled_json(
-        self, cli_runner: CliRunner, isolated_workspace: Path
-    ) -> None:
-        """Exit 0 with the declined-delete JSON after prompting for an unknown name when stdin answers 'n'."""
-        result = cli_runner.invoke(
-            app, ["-p", str(isolated_workspace), "blueprint", "delete", "ghost", "--format", "json"], input="n\n"
-        )
-
-        assert result.exit_code == 0
-        assert _PROMPT.format(name="ghost") in result.stdout
-        assert _payload(result.stdout) == _CANCELLED_PAYLOAD
 
     @pytest.mark.parametrize(
         ("name", "error_code", "error"),
@@ -229,10 +223,10 @@ class BlueprintDeleteCliTests:
             ),
         ],
     )
-    def test_refused_target_accepted_prompts_then_fails_json(
+    def test_refused_target_fails_without_prompt_json(
         self, cli_runner: CliRunner, isolated_workspace: Path, name: str, error_code: str, error: str
     ) -> None:
-        """Exit 1 with error_code and errors == [error] after prompting for a protected or user-tier blueprint when stdin answers 'y'."""
+        """Exit 1 with error_code and errors == [error] and no prompt for a protected or user-tier blueprint, though stdin answers 'y'."""
         user_blueprints = resolve_global_paths(None).user_catalog_dir / "blueprints"
         user_blueprints.mkdir(parents=True, exist_ok=True)
         (user_blueprints / "user-only.yml").write_text(
@@ -244,7 +238,7 @@ class BlueprintDeleteCliTests:
         )
 
         assert result.exit_code == 1
-        assert _PROMPT.format(name=name) in result.stdout
+        assert _PROMPT.format(name=name) not in result.stdout
         payload = _payload(result.stdout)
         assert payload["error_code"] == error_code
         assert payload["errors"] == [error]

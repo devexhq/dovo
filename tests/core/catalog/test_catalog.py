@@ -19,6 +19,7 @@ from dovo.core.catalog.models import (
     CatalogCreateResult,
     CatalogDeleteResult,
     CatalogItemType,
+    CatalogRecord,
     CatalogScan,
     CatalogTier,
 )
@@ -539,6 +540,85 @@ class CatalogMutationOutcomeTests:
         event = read_single_event(frozen_diagnostic_clock)
         assert event["operation"] == f"catalog.{operation}"
         assert event["exception_type"] == "TypeError"
+
+
+class CatalogDeleteConfirmTests:
+    """Tests verifying Catalog.delete resolves the name before it confirms, and builds a declined result itself."""
+
+    def test_delete_asks_confirm_once_and_removes(self, workspace_paths: WorkspacePaths) -> None:
+        """Call confirm once with the 'demo' record, then return deleted True, cancelled False, error_code None and remove the file."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "demo")
+        asked: list[CatalogRecord] = []
+
+        def confirm(item: CatalogRecord) -> bool:
+            asked.append(item)
+            return True
+
+        result = catalog.delete("demo", confirm=confirm)
+
+        assert [item.key for item in asked] == ["demo"]
+        assert result.deleted is True
+        assert result.cancelled is False
+        assert result.error_code is None
+        assert not (workspace_paths.catalog_blueprints_dir / "demo.yml").exists()
+
+    def test_declined_confirm_returns_cancelled_and_keeps_file(self, workspace_paths: WorkspacePaths) -> None:
+        """Return the declined payload (cancelled True, item None, no error_code) with ok True, and keep the file, when confirm returns False."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "demo")
+
+        result = catalog.delete("demo", confirm=lambda item: False)
+
+        assert result.model_dump(mode="json") == {
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
+            "error_code": None,
+            "item": None,
+            "deleted": False,
+            "cancelled": True,
+        }
+        assert result.ok is True
+        assert (workspace_paths.catalog_blueprints_dir / "demo.yml").is_file()
+
+    @pytest.mark.parametrize(
+        ("case", "expected_code"),
+        [
+            pytest.param("not_found", ErrorCode.CATALOG_NOT_FOUND, id="not_found"),
+            pytest.param("protected_delete", ErrorCode.CATALOG_PROTECTED, id="protected"),
+            pytest.param("tier_delete", ErrorCode.CATALOG_TIER_DELETE_FORBIDDEN, id="wrong_tier"),
+        ],
+    )
+    def test_refused_target_never_confirms(
+        self, workspace_paths: WorkspacePaths, case: str, expected_code: ErrorCode
+    ) -> None:
+        """Return error_code == expected_code and never call confirm for an unknown, protected or user-tier name."""
+        names = {"not_found": "missing", "protected_delete": "dovo/fix-tests", "tier_delete": "user-only"}
+        _write_user_blueprint("user-only")
+        asked: list[CatalogRecord] = []
+
+        result = Catalog(workspace_paths).delete(names[case], confirm=lambda item: asked.append(item) is None)
+
+        assert result.error_code == expected_code
+        assert asked == []
+
+    def test_lock_timeout_after_confirmation_propagates(
+        self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Raise LockTimeoutError("lock held") when the lock times out after confirm returned True, and keep the file."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "demo")
+
+        def confirm(item: CatalogRecord) -> bool:
+            monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+            return True
+
+        with pytest.raises(LockTimeoutError, match=r"^lock held$"):
+            catalog.delete("demo", confirm=confirm)
+
+        assert (workspace_paths.catalog_blueprints_dir / "demo.yml").is_file()
 
 
 class CatalogListTests:
