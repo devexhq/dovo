@@ -461,7 +461,7 @@ class WorktreeLifecycleCollisionTests:
         assert (paths.worktrees_dir / "dovo_probefail").exists() is False
         assert "dovo/dovo_probefail" not in GitRunner().list_branches(worktree_workspace)
 
-    def test_create_when_path_check_raises_oserror_returns_creation_failed_and_records_cause(
+    def test_create_when_path_check_raises_oserror_returns_create_failed_and_records_cause(
         self, worktree_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Return WORKTREE_CREATE_FAILED with the path-check message and remediation, and one error record for the PermissionError in diagnostics."""

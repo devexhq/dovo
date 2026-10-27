@@ -232,7 +232,7 @@ class EngineLoaderTests:
     @pytest.mark.parametrize(
         "worktree_id", [pytest.param(None, id="no-id"), pytest.param("gone", id="deleted-directory")]
     )
-    def test_worktree_run_without_retained_directory_raises_worktree_missing_and_keeps_row(
+    def test_worktree_run_without_retained_directory_raises_session_worktree_missing_and_keeps_row(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, worktree_id: str | None
     ) -> None:
         _seed(engine_paths, sessions_repo, use_worktree=True, worktree_id=worktree_id)
@@ -418,7 +418,7 @@ class EngineLoaderResolveAnswersTests:
         assert raised.value.error_code is ErrorCode.INTERACTION_ANSWER_INVALID
         assert str(raised.value) == expected_message
 
-    def test_state_without_pending_ask_raises_no_pending_prompt(
+    def test_state_without_pending_ask_raises_prompt_not_pending(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         _seed(engine_paths, sessions_repo)

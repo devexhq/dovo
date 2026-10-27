@@ -167,7 +167,7 @@ class GitRunnerExecTests:
         )
         assert not frozen_diagnostic_clock.parent.parent.exists()
 
-    def test_missing_working_directory_raises_fs_not_found_and_is_recorded(
+    def test_missing_working_directory_raises_git_workdir_missing_and_is_recorded(
         self, tmp_path: Path, frozen_diagnostic_clock: Path
     ) -> None:
         """Report GIT_WORKDIR_MISSING naming the directory, not GIT_BINARY_MISSING, and record the OSError cause when path does not exist."""
@@ -226,7 +226,7 @@ class GitRunnerExecTests:
             excinfo.value.message == "Git execution failed ('git show-ref --verify --quiet refs/heads/x'): fatal: bad"
         )
 
-    def test_get_current_branch_propagates_fs_not_found(self, tmp_path: Path) -> None:
+    def test_get_current_branch_propagates_git_workdir_missing(self, tmp_path: Path) -> None:
         """Raise the GitError(GIT_WORKDIR_MISSING) git branch --show-current raised instead of returning "unknown"."""
         failure = GitError(ErrorCode.GIT_WORKDIR_MISSING, "working directory does not exist")
         fake = FakeGitRunner({("branch", "--show-current"): failure})
@@ -238,7 +238,10 @@ class GitRunnerExecTests:
 
     @pytest.mark.parametrize(
         "code",
-        [pytest.param(ErrorCode.GIT_TIMEOUT, id="timeout"), pytest.param(ErrorCode.GIT_WORKDIR_MISSING, id="fs")],
+        [
+            pytest.param(ErrorCode.GIT_TIMEOUT, id="timeout"),
+            pytest.param(ErrorCode.GIT_WORKDIR_MISSING, id="workdir_missing"),
+        ],
     )
     def test_status_porcelain_propagates_codes_it_does_not_swallow(self, tmp_path: Path, code: ErrorCode) -> None:
         """Raise the GitError(code) git status raised instead of returning []."""

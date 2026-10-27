@@ -110,7 +110,7 @@ class GitProbeTests:
         assert result.git.is_git_repo is False
         assert result.git.branch == "none"
 
-    def test_collect_propagates_fs_not_found(self, status_workspace: BuildStatusWorkspace) -> None:
+    def test_collect_propagates_git_workdir_missing(self, status_workspace: BuildStatusWorkspace) -> None:
         """Raise the GitError(GIT_WORKDIR_MISSING) rev-parse --is-inside-work-tree raised instead of reporting a git status."""
         workspace = status_workspace()
         failure = GitError(ErrorCode.GIT_WORKDIR_MISSING, "working directory does not exist")

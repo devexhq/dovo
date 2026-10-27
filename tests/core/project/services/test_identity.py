@@ -81,7 +81,7 @@ class ProjectIdentityServiceTests:
             pytest.param('{"id": "Bad", "created_at": "2026-01-02T03:04:05Z"}', id="invalid_identity"),
         ],
     )
-    def test_load_project_identity_invalid_content_raises_invalid_schema(self, tmp_path: Path, contents: str) -> None:
+    def test_load_project_identity_invalid_content_raises_schema_invalid(self, tmp_path: Path, contents: str) -> None:
         path = tmp_path / "project.json"
         path.write_text(contents, encoding="utf-8")
         with pytest.raises(ValidationError) as validation:

@@ -67,7 +67,7 @@ class GitRepoCheckTests:
             ),
         ],
     )
-    def test_execute_propagates_fs_not_found_from_either_probe(
+    def test_execute_propagates_git_workdir_missing_from_either_probe(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,

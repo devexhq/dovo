@@ -232,7 +232,7 @@ class WorktreePatchApplyTests:
             pytest.param(WorktreeApplyStrategy.SQUASH, id="squash"),
         ],
     )
-    def test_dirty_main_repo_without_allow_dirty_reports_git_dirty_worktree(
+    def test_dirty_main_repo_without_allow_dirty_reports_worktree_workspace_dirty(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths, strategy: WorktreeApplyStrategy
     ) -> None:
         db = _repo(worktree_workspace_paths)
@@ -250,7 +250,7 @@ class WorktreePatchApplyTests:
             Remediation(message="Pass '--allow-dirty' to overlay changes anyway"),
         ]
 
-    def test_worktree_with_no_changes_reports_patch_empty(
+    def test_worktree_with_no_changes_reports_worktree_changes_empty(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
         """Return WORKTREE_CHANGES_EMPTY, errors == ["Worktree 'dovo_empty' has no changes to apply."] and warnings == []."""
@@ -810,7 +810,7 @@ class WorktreePatchGitFailureTests:
         assert after is not None
         assert after.status == before.status
 
-    def test_fs_not_found_records_its_oserror_cause(
+    def test_git_workdir_missing_records_its_oserror_cause(
         self, worktree_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
         """Return GIT_WORKDIR_MISSING and diagnostics == [diagnostic_record(...)] with one error event {operation: worktree.apply, exception_type: FileNotFoundError} when apply_check raises GitError(GIT_WORKDIR_MISSING) chained to FileNotFoundError."""
