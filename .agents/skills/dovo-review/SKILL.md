@@ -42,7 +42,7 @@ A reviewer that shares the author's context inherits its blind spots. If this se
 
 ## 3. Load the context
 
-Read [AGENTS.md](../../../AGENTS.md), [docs/agents/code-conventions.md](../../../docs/agents/code-conventions.md), and the exemplar nearest to each changed file, since R5 asks new code to look like it. Do not open `.agentic/plan.md` or `.agentic/implementation-report.md` yet: the bug hunt reads the diff alone, so the plan's choices cannot pass for correctness. Section 5 reads them.
+Read [AGENTS.md](../../../AGENTS.md), [docs/agents/code-conventions.md](../../../docs/agents/code-conventions.md), the [docs/agents/architecture/](../../../docs/agents/architecture/README.md) files for the areas the diff touches, and the exemplar nearest to each changed file, since R5 asks new code to look like it. Do not open `.agentic/plan.md` or `.agentic/implementation-report.md` yet: the bug hunt reads the diff alone, so the plan's choices cannot pass for correctness. Section 5 reads them.
 
 ## 4. Hunt for bugs
 
