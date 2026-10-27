@@ -16,7 +16,7 @@ from dovo.core.agents.models import (
     ResolvedAgentSettings,
 )
 from dovo.core.agents.registry import unsupported_provider_message
-from dovo.core.agents.responses import diagnostics_with_remediations
+from dovo.core.agents.responses import errors_with_fix_block
 from dovo.core.git import GitDiffParser
 
 
@@ -119,7 +119,7 @@ def _settle(response: AgentResponse) -> AgentAttempt:
     if response.status == AgentResponseStatus.PROPOSED_PATCH:
         return _accept_direct_mutation(response)
 
-    errors = diagnostics_with_remediations(response.errors, response.remediations)
+    errors = errors_with_fix_block(response.errors, response.remediations)
     return AgentAttempt(
         status=response.status,
         summary=_response_text(response),

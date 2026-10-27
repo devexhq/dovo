@@ -21,7 +21,7 @@ from dovo.core.agents import (
     resolve_tool_policy,
     run_direct_attempt,
 )
-from dovo.core.agents.responses import diagnostics_with_remediations
+from dovo.core.agents.responses import errors_with_fix_block
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.metadata import metadata_to_env
@@ -139,7 +139,7 @@ def _allocate_scratch(
     if caught.failure is not None:
         return AgentAttempt(
             status=AgentResponseStatus.PROVIDER_ERROR,
-            errors=diagnostics_with_remediations([caught.failure.message], caught.failure.remediations),
+            errors=errors_with_fix_block([caught.failure.message], caught.failure.remediations),
             diagnostics=error_diagnostics(caught.failure.diagnostic),
         )
     return invocation
