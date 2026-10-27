@@ -3,7 +3,9 @@
 Scope: classes are matched by the simple name of each base (`DomainError`, `GitError`, `errors.GitError`), across
 every module in src/dovo, so a base imported from another package is still resolved. A package is `core/<name>` or
 `cli/<name>` for code under those folders, and the top-level folder (`engine`, `common`) otherwise. Not detected: a
-base written as a call or subscript, or a class created with `type(...)`.
+base written as a call or subscript, a class created with `type(...)`, and a base imported under an alias
+(`from dovo.core.git import GitError as X`, then `class Y(X)`). Because classes are matched by name only, an unrelated
+class that reuses a DomainError class's name (`class EngineError(Exception)` elsewhere) is counted as one.
 """
 
 from __future__ import annotations
