@@ -43,7 +43,7 @@ An issue is a working document. Aim for a sensible issue, not a perfect one: whe
 5. **Changes and guards:**
    - A **change** is what the issue exists to deliver ("`validate_patch_text` raises `GitError` with a `PATCH_*` code"). It binds the planner exactly as written.
    - A **guard** says what must not regress ("the agent step reports today's outcome"). It binds what a user or caller relies on: outcome, status, exit code, `error_code`, persisted data, and text that a doc or a test outside the change depends on. Name that text when it matters; never guard incidental wording with "same as today".
-   - A guard never excludes the behaviour of the foundation an Adopt issue adopts. When adopting `catch_failure` adds a `Details logged:` line to a failure caused by an `OSError` on Dovo's own state (`docs/agents/code-conventions.md`, Domain errors), that line is part of the adoption, and a guard that forbids it is wrong.
+   - A guard never excludes the behaviour of the foundation an Adopt issue adopts. When adopting `catch_failure` adds a `diagnostics` entry to a failure caused by an `OSError` on Dovo's own state (`docs/agents/architecture/exceptions.md` and `diagnostics.md`), that entry is part of the adoption, and a guard that forbids it is wrong.
    - The planner may depart from a guard, never from a change, with an Open Question that names the departure ([planning.md](../../../docs/agents/planning.md) Step 1).
 
 ## Workflow
@@ -167,8 +167,8 @@ Before running `gh issue create` or `gh issue edit`:
    - R1, R3 to R6, R9 to R14, R16 and R17 always apply. R2 applies when the issue touches `cli/` handlers, R7 when it reads secrets or writes log or diagnostic context, R8 when it adds a migration, R15 when it prescribes a test double, and R18 when it changes a page under `docs/` outside `docs/agents/`.
    - Ground in the code the rules that depend on it:
      - R1: check against `LAYER_RULES` in `tests/lint/test_layer_direction.py`.
-     - R4: check the issue's catch sites, results and any mapping of one status or error code onto another against `docs/agents/code-conventions.md`.
-     - R6: check the issue's lock handling against `WorkspaceLock`, `LockTimeoutError` and `catch_failure`.
+     - R4: check the issue's catch sites, error classes, error codes, results and any mapping of one status or error code onto another against `docs/agents/architecture/exceptions.md` and `results.md`.
+     - R6: check the issue's lock handling against `WorkspaceLock` and the lock-timeout entry in `docs/agents/architecture/exceptions.md`.
      - R17: search `docs/` and the docstrings of the changed symbols for sentences the change makes false.
    - Also check the body against itself. An FR that contradicts **Out of scope**, another FR, or a field an output requirement relies on is a finding.
    - A guard that pins incidental wording, or that forbids behaviour of the foundation an Adopt issue adopts, is a finding (**Core Principles** 5). Quote the guard and the foundation behaviour it excludes, such as `catch_failure` recording an `OSError` cause (`src/dovo/common/exceptions.py`).

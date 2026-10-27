@@ -65,7 +65,10 @@ ID, with the `path:line` that breaks it.
   of their own, and no table or `match` maps one status or error code onto
   another. `error_code` is a failure's only classification: a status value
   never names a failure cause, so a new status enum or value holds only
-  outcomes `error_code` cannot express. Raise
+  outcomes `error_code` cannot express. Each package has exactly one
+  `DomainError` class: the code is passed at the raise, with no subclass per
+  code, and code branches on `error_code`, never on the class
+  ([exceptions.md](docs/agents/architecture/exceptions.md)). Raise
   anything else only for programmer errors and broken invariants. *Why:* exit
   codes, the JSON envelope and every caller branch on the entrypoint's result,
   and a failure that carries the `ErrorCode` it was raised with needs no
@@ -78,8 +81,10 @@ ID, with the `path:line` that breaks it.
 ### State and safety
 
 - **R6. Writes under `.dovo/` go through `Filesystem.atomic_write_*`, and
-  mutations that can run in more than one process hold `WorkspaceLock`.** Report
-  `LockTimeoutError`; never swallow it. *Why:* concurrent `dovo` runs share one
+  mutations that can run in more than one process hold `WorkspaceLock`.** Every
+  `LockTimeoutError` propagates to the top-level handler; no package turns it
+  into an error code, a warning or a status
+  ([exceptions.md](docs/agents/architecture/exceptions.md)). *Why:* concurrent `dovo` runs share one
   workspace, and a torn or racing write corrupts it.
 - **R7. Secrets come only from environment variables, read at call time.** Never
   write them to `config.json`, `data.db`, logs, artifacts or prompt arguments.
@@ -189,6 +194,7 @@ Fix a failure in the code, never with a suppression or a lowered threshold.
 | Doc | When to use |
 |-----|-------------|
 | [docs/agents/code-conventions.md](docs/agents/code-conventions.md) | Python style, model placement, `Any` and type-ignore rules |
+| [docs/agents/architecture/](docs/agents/architecture/README.md) | Settled decisions: exceptions, remediations, diagnostics and results |
 | [docs/agents/testing.md](docs/agents/testing.md) | Test tiers, harness helpers, naming, parameterization |
 | [docs/agents/planning.md](docs/agents/planning.md) | Planning and phasing an issue (`/dovo-plan`) |
 | [docs/agents/documentation.md](docs/agents/documentation.md) | Which user-facing docs a change must update |

@@ -10,6 +10,7 @@ Update docs in the same PR **only** when a change triggers one of these gates or
 - **User-visible CLI behavior, arguments, or flags changed:** Update the corresponding command page under `docs/cli/<command>.md`.
 - **User-visible config or blueprint schema changed:** Update the corresponding reference page under `docs/reference/` (`tests/lint/test_config_schema_parity.py` and `tests/lint/test_step_schema_parity.py` enforce schema parity).
 - **Python style, package layout, or `Any`/ignore rules changed:** Update [docs/agents/code-conventions.md](code-conventions.md).
+- **A settled design decision added or changed (results, domain errors, remediations, diagnostics):** Rewrite its entry in [docs/agents/architecture/](architecture/README.md), following that folder's rules, and cite the issue in **Since**. A lint test that enforces an entry cites it in its failure message as `docs/agents/architecture/<file>.md#<heading>`.
 - **Test tier or harness conventions changed:** Update [docs/agents/testing.md](testing.md).
 - **Existing doc or docstring sentence made false (`R17`):** Correct or delete the false sentence in the same change.
 

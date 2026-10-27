@@ -10,7 +10,8 @@ Walk the changed-file list against this table (and [docs/agents/documentation.md
 | User-visible CLI behavior or flags changed | per-command page updated | `docs/cli/` |
 | User-visible config or blueprint schema changed | corresponding schema reference page updated | `docs/reference/` |
 | A production symbol deleted whose only caller was a test | the test deleted in the same change, coverage expected to fall, no backfilled tests holding the percentage, and no negative existence tests (`assert not hasattr(...)`) added | `AGENTS.md`, `docs/agents/testing.md` |
-| How to write Python here changed (package or module layout, model placement, `Result`/`Outcome`, error or `Any`/ignore rules) | conventions doc updated | `docs/agents/code-conventions.md` |
+| How to write Python here changed (package or module layout, model placement, `Any`/ignore rules) | conventions doc updated | `docs/agents/code-conventions.md` |
+| A decision on results, domain errors, remediations or diagnostics added or changed | its entry rewritten, with the issue in **Since** | `docs/agents/architecture/` |
 | Test tier or harness conventions changed | testing guide updated | `docs/agents/testing.md` |
 | Any change makes an existing doc, skill, rule, or docstring sentence false (`R17`) | false sentence corrected or deleted in the same change | affected doc or docstring |
 
