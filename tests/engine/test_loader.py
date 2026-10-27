@@ -11,6 +11,7 @@ from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.engine import EngineLoader, EngineResumeError, SessionStateStore
 from dovo.engine.executors.models import StepResult
+from dovo.engine.models import LifecycleUpdate
 from dovo.engine.projection import build_session_json_payload
 from dovo.engine.state_models import (
     ExecutionLeafNode,
@@ -123,7 +124,7 @@ def _seed_paused_loop(paths: WorkspacePaths, sessions: SessionsRepository) -> Se
     edit.state = NodeState.COMPLETED
     verify.attempts = [attempt("verify", "failed")]
     verify.state = NodeState.PAUSED
-    store.save(state, [], run_status=SessionStatus.PAUSED)
+    store.save(state, [], LifecycleUpdate(run_status=SessionStatus.PAUSED))
     return store
 
 

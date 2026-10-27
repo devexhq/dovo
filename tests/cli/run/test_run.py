@@ -23,6 +23,7 @@ from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
 from dovo.engine import SessionStateStore
+from dovo.engine.models import LifecycleUpdate
 from dovo.engine.state_models import ExecutionStateTree
 from tests.harness import FakeAgentRunner, UnfixableAgentRunner
 from tests.harness.builders import init_git_repository
@@ -233,14 +234,11 @@ class RunCliIntegrationTests:
             self: SessionStateStore,
             state: ExecutionStateTree,
             warnings: list[str],
-            run_status: SessionStatus | None = None,
-            error_message: str | None = None,
-            worktree_id: str | None = None,
-            worktree_kept: bool | None = None,
+            lifecycle: LifecycleUpdate | None = None,
         ) -> ExecutionStateTree:
-            if worktree_kept is not None:
+            if lifecycle is not None and lifecycle.worktree_kept is not None:
                 raise OSError("disk full")
-            return original_save(self, state, warnings, run_status, error_message, worktree_id)
+            return original_save(self, state, warnings, lifecycle)
 
         monkeypatch.setattr(SessionStateStore, "save", _finalize_disk_full)
 

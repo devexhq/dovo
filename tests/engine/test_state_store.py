@@ -16,7 +16,7 @@ from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.engine import EngineError, SessionStateStore
-from dovo.engine.models import DefinitionRef, DefinitionsManifest
+from dovo.engine.models import DefinitionRef, DefinitionsManifest, LifecycleUpdate
 from dovo.engine.projection import build_session_json_payload
 from dovo.engine.state_models import (
     ExecutionIterationRecord,
@@ -220,7 +220,11 @@ class SessionStateStoreSaveTests:
         state = fixture.initialized_at(0)
 
         fixture.store.save(
-            state, [], run_status=SessionStatus.FAILED, error_message="boom", worktree_id="dovo_1", worktree_kept=True
+            state,
+            [],
+            LifecycleUpdate(
+                run_status=SessionStatus.FAILED, error_message="boom", worktree_id="dovo_1", worktree_kept=True
+            ),
         )
 
         row = fixture.row()

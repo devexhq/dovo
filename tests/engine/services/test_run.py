@@ -18,7 +18,7 @@ from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions import Reconciliation
 from dovo.engine import SessionStateStore
-from dovo.engine.models import RunOutcome
+from dovo.engine.models import LifecycleUpdate, RunOutcome
 from dovo.engine.services.run import BlueprintRunService
 from dovo.engine.state_models import ExecutionStateTree
 from tests.engine.conftest import StubDriveRun
@@ -363,14 +363,11 @@ class BlueprintRunServiceCatchTests:
             self: SessionStateStore,
             state: ExecutionStateTree,
             warnings: list[str],
-            run_status: SessionStatus | None = None,
-            error_message: str | None = None,
-            worktree_id: str | None = None,
-            worktree_kept: bool | None = None,
+            lifecycle: LifecycleUpdate | None = None,
         ) -> ExecutionStateTree:
-            if worktree_kept is not None:
+            if lifecycle is not None and lifecycle.worktree_kept is not None:
                 raise OSError("disk full")
-            return original_save(self, state, warnings, run_status, error_message, worktree_id)
+            return original_save(self, state, warnings, lifecycle)
 
         monkeypatch.setattr(SessionStateStore, "save", _finalize_disk_full)
 

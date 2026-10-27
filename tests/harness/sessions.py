@@ -21,7 +21,13 @@ from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.engine import RunCoordinator, RunObserver, RunOutcome
 from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult, StepResult
-from dovo.engine.models import FailurePromptDecision, FailurePrompter, LoopPromptDecision, RunContext
+from dovo.engine.models import (
+    FailurePromptDecision,
+    FailurePrompter,
+    LifecycleUpdate,
+    LoopPromptDecision,
+    RunContext,
+)
 from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
 from dovo.engine.state_store import SessionStateStore
 from dovo.engine.writer import snapshot_definitions
@@ -333,9 +339,11 @@ def seed_paused_session(
     store.save(
         state,
         [],
-        run_status=SessionStatus.PAUSED,
-        error_message=f"Step '{paused_step_id}' failed: {SEEDED_FAILURE}",
-        worktree_id=worktree_id,
+        LifecycleUpdate(
+            run_status=SessionStatus.PAUSED,
+            error_message=f"Step '{paused_step_id}' failed: {SEEDED_FAILURE}",
+            worktree_id=worktree_id,
+        ),
     )
     row = sessions.get(session_id)
     assert row is not None
@@ -389,8 +397,10 @@ def seed_failed_session(
     store.save(
         state,
         [],
-        run_status=SessionStatus.FAILED,
-        error_message=f"Step '{failed_step_id}' failed: {SEEDED_FAILURE}",
+        LifecycleUpdate(
+            run_status=SessionStatus.FAILED,
+            error_message=f"Step '{failed_step_id}' failed: {SEEDED_FAILURE}",
+        ),
     )
     row = sessions.get(session_id)
     assert row is not None

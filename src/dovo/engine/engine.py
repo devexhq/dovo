@@ -28,6 +28,7 @@ from dovo.engine.models import (
     DefinitionsManifest,
     FailurePrompter,
     InteractionPrompter,
+    LifecycleUpdate,
     RunObserver,
     RunOutcome,
     RunRequest,
@@ -244,10 +245,12 @@ class Engine:
             store.save(
                 state,
                 warnings,
-                run_status=outcome.status,
-                error_message=error_message,
-                worktree_id=outcome.worktree_id,
-                worktree_kept=outcome.worktree_kept,
+                LifecycleUpdate(
+                    run_status=outcome.status,
+                    error_message=error_message,
+                    worktree_id=outcome.worktree_id,
+                    worktree_kept=outcome.worktree_kept,
+                ),
             )
         except EngineError as error:
             warnings.append(error.message)

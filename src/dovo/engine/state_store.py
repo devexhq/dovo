@@ -10,9 +10,9 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
-from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
+from dovo.core.db import SessionRecord, SessionsRepository
 from dovo.engine.exceptions import EngineError
-from dovo.engine.models import DefinitionsManifest
+from dovo.engine.models import DefinitionsManifest, LifecycleUpdate
 from dovo.engine.projection import build_session_json_payload
 from dovo.engine.state_models import (
     ExecutionIterationRecord,
@@ -133,26 +133,24 @@ class SessionStateStore:
         self,
         state: ExecutionStateTree,
         warnings: list[str],
-        run_status: SessionStatus | None = None,
-        error_message: str | None = None,
-        worktree_id: str | None = None,
-        worktree_kept: bool | None = None,
+        lifecycle: LifecycleUpdate | None = None,
     ) -> ExecutionStateTree:
         """Commit state at revision + 1 with optional lifecycle fields and return it, appending any session.json projection warning.
 
         Raises:
             EngineError: SESSION_NOT_FOUND or SESSION_STATE_REVISION_CONFLICT, leaving the row and projection untouched.
         """
+        update = lifecycle or LifecycleUpdate()
         next_state = state.model_copy(update={"revision": state.revision + 1})
         row = self.sessions.save_execution_state(
             self.session_id,
             next_state.model_dump_json(),
             expected_revision=state.revision,
             next_revision=next_state.revision,
-            status=run_status,
-            error_message=error_message,
-            worktree_id=worktree_id,
-            worktree_kept=worktree_kept,
+            status=update.run_status,
+            error_message=update.error_message,
+            worktree_id=update.worktree_id,
+            worktree_kept=update.worktree_kept,
         )
         if row is None:
             raise self._write_failure()

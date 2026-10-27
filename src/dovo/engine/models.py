@@ -51,6 +51,16 @@ class RunRequest:
 
 
 @dataclass(frozen=True)
+class LifecycleUpdate:
+    """Session row lifecycle fields committed with an execution-state save; None leaves a field unchanged."""
+
+    run_status: SessionStatus | None = None
+    error_message: str | None = None
+    worktree_id: str | None = None
+    worktree_kept: bool | None = None
+
+
+@dataclass(frozen=True)
 class RunStartConfig:
     """Resolved run options persisted on the session row at start."""
 

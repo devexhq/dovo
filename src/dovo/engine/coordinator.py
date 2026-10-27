@@ -42,6 +42,7 @@ from dovo.engine.loop_events import LoopEventEmitter
 from dovo.engine.loop_policy import LoopDecision, LoopPolicy, LoopTransitionKind
 from dovo.engine.models import (
     FailurePrompter,
+    LifecycleUpdate,
     LoopPromptDecision,
     RunContext,
     RunObserver,
@@ -821,9 +822,11 @@ class RunCoordinator:
                 saved = self._state_store.save(
                     self._run.state,
                     self._warnings,
-                    run_status=run_status,
-                    error_message=error_message,
-                    worktree_id=worktree.session_id if worktree is not None else None,
+                    LifecycleUpdate(
+                        run_status=run_status,
+                        error_message=error_message,
+                        worktree_id=worktree.session_id if worktree is not None else None,
+                    ),
                 )
             except EngineError as error:
                 self._errors.append(f"Failed to persist run state {boundary}: {error.message}")
