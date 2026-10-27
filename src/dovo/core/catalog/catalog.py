@@ -133,7 +133,7 @@ class Catalog:
         except OSError as exc:
             raise CatalogError(
                 ErrorCode.CATALOG_FILE_UNREADABLE, f"Failed to read file for catalog blueprint '{sha_or_name}': {exc}"
-            ) from exc
+            ) from None
 
         template_matches = [(item.path.as_posix(), content)] if item.tier == CatalogTier.PACKAGED else []
         return CatalogShowResult(item=item, content=content, template_matches=template_matches)
