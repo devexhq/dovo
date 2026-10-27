@@ -51,7 +51,7 @@ def load_project_identity(path: Path) -> ProjectIdentity:
     if not path.exists():
         raise ProjectIdentityError(
             ErrorCode.PROJECT_IDENTITY_NOT_FOUND,
-            f"Project identity file not found at '{path}' (PROJECT_IDENTITY_NOT_FOUND).",
+            f"Project identity file not found at '{path}'.",
         )
 
     try:
@@ -59,12 +59,12 @@ def load_project_identity(path: Path) -> ProjectIdentity:
     except ValidationError as exc:
         raise ProjectIdentityError(
             ErrorCode.PROJECT_IDENTITY_INVALID_SCHEMA,
-            f"Project identity at '{path}' is invalid: {exc} (PROJECT_IDENTITY_INVALID_SCHEMA).",
+            f"Project identity at '{path}' is invalid: {exc}.",
         ) from exc
     except (OSError, UnicodeDecodeError) as exc:
         raise ProjectIdentityError(
             ErrorCode.PROJECT_IDENTITY_UNREADABLE,
-            f"Unable to read project identity at '{path}': {exc} (PROJECT_IDENTITY_UNREADABLE).",
+            f"Unable to read project identity at '{path}': {exc}.",
         ) from exc
 
 
@@ -76,12 +76,12 @@ def save_project_identity(path: Path, identity: ProjectIdentity) -> None:
     except LockTimeoutError as exc:
         raise ProjectIdentityError(
             ErrorCode.PROJECT_IDENTITY_LOCKED,
-            f"Unable to acquire project identity lock at '{path}': {exc} (PROJECT_IDENTITY_LOCKED).",
+            f"Unable to acquire project identity lock at '{path}': {exc}.",
         ) from exc
     except OSError as exc:
         raise ProjectIdentityError(
             ErrorCode.PROJECT_IDENTITY_WRITE_FAILED,
-            f"Unable to write project identity at '{path}': {exc} (PROJECT_IDENTITY_WRITE_FAILED).",
+            f"Unable to write project identity at '{path}': {exc}.",
         ) from exc
 
 

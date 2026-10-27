@@ -169,9 +169,7 @@ class InitCliIntegrationTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["failure_mode"] == "bootstrap"
-        assert payload["errors"] == [
-            f"Project identity at '{identity_path}' is invalid: {validation.value} (PROJECT_IDENTITY_INVALID_SCHEMA)."
-        ]
+        assert payload["errors"] == [f"Project identity at '{identity_path}' is invalid: {validation.value}."]
         assert payload["remediations"] == [
             {"message": "Resolve the path conflict above, then rerun 'dovo init'", "command": None}
         ]

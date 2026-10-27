@@ -28,7 +28,7 @@ class ResolveWorkspacePathsTests:
 
         identity_path = repository / ".dovo" / "project.json"
         assert str(exc_info.value) == (
-            f"Workspace is not initialized: no valid project identity at '{identity_path}' (WORKSPACE_NOT_INITIALIZED).\n"
+            f"Workspace is not initialized: no valid project identity at '{identity_path}'.\n"
             "Fix: Run `dovo init` to initialize this workspace."
         )
         assert not (repository / ".dovo").exists()
@@ -80,7 +80,7 @@ class ResolveWorkspacePathsTests:
             resolve_workspace_paths(RepositoryPaths.from_root(repository), GlobalPaths.from_root(tmp_path / "global"))
 
         assert str(exc_info.value) == (
-            f"Workspace is not initialized: no valid project identity at '{identity_path}' (WORKSPACE_NOT_INITIALIZED).\n"
+            f"Workspace is not initialized: no valid project identity at '{identity_path}'.\n"
             f"Fix: Run `dovo init` to initialize this workspace.\n{FORCE_HINT}"
         )
         event = read_single_event(frozen_diagnostic_clock)
@@ -102,8 +102,7 @@ class ResolveWorkspacePathsTests:
             resolve_workspace_paths(RepositoryPaths.from_root(home), GlobalPaths.from_root(global_root))
 
         assert str(exc_info.value) == (
-            f"Workspace is not initialized: no valid project identity at '{identity_path.resolve()}' "
-            "(WORKSPACE_NOT_INITIALIZED).\n"
+            f"Workspace is not initialized: no valid project identity at '{identity_path.resolve()}'.\n"
             "Fix: Run `dovo init` to initialize this workspace."
         )
 

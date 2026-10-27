@@ -434,7 +434,7 @@ class ConfigTolerantCommandsPostInitTests:
 
         result = cli_runner.invoke(app, ["-p", str(workspace), *argv])
 
-        assert "WORKSPACE_NOT_INITIALIZED" not in result.stdout
+        assert GUARD_MESSAGE_HEAD not in result.stdout
         assert "Fatal Error" not in result.stdout
         assert any(isinstance(item, dispatched_type) for item in dispatch_spy)
 
@@ -448,7 +448,6 @@ class ConfigTolerantCommandsPostInitTests:
         )
 
         set_results = [item for item in dispatch_spy if isinstance(item, ConfigSetResult)]
-        assert "WORKSPACE_NOT_INITIALIZED" not in result.stdout
         assert GUARD_MESSAGE_HEAD not in result.stdout
         assert [item.status for item in set_results] == [ConfigSetStatus.NOT_FOUND]
 

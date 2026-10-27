@@ -333,9 +333,7 @@ BOOTSTRAP_FAILURE = FormatterCase(
     ],
 )
 
-IDENTITY_FAILURE_ERROR = (
-    "Unable to read project identity at '/workspace/my-repo/.dovo/project.json': denied (PROJECT_IDENTITY_UNREADABLE)."
-)
+IDENTITY_FAILURE_ERROR = "Unable to read project identity at '/workspace/my-repo/.dovo/project.json': denied."
 IDENTITY_FAILURE_RECORD = DiagnosticRecord(
     event_id="exc_3f9a1c07b2de",
     log_path=Path("/home/you/.dovo/logs/2026-10-19/exc_3f9a1c07b2de.json"),
@@ -366,7 +364,7 @@ IDENTITY_FAILURE = FormatterCase(
         diagnostics=[IDENTITY_FAILURE_RECORD],
     ),
     render_expectations=[
-        "PROJECT_IDENTITY_UNREADABLE",
+        "Unable to read project identity at",
         "exc_3f9a1c07b2de",
         "Fix:",
         "- Resolve the path conflict above, then rerun 'dovo init'",
