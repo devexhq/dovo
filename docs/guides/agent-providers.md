@@ -210,7 +210,7 @@ Fix:
 - Restore access to the session temp directory or correct its storage path.
 ```
 
-- When the operating system refuses to read the session temp directory or create the attempt's directories (for example, a permission error), Dovo writes a [diagnostic log](../cli/doctor.md#diagnostic-logs) record, and `dovo run` prints a `Details logged: <path> (event <event_id>)` line after the run's warnings and outcome; the step's error is unchanged. If the record cannot be written, the line is absent.
+- When the operating system refuses to read the session temp directory or create the attempt's directories (for example, a permission error), Dovo writes a [diagnostic log](../cli/doctor.md#diagnostic-logs) record, and `dovo run` and `dovo session resume` print a `Details logged: <path> (event <event_id>)` line after the run's warnings and outcome; the step's error is unchanged. If the record cannot be written, the line is absent.
 - Completed runs remove the session temp directory. Failed, paused, cancelled and `--keep` runs retain it for inspection.
 
 ---

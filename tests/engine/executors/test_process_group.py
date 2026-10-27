@@ -55,7 +55,7 @@ class ProcessGroupEscalationTests:
         step = StepBuilder.command(cmd).with_id("timeout-escalate").with_timeout(1).build()
 
         start_time = time.monotonic()
-        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path))
+        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[]))
         monkeypatch.setattr(
             "dovo.engine.executors.step_executor.terminate_process_tree",
             lambda process, *, grace_seconds=2.0, pgid=None: terminate_process_tree(
@@ -97,7 +97,7 @@ time.sleep(30)
         (tmp_path / "tree_script.py").write_text(script_content)
         cmd = f"{sys.executable} tree_script.py"
         step = StepBuilder.command(cmd).with_id("interrupt-tree").with_timeout(30).build()
-        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path))
+        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[]))
 
         def mock_wait(self_proc: subprocess.Popen[str], *args: object, **kwargs: object) -> int:
             _sync_and_interrupt(tmp_path)

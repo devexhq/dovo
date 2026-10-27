@@ -20,7 +20,7 @@ class InternalCommandDispatchTests:
     def test_execute_internal_unknown_command_returns_failed_dispatch(self, tmp_path: Path) -> None:
         step = StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.nonexistent")
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "failed"
         assert result.error_message is not None
@@ -36,7 +36,7 @@ class InternalCommandDispatchTests:
         monkeypatch.setitem(step_executor.INTERNAL_COMMAND_HANDLERS, "artifacts.upload", _broken_handler)
         step = StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.upload")
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "failed"
         assert result.error_message is not None
@@ -46,7 +46,7 @@ class InternalCommandDispatchTests:
         """Fail naming the missing session, not an AttributeError, when artifact_store is None."""
         step = StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.upload")
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "failed"
         assert result.error_message is not None
@@ -70,6 +70,7 @@ class InternalCommandDispatchTests:
                 session_id="wf_1",
                 artifact_store=ArtifactStore(Artifacts(engine_paths, artifacts_repository), "wf_1"),
                 loop_iteration=2,
+                diagnostics=[],
             )
         ).run()
 

@@ -46,6 +46,7 @@ def _run(
             artifact_store=ArtifactStore(Artifacts(paths, repository), "wf_1"),
             paths=paths,
             loop_iteration=loop_iteration,
+            diagnostics=[],
         )
     ).run()
 

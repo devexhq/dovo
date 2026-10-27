@@ -25,7 +25,7 @@ class StepExecutionResolutionTests:
     def test_unresolvable_uses_step_returns_failed_result_with_could_not_resolve_message(self, tmp_path: Path) -> None:
         step = StepDefinition(id="s1", uses="base-step")
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "failed"
         assert result.error_message == "Could not resolve step 's1'."
@@ -80,7 +80,7 @@ class StepExecutionResolutionTests:
     def test_run_shorthand_step_executes_as_command(self, tmp_path: Path) -> None:
         step = StepDefinition(id="s1", run="echo ok")
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "completed"
         assert "ok" in result.stdout
@@ -104,7 +104,7 @@ class CommandScriptEnvironmentPreservedTests:
             builder = StepBuilder.script("probe.py")
         step = builder.with_id("probe").with_env("DOVO_STEP_NAME", "from-step").build()
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "completed"
         assert result.stdout.strip() == "1|probe|from-step"
@@ -115,7 +115,7 @@ class StepExecutionContextFieldsTests:
         step = StepBuilder.command("echo ${{ inputs.feature }}").with_id("s1").build()
 
         result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, inputs={"feature": "export"})
+            StepExecutionContext(step=step, worktree_path=tmp_path, inputs={"feature": "export"}, diagnostics=[])
         ).run()
 
         assert result.stdout == "export\n"
@@ -123,7 +123,7 @@ class StepExecutionContextFieldsTests:
     def test_missing_input_stays_literal_like_a_run_without_inputs(self, tmp_path: Path) -> None:
         step = StepBuilder.command("echo '${{ inputs.x }}'").with_id("s1").build()
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "completed"
         assert result.stdout == "${{ inputs.x }}\n"
@@ -131,7 +131,9 @@ class StepExecutionContextFieldsTests:
     def test_iteration_index_follows_loop_iteration(self, tmp_path: Path) -> None:
         step = StepBuilder.command("echo $DOVO_ITERATION_INDEX ${{ iteration.index }}").with_id("s1").build()
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, loop_iteration=3)).run()
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, loop_iteration=3, diagnostics=[])
+        ).run()
 
         assert result.stdout == "3 3\n"
 
@@ -149,7 +151,7 @@ class StepExecutionDurationTests:
         monkeypatch.setattr("dovo.common.timing.monotonic", lambda: next(readings))
         step = StepDefinition(id="s1", run="echo ok")
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "completed"
         assert result.duration_seconds == 2.5
@@ -162,10 +164,12 @@ class StepExecutionDurationTests:
         monkeypatch.setattr("dovo.common.timing.monotonic", _unread_clock)
         if failure == "missing_worktree":
             context = StepExecutionContext(
-                step=StepDefinition(id="s1", run="echo ok"), worktree_path=tmp_path / "missing"
+                step=StepDefinition(id="s1", run="echo ok"), worktree_path=tmp_path / "missing", diagnostics=[]
             )
         else:
-            context = StepExecutionContext(step=StepDefinition(id="s1", uses="base-step"), worktree_path=tmp_path)
+            context = StepExecutionContext(
+                step=StepDefinition(id="s1", uses="base-step"), worktree_path=tmp_path, diagnostics=[]
+            )
 
         result = StepExecution(context).run()
 

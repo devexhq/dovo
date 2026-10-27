@@ -25,7 +25,9 @@ class StepExecutionTempEnvVarTests:
         )
 
         result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=worktree_path, session_tmp_dir=session_tmp_dir)
+            StepExecutionContext(
+                step=step, worktree_path=worktree_path, session_tmp_dir=session_tmp_dir, diagnostics=[]
+            )
         ).run()
 
         assert result.status == "completed"
@@ -38,7 +40,7 @@ class StepExecutionTempEnvVarTests:
         """Leave all four temp variables unset, not just empty, when session_tmp_dir is None."""
         step = StepBuilder.command('[ -z "${DOVO_TEMP+x}" ]').with_id("s1").build()
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert result.status == "completed"
         assert result.exit_code == 0
@@ -93,7 +95,9 @@ class StepExecutionOutputParsingTests:
         step = StepBuilder.command(command).with_id("s1").build()
 
         result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
+            StepExecutionContext(
+                step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session", diagnostics=[]
+            )
         ).run()
 
         assert (result.status, result.outputs, result.warnings) == ("completed", outputs, warnings)
@@ -110,7 +114,9 @@ class StepExecutionOutputParsingTests:
         )
 
         result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
+            StepExecutionContext(
+                step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session", diagnostics=[]
+            )
         ).run()
 
         assert result.status == "completed"

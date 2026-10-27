@@ -1,5 +1,5 @@
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, Protocol
@@ -189,6 +189,8 @@ class StepExecutionContext:
 
     step: StepDefinition
     worktree_path: Path
+    # The caller's list for the run's diagnostics; the step extends it as each record is written.
+    diagnostics: list[DiagnosticRecord]
     inputs: dict[str, str | int | bool] | None = None
     on_output: OutputCallback | None = None
     on_progress: ProgressCallback | None = None
@@ -207,8 +209,6 @@ class StepExecutionContext:
     paths: WorkspacePaths | None = None
     agent_runner: AgentStepRunner | None = None
     sensitive_variables: tuple[str, ...] = ()
-    # The caller's list for the run's diagnostics; the step extends it as each record is written.
-    diagnostics: list[DiagnosticRecord] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Reject an agent step that has no agent runner."""

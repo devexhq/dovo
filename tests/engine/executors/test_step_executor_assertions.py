@@ -20,7 +20,7 @@ class StepRunnerAssertionContractTests:
             assert_=StepAssert(file_exists="present.bin"),
         )
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert (result.status, result.error_message) == ("completed", None)
 
@@ -31,7 +31,7 @@ class StepRunnerAssertionContractTests:
             command=f"{sys.executable} -c \"print('ok')\"",
             assert_=StepAssert(file_exists="missing.bin"),
         )
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
         assert (result.status, result.exit_code) == ("failed", 0)
         assert result.error_message == (
