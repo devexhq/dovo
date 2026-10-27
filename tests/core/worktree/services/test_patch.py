@@ -309,6 +309,35 @@ class WorktreePatchApplyTests:
         log_message = GitRunner().run(["log", "-1", "--format=%s"], path=worktree_workspace).strip()
         assert log_message == "dovo: apply changes from worktree dovo_squash"
 
+    @pytest.mark.parametrize(
+        ("strategy", "dry_run"),
+        [
+            pytest.param(WorktreeApplyStrategy.SQUASH, False, id="squash"),
+            pytest.param(WorktreeApplyStrategy.PATCH, True, id="patch_dry_run"),
+        ],
+    )
+    def test_squash_and_patch_dry_run_conflicts_report_conflicting_files(
+        self,
+        worktree_workspace: Path,
+        worktree_workspace_paths: WorkspacePaths,
+        strategy: WorktreeApplyStrategy,
+        dry_run: bool,
+    ) -> None:
+        """Return WORKTREE_APPLY_CONFLICT with the strategy, conflicting_files == ["new_file.txt"], the full conflict message and touched_files == []."""
+        _create_conflicting_worktree(worktree_workspace_paths, worktree_workspace, "dovo_conflict")
+        worktree = _worktree(worktree_workspace_paths, _repo(worktree_workspace_paths), git=GitRunner())
+
+        result = worktree.apply("dovo_conflict", strategy=strategy, dry_run=dry_run)
+
+        assert result.error_code == ErrorCode.WORKTREE_APPLY_CONFLICT
+        assert result.worktree_id == "dovo_conflict"
+        assert result.strategy == strategy
+        assert result.conflicting_files == ["new_file.txt"]
+        assert result.touched_files == []
+        assert result.errors == [
+            "Cannot apply worktree dovo_conflict: conflicts detected.\nConflicting files:\n  • new_file.txt"
+        ]
+
 
 _SEED_FILES = {
     "notes.txt": "notes\n",
@@ -989,35 +1018,6 @@ class WorktreePatchDiagnosticLogTests:
         ]
         assert result.diagnostics == []
         assert not resolve_global_paths(None).logs_dir.exists()
-
-    @pytest.mark.parametrize(
-        ("strategy", "dry_run"),
-        [
-            pytest.param(WorktreeApplyStrategy.SQUASH, False, id="squash"),
-            pytest.param(WorktreeApplyStrategy.PATCH, True, id="patch_dry_run"),
-        ],
-    )
-    def test_apply_conflict_carries_conflicting_files_for_every_strategy(
-        self,
-        worktree_workspace: Path,
-        worktree_workspace_paths: WorkspacePaths,
-        strategy: WorktreeApplyStrategy,
-        dry_run: bool,
-    ) -> None:
-        """Return WORKTREE_APPLY_CONFLICT with the strategy, conflicting_files == ["new_file.txt"], the full conflict message and touched_files == []."""
-        _create_conflicting_worktree(worktree_workspace_paths, worktree_workspace, "dovo_conflict")
-        worktree = _worktree(worktree_workspace_paths, _repo(worktree_workspace_paths), git=GitRunner())
-
-        result = worktree.apply("dovo_conflict", strategy=strategy, dry_run=dry_run)
-
-        assert result.error_code == ErrorCode.WORKTREE_APPLY_CONFLICT
-        assert result.worktree_id == "dovo_conflict"
-        assert result.strategy == strategy
-        assert result.conflicting_files == ["new_file.txt"]
-        assert result.touched_files == []
-        assert result.errors == [
-            "Cannot apply worktree dovo_conflict: conflicts detected.\nConflicting files:\n  • new_file.txt"
-        ]
 
     def test_conflict_status_write_failure_records_debug_and_keeps_conflict(
         self,

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
@@ -16,6 +19,7 @@ from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.engine import BlueprintRunService
+from dovo.engine.exceptions import EngineError
 from dovo.engine.models import BlueprintRunResult, RunOutcome
 from dovo.engine.services.resume import BlueprintResumeService
 from tests.engine.conftest import StubDriveRun
@@ -163,6 +167,65 @@ class BlueprintResumeServiceCatchTests:
         event = read_single_event(frozen_diagnostic_clock)
         assert event["operation"] == "engine.resume"
         assert event["context"] == {"session_id": "paused-1"}
+
+    def test_read_run_record_precedes_resume_failure_record(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        stub_drive_run: StubDriveRun,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With the first session read raising and drive_run raising an EngineError from an OSError, return diagnostics == [the engine.read_run record, the engine.resume record] in that order."""
+        _seed(engine_paths, sessions_repo, "paused-1")
+        monkeypatch.setattr(
+            "dovo.common.diagnostic_log.services.record.uuid4",
+            iter([UUID("aaaaaaaaaaaa" + "0" * 20), UUID("bbbbbbbbbbbb" + "0" * 20)]).__next__,
+        )
+        real_get = SessionsRepository.get
+        reads: list[str] = []
+
+        def _fail_first_read(self: SessionsRepository, session_id: str) -> SessionRecord | None:
+            reads.append(session_id)
+            if len(reads) == 1:
+                raise TypeError("read failed")
+            return real_get(self, session_id)
+
+        monkeypatch.setattr(SessionsRepository, "get", _fail_first_read)
+
+        def _boom(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> RunOutcome:
+            try:
+                raise PermissionError("state.json")
+            except OSError as exc:
+                raise EngineError(ErrorCode.SESSION_STATE_CORRUPT, "Unable to read session state.") from exc
+
+        stub_drive_run(_boom)
+
+        result = BlueprintResumeService(
+            paths=engine_paths,
+            db=sessions_repo,
+            session_id="paused-1",
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        ).execute()
+
+        day_dir = frozen_diagnostic_clock.parent
+        assert result.error_code == ErrorCode.SESSION_STATE_CORRUPT
+        assert result.errors == ["Unable to read session state."]
+        assert result.diagnostics == [
+            DiagnosticRecord(
+                event_id="exc_aaaaaaaaaaaa", log_path=day_dir / "exc_aaaaaaaaaaaa.json", level=DiagnosticLevel.ERROR
+            ),
+            DiagnosticRecord(
+                event_id="exc_bbbbbbbbbbbb", log_path=day_dir / "exc_bbbbbbbbbbbb.json", level=DiagnosticLevel.ERROR
+            ),
+        ]
+        operations = [
+            json.loads((day_dir / f"{event_id}.json").read_text(encoding="utf-8"))["operation"]
+            for event_id in ("exc_aaaaaaaaaaaa", "exc_bbbbbbbbbbbb")
+        ]
+        assert operations == ["engine.read_run", "engine.resume"]
 
     def test_unexpected_error_resolving_latest_paused_returns_internal_error(
         self,
