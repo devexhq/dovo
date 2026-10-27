@@ -99,6 +99,20 @@ class StepDeleteCliIntegrationTests:
         assert isinstance(result.exception, LockTimeoutError)
         assert "Catalog Delete Failed" not in result.stdout
 
+    def test_step_delete_cli_resync_lock_timeout_propagates_before_prompt(
+        self, cli_runner: CliRunner, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 with result.exception a LockTimeoutError and no prompt for `delete demo` answered 'y' when the re-sync's lock times out."""
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "demo")
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "delete", "demo"], input="y\n")
+
+        assert result.exit_code == 1
+        assert isinstance(result.exception, LockTimeoutError)
+        assert _PROMPT.format(name="demo") not in result.stdout
+        assert (isolated_workspace / ".dovo" / "catalog" / "steps" / "demo.yml").is_file()
+
 
 class StepDeleteCliTests:
     """Typer runner tests for dovo step delete's declined confirmation."""
