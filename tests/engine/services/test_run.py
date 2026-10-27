@@ -171,6 +171,53 @@ class BlueprintRunServiceLoadTests:
         assert event["exception_type"] == "TypeError"
         assert sessions_repo.list() == []
 
+    def test_load_domain_failure_keeps_prior_records_and_writes_no_event(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With reconciliation returning a record and an unknown blueprint, return CATALOG_NOT_FOUND with diagnostics == [the reconciliation record], write no event file and add no session row."""
+        prior = DiagnosticRecord(
+            event_id="exc_000000000001", log_path=Path("/logs/exc_000000000001.json"), level=DiagnosticLevel.ERROR
+        )
+        monkeypatch.setattr(
+            "dovo.engine.services.run.reconcile_stale_sessions",
+            lambda sessions_db, *, path: Reconciliation(diagnostic=prior),
+        )
+
+        result = BlueprintRunService(
+            name="nope",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        ).execute()
+
+        assert result.error_code == ErrorCode.CATALOG_NOT_FOUND
+        assert result.errors == ["Catalog item 'nope' not found."]
+        assert result.diagnostics == [prior]
+        assert not frozen_diagnostic_clock.parent.exists()
+        assert sessions_repo.list() == []
+
+    def test_load_lock_timeout_propagates(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With reconciliation stubbed and the catalog index's lock timing out while the blueprint loads, raise LockTimeoutError("lock held") and add no session row."""
+        monkeypatch.setattr(
+            "dovo.engine.services.run.reconcile_stale_sessions", lambda sessions_db, *, path: Reconciliation()
+        )
+        service = _lint_service(engine_paths, sessions_repo)
+        time_out_first_lock(monkeypatch)
+
+        with pytest.raises(LockTimeoutError, match="lock held"):
+            service.execute()
+
+        monkeypatch.undo()
+        assert sessions_repo.list() == []
+
     def test_reconciliation_record_precedes_catalog_record(
         self,
         engine_paths: WorkspacePaths,
