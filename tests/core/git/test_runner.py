@@ -214,6 +214,19 @@ class GitRunnerExecTests:
 
         assert output == ""
 
+    def test_branch_exists_raises_git_failed_on_fatal_show_ref(self, tmp_path: Path) -> None:
+        """Raise GitError GIT_FAILED naming the show-ref command and its stderr when show-ref exits 128."""
+        fake = FakeGitRunner({("show-ref",): GitProcessOutput(128, "", "fatal: bad")})
+
+        with pytest.raises(GitError) as excinfo:
+            fake.branch_exists(tmp_path, "x")
+
+        assert excinfo.value.error_code is ErrorCode.GIT_FAILED
+        assert (
+            excinfo.value.message
+            == "Git execution failed ('git git show-ref --verify --quiet refs/heads/x'): fatal: bad"
+        )
+
     def test_get_current_branch_propagates_fs_not_found(self, tmp_path: Path) -> None:
         """Raise the GitError(FS_NOT_FOUND) git branch --show-current raised instead of returning "unknown"."""
         failure = GitError(ErrorCode.FS_NOT_FOUND, "working directory does not exist")
