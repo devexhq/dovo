@@ -92,7 +92,7 @@ Three sections, intent-focused:
 Fixes #<n>
 ```
 
-The Phases and Departures lines follow "In the pull request" in `docs/agents/planning.md`.
+The Phases and Departures lines follow "In the pull request" in `docs/agents/planning.md`. Take the phases from the `## Phases` table in `.agentic/plan.md` when it exists.
 
 Use `Fixes #N` (or `Closes #N`) when the work resolves an issue, with `N` from the header captured in Step 2; when Step 2 found no issue number, write `Fixes: none (no tracking issue)` on the `Fixes` line rather than inventing a reference. Keep the title in the same imperative, semantic style as the commit titles.
 

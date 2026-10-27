@@ -10,7 +10,7 @@ from typing import Final
 
 import pytest
 
-from tests.lint.astlib import REPO_ROOT
+from tests.lint.astlib import REPO_ROOT, TESTS_ROOT, collect_python_files
 
 ARCHITECTURE_DIR: Final[Path] = REPO_ROOT / "docs" / "agents" / "architecture"
 INDEX: Final[Path] = ARCHITECTURE_DIR / "README.md"
@@ -21,21 +21,20 @@ MAX_HEADING_LEVEL: Final = 3
 MAX_PARAGRAPH_WORDS: Final = 40
 MAX_CODE_BLOCK_LINES: Final = 10
 MAX_FILE_LINES: Final = 150
-FIELDS: Final = ("Decision", "Why", "Exemplar", "Enforced by", "Since")
-REQUIRED_FIELDS: Final = ("Decision", "Why", "Enforced by")
+FIELDS: Final = ("Decision", "Why", "Since", "Example")
+REQUIRED_FIELDS: Final = ("Decision", "Why", "Since")
 PATH_PREFIXES: Final = ("src/", "tests/", "docs/", "e2e/", "scripts/", ".agents/")
 ROOT_FILES: Final = frozenset({"AGENTS.md", "README.md", "mkdocs.yml", "pyproject.toml"})
-FENCES: Final = ("```", "~~~")
 
 HEADING: Final = re.compile(r"^(?P<marks>#+)\s+(?P<title>.+)$")
+FENCE: Final = re.compile(r"^(?P<marks>`{3,}|~{3,})(?P<info>.*)$")
 BULLET: Final = re.compile(r"^(?:[-*+]|\d+\.)\s")
-FIELD: Final = re.compile(r"^- \*\*(?P<name>[^*]+):\*\*\s*(?P<value>.*)$")
+FIELD: Final = re.compile(r"^- \*\*(?P<name>[^*]+):\*\*")
 BACKTICKED: Final = re.compile(r"`([^`]+)`")
 LINK_TARGET: Final = re.compile(r"\]\((?P<target>[^)#\s]+)(?:#[^)]*)?\)")
 LINE_NUMBER: Final = re.compile(r":\d+(?:-\d+)?$")
 PARAMETRIZE_ID: Final = re.compile(r"\[.*\]$")
-PENDING: Final = re.compile(r"^pending #\d+(?: \(phase \d+\))?$")
-TEST_PATHS: Final = re.compile(r"^`tests/[^`]+\.py(?:::[^`]+)?`(?:, `tests/[^`]+\.py(?:::[^`]+)?`)*$")
+ENTRY_CITATION: Final = re.compile(r"docs/agents/architecture/(?P<file>[\w.-]+\.md)#(?P<anchor>[\w-]+)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,9 +68,9 @@ def _doc_params(docs: list[Path]) -> list[object]:
     return [pytest.param(doc, id=doc.name) for doc in docs]
 
 
-def _relative(doc: Path) -> str:
-    """Return doc's path relative to the repository root."""
-    return str(doc.relative_to(REPO_ROOT))
+def _relative(path: Path) -> str:
+    """Return path relative to the repository root."""
+    return str(path.relative_to(REPO_ROOT))
 
 
 def _doc_lines(doc: Path) -> list[str]:
@@ -79,10 +78,15 @@ def _doc_lines(doc: Path) -> list[str]:
     return doc.read_text(encoding="utf-8").splitlines()
 
 
-def _fence(text: str) -> str | None:
-    """Return the fence marker a line opens or closes with, at any indentation, or None."""
-    stripped = text.lstrip()
-    return next((marker for marker in FENCES if stripped.startswith(marker)), None)
+def _closes(text: str, opener: str) -> bool:
+    """Return whether a line closes a fence opened with opener: same character, at least as long, no info string."""
+    match = FENCE.match(text.lstrip())
+    return (
+        match is not None
+        and not match["info"].strip()
+        and match["marks"][0] == opener[0]
+        and len(match["marks"]) >= len(opener)
+    )
 
 
 def _fenced_blocks(lines: list[str]) -> list[tuple[int, int, int]]:
@@ -90,14 +94,11 @@ def _fenced_blocks(lines: list[str]) -> list[tuple[int, int, int]]:
     blocks: list[tuple[int, int, int]] = []
     opened: tuple[int, str] | None = None
     for number, text in enumerate(lines, start=1):
-        marker = _fence(text)
-        if marker is None:
-            continue
-        if opened is None:
-            opened = (number, marker)
-        elif marker == opened[1]:
+        if opened is not None and _closes(text, opened[1]):
             blocks.append((opened[0], number, number - opened[0] - 1))
             opened = None
+        elif opened is None and (match := FENCE.match(text.lstrip())) is not None:
+            opened = (number, match["marks"])
     if opened is not None:
         blocks.append((opened[0], len(lines) + 1, len(lines) - opened[0]))
     return blocks
@@ -105,13 +106,15 @@ def _fenced_blocks(lines: list[str]) -> list[tuple[int, int, int]]:
 
 def _prose_lines(lines: list[str]) -> list[Line]:
     """Return lines outside code fences, keeping each opening fence, with its indentation, as a one-line marker."""
-    fenced = {number for start, end, _ in _fenced_blocks(lines) for number in range(start + 1, end + 1)}
+    blocks = _fenced_blocks(lines)
+    fenced = {number for start, end, _ in blocks for number in range(start + 1, end + 1)}
+    openers = {start for start, _, _ in blocks}
     kept: list[Line] = []
     for number, text in enumerate(lines, start=1):
         if number in fenced:
             continue
         indent = text[: len(text) - len(text.lstrip())]
-        kept.append(Line(number, f"{indent}```" if _fence(text) else text))
+        kept.append(Line(number, f"{indent}```" if number in openers else text))
     return kept
 
 
@@ -174,45 +177,52 @@ def _prose_violations(doc: Path, section: Section) -> list[str]:
     return violations
 
 
-def _fields(section: Section) -> tuple[list[tuple[str, str]], list[Line]]:
-    """Return a decision entry's (field, value) pairs in order, and its top-level bullets that are not a known field."""
-    fields: list[tuple[str, str]] = []
-    strays: list[Line] = []
+def _is_entry(doc: Path, section: Section) -> bool:
+    """Return whether a section is a decision entry: a level-2 section of an area file."""
+    return doc != INDEX and section.level == 2
+
+
+def _entry_lines(section: Section) -> tuple[list[str], list[str]]:
+    """Return an entry's field names in order, and a problem for each top-level line that is not a known field."""
+    names: list[str] = []
+    problems: list[str] = []
+    previous = "blank"
     for line in section.body:
+        kind = _kind(line.text, previous)
+        previous = kind
         match = FIELD.match(line.text)
-        if match is not None and match["name"] in FIELDS:
-            fields.append((match["name"], match["value"].strip()))
-        elif BULLET.match(line.text):
-            strays.append(line)
-    return fields, strays
+        if kind == "list" and match is not None and match["name"] in FIELDS:
+            names.append(match["name"])
+        elif kind == "list":
+            problems.append(f"{line.number}: not a field ({', '.join(FIELDS)})")
+        elif kind in ("paragraph", "code"):
+            problems.append(f"{line.number}: {kind} inside an entry; use field bullets")
+    return names, problems
 
 
-def _field_order_violations(where: str, names: list[str]) -> list[str]:
-    """Return a violation for each repeated field and for fields out of the README's order."""
-    repeated = sorted({name for name in names if names.count(name) > 1})
-    violations = [f"{where}: **{name}:** appears more than once" for name in repeated]
+def _field_order_violations(names: list[str]) -> list[str]:
+    """Return a problem for each missing or repeated field, and for fields out of the README's order."""
+    missing = [f"missing **{name}:**" for name in REQUIRED_FIELDS if name not in names]
+    repeated = [f"**{name}:** appears more than once" for name in sorted({n for n in names if names.count(n) > 1})]
     positions = [FIELDS.index(name) for name in names]
-    if positions != sorted(positions):
-        violations.append(f"{where}: fields out of order ({', '.join(names)}); use {', '.join(FIELDS)}")
-    return violations
+    order = [] if positions == sorted(positions) else [f"fields out of order ({', '.join(names)})"]
+    return [*missing, *repeated, *order]
 
 
 def _entry_violations(doc: Path, section: Section) -> list[str]:
-    """Return a violation for each missing, repeated or misordered field, or stray top-level bullet, in one entry."""
-    fields, strays = _fields(section)
-    names = [name for name, _ in fields]
+    """Return every format violation in one decision entry, naming the file and heading."""
+    names, problems = _entry_lines(section)
     where = f"{_relative(doc)} ({section.title})"
-    missing = [f"{where}: missing **{name}:**" for name in REQUIRED_FIELDS if name not in names]
-    stray = [f"{_relative(doc)}:{line.number} ({section.title}): top-level bullet is not a field" for line in strays]
-    return [*missing, *_field_order_violations(where, names), *stray]
+    return [f"{where}: {problem}" for problem in [*problems, *_field_order_violations(names)]]
 
 
 def _names_exist(source: Path, names: list[str]) -> bool:
-    """Return whether the nested class or function names exist in a Python file, ignoring a [parametrize-id]."""
-    if source.suffix != ".py":
+    """Return whether nested class and test names exist in a Python file; the last name must start with test_."""
+    bare = [PARAMETRIZE_ID.sub("", name) for name in names]
+    if source.suffix != ".py" or not bare[-1].startswith("test_"):
         return False
     scope: list[ast.stmt] = ast.parse(source.read_text(encoding="utf-8")).body
-    for name in (PARAMETRIZE_ID.sub("", part) for part in names):
+    for name in bare:
         found = next(
             (
                 node
@@ -245,29 +255,20 @@ def _reference_problem(span: str) -> str | None:
     if not target.exists():
         return f"{span}: no such path"
     if names and not _names_exist(target, names.split("::")):
-        return f"{span}: no such class or test"
+        return f"{span}: no such test"
     return None
-
-
-def _enforced_by_is_valid(value: str) -> bool:
-    """Return whether an Enforced by value is review only, pending #<n>, or existing backticked tests."""
-    if value == "review only" or PENDING.match(value):
-        return True
-    if not TEST_PATHS.match(value):
-        return False
-    return all(_reference_problem(span) is None for span in BACKTICKED.findall(value))
-
-
-def _missing_links(doc: Path, text: str) -> list[str]:
-    """Return each relative link target in text that does not exist next to doc."""
-    links = [match["target"] for match in LINK_TARGET.finditer(text) if "://" not in match["target"]]
-    return [f"{link}: no such file" for link in links if not (doc.parent / link).exists()]
 
 
 def _reference_problems(text: str) -> list[str]:
     """Return the problem with each invalid backticked repository reference in text."""
     problems = [_reference_problem(span) for span in BACKTICKED.findall(text)]
     return [problem for problem in problems if problem is not None]
+
+
+def _missing_links(doc: Path, text: str) -> list[str]:
+    """Return each relative link target in text that does not exist next to doc."""
+    links = [match["target"] for match in LINK_TARGET.finditer(text) if "://" not in match["target"]]
+    return [f"{link}: no such file" for link in links if not (doc.parent / link).exists()]
 
 
 def _unresolved_references(doc: Path) -> list[str]:
@@ -279,12 +280,35 @@ def _unresolved_references(doc: Path) -> list[str]:
     ]
 
 
+def _anchor(title: str) -> str:
+    """Return GitHub's anchor for a heading: lowercase, punctuation dropped, spaces to hyphens."""
+    kept = "".join(character for character in title.lower() if character.isalnum() or character in " -_")
+    return kept.replace(" ", "-")
+
+
+def _anchors(doc: Path) -> set[str]:
+    """Return the anchors of every heading in doc."""
+    return {_anchor(section.title) for section in _sections(doc) if section.level > 0}
+
+
+def _citation_problems(source: Path) -> list[str]:
+    """Return `path:line: citation` for each architecture entry cited in source that names no real file or heading."""
+    problems: list[str] = []
+    for number, text in enumerate(source.read_text(encoding="utf-8").splitlines(), start=1):
+        for match in ENTRY_CITATION.finditer(text):
+            doc = ARCHITECTURE_DIR / match["file"]
+            if not doc.is_file() or match["anchor"] not in _anchors(doc):
+                problems.append(f"{_relative(source)}:{number}: {match.group(0)}")
+    return problems
+
+
 def _heading_violations(doc: Path) -> list[str]:
-    """Return a violation for each heading deeper than level 3."""
+    """Return a violation for each heading deeper than level 3, and for any sub-heading inside an area file's entries."""
+    deepest = MAX_HEADING_LEVEL if doc == INDEX else 2
     return [
         f"{_relative(doc)}:{line.number}: heading level {len(match['marks'])} ({match['title']})"
         for line in _prose_lines(_doc_lines(doc))
-        if (match := HEADING.match(line.text)) is not None and len(match["marks"]) > MAX_HEADING_LEVEL
+        if (match := HEADING.match(line.text)) is not None and len(match["marks"]) > deepest
     ]
 
 
@@ -294,12 +318,14 @@ class ArchitectureDocsTests:
         assert AREA_DOCS, f"no area files in {_relative(ARCHITECTURE_DIR)}"
 
     @pytest.mark.parametrize("doc", _doc_params(ARCHITECTURE_DOCS))
-    def test_headings_stay_within_levels_one_to_three(self, doc: Path) -> None:
+    def test_headings_stay_within_levels_and_entries_have_no_sub_headings(self, doc: Path) -> None:
         assert _heading_violations(doc) == []
 
     @pytest.mark.parametrize("doc", _doc_params(ARCHITECTURE_DOCS))
-    def test_sections_open_with_at_most_one_short_paragraph_then_bullets(self, doc: Path) -> None:
-        violations = [found for section in _sections(doc) for found in _prose_violations(doc, section)]
+    def test_non_entry_sections_open_with_at_most_one_short_paragraph(self, doc: Path) -> None:
+        sections = [section for section in _sections(doc) if not _is_entry(doc, section)]
+
+        violations = [found for section in sections for found in _prose_violations(doc, section)]
 
         assert violations == []
 
@@ -314,29 +340,25 @@ class ArchitectureDocsTests:
         assert long_blocks == []
 
     @pytest.mark.parametrize("doc", _doc_params(AREA_DOCS))
-    def test_decision_entries_hold_required_fields_once_in_order(self, doc: Path) -> None:
-        entries = [section for section in _sections(doc) if section.level == 2]
+    def test_entries_hold_only_decision_why_since_and_optional_example_in_order(self, doc: Path) -> None:
+        entries = [section for section in _sections(doc) if _is_entry(doc, section)]
         assert entries, f"{_relative(doc)} has no decision entries"
 
         violations = [found for entry in entries for found in _entry_violations(doc, entry)]
 
         assert violations == []
 
-    @pytest.mark.parametrize("doc", _doc_params(AREA_DOCS))
-    def test_enforced_by_names_existing_tests_review_only_or_pending_issue(self, doc: Path) -> None:
-        invalid = [
-            f"{_relative(doc)} ({section.title}): Enforced by {value}"
-            for section in _sections(doc)
-            if section.level == 2
-            and (value := dict(_fields(section)[0]).get("Enforced by")) is not None
-            and not _enforced_by_is_valid(value)
-        ]
-
-        assert invalid == [], "use backticked tests that exist, `review only`, or `pending #<issue>`"
-
     @pytest.mark.parametrize("doc", _doc_params(ARCHITECTURE_DOCS))
     def test_cited_paths_tests_and_links_resolve_without_line_numbers(self, doc: Path) -> None:
         assert _unresolved_references(doc) == []
+
+    def test_entry_citations_under_tests_name_a_real_file_and_heading(self) -> None:
+        sources = collect_python_files(TESTS_ROOT)
+        assert sources, "no test files found, so the rule would pass vacuously"
+
+        problems = [found for source in sources for found in _citation_problems(source)]
+
+        assert problems == [], "cite an entry as docs/agents/architecture/<file>.md#<heading-anchor>"
 
     @pytest.mark.parametrize("doc", _doc_params(ARCHITECTURE_DOCS))
     def test_file_stays_under_line_limit(self, doc: Path) -> None:

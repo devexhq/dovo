@@ -62,7 +62,8 @@ mkdir -p .agentic
   ```
 
   The Phases and Departures lines follow "In the pull request" in
-  `docs/agents/planning.md`.
+  `docs/agents/planning.md`. Take the phases from the `## Phases` table in
+  `.agentic/plan.md` when it exists, as `dovo-push` does.
 
   Omit the `Fixes #N` line entirely when there is no related issue — never
   invent one.
