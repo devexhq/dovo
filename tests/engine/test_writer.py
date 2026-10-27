@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.redact import SecretRedactor
@@ -20,11 +21,13 @@ from dovo.core.catalog.models import CatalogScan
 from dovo.core.db import SessionStatus
 from dovo.core.project.models import ProjectIdentity
 from dovo.core.project.services.identity import save_project_identity
+from dovo.engine.exceptions import EngineError
 from dovo.engine.models import DefinitionRef, DefinitionsManifest
 from dovo.engine.state_models import SessionJsonPayload, SessionLifecycle
 from dovo.engine.writer import (
     get_session_dir,
     load_blueprint_from_snapshot,
+    snapshot_blueprint_path,
     snapshot_definitions,
     write_session_diff,
     write_session_projection,
@@ -188,6 +191,23 @@ class LoadBlueprintFromSnapshotTests:
         step = rebuilt.steps[0]
         assert isinstance(step, StepDefinition)
         assert (step.id, step.type, step.command) == ("s1", StepType.COMMAND, "echo lint")
+
+    def test_missing_blueprint_snapshot_raises_snapshot_missing(self, tmp_path: Path) -> None:
+        """Raise EngineError SESSION_SNAPSHOT_MISSING "Snapshot definition file is missing: '<path>'." when the blueprint file is gone."""
+        workspace = tmp_path / "workspace"
+        write_runnable_blueprint(workspace, key="gone-task", steps=[{"id": "s1", "run": "echo hi"}])
+        catalog = Catalog(initialized_workspace_paths(workspace))
+        session_dir = tmp_path / "session"
+        manifest = snapshot_definitions(catalog, Blueprint.load("gone-task", catalog=catalog), session_dir, [], [])
+        assert manifest is not None
+        snapshot = snapshot_blueprint_path(session_dir, "gone-task")
+        snapshot.unlink()
+
+        with pytest.raises(EngineError) as excinfo:
+            load_blueprint_from_snapshot(session_dir, manifest)
+
+        assert excinfo.value.error_code is ErrorCode.SESSION_SNAPSHOT_MISSING
+        assert excinfo.value.message == f"Snapshot definition file is missing: '{snapshot}'."
 
 
 class WriteSessionRunProjectionTests:
