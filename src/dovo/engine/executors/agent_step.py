@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
-from dovo.common.diagnostic_log import append_diagnostic_hint
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.exceptions import catch_failure
 from dovo.common.timing import Stopwatch
 from dovo.core.agents import (
@@ -24,13 +24,13 @@ from dovo.core.agents import (
 from dovo.core.agents.responses import diagnostics_with_remediations
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
-from dovo.engine.executors.failure_log import DiagnosticContext, logged_hint
 from dovo.engine.executors.metadata import metadata_to_env
 from dovo.engine.executors.models import (
     AGENT_OUTCOME_EXIT_CODES,
     AgentProgressSink,
     AgentStepRunner,
     AgentStepSummary,
+    DiagnosticContext,
     ExecutionMetadata,
     OutputCallback,
     StepDispatchOutcome,
@@ -127,7 +127,7 @@ def _allocate_scratch(
     main_checkout: Path,
     context: DiagnosticContext,
 ) -> AgentInvocationContext | AgentAttempt:
-    """Return the attempt's private paths, or the provider_error attempt carrying the failure's message, any Details logged line, and its Fix: block."""
+    """Return the attempt's private paths, or the provider_error attempt carrying the failure's message, its Fix: block, and its record."""
     with catch_failure("engine.step", **context) as caught:
         invocation = allocate_invocation_paths(
             invocation_id=new_invocation_id(),
@@ -137,8 +137,11 @@ def _allocate_scratch(
             main_checkout=main_checkout,
         )
     if caught.failure is not None:
-        message = append_diagnostic_hint(caught.failure.message, caught.failure.diagnostic)
-        return _provider_error(*diagnostics_with_remediations([message], caught.failure.remediations))
+        return AgentAttempt(
+            status=AgentResponseStatus.PROVIDER_ERROR,
+            errors=diagnostics_with_remediations([caught.failure.message], caught.failure.remediations),
+            diagnostics=error_diagnostics(caught.failure.diagnostic),
+        )
     return invocation
 
 
@@ -244,9 +247,9 @@ def _report_withheld_fix(attempt: AgentAttempt, provider: str, on_output: Output
     )
 
 
-def _provider_error(*diagnostics: str) -> AgentAttempt:
-    """Build a provider_error attempt carrying the given diagnostics."""
-    return AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, diagnostics=list(diagnostics))
+def _provider_error(*errors: str) -> AgentAttempt:
+    """Build a provider_error attempt carrying the given errors."""
+    return AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, errors=list(errors))
 
 
 def _summary_line(attempt: AgentAttempt, *, status: AgentResponseStatus | None = None) -> str:
@@ -261,13 +264,13 @@ def _summary_line(attempt: AgentAttempt, *, status: AgentResponseStatus | None =
 
 
 def _failure_text(attempt: AgentAttempt) -> str:
-    """Name the unfixable reason followed by any diagnostics, else join the diagnostics, else name the status."""
+    """Name the unfixable reason followed by any errors, else join the errors, else name the status."""
     if attempt.status == AgentResponseStatus.UNFIXABLE:
         reason_line = f"Agent reported the task unfixable: {attempt.unfixable_reason or 'no reason given'}"
-        return "\n".join([reason_line, *attempt.diagnostics])
+        return "\n".join([reason_line, *attempt.errors])
 
-    if attempt.diagnostics:
-        return "\n".join(attempt.diagnostics)
+    if attempt.errors:
+        return "\n".join(attempt.errors)
 
     return f"Agent step ended with status '{attempt.status.value}'."
 
@@ -289,11 +292,17 @@ def _emit_output(on_output: OutputCallback | None, stream_name: str, line: str) 
 def _to_outcome(
     attempt: AgentAttempt, on_output: OutputCallback | None, *, context: DiagnosticContext
 ) -> StepDispatchOutcome:
-    """Convert an attempt into its dispatch outcome carrying the attempt's warnings; a failing summary callback is recorded and downgrades success."""
+    """Convert an attempt into its dispatch outcome carrying the attempt's records; a failing summary callback is recorded and downgrades success."""
     line = _summary_line(attempt)
     callback_error = _emit_output(on_output, "stdout", line)
-    hint = logged_hint(callback_error, operation="engine.step", context=context) if callback_error is not None else None
-    warnings = [*attempt.warnings, *([hint] if hint is not None else [])]
+    callback_records = (
+        error_diagnostics(
+            record_exception(callback_error, level=DiagnosticLevel.ERROR, operation="engine.step", context=context)
+        )
+        if callback_error is not None
+        else []
+    )
+    diagnostics = [*attempt.diagnostics, *callback_records]
 
     if not attempt.completed:
         return _failed_outcome(
@@ -301,7 +310,7 @@ def _to_outcome(
             line,
             _failure_text(attempt),
             rejected_patch_path=attempt.rejected_patch_path,
-            warnings=warnings,
+            diagnostics=diagnostics,
         )
 
     if callback_error is not None:
@@ -310,7 +319,7 @@ def _to_outcome(
             AgentResponseStatus.PROVIDER_ERROR,
             downgraded,
             f"Agent output callback error: {callback_error}",
-            warnings=warnings,
+            diagnostics=diagnostics,
         )
 
     return StepDispatchOutcome(
@@ -319,7 +328,7 @@ def _to_outcome(
         stdout=line,
         stderr="",
         error_message=None,
-        warnings=warnings,
+        diagnostics=diagnostics,
     )
 
 
@@ -329,9 +338,9 @@ def _failed_outcome(
     message: str,
     *,
     rejected_patch_path: str | None = None,
-    warnings: list[str],
+    diagnostics: list[DiagnosticRecord],
 ) -> StepDispatchOutcome:
-    """Build the failed dispatch outcome carrying the mapped exit code for status, the summary line, the diagnostic, any saved rejected-edit path, and the diagnostic hint warnings."""
+    """Build the failed dispatch outcome carrying the mapped exit code for status, the summary line, the diagnostic, any saved rejected-edit path, and the attempt's records."""
     return StepDispatchOutcome(
         status="failed",
         exit_code=AGENT_OUTCOME_EXIT_CODES[status],
@@ -339,5 +348,5 @@ def _failed_outcome(
         stderr=message,
         error_message=message,
         rejected_patch_path=rejected_patch_path,
-        warnings=warnings,
+        diagnostics=diagnostics,
     )

@@ -29,7 +29,7 @@ from dovo.core.agents import (
 )
 from dovo.core.agents.registry import PROVIDERS
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
 _NO_OP_SUMMARY = "Inspected the repository; no edits were required."
 
@@ -145,18 +145,18 @@ class RunDirectAttemptRequestTests:
     def test_unregistered_provider_returns_provider_error_attempt(
         self, git_repo: Path, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return provider_error naming the unsupported provider with no warnings and no record."""
+        """Return provider_error naming the unsupported provider with no diagnostics and no record."""
         attempt = _attempt(git_repo, "unregistered")
 
         assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
-        assert "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED)" in attempt.diagnostics[0]
-        assert attempt.warnings == []
+        assert "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED)" in attempt.errors[0]
+        assert attempt.diagnostics == []
         assert not frozen_diagnostic_clock.parent.parent.exists()
 
     def test_provider_exception_returns_provider_error_attempt(
         self, git_repo: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return provider_error with the hint as a warning and write one agent.run error record."""
+        """Return provider_error with errors == ["Agent provider error: boom"] and diagnostics == [the agent.run record]."""
 
         class _Exploding(BaseAgentProvider):
             def _invoke(self, request: AgentRequest) -> AgentResponse:
@@ -167,8 +167,8 @@ class RunDirectAttemptRequestTests:
         attempt = _attempt(git_repo)
 
         assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
-        assert attempt.diagnostics == ["Agent provider error: boom"]
-        assert attempt.warnings == [diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")]
+        assert attempt.errors == ["Agent provider error: boom"]
+        assert attempt.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"], event["context"]) == (
             "error",
@@ -177,14 +177,14 @@ class RunDirectAttemptRequestTests:
         )
 
     @pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
-    def test_adapter_build_exception_records_error_and_returns_hint_warning(
+    def test_adapter_build_exception_records_error_into_attempt_records(
         self,
         git_repo: Path,
         frozen_diagnostic_clock: Path,
         monkeypatch: pytest.MonkeyPatch,
         error_type: type[Exception],
     ) -> None:
-        """Return provider_error with the hint as a warning and write one agent.run record when the spec's build raises."""
+        """Return provider_error with errors == ["Agent provider error: build failed"] and diagnostics == [the agent.run record] when the spec's build raises."""
 
         def _build_failed() -> BaseAgentProvider:
             raise error_type("build failed")
@@ -194,8 +194,8 @@ class RunDirectAttemptRequestTests:
         attempt = _attempt(git_repo)
 
         assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
-        assert attempt.diagnostics == ["Agent provider error: build failed"]
-        assert attempt.warnings == [diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")]
+        assert attempt.errors == ["Agent provider error: build failed"]
+        assert attempt.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"]) == ("error", "agent.run")
 
@@ -249,7 +249,24 @@ class RunDirectAttemptSettleTests:
         attempt = _attempt(git_repo)
 
         assert attempt.status == AgentResponseStatus.TIMEOUT
-        assert attempt.diagnostics == ["e", "Fix:\n- Do one\n- Run 'two'"]
+        assert attempt.errors == ["e", "Fix:\n- Do one\n- Run 'two'"]
+
+    def test_settle_copies_response_records_onto_attempt(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Copy a PROVIDER_ERROR response's diagnostics [record] onto the attempt unchanged, with its errors in the attempt's errors."""
+        record = diagnostic_record(frozen_diagnostic_clock)
+        response = AgentResponse(
+            status=AgentResponseStatus.PROVIDER_ERROR,
+            errors=["Unexpected error during agent.validate_patch: boom"],
+            diagnostics=[record],
+        )
+        _use_provider(monkeypatch, FakeAgentProvider(response))
+
+        attempt = _attempt(git_repo)
+
+        assert attempt.errors == ["Unexpected error during agent.validate_patch: boom"]
+        assert attempt.diagnostics == [record]
 
 
 class _EditingAdapter(CliDirectMutationAdapter):

@@ -39,7 +39,7 @@ from dovo.engine.writer import snapshot_blueprint_path
 from tests.engine.conftest import AgentRunnerBuild
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
 from tests.harness.builders import WorkspaceBuilder
-from tests.harness.diagnostic_log import diagnostic_hint, diagnostic_record
+from tests.harness.diagnostic_log import diagnostic_record
 from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id
 from tests.harness.sessions import (
     NoOpRunObserver,
@@ -598,14 +598,14 @@ class DriveRunCleanupTests:
 
 
 class SessionRunnerDiagnosticLogTests:
-    def test_launch_failure_hints_run_warnings_not_session_state(
+    def test_launch_failure_records_into_run_diagnostics_not_session_state(
         self,
         git_paths: WorkspacePaths,
         git_runs: SessionsRepository,
         frozen_diagnostic_clock: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Fail the step unhinted, hold one hint in outcome.warnings and leave no 'Details logged:' text in the session's state."""
+        """Fail the step with no line, hold no 'Details logged:' warning, set diagnostics == [the engine.step record] and leave the session's state without the line."""
 
         def _exec_format_error(*_args: object, **_kwargs: object) -> None:
             raise OSError("exec format error")
@@ -617,16 +617,50 @@ class SessionRunnerDiagnosticLogTests:
 
         assert outcome.status == SessionStatus.FAILED
         assert outcome.errors == ["Step 'a' failed: Command execution error: exec format error"]
-        assert [warning for warning in outcome.warnings if "Details logged:" in warning] == [
-            diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")
-        ]
-        row = git_runs.get("launch")
-        assert row is not None
+        assert [warning for warning in outcome.warnings if "Details logged:" in warning] == []
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        _assert_state_without_line(git_paths, git_runs, "launch")
         session_json = (git_paths.session_dir("launch") / "session.json").read_text(encoding="utf-8")
-        assert "Details logged:" not in (row.error_message or "")
-        assert "Details logged:" not in (row.execution_state_json or "")
-        assert "Details logged:" not in session_json
         assert "Command execution error: exec format error" in session_json
+
+    @pytest.mark.parametrize("site", ["scratch", "edit-check"])
+    def test_agent_step_records_reach_run_diagnostics_not_session_state(
+        self, tmp_path: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch, site: str
+    ) -> None:
+        """Fail the agent step with no line, set diagnostics == [the site's record], and leave the session's state without 'Details logged:'."""
+        record = diagnostic_record(frozen_diagnostic_clock)
+        if site == "scratch":
+
+            def _boom(**_kwargs: object) -> None:
+                raise RuntimeError("boom")
+
+            monkeypatch.setattr("dovo.engine.executors.agent_step.allocate_invocation_paths", _boom)
+            expected_error = "Unexpected error during engine.step: boom"
+        else:
+            expected_error = "Unexpected error during agent.validate_patch: boom"
+        provider = FakeAgentProvider(
+            AgentResponse(status=AgentResponseStatus.PROVIDER_ERROR, errors=[expected_error], diagnostics=[record])
+        )
+        monkeypatch.setattr(AGENT_ADAPTER_FACTORY, lambda token: provider)
+        paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG})
+        seed_new_session(paths, sessions, session_id=site, steps=[_agent_step("a")], use_worktree=True)
+
+        outcome = _drive(paths, sessions, site)
+
+        assert outcome.status == SessionStatus.FAILED
+        assert outcome.errors == [f"Step 'a' failed: {expected_error}"]
+        assert outcome.diagnostics == [record]
+        _assert_state_without_line(paths, sessions, site)
+
+
+def _assert_state_without_line(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> None:
+    """Assert the row, its execution_state_json and session.json hold no 'Details logged:' text."""
+    row = sessions.get(session_id)
+    assert row is not None
+    session_json = (paths.session_dir(session_id) / "session.json").read_text(encoding="utf-8")
+    assert "Details logged:" not in (row.error_message or "")
+    assert "Details logged:" not in (row.execution_state_json or "")
+    assert "Details logged:" not in session_json
 
 
 class DriveRunObserverContractTests:

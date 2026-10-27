@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from dovo.common.diagnostic_log import append_diagnostic_hint
+from dovo.common.diagnostic_log import error_diagnostics
 from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.process import stream_isolated_process
@@ -379,17 +379,22 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         baseline: str,
         duration_seconds: float,
     ) -> AgentResponse:
-        """Save the rejected edit, then discard it and return PROVIDER_ERROR carrying the validation failure's message and any Details logged line, the saved path, and any discard failure; a failed save leaves the worktree untouched."""
+        """Save the rejected edit, then discard it and return PROVIDER_ERROR carrying the validation failure's message, its record in diagnostics, the saved path, and any discard failure; a failed save leaves the worktree untouched."""
         saved, notes, discard_detail = _save_and_discard(request, baseline)
         response = provider_error_response(
             duration_seconds=duration_seconds,
             detail=discard_detail,
-            errors=[append_diagnostic_hint(failure.message, failure.diagnostic), *notes],
+            errors=[failure.message, *notes],
             raw_text=outcome.result_text,
             mutation_baseline_ref=baseline,
         )
 
-        return response.model_copy(update={"rejected_patch_path": str(saved) if saved is not None else None})
+        return response.model_copy(
+            update={
+                "rejected_patch_path": str(saved) if saved is not None else None,
+                "diagnostics": error_diagnostics(failure.diagnostic),
+            }
+        )
 
     def _unfixable_outcome(
         self,

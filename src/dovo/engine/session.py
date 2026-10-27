@@ -324,7 +324,7 @@ class SessionRunner:
         process_registry.terminate_all(grace_seconds=0.5)
         warnings = list(outcome.warnings)
         diagnostics = list(outcome.diagnostics)
-        self._workspace.capture_and_persist_diff(self._worktree, warnings)
+        self._workspace.capture_and_persist_diff(self._worktree, warnings, diagnostics)
         worktree_kept = self._workspace.finalize_cleanup(
             self._manager,
             self._worktree,

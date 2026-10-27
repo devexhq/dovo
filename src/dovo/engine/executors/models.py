@@ -1,11 +1,12 @@
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, Protocol
 
 from pydantic import BaseModel, Field
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
 from dovo.core.agents.models import AgentProgress, AgentProgressKind, AgentResponseStatus
@@ -107,6 +108,9 @@ class ExecutionMetadata(BaseModel):
     loop_iteration: int | None = None
 
 
+DiagnosticContext = Mapping[str, str | int | float | bool | None]
+
+
 class StepDispatchOutcome(BaseModel):
     """Raw outcome of one or more step primitive dispatches (before finalization)."""
 
@@ -119,7 +123,9 @@ class StepDispatchOutcome(BaseModel):
     error_message: str | None = None
     attempts: int = 1
     rejected_patch_path: str | None = None
-    warnings: list[str] = Field(default_factory=list)  # Diagnostic hints for the run's warnings; never persisted.
+    diagnostics: list[DiagnosticRecord] = Field(
+        default_factory=list
+    )  # Records for the run's diagnostics; never persisted.
 
 
 class StepPostcondition(Protocol):
@@ -201,6 +207,8 @@ class StepExecutionContext:
     paths: WorkspacePaths | None = None
     agent_runner: AgentStepRunner | None = None
     sensitive_variables: tuple[str, ...] = ()
+    # The caller's list for the run's diagnostics; the step extends it as each record is written.
+    diagnostics: list[DiagnosticRecord] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Reject an agent step that has no agent runner."""

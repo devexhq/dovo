@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.lock import WorkspaceLock
 from dovo.common.models import FailurePolicy
 from dovo.common.process import process_registry
@@ -114,6 +115,7 @@ class RunCoordinator:
         self._paused_prompt_id: str | None = None
         self._errors: list[str] = []
         self._warnings: list[str] = []
+        self._diagnostics: list[DiagnosticRecord] = []
         self._loaded: _LoadedRun | None = None
         self._load_ok: bool | None = None
         self._in_flight: ExecutionLeafNode | ExecutionLoopNode | None = None
@@ -311,7 +313,7 @@ class RunCoordinator:
         )
 
     def _run_attempt(self, invocation: StepInvocation) -> StepResult:
-        """Notify and log the start, run one StepExecution with observer-forwarding callbacks, notify and log the done, and append the result's warnings and the execution's diagnostic hints."""
+        """Notify and log the start, run one StepExecution with observer-forwarding callbacks, notify and log the done, and append the result's warnings."""
         self._log_step_start(invocation)
         observer = self._run.settings.observer
         step, idx, total = invocation.step, invocation.idx, invocation.total
@@ -329,10 +331,9 @@ class RunCoordinator:
             if observer is not None
             else None
         )
-        execution = StepExecution(self._execution_context(invocation, on_output=on_output, on_progress=on_progress))
-        result = execution.run()
+        result = StepExecution(self._execution_context(invocation, on_output=on_output, on_progress=on_progress)).run()
         self._log_step_done(invocation, result)
-        self._warnings.extend([*result.warnings, *execution.diagnostic_hints])
+        self._warnings.extend(result.warnings)
         return result
 
     def _resolve_ask(self, invocation: StepInvocation) -> AskResolution:
@@ -359,7 +360,7 @@ class RunCoordinator:
         on_output: Callable[[str, str], None] | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> StepExecutionContext:
-        """Build the StepExecutionContext for invocation, with an agent runner for every step type except ask."""
+        """Build the StepExecutionContext for invocation, with an agent runner for every step type except ask and the run's diagnostics list for the step's records."""
         settings = self._run.settings
         session_dir = self._context.paths.session_dir(self._context.session_id)
         return StepExecutionContext(
@@ -392,6 +393,7 @@ class RunCoordinator:
                 session_dir=session_dir,
             ),
             sensitive_variables=settings.sensitive_variables,
+            diagnostics=self._diagnostics,
         )
 
     def _log_step_start(self, invocation: StepInvocation) -> None:
@@ -836,13 +838,14 @@ class RunCoordinator:
         return True
 
     def _outcome(self, status: SessionStatus) -> RunOutcome:
-        """Build the RunOutcome for status from the flattened state, accumulated errors, warnings, and worktree identity."""
+        """Build the RunOutcome for status from the flattened state, accumulated errors, warnings, recorded diagnostics, and worktree identity."""
         worktree = self._context.worktree
         return RunOutcome(
             status=status,
             step_results=flatten_step_results(self._loaded.state) if self._loaded is not None else [],
             errors=list(self._errors),
             warnings=list(self._warnings),
+            diagnostics=list(self._diagnostics),
             worktree_path=worktree.worktree_path if worktree is not None else self._context.target_dir,
             session_id=self._context.session_id,
             worktree_id=worktree.session_id if worktree is not None else None,

@@ -6,10 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.core.db import SessionsRepository
 from dovo.engine.services._shared import load_record
 from tests.harness.builders import WorkspaceBuilder
-from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -24,16 +25,18 @@ class SharedLoadRecordTests:
         repo = _repo(tmp_path)
         created = repo.create(session_id="sess-1", blueprint_name="lint", blueprint_key="lint")
         warnings: list[str] = []
+        diagnostics: list[DiagnosticRecord] = []
 
-        record = load_record(repo, warnings, "sess-1")
+        record = load_record(repo, warnings, diagnostics, "sess-1")
 
         assert record == created
         assert warnings == []
+        assert diagnostics == []
 
-    def test_load_record_records_error_and_hints_warning(
+    def test_load_record_records_error_into_diagnostics(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return None, append the hinted load failure and write one engine.read_run record."""
+        """Return None, append the load failure alone and add its engine.read_run record to diagnostics."""
         repo = _repo(tmp_path)
 
         def raise_error(session_id: str) -> None:
@@ -41,13 +44,13 @@ class SharedLoadRecordTests:
 
         monkeypatch.setattr(repo, "get", raise_error)
         warnings: list[str] = []
+        diagnostics: list[DiagnosticRecord] = []
 
-        record = load_record(repo, warnings, "sess-2")
+        record = load_record(repo, warnings, diagnostics, "sess-2")
 
         assert record is None
-        assert warnings == [
-            f"Failed to load session record for 'sess-2': db unavailable{diagnostic_hint(frozen_diagnostic_clock)}"
-        ]
+        assert warnings == ["Failed to load session record for 'sess-2': db unavailable"]
+        assert diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"], event["context"]) == (
             "error",

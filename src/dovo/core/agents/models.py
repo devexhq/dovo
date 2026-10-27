@@ -10,6 +10,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy
@@ -231,6 +232,9 @@ class AgentResponse(BaseModel):
     mutation_baseline_ref: str | None = None
     env_withheld: list[str] = Field(default_factory=list)
     rejected_patch_path: str | None = None
+    diagnostics: list[DiagnosticRecord] = Field(
+        default_factory=list
+    )  # error-level records for the caller's diagnostics
 
     @property
     def ok(self) -> bool:
@@ -242,17 +246,17 @@ class AgentResponse(BaseModel):
 class AgentAttempt:
     """Classified result of one agent attempt before an adapter turns it into a caller-specific outcome.
 
-    warnings carry diagnostic hints for the caller's warnings, never its error text.
+    errors carry provider error text; diagnostics carry error-level diagnostic-log records for the caller's diagnostics, never its error text.
     """
 
     status: AgentResponseStatus
     summary: str | None = None
     unfixable_reason: str | None = None
     touched_files: list[str] = field(default_factory=list)
-    diagnostics: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
     env_withheld: list[str] = field(default_factory=list)
     rejected_patch_path: str | None = None
-    warnings: list[str] = field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = field(default_factory=list)
 
     @property
     def completed(self) -> bool:

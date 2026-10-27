@@ -66,7 +66,7 @@ class BlueprintResumeService:
     def _target_session_id(self) -> str | None:
         """Return session_id after loading its record, or the latest paused session's id, or None when nothing is paused."""
         if self.session_id:
-            load_record(self.db, self.warnings, self.session_id)
+            load_record(self.db, self.warnings, self.diagnostics, self.session_id)
             return self.session_id
         record = self.db.get_latest_paused()
         return record.session_id if record is not None else None

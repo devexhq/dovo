@@ -378,6 +378,9 @@ class BlueprintRunServiceCatchTests:
 
         assert result.error_code is None
         assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.persist"
+        assert "Failed to update run status in database: disk full" in result.warnings
+        assert all("Details logged:" not in warning for warning in result.warnings)
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
 
 
 class BlueprintRunServiceEnvTests:

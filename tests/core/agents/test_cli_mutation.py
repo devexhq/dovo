@@ -52,6 +52,7 @@ from tests.harness import (
     StreamingAgentRunner,
     new_file_diff,
 )
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
 
 def _fake_run(
@@ -848,9 +849,11 @@ class RejectedPatchSaveTests:
         assert "agent.txt" in destination.read_text(encoding="utf-8")
         assert not (git_repo / "agent.txt").exists()
 
-    def test_unexpected_validation_error_saves_then_discards_with_details_logged(
-        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    def test_unexpected_validation_error_saves_then_discards_with_record(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
+        """Return errors[0] == "Unexpected error during agent.validate_patch: boom" and diagnostics == [the agent.validate_patch record], then save and discard the edit."""
+
         def _boom(request: AgentRequest, diff: str) -> list[str]:
             raise RuntimeError("boom")
 
@@ -864,9 +867,12 @@ class RejectedPatchSaveTests:
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
         assert response.rejected_patch_path == str(destination)
         assert not (git_repo / "agent.txt").exists()
-        assert response.errors[0].splitlines()[0] == "Unexpected error during agent.validate_patch: boom"
-        assert response.errors[0].splitlines()[1].startswith("Details logged: ")
-        assert response.errors[1] == f"Discarded edit saved to {destination}."
+        assert response.errors == [
+            "Unexpected error during agent.validate_patch: boom",
+            f"Discarded edit saved to {destination}.",
+        ]
+        assert response.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "agent.validate_patch"
 
     def test_saved_rejection_errors_are_gate_error_then_discarded_line(self, git_repo: Path, tmp_path: Path) -> None:
         destination = tmp_path / "rejected" / "code_attempt_1.patch"

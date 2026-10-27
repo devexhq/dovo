@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dovo.engine.executors.failure_log import record_fallback
+from dovo.common.diagnostic_log import DiagnosticLevel, record_exception
 from dovo.engine.models import RunObserver
 
 
@@ -16,4 +16,4 @@ def safe_notify(observer: RunObserver | None, method_name: str, *args: object, *
     try:
         method(*args, **kwargs)
     except Exception as exc:
-        record_fallback(exc, operation="engine.notify", context={"method": method_name})
+        record_exception(exc, level=DiagnosticLevel.DEBUG, operation="engine.notify", context={"method": method_name})
