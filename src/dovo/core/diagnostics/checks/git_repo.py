@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import Final
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DiagnosticsContext
-from dovo.core.git import (
-    GitCommandError,
-    GitNotFoundError,
-    GitPlumbingTimeoutError,
-)
+from dovo.core.git import GitError
+
+_NOT_REPO_CODES: Final = frozenset({ErrorCode.GIT_FAILED, ErrorCode.GIT_TIMEOUT})
+_TOPLEVEL_NOT_REPO_CODES: Final = frozenset({ErrorCode.GIT_BINARY_MISSING, *_NOT_REPO_CODES})
 
 
 class GitRepoCheck:
@@ -27,9 +28,11 @@ class GitRepoCheck:
 
         try:
             is_inside_work_tree = context.git.run(["rev-parse", "--is-inside-work-tree"], path=context.cwd)
-        except GitNotFoundError:
-            return _binary_missing_result(self.check_id, self.name, self.category)
-        except (GitCommandError, GitPlumbingTimeoutError):
+        except GitError as exc:
+            if exc.error_code is ErrorCode.GIT_BINARY_MISSING:
+                return _binary_missing_result(self.check_id, self.name, self.category)
+            if exc.error_code not in _NOT_REPO_CODES:
+                raise
             return _not_repo_result(self.check_id, self.name, self.category, context.cwd)
 
         if is_inside_work_tree != "true":
@@ -37,7 +40,9 @@ class GitRepoCheck:
 
         try:
             root = context.git.run(["rev-parse", "--show-toplevel"], path=context.cwd)
-        except (GitNotFoundError, GitCommandError, GitPlumbingTimeoutError):
+        except GitError as exc:
+            if exc.error_code not in _TOPLEVEL_NOT_REPO_CODES:
+                raise
             return _not_repo_result(self.check_id, self.name, self.category, context.cwd)
 
         branch = context.git.get_current_branch(context.cwd)

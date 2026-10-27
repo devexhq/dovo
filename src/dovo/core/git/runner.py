@@ -6,17 +6,15 @@ import os
 import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from dovo.common.constants import GIT_SUBPROCESS_TIMEOUT_SECONDS
 from dovo.common.error_codes import ErrorCode
-from dovo.core.git.exceptions import (
-    GitCommandError,
-    GitError,
-    GitNotFoundError,
-    GitPlumbingTimeoutError,
-)
+from dovo.core.git.exceptions import GitError, git_command_error
 from dovo.core.git.models import GitProcessOutput, GitWorktreeEntry
+
+_BRANCH_UNKNOWN_CODES: Final = frozenset({ErrorCode.GIT_BINARY_MISSING, ErrorCode.GIT_TIMEOUT, ErrorCode.GIT_FAILED})
+_STATUS_EMPTY_CODES: Final = frozenset({ErrorCode.GIT_BINARY_MISSING, ErrorCode.GIT_FAILED})
 
 
 def _extract_branch_name(raw_branch: str) -> str:
@@ -131,8 +129,8 @@ class GitRunner:
 
         Raises:
             GitError: With FS_NOT_FOUND when path is not a directory, chained to the OSError.
-            GitNotFoundError: When git binary is not found.
-            GitPlumbingTimeoutError: When subprocess.run times out; the message ends `(GIT_TIMEOUT)`.
+            GitError: With GIT_BINARY_MISSING when git binary is not found, or GIT_TIMEOUT when subprocess.run
+                times out; the timeout message ends `(GIT_TIMEOUT)`.
         """
         try:
             proc = subprocess.run(
@@ -153,10 +151,13 @@ class GitRunner:
                     f"Git execution failed ('git {' '.join(args)}'): working directory '{path}' does not exist",
                 ) from exc
             # Not chained: a missing git binary is fully named by its code, so catch_failure leaves no event file.
-            raise GitNotFoundError(f"Git execution failed ('git {' '.join(args)}'): git not found") from None
+            raise GitError(
+                ErrorCode.GIT_BINARY_MISSING, f"Git execution failed ('git {' '.join(args)}'): git not found"
+            ) from None
         except subprocess.TimeoutExpired as exc:
-            raise GitPlumbingTimeoutError(
-                f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git {' '.join(args)}') (GIT_TIMEOUT)"
+            raise GitError(
+                ErrorCode.GIT_TIMEOUT,
+                f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git {' '.join(args)}') (GIT_TIMEOUT)",
             ) from exc
         return GitProcessOutput(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
 
@@ -175,41 +176,39 @@ class GitRunner:
             args: Command arguments after ``git``.
             path: Working directory for git command execution.
             input_text: Optional stdin input string.
-            check: When True, raises GitCommandError if returncode != 0.
+            check: When True, raises a GIT_FAILED GitError if returncode != 0.
             env: Extra environment variables merged over the process environment.
 
         Returns:
             Stripped stdout text.
 
         Raises:
-            GitNotFoundError: When git binary is not found.
-            GitPlumbingTimeoutError: When git times out.
-            GitCommandError: When git exits non-zero and check is True.
+            GitError: With GIT_BINARY_MISSING, GIT_TIMEOUT or FS_NOT_FOUND from exec, or GIT_FAILED when git
+                exits non-zero and check is True.
         """
         result = self.exec(args, path, input_text=input_text, env=env)
         if check and result.returncode != 0:
-            raise GitCommandError(
-                cmd=["git", *args],
-                returncode=result.returncode,
-                stdout=result.stdout,
-                stderr=result.stderr,
-            )
+            raise git_command_error(["git", *args], result.returncode, result.stdout, result.stderr)
         return result.stdout.rstrip("\r\n")
 
     def get_current_branch(self, path: Path) -> str:
-        """Extract current active Git branch, returning 'HEAD (detached)' or 'unknown' on error."""
+        """Extract current active Git branch, returning 'HEAD (detached)', or 'unknown' when git is missing, times out or fails."""
         try:
             branch = self.run(["branch", "--show-current"], path=path).strip()
             return branch if branch else "HEAD (detached)"
-        except (GitNotFoundError, GitPlumbingTimeoutError, GitCommandError):
+        except GitError as exc:
+            if exc.error_code not in _BRANCH_UNKNOWN_CODES:
+                raise
             return "unknown"
 
     def status_porcelain(self, path: Path) -> list[str]:
-        """Return raw status porcelain lines for tracked/untracked working tree modifications."""
+        """Return raw status porcelain lines for tracked/untracked working tree modifications, or [] when git is missing or fails."""
         try:
             output = self.run(["status", "--porcelain", "-u"], path=path)
             return [line for line in output.splitlines() if line.strip()]
-        except (GitNotFoundError, GitCommandError):
+        except GitError as exc:
+            if exc.error_code not in _STATUS_EMPTY_CODES:
+                raise
             return []
 
     def has_uncommitted_changes(self, path: Path) -> bool:
@@ -227,9 +226,7 @@ class GitRunner:
         """Return sorted unquoted paths with staged, unstaged or untracked changes, listing both sides of a rename or copy.
 
         Raises:
-            GitNotFoundError: When git binary is not found.
-            GitPlumbingTimeoutError: When git status times out.
-            GitCommandError: When git status exits non-zero.
+            GitError: With GIT_BINARY_MISSING, GIT_TIMEOUT, or GIT_FAILED when git status exits non-zero.
         """
         fields = iter(self.run(["status", "--porcelain=v1", "-z", "-uall"], path=path).split("\0"))
         paths: set[str] = set()
@@ -298,12 +295,12 @@ class GitRunner:
 
     def branch_exists(self, path: Path, branch: str) -> bool:
         """Return True when refs/heads/<branch> exists; raise for git failures other than a missing ref."""
-        try:
-            self.run(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], path=path)
-        except GitCommandError as exc:
-            if exc.returncode == 1:
-                return False
-            raise
+        args = ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"]
+        result = self.exec(args, path)
+        if result.returncode == 1:
+            return False
+        if result.returncode != 0:
+            raise git_command_error(["git", *args], result.returncode, result.stdout, result.stderr)
         return True
 
     def rev_parse(self, path: Path, rev: str = "HEAD") -> str:
@@ -317,7 +314,7 @@ class GitRunner:
         so the result describes exactly the patch that is applied.
 
         Raises:
-            GitCommandError: When git apply cannot parse diff_text.
+            GitError: GIT_FAILED when git apply cannot parse diff_text.
         """
         paths: set[str] = set()
         for args in (["apply", "--numstat", "-z", "-"], ["apply", "-R", "--numstat", "-z", "-"]):
@@ -371,7 +368,7 @@ class GitRunner:
 
         Raises:
             ValueError: When paths is empty, since an empty pathspec would commit the whole index.
-            GitCommandError: When git commit exits non-zero (for example a failing hook).
+            GitError: GIT_FAILED when git commit exits non-zero (for example a failing hook).
         """
         if not paths:
             raise ValueError("GitRunner.commit requires at least one path")

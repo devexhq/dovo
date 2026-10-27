@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Final
 
-from dovo.core.git import (
-    GitCommandError,
-    GitNotFoundError,
-    GitPlumbingTimeoutError,
-    GitRunner,
-)
+from dovo.common.error_codes import ErrorCode
+from dovo.core.git import GitError, GitRunner
 from dovo.core.status.models import GitStatusInfo
+
+_BRANCH_UNKNOWN_CODES: Final = frozenset({ErrorCode.GIT_BINARY_MISSING, ErrorCode.GIT_TIMEOUT})
 
 
 def probe_git(root_dir: Path, *, git: GitRunner) -> GitStatusInfo:
@@ -32,17 +31,16 @@ def probe_git(root_dir: Path, *, git: GitRunner) -> GitStatusInfo:
             is_dirty=bool(status_lines),
             uncommitted_files=len(status_lines),
         )
-    except (GitNotFoundError, GitPlumbingTimeoutError):
+    except GitError as exc:
+        if exc.error_code in _BRANCH_UNKNOWN_CODES:
+            branch = "unknown"
+        elif exc.error_code is ErrorCode.GIT_FAILED:
+            branch = "none"
+        else:
+            raise
         return GitStatusInfo(
             is_git_repo=False,
-            branch="unknown",
-            is_dirty=False,
-            uncommitted_files=0,
-        )
-    except GitCommandError:
-        return GitStatusInfo(
-            is_git_repo=False,
-            branch="none",
+            branch=branch,
             is_dirty=False,
             uncommitted_files=0,
         )

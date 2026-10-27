@@ -12,7 +12,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.core.db import WorktreeRecord, WorktreesRepository, WorktreeStatus
-from dovo.core.git.exceptions import GitError, GitPlumbingTimeoutError
+from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
 from dovo.core.git.tree_diff import diff_work_tree
 from dovo.core.worktree.exceptions import WorktreeApplyConflict, WorktreeError, recorded_cause
@@ -54,7 +54,7 @@ def _reraise_git(worktree_id: str, activity: str) -> Generator[None]:
     try:
         yield
     except GitError as exc:
-        verb = "timed out" if isinstance(exc, GitPlumbingTimeoutError) else "failed"
+        verb = "timed out" if exc.error_code is ErrorCode.GIT_TIMEOUT else "failed"
         raise WorktreeError(
             exc.error_code, f"Git {verb} {activity} for worktree '{worktree_id}': {exc}"
         ) from recorded_cause(exc)

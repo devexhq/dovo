@@ -9,7 +9,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.diagnostics.checks.git_repo import GitRepoCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
-from dovo.core.git import GitError, GitNotFoundError, GitProcessOutput
+from dovo.core.git import GitError, GitProcessOutput
 from dovo.core.git.runner import GitRunner
 from tests.harness.fakes import FakeGitRunner
 
@@ -40,7 +40,9 @@ class GitRepoCheckTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         monkeypatch.setattr("dovo.core.diagnostics.checks.git_repo.shutil.which", lambda _name: "/usr/bin/git")
-        fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): GitNotFoundError("git not found")})
+        fake = FakeGitRunner(
+            {("rev-parse", "--is-inside-work-tree"): GitError(ErrorCode.GIT_BINARY_MISSING, "git not found")}
+        )
         check = GitRepoCheck()
         context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None), git=fake)
 

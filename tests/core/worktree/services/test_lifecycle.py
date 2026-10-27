@@ -17,7 +17,7 @@ from dovo.common.filesystem.services import resolve_global_paths
 from dovo.common.models import Remediation
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.db import WorktreesRepository, WorktreeStatus
-from dovo.core.git.exceptions import GitCommandError, GitError, GitPlumbingTimeoutError
+from dovo.core.git.exceptions import GitError, git_command_error
 from dovo.core.git.models import GitProcessOutput
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.exceptions import WorktreeError
@@ -424,13 +424,13 @@ class WorktreeLifecycleCollisionTests:
         ("probe_error", "expected_code", "expected_error_prefix"),
         [
             pytest.param(
-                GitPlumbingTimeoutError("show-ref timed out"),
+                GitError(ErrorCode.GIT_TIMEOUT, "show-ref timed out"),
                 ErrorCode.GIT_TIMEOUT,
                 "Git worktree operation timed out (WORKTREE_GIT_TIMEOUT): show-ref timed out",
                 id="probe_timeout",
             ),
             pytest.param(
-                GitCommandError(cmd=["git", "show-ref"], returncode=128, stdout="", stderr="fatal"),
+                git_command_error(cmd=["git", "show-ref"], returncode=128, stdout="", stderr="fatal"),
                 ErrorCode.GIT_FAILED,
                 "Git worktree operation failed (WORKTREE_GIT_FAILED): ",
                 id="probe_fatal_exit_128",
@@ -514,9 +514,9 @@ class WorktreeLifecycleCollisionTests:
                     _, _, _, branch, _, base_ref = args
                     super().exec(["branch", branch, base_ref], path)
                     self.added = True
-                    raise GitCommandError(cmd=["git", "worktree", "add"], returncode=128, stdout="", stderr="boom")
+                    raise git_command_error(cmd=["git", "worktree", "add"], returncode=128, stdout="", stderr="boom")
                 if self.added and args[0] == "show-ref":
-                    raise GitCommandError(cmd=["git", "show-ref"], returncode=128, stdout="", stderr="fatal")
+                    raise git_command_error(cmd=["git", "show-ref"], returncode=128, stdout="", stderr="fatal")
                 return super().exec(args, path, input_text=input_text, env=env)
 
         worktree = Worktree(
@@ -558,7 +558,7 @@ class WorktreeLifecycleCollisionTests:
         self, worktree_workspace: Path
     ) -> None:
         paths = _paths(worktree_workspace)
-        failure = GitCommandError(cmd=["git", "rev-parse", "HEAD"], returncode=128, stdout="", stderr="boom")
+        failure = git_command_error(cmd=["git", "rev-parse", "HEAD"], returncode=128, stdout="", stderr="boom")
         worktree = Worktree(
             paths,
             db=WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
@@ -638,7 +638,7 @@ class WorktreeCreateFailureCodeTests:
         [
             pytest.param(
                 ("worktree", "add"),
-                GitCommandError(["worktree", "add"], 128, "", "fatal: bad ref"),
+                git_command_error(["worktree", "add"], 128, "", "fatal: bad ref"),
                 False,
                 ErrorCode.GIT_FAILED,
                 "Git worktree operation failed (WORKTREE_GIT_FAILED): Git execution failed ('git worktree add'): fatal: bad ref",
@@ -647,7 +647,7 @@ class WorktreeCreateFailureCodeTests:
             ),
             pytest.param(
                 ("worktree", "add"),
-                GitPlumbingTimeoutError("add timed out"),
+                GitError(ErrorCode.GIT_TIMEOUT, "add timed out"),
                 False,
                 ErrorCode.GIT_TIMEOUT,
                 "Git worktree operation timed out (WORKTREE_GIT_TIMEOUT): add timed out",
@@ -656,7 +656,7 @@ class WorktreeCreateFailureCodeTests:
             ),
             pytest.param(
                 ("rev-parse", "HEAD"),
-                GitCommandError(["rev-parse", "HEAD"], 128, "", "boom"),
+                git_command_error(["rev-parse", "HEAD"], 128, "", "boom"),
                 False,
                 ErrorCode.GIT_FAILED,
                 "Git worktree operation failed (WORKTREE_GIT_FAILED): Git execution failed ('git rev-parse HEAD'): boom",
@@ -665,9 +665,9 @@ class WorktreeCreateFailureCodeTests:
             ),
             pytest.param(
                 ("status",),
-                GitError(ErrorCode.GIT_FAILED, "status failed"),
+                GitError(ErrorCode.FS_NOT_FOUND, "status failed"),
                 True,
-                ErrorCode.GIT_FAILED,
+                ErrorCode.FS_NOT_FOUND,
                 "Failed to overlay uncommitted WIP into worktree (WORKTREE_WIP_FAILED): status failed",
                 [_WIP_FAILED_REMEDIATION],
                 id="wip_git_fails",
@@ -833,7 +833,7 @@ class WorktreeLifecycleDiagnosticLogTests:
     def test_branch_probe_failure_records_debug_and_keeps_git_failed(
         self, worktree_workspace: Path, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return GIT_FAILED with an unhinted error and empty diagnostics when worktree_add raises GitCommandError and the follow-up branch probe raises RuntimeError, and write one debug record for worktree.create."""
+        """Return GIT_FAILED with an unhinted error and empty diagnostics when worktree_add raises a GIT_FAILED GitError and the follow-up branch probe raises RuntimeError, and write one debug record for worktree.create."""
 
         class _SecondProbeFails(FakeGitRunner):
             probes = 0
@@ -853,7 +853,7 @@ class WorktreeLifecycleDiagnosticLogTests:
                     raise RuntimeError("boom")
                 return super().exec(args, path, input_text=input_text, env=env)
 
-        failure = GitCommandError(cmd=["git", "worktree", "add"], returncode=128, stdout="", stderr="fatal")
+        failure = git_command_error(cmd=["git", "worktree", "add"], returncode=128, stdout="", stderr="fatal")
         worktree = _worktree(worktree_workspace, _SecondProbeFails({("worktree", "add"): failure}))
 
         result = worktree.create(session_id="dovo_probe")

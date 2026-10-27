@@ -11,7 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.core.git.exceptions import GitCommandError
+from dovo.core.git.exceptions import git_command_error
 from dovo.core.worktree.models import WorktreePruneStatus
 from dovo.core.worktree.services.detector import WorktreeDetector
 from tests.harness.fakes import FakeGitRunner, use_fake_git
@@ -94,12 +94,12 @@ class WorktreePruneCliIntegrationTests:
         monkeypatch: pytest.MonkeyPatch,
         case: str,
     ) -> None:
-        """Exit 1 for --format json. partial_failure (git branch -D raising RuntimeError("boom") via use_fake_git on a stale dovo/dovo_x branch) emits status "partial_failure", error_code "WORKTREE_PRUNE_ITEMS_FAILED", errors ["Failed to delete branch 'dovo/dovo_x': boom"] with no hint and one diagnostics entry. unexpected (WorktreeDetector.detect raising TypeError("boom")) emits status null, error_code "INTERNAL_ERROR", errors ["Unexpected error during worktree.prune: boom"] and diagnostics [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]. git_failed (git worktree list raising GitCommandError) emits status null, error_code "GIT_FAILED", its message as the one error, no items and no diagnostics."""
+        """Exit 1 for --format json. partial_failure (git branch -D raising RuntimeError("boom") via use_fake_git on a stale dovo/dovo_x branch) emits status "partial_failure", error_code "WORKTREE_PRUNE_ITEMS_FAILED", errors ["Failed to delete branch 'dovo/dovo_x': boom"] with no hint and one diagnostics entry. unexpected (WorktreeDetector.detect raising TypeError("boom")) emits status null, error_code "INTERNAL_ERROR", errors ["Unexpected error during worktree.prune: boom"] and diagnostics [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]. git_failed (git worktree list raising a GIT_FAILED GitError) emits status null, error_code "GIT_FAILED", its message as the one error, no items and no diagnostics."""
         if case == "partial_failure":
             subprocess.run(["git", "branch", "dovo/dovo_x"], cwd=cli_workspace, check=True, capture_output=True)
             use_fake_git(monkeypatch, FakeGitRunner({("branch", "-D"): RuntimeError("boom")}))
         elif case == "git_failed":
-            failure = GitCommandError(["worktree", "list"], 1, "", "fatal error")
+            failure = git_command_error(["worktree", "list"], 1, "", "fatal error")
             use_fake_git(monkeypatch, FakeGitRunner({("worktree", "list"): failure}))
         else:
             monkeypatch.setattr(WorktreeDetector, "detect", _raise_type_error)

@@ -13,7 +13,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.core.db import WorktreesRepository, WorktreeStatus
-from dovo.core.git.exceptions import GitCommandError, GitNotFoundError, GitPlumbingTimeoutError
+from dovo.core.git.exceptions import GitError, git_command_error
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
 from dovo.core.worktree.models import StaleWorktreeCategory
@@ -224,15 +224,15 @@ class WorktreeDetectorFailureTests:
     """Tests verifying error handling when git or database operations fail."""
 
     def test_detect_propagates_git_error_with_its_code(self, detector_workspace_paths: WorkspacePaths) -> None:
-        """Raise GitCommandError with error_code GIT_FAILED and message "Git execution failed ('git worktree list'): fatal error" when git worktree list raises GitCommandError(["worktree", "list"], 1, "", "fatal error")."""
-        failure = GitCommandError(["worktree", "list"], 1, "", "fatal error")
+        """Raise GitError with error_code GIT_FAILED and message "Git execution failed ('git worktree list'): fatal error" when git worktree list raises git_command_error(["worktree", "list"], 1, "", "fatal error")."""
+        failure = git_command_error(["worktree", "list"], 1, "", "fatal error")
         detector = WorktreeDetector(
             detector_workspace_paths,
             _repo(detector_workspace_paths),
             git=FakeGitRunner({("worktree", "list"): failure}),
         )
 
-        with pytest.raises(GitCommandError) as excinfo:
+        with pytest.raises(GitError) as excinfo:
             detector.detect()
 
         assert excinfo.value.error_code == ErrorCode.GIT_FAILED
@@ -265,7 +265,7 @@ class WorktreeDetectorDiagnosticLogTests:
         ("failure", "recorded"),
         [
             pytest.param(RuntimeError("boom"), True, id="unexpected"),
-            pytest.param(GitPlumbingTimeoutError("git status timed out"), False, id="git_error"),
+            pytest.param(GitError(ErrorCode.GIT_TIMEOUT, "git status timed out"), False, id="git_error"),
         ],
     )
     def test_orphan_inspection_failure_warns_and_follows_recording_rule(
@@ -298,8 +298,8 @@ class WorktreeDetectorDiagnosticLogTests:
         ("failure", "recorded"),
         [
             pytest.param(RuntimeError("boom"), True, id="unexpected"),
-            pytest.param(GitCommandError(["for-each-ref"], 1, "", "boom"), True, id="git_error"),
-            pytest.param(GitNotFoundError("git not found"), False, id="git_missing"),
+            pytest.param(git_command_error(["for-each-ref"], 1, "", "boom"), True, id="git_error"),
+            pytest.param(GitError(ErrorCode.GIT_BINARY_MISSING, "git not found"), False, id="git_missing"),
         ],
     )
     def test_branch_scan_failure_records_debug_and_skips_branches(

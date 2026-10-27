@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Final
+from typing import Final, TypeGuard
 
 from dovo.common.clock import Clock
 from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
@@ -17,12 +17,7 @@ from dovo.common.models import Remediation
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.config.models import WorktreeConfig
 from dovo.core.db import WorktreeRecord, WorktreesRepository, WorktreeStatus
-from dovo.core.git.exceptions import (
-    GitCommandError,
-    GitError,
-    GitNotFoundError,
-    GitPlumbingTimeoutError,
-)
+from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.exceptions import WorktreeCapacityError, WorktreeError, recorded_cause
 from dovo.core.worktree.models import WorktreeCreation, WorktreeRemoval, WorktreeSession
@@ -52,11 +47,18 @@ _GIT_TIMEOUT_REMEDIATION: Final = Remediation(
 _GIT_FAILED_REMEDIATION: Final = Remediation(message="Ensure this directory is a Git repository with a valid base ref")
 _WIP_TIMEOUT_REMEDIATION: Final = Remediation(message="Check for git lock files or retry without '--wip'")
 _WIP_FAILED_REMEDIATION: Final = Remediation(message="Resolve local conflicts and retry, or commit changes first")
+# Branch deletion and git worktree prune ignore these during idempotent cleanup; any other code is a failure.
+_IGNORED_CLEANUP_CODES: Final = frozenset({ErrorCode.GIT_FAILED, ErrorCode.GIT_BINARY_MISSING})
+
+
+def _is_git_code(exc: Exception, code: ErrorCode) -> TypeGuard[GitError]:
+    """Return whether exc is a GitError carrying code."""
+    return isinstance(exc, GitError) and exc.error_code is code
 
 
 def _git_step_error(exc: GitError, *, remediate: bool) -> WorktreeError:
     """Return a WorktreeError with exc's code and today's timed-out or failed message, with its remediation when remediate."""
-    if isinstance(exc, GitPlumbingTimeoutError):
+    if exc.error_code is ErrorCode.GIT_TIMEOUT:
         message = f"Git worktree operation timed out (WORKTREE_GIT_TIMEOUT): {exc}"
         remediation = _GIT_TIMEOUT_REMEDIATION
     else:
@@ -66,8 +68,8 @@ def _git_step_error(exc: GitError, *, remediate: bool) -> WorktreeError:
 
 
 def _record_recovered(exc: Exception, *, operation: str, context: Mapping[str, str | None]) -> None:
-    """Record exc at debug level for a failure Dovo recovered from, skipping GitNotFoundError."""
-    if isinstance(exc, GitNotFoundError):
+    """Record exc at debug level for a failure Dovo recovered from, skipping a GIT_BINARY_MISSING GitError."""
+    if _is_git_code(exc, ErrorCode.GIT_BINARY_MISSING):
         return
 
     record_exception(exc, level=DiagnosticLevel.DEBUG, operation=operation, context=context)
@@ -308,7 +310,7 @@ class WorktreeLifecycle:
         except Exception as exc:
             # Recover then re-raise: catch_failure records an unexpected exc once.
             self.discard_partial(worktree_path, temp_branch, created_dir=True, created_branch=True)
-            if isinstance(exc, GitPlumbingTimeoutError):
+            if _is_git_code(exc, ErrorCode.GIT_TIMEOUT):
                 raise WorktreeError(
                     exc.error_code,
                     f"Git timed out while overlaying uncommitted WIP (WORKTREE_GIT_TIMEOUT): {exc}",
@@ -445,10 +447,10 @@ class WorktreeLifecycle:
         try:
             self.git.branch_delete(self.path, branch_name, force=True)
             return None
-        except (GitCommandError, GitNotFoundError):
-            # Best-effort: branch may already be deleted during idempotent cleanup.
-            return None
         except Exception as exc:
+            if isinstance(exc, GitError) and exc.error_code in _IGNORED_CLEANUP_CODES:
+                # Best-effort: branch may already be deleted during idempotent cleanup.
+                return None
             return (
                 f"Failed to delete branch '{branch_name}': {exc}",
                 _record_reported(exc, operation="worktree.cleanup", context={"branch": branch_name}),
@@ -498,6 +500,7 @@ class WorktreeLifecycle:
         """Prune stale Git worktree administrative records."""
         try:
             self.git.worktree_prune(self.path)
-        except (GitCommandError, GitNotFoundError):
+        except GitError as exc:
             # Best-effort: ignore harmless git errors during administrative worktree prune.
-            pass
+            if exc.error_code not in _IGNORED_CLEANUP_CODES:
+                raise

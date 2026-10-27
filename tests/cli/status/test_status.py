@@ -10,9 +10,10 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.common.error_codes import ErrorCode
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.core.db import SessionStatus
-from dovo.core.git import GitNotFoundError
+from dovo.core.git import GitError
 from dovo.core.status.models import (
     DovoStatusResult,
 )
@@ -119,8 +120,10 @@ class StatusCliIntegrationTests:
         dispatch_spy: list[object],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Exit 0 for `status --format json` with use_fake_git raising GitNotFoundError for rev-parse --is-inside-work-tree, dispatch a result with git.branch "unknown" and git.is_git_repo False, and emit payload git_branch null."""
-        fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): GitNotFoundError("git not found")})
+        """Exit 0 for `status --format json` with use_fake_git raising a GIT_BINARY_MISSING GitError for rev-parse --is-inside-work-tree, dispatch a result with git.branch "unknown" and git.is_git_repo False, and emit payload git_branch null."""
+        fake = FakeGitRunner(
+            {("rev-parse", "--is-inside-work-tree"): GitError(ErrorCode.GIT_BINARY_MISSING, "git not found")}
+        )
         use_fake_git(monkeypatch, fake)
 
         result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", "json"])

@@ -11,10 +11,11 @@ from typing import NoReturn
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.core.db import WorktreesRepository, WorktreeStatus
-from dovo.core.git.exceptions import GitCommandError, GitNotFoundError
+from dovo.core.git.exceptions import GitError, git_command_error
 from dovo.core.git.models import GitProcessOutput
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
@@ -536,7 +537,7 @@ class WorktreePrunerDiagnosticLogTests:
         else:
             GitRunner().run(["branch", "dovo/dovo_x"], path=pruner_workspace)
             expected_category = StaleWorktreeCategory.STALE_BRANCH
-            fake.responses[("branch", "-D")] = GitCommandError(["branch", "-D", "dovo/dovo_x"], 1, "", "boom")
+            fake.responses[("branch", "-D")] = git_command_error(["branch", "-D", "dovo/dovo_x"], 1, "", "boom")
 
         result = WorktreePruner(pruner_workspace_paths, db, git=fake).prune()
 
@@ -553,9 +554,9 @@ class WorktreePrunerDiagnosticLogTests:
     def test_fallback_git_not_found_writes_no_record(
         self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return ok with the untracked orphan pruned by rmtree and leave <DOVO_HOME>/logs absent when git worktree remove raises GitNotFoundError."""
+        """Return ok with the untracked orphan pruned by rmtree and leave <DOVO_HOME>/logs absent when git worktree remove raises a GIT_BINARY_MISSING GitError."""
         orphan_dir = _make_untracked_orphan(pruner_workspace, "dovo_orphan")
-        fake = FakeGitRunner({("worktree", "remove"): GitNotFoundError("git not found")})
+        fake = FakeGitRunner({("worktree", "remove"): GitError(ErrorCode.GIT_BINARY_MISSING, "git not found")})
 
         result = WorktreePruner(pruner_workspace_paths, _repo(pruner_workspace_paths), git=fake).prune()
 
@@ -568,7 +569,7 @@ class WorktreePrunerDiagnosticLogTests:
     def test_untracked_orphan_falls_back_to_rmtree_with_debug_record(
         self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return ok with the orphan pruned, its directory gone, no hint in any entry, and one debug record for worktree.prune with exception_type GitCommandError."""
+        """Return ok with the orphan pruned, its directory gone, no hint in any entry, and one debug record for worktree.prune with exception_type GitError."""
         orphan_dir = _make_untracked_orphan(pruner_workspace, "dovo_orphan")
 
         result = WorktreePruner(pruner_workspace_paths, _repo(pruner_workspace_paths), git=GitRunner()).prune()
@@ -584,7 +585,7 @@ class WorktreePrunerDiagnosticLogTests:
         assert event["level"] == "debug"
         assert event["operation"] == "worktree.prune"
         assert event["context"] == {"worktree_id": None, "branch": None, "path": str(orphan_dir)}
-        assert event["exception_type"] == "GitCommandError"
+        assert event["exception_type"] == "GitError"
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permission bits")
     def test_orphan_rmtree_failure_records_error_into_diagnostics(

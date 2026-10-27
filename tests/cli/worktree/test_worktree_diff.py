@@ -10,8 +10,9 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.services import resolve_global_paths
-from dovo.core.git.exceptions import GitPlumbingTimeoutError
+from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeDiffResult, WorktreeSession
 from dovo.core.worktree.worktree import Worktree
@@ -148,7 +149,7 @@ class WorktreeDiffCliIntegrationTests:
     ) -> None:
         session = _create_worktree_with_committed_change(cli_workspace)
         detail = "Git timed out after 30s ('git diff --cached') (GIT_TIMEOUT)"
-        use_fake_git(monkeypatch, FakeGitRunner({("diff", "--cached"): GitPlumbingTimeoutError(detail)}))
+        use_fake_git(monkeypatch, FakeGitRunner({("diff", "--cached"): GitError(ErrorCode.GIT_TIMEOUT, detail)}))
 
         result = cli_runner.invoke(
             app, ["-p", str(cli_workspace), "worktree", "diff", session.session_id, "--format", "json"]

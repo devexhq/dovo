@@ -10,14 +10,7 @@ import pytest
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.db import SessionsRepository
-from dovo.core.git import (
-    GitCommandError,
-    GitError,
-    GitNotFoundError,
-    GitPlumbingTimeoutError,
-    GitProcessOutput,
-    GitRunner,
-)
+from dovo.core.git import GitError, GitProcessOutput, GitRunner, git_command_error
 from dovo.core.status import Status
 from tests.harness.fakes import FakeGitRunner
 from tests.harness.status_workspace import BuildStatusWorkspace
@@ -81,8 +74,8 @@ class GitProbeTests:
     @pytest.mark.parametrize(
         "git_error",
         [
-            pytest.param(GitNotFoundError("git not found"), id="not_found"),
-            pytest.param(GitPlumbingTimeoutError("git timed out"), id="timeout"),
+            pytest.param(GitError(ErrorCode.GIT_BINARY_MISSING, "git not found"), id="not_found"),
+            pytest.param(GitError(ErrorCode.GIT_TIMEOUT, "git timed out"), id="timeout"),
         ],
     )
     def test_collect_git_error_reports_unknown_branch(
@@ -103,9 +96,11 @@ class GitProbeTests:
         ]
 
     def test_collect_git_command_error_reports_no_branch(self, status_workspace: BuildStatusWorkspace) -> None:
-        """Return is_git_repo False and branch "none" when the fake raises GitCommandError for rev-parse --is-inside-work-tree."""
+        """Return is_git_repo False and branch "none" when the fake raises a GIT_FAILED GitError for rev-parse --is-inside-work-tree."""
         workspace = status_workspace()
-        failure = GitCommandError(["git", "rev-parse", "--is-inside-work-tree"], 128, "", "fatal: not a git repository")
+        failure = git_command_error(
+            ["git", "rev-parse", "--is-inside-work-tree"], 128, "", "fatal: not a git repository"
+        )
         fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): failure})
 
         result = Status(

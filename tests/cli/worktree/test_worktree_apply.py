@@ -10,8 +10,9 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.common.error_codes import ErrorCode
 from dovo.core.db import WorktreesRepository, WorktreeStatus
-from dovo.core.git.exceptions import GitPlumbingTimeoutError
+from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeApplyResult, WorktreeApplyStrategy, WorktreeSession
 from dovo.core.worktree.worktree import Worktree
@@ -210,7 +211,7 @@ class WorktreeApplyCliIntegrationTests:
     ) -> None:
         session = _create_worktree_with_committed_change(cli_workspace)
         detail = "Git timed out after 30s ('git apply --check') (GIT_TIMEOUT)"
-        use_fake_git(monkeypatch, FakeGitRunner({("apply", "--check"): GitPlumbingTimeoutError(detail)}))
+        use_fake_git(monkeypatch, FakeGitRunner({("apply", "--check"): GitError(ErrorCode.GIT_TIMEOUT, detail)}))
 
         result = cli_runner.invoke(
             app, ["-p", str(cli_workspace), "worktree", "apply", session.session_id, "--format", "json"]

@@ -14,7 +14,7 @@ from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.db import WorktreesRepository
 from dovo.core.diagnostics.checks.worktree_refs import WorktreeRefsCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
-from dovo.core.git.exceptions import GitCommandError
+from dovo.core.git.exceptions import git_command_error
 from dovo.core.git.runner import GitRunner
 from tests.harness import WorkspaceBuilder
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
@@ -206,10 +206,10 @@ class WorktreeRefsCheckTests:
         monkeypatch: pytest.MonkeyPatch,
         case: str,
     ) -> None:
-        """Return WARNING with error_code None. git_failed (FakeGitRunner raising GitCommandError(["worktree", "list"], 1, "", "fatal error") for ("worktree", "list")) gives message "Worktree detection could not complete (GIT_FAILED): Git execution failed ('git worktree list'): fatal error", details {"error_code": "GIT_FAILED"} and diagnostics []. unexpected (WorktreesRepository.list raising RuntimeError("boom")) gives message "Worktree detection could not complete (INTERNAL_ERROR): Unexpected error during worktree.detect: boom", details {"error_code": "INTERNAL_ERROR"}, diagnostics [diagnostic_record(frozen_diagnostic_clock)] and one error event with operation worktree.detect."""
+        """Return WARNING with error_code None. git_failed (FakeGitRunner raising git_command_error(["worktree", "list"], 1, "", "fatal error") for ("worktree", "list")) gives message "Worktree detection could not complete (GIT_FAILED): Git execution failed ('git worktree list'): fatal error", details {"error_code": "GIT_FAILED"} and diagnostics []. unexpected (WorktreesRepository.list raising RuntimeError("boom")) gives message "Worktree detection could not complete (INTERNAL_ERROR): Unexpected error during worktree.detect: boom", details {"error_code": "INTERNAL_ERROR"}, diagnostics [diagnostic_record(frozen_diagnostic_clock)] and one error event with operation worktree.detect."""
         git: GitRunner
         if case == "git_failed":
-            git = FakeGitRunner({("worktree", "list"): GitCommandError(["worktree", "list"], 1, "", "fatal error")})
+            git = FakeGitRunner({("worktree", "list"): git_command_error(["worktree", "list"], 1, "", "fatal error")})
             code = "GIT_FAILED"
             detail = "Git execution failed ('git worktree list'): fatal error"
         else:
