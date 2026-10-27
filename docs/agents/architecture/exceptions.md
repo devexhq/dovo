@@ -4,10 +4,11 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 
 ## One DomainError class per package
 
-- **Decision:** each package defines exactly one `DomainError` subclass in its `exceptions.py`.
-  - The `ErrorCode`, the message and any remediations are passed at the raise.
+- **Decision:** each package that raises business failures defines exactly one `DomainError` subclass in its `exceptions.py`.
+  - The `ErrorCode`, the message and any remediations are passed at the raise. A failure that needs a built message gets a factory function returning the package class, never a subclass.
   - No subclass per code, and no class derives from the package's class.
-  - Code branches on `error_code`, never on the exception class (`isinstance`, or `except` naming a subclass).
+  - Code branches on `error_code`, never on the exception class. `except GitError` or `isinstance(exc, GitError)` only names the package; the branch reads `error_code`.
+  - A handler that catches the package class handles a set of codes and re-raises every other code unchanged.
 - **Why:** a failure carries one classification, its `error_code`; a class per code is a second one that drifts from it.
 - **Since:** #1214
 - **Example:**
@@ -38,6 +39,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
   - Never `from error`: the cause is then a `DomainError`, so `catch_failure` drops the wrapped `OSError` record.
   - Never `from None` when the wrapped error has a cause: the record is lost.
   - The new code names the wrapping package (see ErrorCode naming). A package with nothing to add lets the error propagate unchanged.
+  - A re-raise inside one package that adds context, such as an `EngineError` re-raised as an `EngineError` with a "Cannot resume" message, chains the same way.
   - The chain is written at the raise, with no helper.
 - **Why:** only the wrapped error's `OSError` cause is recorded, so the record survives the wrap exactly as it would unwrapped.
 - **Since:** #1214
