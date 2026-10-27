@@ -183,6 +183,28 @@ class WorktreeApplyCliIntegrationTests:
         assert payload["errors"] == [f"Worktree '{session.session_id}' is already merged."]
         assert payload["warnings"] == []
 
+    def test_worktree_apply_cli_conflict_json_lists_conflicting_files(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        """Exit 1 for --format json when the main workspace changed target.py too, emitting WORKTREE_APPLY_CONFLICT, the conflict message and conflicting_files == ["target.py"]."""
+        session = _create_worktree_with_committed_change(cli_workspace)
+        (cli_workspace / "target.py").write_text("main change\n", encoding="utf-8")
+        GitRunner().run(["add", "-A"], path=cli_workspace)
+        GitRunner().run(["commit", "-m", "Main change to target.py"], path=cli_workspace)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "worktree", "apply", session.session_id, "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["error_code"] == "WORKTREE_APPLY_CONFLICT"
+        assert payload["errors"] == [
+            f"Cannot apply worktree {session.session_id}: conflicts detected.\nConflicting files:\n  • target.py"
+        ]
+        assert payload["conflicting_files"] == ["target.py"]
+        assert payload["touched_files"] == []
+
     def test_worktree_apply_cli_git_timeout_json_exits_one(
         self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
