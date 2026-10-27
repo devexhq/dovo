@@ -67,12 +67,12 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 ## Caught once, at the public entrypoint
 
 - **Decision:** a `DomainError` is caught once, with `catch_failure`, by the public entrypoint or by a caller in another package, and its failure is copied into the result.
-  - The copy is `Failure.result_fields()`, as the next entry states.
+  - The copy is `Failure.result_fields()` spread into the result constructor, never a hand-written copy of the failure's fields.
   - Code behind an entrypoint catches only to recover, or to collect per-item failures and continue. It records what it caught with `record_exception`, at the level [diagnostics.md](diagnostics.md) sets.
   - Nothing inside a `catch_failure` block catches and re-raises a `DomainError` to carry data out of it; the raise passes `data=` instead.
   - `catch_failure` re-raises `LockTimeoutError` and records unexpected exceptions, so no helper catches broad `Exception` to report it.
 - **Why:** one catch site means one copy into the result, one diagnostic record and one place a caller looks.
-- **Since:** #1106
+- **Since:** #1214
 - **Example:**
   ```python
   with catch_failure("worktree.show", worktree_id=worktree_id) as caught:
@@ -88,6 +88,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
   - The entrypoint reads it after the block with `isinstance(caught.failure.data, <the FailureData subclass>)`. That narrows the data, not the error, so it is not a branch on the exception class.
   - `result_fields()` returns `error_code`, the message as `errors`, `remediations` and `diagnostics`, spread into the result constructor so ty checks each field. `prior_diagnostics` puts records gathered earlier first.
   - A site that replaces the remediations assigns `fields["remediations"]` on the returned dict. There is no hand-written copy of a failure's fields and no per-package builder.
+  - A site that reports the failure as something other than its result's failure (a warning, a doctor check result, or a step or agent error) does not copy it into the result header. It carries the message, and the diagnostic through `error_diagnostics(failure.diagnostic)` where it keeps one, and never sets `error_code=` or `remediations=` from the failure.
 - **Why:** one copy keeps every result header the same, and typed data reaches the result without a catch and re-raise inside the block.
 - **Since:** #1214
 - **Example:**

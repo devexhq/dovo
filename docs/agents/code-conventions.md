@@ -25,7 +25,7 @@ Standard package skeleton for domain logic under `src/dovo/core/`:
 core/<domain>/
   __init__.py       # Re-export public API only
   models.py         # BaseModel, StrEnum, dataclasses, Protocols
-  exceptions.py     # The package's one DomainError subclass
+  exceptions.py     # The package's one DomainError subclass and its FailureData subclasses
   <domain>.py       # Domain entrypoint (named after the domain, e.g. prune.py; never facade.py)
   services/         # Imperative operations
     <verb>.py       # loader, runner, renderer, resolver, etc.
