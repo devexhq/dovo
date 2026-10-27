@@ -61,7 +61,7 @@ class ConfigShowCliIntegrationTests:
 
         assert res.exit_code == 1
         assert "Config Error" in res.stdout
-        assert "CONFIG_NOT_FOUND" in res.stdout
+        assert "Configuration file not found" in res.stdout
 
     def test_config_show_cli_malformed_user_tier_exits_one_with_config_error_panel(
         self,

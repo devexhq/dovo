@@ -70,7 +70,7 @@ class BlockedResponseContractTests:
             raw_text="partial",
             mutation_baseline_ref="abc",
             errors=[
-                "Agent run was blocked by tool permissions (AGENT_PERMISSION_BLOCKED): bash: no interactive user response",
+                "Agent run was blocked by tool permissions: bash: no interactive user response",
                 "edit: denied due to the following rules",
             ],
             remediations=[
@@ -115,7 +115,7 @@ class ProviderErrorResponseTests:
     @pytest.mark.parametrize(
         ("detail", "errors", "expected"),
         [
-            pytest.param("boom", (), ["Agent provider error (AGENT_PROVIDER_ERROR): boom"], id="detail-only"),
+            pytest.param("boom", (), ["Agent provider error: boom"], id="detail-only"),
             pytest.param(
                 None,
                 ["Patch touches 2 files; max_files is 1."],
@@ -125,11 +125,11 @@ class ProviderErrorResponseTests:
             pytest.param(
                 "d",
                 ["a", "b"],
-                ["Agent provider error (AGENT_PROVIDER_ERROR): d", "a", "b"],
+                ["Agent provider error: d", "a", "b"],
                 id="detail-first-then-errors-in-order",
             ),
             pytest.param(None, (), [], id="neither"),
-            pytest.param("", (), ["Agent provider error (AGENT_PROVIDER_ERROR): "], id="empty-detail-still-prefixed"),
+            pytest.param("", (), ["Agent provider error: "], id="empty-detail-still-prefixed"),
         ],
     )
     def test_provider_error_response_orders_and_prefixes_diagnostics(

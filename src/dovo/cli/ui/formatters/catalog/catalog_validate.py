@@ -41,9 +41,12 @@ def _build_status_banner(view: CatalogValidateView) -> Text:
 
 
 def _build_issues_table(
-    title: str, messages: list[str], remediations: list[Remediation], *, show_remediation: bool
+    title: str, messages: list[str], remediations: list[Remediation], *, show_remediation: bool, default_code: str = ""
 ) -> Table:
-    """Build a Code/Details[/Remediation] Rich table, pairing remediations[i].message with messages[i]."""
+    """Build a Code/Details[/Remediation] Rich table, pairing remediations[i].message with messages[i].
+
+    A message without a trailing code shows default_code in the Code column.
+    """
     table = Table(title=title, title_justify="left", show_header=True)
     table.add_column("Code", no_wrap=True)
     table.add_column("Details")
@@ -52,6 +55,7 @@ def _build_issues_table(
 
     for index, message in enumerate(messages):
         code, detail = _split_issue_code(message)
+        code = code or default_code
         if show_remediation:
             remediation = remediations[index].message if index < len(remediations) else ""
             table.add_row(code, detail, remediation)
@@ -65,7 +69,11 @@ def _render(view: CatalogValidateView) -> RenderableType:
     """Render the status banner plus Errors/Warnings tables from the view."""
     renderables: list[RenderableType] = [_build_status_banner(view)]
     if view.errors:
-        renderables.append(_build_issues_table("Errors", view.errors, view.remediations, show_remediation=True))
+        renderables.append(
+            _build_issues_table(
+                "Errors", view.errors, view.remediations, show_remediation=True, default_code=view.error_code or ""
+            )
+        )
     if view.warnings:
         renderables.append(_build_issues_table("Warnings", view.warnings, [], show_remediation=False))
     return Group(*renderables)

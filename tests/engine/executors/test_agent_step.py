@@ -158,14 +158,14 @@ class ExecuteAgentStepToolPolicyFailureTests:
                 ),
                 204,
                 "blocked",
-                ["AGENT_PERMISSION_BLOCKED", "tools: {allow: [{capability: shell}]}"],
+                ["Agent run was blocked by tool permissions", "tools: {allow: [{capability: shell}]}"],
                 id="blocked",
             ),
             pytest.param(
                 provider_error_response(duration_seconds=1.0, errors=[tool_policy_unsupported_message("copilot")]),
                 203,
                 "provider_error",
-                ["AGENT_TOOL_POLICY_UNSUPPORTED"],
+                ["cannot enforce the requested tool policy"],
                 id="unsupported_policy",
             ),
         ],
@@ -291,8 +291,8 @@ class ExecuteAgentStepOutputTests:
                 AgentResponseStatus.PROVIDER_ERROR,
                 203,
                 None,
-                ["Agent provider error (AGENT_PROVIDER_ERROR): down"],
-                "Agent provider error (AGENT_PROVIDER_ERROR): down",
+                ["Agent provider error: down"],
+                "Agent provider error: down",
                 id="provider-error",
             ),
         ],
@@ -452,7 +452,7 @@ class ExecuteAgentStepScratchTests:
             session_tmp.chmod(0o700)
 
         assert outcome.exit_code == 203
-        assert "AGENT_SCRATCH_UNAVAILABLE" in (outcome.error_message or "")
+        assert "Cannot prepare private scratch for agent step" in (outcome.error_message or "")
         assert (outcome.error_message or "").splitlines()[1:] == [
             "Fix:",
             "- Restore access to the session temp directory or correct its storage path.",

@@ -429,7 +429,7 @@ class ClaudeInvokeTests:
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
         assert response.errors == [
-            "Agent provider error (AGENT_PROVIDER_ERROR): Claude Code is not authenticated. "
+            "Agent provider error: Claude Code is not authenticated. "
             "Fix: run `claude auth login`, export CLAUDE_CODE_OAUTH_TOKEN=... (from `claude setup-token`) "
             "or export ANTHROPIC_API_KEY=..."
         ]
@@ -597,8 +597,7 @@ class ClaudeGitIntegrationTests:
         assert response.unified_diff is None
         assert _porcelain(git_repo) == ""
         assert response.errors[0] == (
-            "Agent run was blocked by tool permissions (AGENT_PERMISSION_BLOCKED): "
-            "Bash: Permission to use Bash was denied"
+            "Agent run was blocked by tool permissions: Bash: Permission to use Bash was denied"
         )
 
 

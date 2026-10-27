@@ -55,8 +55,7 @@ class ConfigMutationTests:
 
         assert result.status == ConfigSetStatus.SCHEMA_INVALID
         assert result.errors == [
-            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n"
-            "- default_agent: 'gemini' is not one of ['copilot', 'claude']"
+            "Config schema validation failed:\n- default_agent: 'gemini' is not one of ['copilot', 'claude']"
         ]
         assert config_path.read_bytes() == before
 
@@ -83,7 +82,7 @@ class ConfigMutationTests:
         assert schema_error_result.key == "worktree.max_active_worktrees"
         assert schema_error_result.value == "not_an_int"
         assert schema_error_result.errors == [
-            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- worktree.max_active_worktrees: 'not_an_int' is not of type 'integer'"
+            "Config schema validation failed:\n- worktree.max_active_worktrees: 'not_an_int' is not of type 'integer'"
         ]
         assert schema_error_result.remediations == [
             Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
@@ -146,9 +145,7 @@ class ConfigMutationTests:
         assert result.status == ConfigSetStatus.SCHEMA_INVALID
         assert result.value == 12345
         assert type(result.value) is int
-        assert result.errors == [
-            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- worktree.base_ref: 12345 is not of type 'string'"
-        ]
+        assert result.errors == ["Config schema validation failed:\n- worktree.base_ref: 12345 is not of type 'string'"]
         assert config_path.read_bytes() == before
 
 
@@ -268,7 +265,7 @@ class ConfigUnsetMutationTests:
         assert result.key == "agents.copilot.model"
         assert result.existed is False
         assert result.previous_value is None
-        assert result.errors == [f"Configuration file not found at '{config_path}' (CONFIG_NOT_FOUND)."]
+        assert result.errors == [f"Configuration file not found at '{config_path}'."]
         assert result.warnings == []
         assert result.remediations == [
             Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")
@@ -285,7 +282,7 @@ class ConfigUnsetMutationTests:
         assert result.key == "agents.copilot.model"
         assert result.existed is False
         assert result.previous_value is None
-        assert result.errors == [f"Config path is a directory, not a file: '{config_path}' (CONFIG_PATH_IS_DIRECTORY)."]
+        assert result.errors == [f"Config path is a directory, not a file: '{config_path}'."]
         assert result.warnings == []
         assert result.remediations == [Remediation(message="Remove the directory or point config_path at a file")]
 
@@ -302,8 +299,7 @@ class ConfigUnsetMutationTests:
         assert result.previous_value is None
         assert result.errors == [
             f"Malformed config.json at '{config_path}': "
-            "Expecting property name enclosed in double quotes at line 1 column 2 (char 1) "
-            "(CONFIG_MALFORMED_JSON)."
+            "Expecting property name enclosed in double quotes at line 1 column 2 (char 1)."
         ]
         assert result.warnings == []
         assert result.remediations == [Remediation(message="Repair JSON syntax, or restore from backup")]
@@ -319,9 +315,7 @@ class ConfigUnsetMutationTests:
         assert result.key == "agents.copilot.model"
         assert result.existed is False
         assert result.previous_value is None
-        assert result.errors == [
-            f"Malformed config.json at '{config_path}': root must be an object (CONFIG_ROOT_NOT_OBJECT)."
-        ]
+        assert result.errors == [f"Malformed config.json at '{config_path}': root must be an object."]
         assert result.warnings == []
         assert result.remediations == [
             Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")
@@ -340,9 +334,7 @@ class ConfigUnsetMutationTests:
         assert result.key == "project"
         assert result.existed is True
         assert result.previous_value == payload["project"]
-        assert result.errors == [
-            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"
-        ]
+        assert result.errors == ["Config schema validation failed:\n- (root): 'project' is a required property"]
         assert result.warnings == []
         assert result.remediations == [
             Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
@@ -373,7 +365,7 @@ class ConfigUnsetMutationTests:
         assert result.key == "agents.copilot.model"
         assert result.existed is True
         assert result.previous_value == "gpt-4.1"
-        assert result.errors == [f"Unable to write config.json at '{config_path}': disk full (CONFIG_WRITE_FAILED)."]
+        assert result.errors == [f"Unable to write config.json at '{config_path}': disk full."]
         assert result.warnings == []
         assert result.remediations == [Remediation(message="Check file permissions and free disk space")]
 

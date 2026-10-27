@@ -120,7 +120,7 @@ def publish_artifact(
             shutil.rmtree(temp_dir, ignore_errors=True)
             return ArtifactUploadResult(
                 status=ArtifactUploadStatus.NO_MATCHING_FILES,
-                errors=[f"Artifact '{name}' matched no files at '{path_glob}' (ARTIFACT_NOT_PRODUCED)."],
+                errors=[f"Artifact '{name}' matched no files at '{path_glob}'."],
             )
 
         manifest = build_manifest(

@@ -16,7 +16,7 @@ dovo run <name> [OPTIONS] [-- <input-overrides>]
 | `--keep` | Keep the worktree whatever the run status. Each run gets its own worktree at `.dovo/worktrees/<session_id>/` on branch `dovo/<session_id>`, so repeated `--keep` runs of one blueprint do not collide. |
 | `--discard` | Remove the worktree whatever the run status, including after a failed run. Cannot be combined with `--keep`: the pair exits `2` with a usage error before any session is created. |
 | `--auto-apply` | Automatically apply worktree changes to the main workspace on successful completion. |
-| `--agent <name>` | Use this agent provider for the run instead of `default_agent`. All agent settings (model, endpoint, temperature, max tokens, tools, environment) come from `agents.<name>`, or the field defaults when that block is absent; other providers' blocks are not read. An unknown name fails agent steps with `AGENT_PROVIDER_UNSUPPORTED`; command and script steps are unaffected. |
+| `--agent <name>` | Use this agent provider for the run instead of `default_agent`. All agent settings (model, endpoint, temperature, max tokens, tools, environment) come from `agents.<name>`, or the field defaults when that block is absent; other providers' blocks are not read. An unknown name fails agent steps with `Unsupported agent provider '<name>'`; command and script steps are unaffected. |
 | `--session-id <id>` | Explicit session identifier. |
 | `--no-tty` | Disable interactive prompts; prompt_user failures abort the run instead of blocking for input, and a run that reaches an `ask` step pauses (exit `0`) so it can be answered with `dovo resume --answer`. |
 | `--env-mode <allowlist\|inherit>` | Override `agents.<provider>.env_mode` for this invocation. |

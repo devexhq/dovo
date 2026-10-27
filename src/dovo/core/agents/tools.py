@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Protocol
+from typing import Protocol
 
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents.models import AgentInvocationContext
-
-TOOL_POLICY_UNSUPPORTED_CODE: Final[str] = "AGENT_TOOL_POLICY_UNSUPPORTED"
 
 
 @dataclass(frozen=True)
@@ -40,9 +38,9 @@ def resolve_tool_policy(step_policy: ToolPolicy | None, configured: ToolPolicy) 
 
 
 def tool_policy_unsupported_message(token: str) -> str:
-    """Return the fixed AGENT_TOOL_POLICY_UNSUPPORTED diagnostic naming the provider token."""
+    """Return the fixed unsupported-tool-policy message naming the provider token."""
     return (
-        f"Agent provider '{token}' cannot enforce the requested tool policy ({TOOL_POLICY_UNSUPPORTED_CODE}). "
+        f"Agent provider '{token}' cannot enforce the requested tool policy. "
         "Fix: choose a policy-capable provider or an explicitly authorized policy it can enforce."
     )
 

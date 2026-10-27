@@ -130,7 +130,7 @@ class GitRunner:
         Raises:
             GitError: With FS_NOT_FOUND when path is not a directory, chained to the OSError.
             GitError: With GIT_BINARY_MISSING when git binary is not found, or GIT_TIMEOUT when subprocess.run
-                times out; the timeout message ends `(GIT_TIMEOUT)`.
+                times out.
         """
         try:
             proc = subprocess.run(
@@ -157,7 +157,7 @@ class GitRunner:
         except subprocess.TimeoutExpired as exc:
             raise GitError(
                 ErrorCode.GIT_TIMEOUT,
-                f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git {' '.join(args)}') (GIT_TIMEOUT)",
+                f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git {' '.join(args)}')",
             ) from exc
         return GitProcessOutput(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
 
@@ -188,7 +188,7 @@ class GitRunner:
         """
         result = self.exec(args, path, input_text=input_text, env=env)
         if check and result.returncode != 0:
-            raise git_command_error(["git", *args], result.returncode, result.stdout, result.stderr)
+            raise git_command_error(args, result.returncode, result.stdout, result.stderr)
         return result.stdout.rstrip("\r\n")
 
     def get_current_branch(self, path: Path) -> str:
@@ -300,7 +300,7 @@ class GitRunner:
         if result.returncode == 1:
             return False
         if result.returncode != 0:
-            raise git_command_error(["git", *args], result.returncode, result.stdout, result.stderr)
+            raise git_command_error(args, result.returncode, result.stdout, result.stderr)
         return True
 
     def rev_parse(self, path: Path, rev: str = "HEAD") -> str:

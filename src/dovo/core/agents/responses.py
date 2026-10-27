@@ -42,7 +42,7 @@ def provider_error_response(
     """
     errors_out = [*errors]
     if detail is not None:
-        errors_out.insert(0, f"Agent provider error (AGENT_PROVIDER_ERROR): {detail}")
+        errors_out.insert(0, f"Agent provider error: {detail}")
 
     return AgentResponse(
         status=AgentResponseStatus.PROVIDER_ERROR,
@@ -101,7 +101,7 @@ def blocked_response(
     """
     first, *rest = denials
     errors = [
-        f"Agent run was blocked by tool permissions (AGENT_PERMISSION_BLOCKED): {first.tool}: {first.message}",
+        f"Agent run was blocked by tool permissions: {first.tool}: {first.message}",
         *(f"{denial.tool}: {denial.message}" for denial in rest),
     ]
     remediations: list[Remediation] = []

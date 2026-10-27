@@ -65,7 +65,7 @@ class BaseAgentProvider(abc.ABC):
         return None
 
     def _env_preflight(self, request: AgentRequest) -> str | None:
-        """Return the fixed AGENT_ENV_OVERRIDE_INVALID message when a literal passthrough or step env entry is reserved, else None."""
+        """Return the fixed environment-override conflict message when a literal passthrough or step env entry is reserved, else None."""
         spec = self._provider_spec()
 
         return None if spec is None else validate_agent_env_request(spec, request, spec.token)

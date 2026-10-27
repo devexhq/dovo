@@ -1891,7 +1891,7 @@ class CoordinatorAskTests:
         outcome = ask_run.start([triage], prompter)
 
         assert outcome.status == SessionStatus.FAILED
-        assert "(ASK_OPTIONS_ARTIFACT_NOT_FOUND)" in outcome.errors[0]
+        assert "for options_from was not found." in outcome.errors[0]
         assert prompter.requests == []
 
     def test_empty_multiselect_completes_without_prompting(self, ask_run: AskRun) -> None:

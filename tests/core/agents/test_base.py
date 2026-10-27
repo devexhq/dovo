@@ -27,7 +27,7 @@ from dovo.core.agents.registry import PROVIDERS
 from tests.harness import PROVIDER_FINISHED_STREAMS, AgentRequestBuilder, FakeAgentRunner, real_invocation
 
 _CANONICAL_MISSING_CREDENTIAL_ERROR = (
-    "Agent provider error (AGENT_PROVIDER_ERROR): "
+    "Agent provider error: "
     "missing TEST_CREDENTIAL_PRIMARY or TEST_CREDENTIAL_FALLBACK. "
     "Fix: export TEST_CREDENTIAL_PRIMARY=... or export TEST_CREDENTIAL_FALLBACK=..."
 )
@@ -298,7 +298,7 @@ class RegisteredAdapterCredentialContractTests:
 
         [error] = response.errors
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert error.startswith("Agent provider error (AGENT_PROVIDER_ERROR): ")
+        assert error.startswith("Agent provider error: ")
         assert error.endswith(_missing_credential_suffix(PROVIDERS[token]))
 
     @pytest.mark.parametrize("token", _CREDENTIALED)
@@ -565,7 +565,7 @@ class InvokeRedactionTests:
 
 
 _OVERRIDE_MESSAGE = (
-    "Agent environment override '{name}' conflicts with provider or Dovo controls (AGENT_ENV_OVERRIDE_INVALID). "
+    "Agent environment override '{name}' conflicts with provider or Dovo controls. "
     "Fix: remove it from agents.{provider}.env_passthrough or the agent step's env."
 )
 

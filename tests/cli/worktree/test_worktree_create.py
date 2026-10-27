@@ -102,7 +102,7 @@ class WorktreeCreateCliIntegrationTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["error_code"] == "WORKTREE_PATH_CONFLICT"
-        assert payload["errors"] == ["Worktree 'dovo_0000abcd' already exists (WORKTREE_PATH_CONFLICT)."]
+        assert payload["errors"] == ["Worktree 'dovo_0000abcd' already exists."]
         assert (cli_workspace / ".dovo" / "worktrees" / "dovo_0000abcd").is_dir()
         assert "dovo/dovo_0000abcd" in GitRunner().list_branches(cli_workspace)
 

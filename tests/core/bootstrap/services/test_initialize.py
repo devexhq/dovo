@@ -232,14 +232,12 @@ def _expected_identity_message(identity_path: Path, failure: str) -> str:
     if failure == "invalid_schema":
         with pytest.raises(ValidationError) as validation:
             ProjectIdentity.model_validate_json("{not-json")
-        return (
-            f"Project identity at '{identity_path}' is invalid: {validation.value} (PROJECT_IDENTITY_INVALID_SCHEMA)."
-        )
+        return f"Project identity at '{identity_path}' is invalid: {validation.value}."
     if failure == "unreadable":
-        return f"Unable to read project identity at '{identity_path}': denied (PROJECT_IDENTITY_UNREADABLE)."
+        return f"Unable to read project identity at '{identity_path}': denied."
     if failure == "write_failed":
-        return f"Unable to write project identity at '{identity_path}': disk full (PROJECT_IDENTITY_WRITE_FAILED)."
-    return f"Unable to acquire project identity lock at '{identity_path}': lock held (PROJECT_IDENTITY_LOCKED)."
+        return f"Unable to write project identity at '{identity_path}': disk full."
+    return f"Unable to acquire project identity lock at '{identity_path}': lock held."
 
 
 class InitializeIdentityFailureTests:

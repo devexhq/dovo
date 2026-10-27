@@ -43,7 +43,7 @@ class ConfigProbeTests:
 
         assert result.config.status == ConfigLoadStatus.MALFORMED_JSON
         assert result.config.is_valid is False
-        assert any("CONFIG_MALFORMED_JSON" in err for err in result.config.errors)
+        assert any(err.startswith("Malformed config.json at") for err in result.config.errors)
         assert result.config.remediations == [Remediation(message="Repair JSON syntax, or restore from backup")]
         assert any("Malformed config.json" in w for w in result.warnings)
         assert result.remediations == [

@@ -84,7 +84,7 @@ class ResolveArtifactReferencesTests:
         )
 
         assert result.status == ArtifactReferencesStatus.CONTENT_UNAVAILABLE
-        assert result.errors == [f"Artifact 'plan' cannot be inlined (ARTIFACT_CONTENT_UNAVAILABLE): {reason}"]
+        assert result.errors == [f"Artifact 'plan' cannot be inlined: {reason}"]
 
     def test_file_exactly_65536_bytes_is_inlined(
         self, artifacts_repository: ArtifactsRepository, tmp_path: Path
@@ -109,9 +109,7 @@ class ResolveArtifactReferencesTests:
         )
 
         assert result.status == ArtifactReferencesStatus.CONTENT_UNAVAILABLE
-        assert result.errors[0].startswith(
-            "Artifact 'plan' cannot be inlined (ARTIFACT_CONTENT_UNAVAILABLE): cannot read file:"
-        )
+        assert result.errors[0].startswith("Artifact 'plan' cannot be inlined: cannot read file:")
 
     def test_legacy_row_without_digest_renders_empty_digest(self, artifacts_repository: ArtifactsRepository) -> None:
         artifacts_repository.create(

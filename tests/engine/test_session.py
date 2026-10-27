@@ -1010,7 +1010,7 @@ class DriveRunAgentSettingsTests:
         outcome = _drive(engine_paths, sessions_repo, "bad-config", observer=observer)
 
         assert outcome.status == SessionStatus.FAILED
-        assert "CONFIG_MALFORMED_JSON" in outcome.errors[0]
+        assert "Malformed config.json at" in outcome.errors[0]
         assert outcome.step_results == []
         assert [call[0] for call in observer.calls] == ["run_completed"]
 
@@ -1028,9 +1028,7 @@ class DriveRunAgentSettingsTests:
         outcome = _drive(paths, sessions, "unregistered")
 
         assert outcome.status == SessionStatus.FAILED
-        assert "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED)" in (
-            outcome.step_results[-1].error_message or ""
-        )
+        assert "Unsupported agent provider 'unregistered'." in (outcome.step_results[-1].error_message or "")
 
 
 class DriveRunAgentWorktreeTests:

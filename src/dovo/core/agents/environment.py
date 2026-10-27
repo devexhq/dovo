@@ -51,7 +51,6 @@ AGENT_SCRATCH_ENV_NAME: Final[str] = "DOVO_AGENT_SCRATCH"
 SCRATCH_TEMP_ENV_NAMES: Final[tuple[str, ...]] = ("TMPDIR", "TMP", "TEMP")
 WITHHELD_ENV_NAME: Final[str] = "DOVO_ENV_WITHHELD"
 WITHHELD_REPORT_LIMIT: Final[int] = 4096
-ENV_OVERRIDE_INVALID_CODE: Final[str] = "AGENT_ENV_OVERRIDE_INVALID"
 
 
 class _EnvDescriptor(Protocol):
@@ -116,7 +115,7 @@ def env_filtered_prompt_line(provider: str) -> str:
 
 
 def validate_agent_env_request(spec: _EnvDescriptor, request: AgentRequest, provider: str) -> str | None:
-    """Return the AGENT_ENV_OVERRIDE_INVALID message for the first reserved name in literal passthrough or step env.
+    """Return the environment-override conflict message for the first reserved name in literal passthrough or step env.
 
     The message names agents.<provider>.env_passthrough; None means no entry is reserved.
     """
@@ -129,8 +128,8 @@ def validate_agent_env_request(spec: _EnvDescriptor, request: AgentRequest, prov
     name = min(conflicts)
 
     return (
-        f"Agent environment override '{name}' conflicts with provider or Dovo controls "
-        f"({ENV_OVERRIDE_INVALID_CODE}). Fix: remove it from agents.{provider}.env_passthrough or the agent step's env."
+        f"Agent environment override '{name}' conflicts with provider or Dovo controls. "
+        f"Fix: remove it from agents.{provider}.env_passthrough or the agent step's env."
     )
 
 

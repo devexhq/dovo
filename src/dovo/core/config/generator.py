@@ -108,12 +108,12 @@ def merge_missing_keys(
 def _preflight_config_path(config_path: Path) -> tuple[list[str], list[Remediation]]:
     """Return (errors, remediations) if the config path cannot be used."""
     if config_path.exists() and config_path.is_dir():
-        return [f"CONFIG_PATH_IS_DIRECTORY at {config_path.as_posix()}"], []
+        return [f"Config path '{config_path.as_posix()}' is a directory."], []
     parent = config_path.parent
     if not parent.exists():
-        return [f"CONFIG_PARENT_MISSING at {parent.as_posix()}"], []
+        return [f"Config directory '{parent.as_posix()}' does not exist."], []
     if not os.access(parent, os.W_OK):
-        return [f"CONFIG_PATH_NOT_WRITABLE at {config_path.as_posix()}"], [
+        return [f"Config path '{config_path.as_posix()}' is not writable."], [
             Remediation(message=f"Ensure write permissions for '{parent.as_posix()}' directory")
         ]
     return [], []
@@ -131,12 +131,12 @@ def _write_fresh_config(
     payload = build_default_config(project_name)
     validation = CONFIG_VALIDATOR.validate(payload)
     if not validation.ok:
-        result.errors.extend([f"CONFIG_VALIDATION_FAILED: {e}" for e in validation.errors])
+        result.errors.extend([f"Generated config failed validation: {e}" for e in validation.errors])
         return result
     try:
         Filesystem.atomic_write_json(config_path, payload)
     except OSError as exc:
-        result.errors.append(f"CONFIG_WRITE_FAILED at {config_path.as_posix()}: {exc}")
+        result.errors.append(f"Unable to write config at '{config_path.as_posix()}': {exc}")
         return result
     clear_config_cache(config_path)
     if existed_before and overwrite:
@@ -156,10 +156,10 @@ def _repair_existing_config(
         with open(config_path, encoding="utf-8") as f:
             existing: dict[str, Any] = json.load(f)
         if not isinstance(existing, dict):
-            result.errors.append("CONFIG_INVALID_JSON: root must be a JSON object")
+            result.errors.append(f"Invalid config JSON at '{config_path.as_posix()}': root must be a JSON object")
             return result
     except json.JSONDecodeError as exc:
-        result.errors.append(f"CONFIG_INVALID_JSON at {config_path.as_posix()}: {exc}")
+        result.errors.append(f"Invalid config JSON at '{config_path.as_posix()}': {exc}")
         result.remediations.extend(
             [
                 Remediation(message="Repair invalid JSON manually"),
@@ -177,12 +177,12 @@ def _repair_existing_config(
     inserted = merge_missing_keys(existing, defaults)
     validation = CONFIG_VALIDATOR.validate(existing)
     if not validation.ok:
-        result.errors.extend([f"CONFIG_VALIDATION_FAILED: {e}" for e in validation.errors])
+        result.errors.extend([f"Repaired config failed validation: {e}" for e in validation.errors])
         return result
     try:
         Filesystem.atomic_write_json(config_path, existing)
     except OSError as exc:
-        result.errors.append(f"CONFIG_WRITE_FAILED at {config_path.as_posix()}: {exc}")
+        result.errors.append(f"Unable to write config at '{config_path.as_posix()}': {exc}")
         return result
 
     clear_config_cache(config_path)

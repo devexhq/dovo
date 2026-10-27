@@ -201,9 +201,9 @@ In `run`, `command`, `prompt`, `script_path` and `env`, reference metadata with 
   * `{{ steps.build.exit_code }}`: Exit code of step with `id: build`
   * `{{ steps.build.outputs.artifact_path }}` / `{{ steps['build'].outputs.artifact_path }}`: A specific output value step `build` wrote to `$DOVO_OUTPUT` (see [Step Outputs](#step-outputs-dovo_output) below). An unknown step ID or output key resolves to an empty string.
   * `steps` holds finished steps only, never the current one. Out-of-range indices and unknown step IDs resolve to an empty string.
-* **Artifacts**: `{{ artifacts.<name>.revision }}`, `{{ artifacts.<name>.digest }}`, `{{ artifacts.<name>.dir }}` and `{{ artifacts.<name>.content }}` resolve against the latest revision of `<name>` published in the current session, read again for every attempt. An unknown artifact or field resolves to an empty string. `content` is the file's text and is available only when the artifact has exactly one file that is valid UTF-8 and at most 65536 bytes; otherwise the step fails with `Artifact '<name>' cannot be inlined (ARTIFACT_CONTENT_UNAVAILABLE)`.
+* **Artifacts**: `{{ artifacts.<name>.revision }}`, `{{ artifacts.<name>.digest }}`, `{{ artifacts.<name>.dir }}` and `{{ artifacts.<name>.content }}` resolve against the latest revision of `<name>` published in the current session, read again for every attempt. An unknown artifact or field resolves to an empty string. `content` is the file's text and is available only when the artifact has exactly one file that is valid UTF-8 and at most 65536 bytes; otherwise the step fails with `Artifact '<name>' cannot be inlined: <reason>`.
 
-A step's `artifacts:` entries are `required` by default: a glob that matches no file fails the step with `Artifact '<name>' matched no files at '<path>' (ARTIFACT_NOT_PRODUCED).` Set `required: false` to downgrade that to a warning. See [Step Schema](../reference/step-schema.md#artifacts-entries).
+A step's `artifacts:` entries are `required` by default: a glob that matches no file fails the step with `Artifact '<name>' matched no files at '<path>'.` Set `required: false` to downgrade that to a warning. See [Step Schema](../reference/step-schema.md#artifacts-entries).
 
 ```yaml
 steps:

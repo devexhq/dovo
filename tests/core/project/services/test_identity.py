@@ -71,7 +71,7 @@ class ProjectIdentityServiceTests:
             load_project_identity(path)
 
         assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_NOT_FOUND
-        assert raised.value.message == f"Project identity file not found at '{path}' (PROJECT_IDENTITY_NOT_FOUND)."
+        assert raised.value.message == f"Project identity file not found at '{path}'."
         assert raised.value.remediations == ()
 
     @pytest.mark.parametrize(
@@ -91,9 +91,7 @@ class ProjectIdentityServiceTests:
             load_project_identity(path)
 
         assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_INVALID_SCHEMA
-        assert raised.value.message == (
-            f"Project identity at '{path}' is invalid: {validation.value} (PROJECT_IDENTITY_INVALID_SCHEMA)."
-        )
+        assert raised.value.message == (f"Project identity at '{path}' is invalid: {validation.value}.")
         assert raised.value.remediations == ()
 
     @pytest.mark.parametrize("failure", ["oserror", "invalid_utf8"])
@@ -119,9 +117,7 @@ class ProjectIdentityServiceTests:
 
         assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_UNREADABLE
         assert type(raised.value.__cause__) is expected_type
-        assert raised.value.message == (
-            f"Unable to read project identity at '{path}': {raised.value.__cause__} (PROJECT_IDENTITY_UNREADABLE)."
-        )
+        assert raised.value.message == (f"Unable to read project identity at '{path}': {raised.value.__cause__}.")
         assert raised.value.remediations == ()
 
     def test_save_project_identity_writes_indented_json_and_returns_none(self, tmp_path: Path) -> None:
@@ -144,16 +140,14 @@ class ProjectIdentityServiceTests:
         with (
             patch(
                 "dovo.core.project.services.identity.WorkspaceLock.__enter__",
-                side_effect=LockTimeoutError("lock held"),
+                side_effect=LockTimeoutError("lock held."),
             ),
             pytest.raises(ProjectIdentityError) as raised,
         ):
             save_project_identity(path, identity)
 
         assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_LOCKED
-        assert raised.value.message == (
-            f"Unable to acquire project identity lock at '{path}': lock held (PROJECT_IDENTITY_LOCKED)."
-        )
+        assert raised.value.message == (f"Unable to acquire project identity lock at '{path}': lock held.")
         assert raised.value.remediations == ()
         assert not path.exists()
 
@@ -168,9 +162,7 @@ class ProjectIdentityServiceTests:
             save_project_identity(path, identity)
 
         assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_WRITE_FAILED
-        assert raised.value.message == (
-            f"Unable to write project identity at '{path}': disk full (PROJECT_IDENTITY_WRITE_FAILED)."
-        )
+        assert raised.value.message == (f"Unable to write project identity at '{path}': disk full.")
         assert type(raised.value.__cause__) is OSError
         assert raised.value.remediations == ()
         assert not path.exists()
@@ -276,15 +268,11 @@ class ProjectIdentityServiceTests:
             with pytest.raises(ValidationError) as validation:
                 ProjectIdentity.model_validate_json("{not-json")
             expected_code = ErrorCode.PROJECT_IDENTITY_INVALID_SCHEMA
-            expected_message = (
-                f"Project identity at '{path}' is invalid: {validation.value} (PROJECT_IDENTITY_INVALID_SCHEMA)."
-            )
+            expected_message = f"Project identity at '{path}' is invalid: {validation.value}."
         else:
             _fail_atomic_write(monkeypatch)
             expected_code = ErrorCode.PROJECT_IDENTITY_WRITE_FAILED
-            expected_message = (
-                f"Unable to write project identity at '{path}': disk full (PROJECT_IDENTITY_WRITE_FAILED)."
-            )
+            expected_message = f"Unable to write project identity at '{path}': disk full."
 
         with pytest.raises(ProjectIdentityError) as raised:
             provision_project_identity(tmp_path)

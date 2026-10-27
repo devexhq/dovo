@@ -118,8 +118,7 @@ class AllocateInvocationPathsTests:
         assert raised.value.error_code == ErrorCode.AGENT_SCRATCH_UNAVAILABLE
         assert raised.value.message == scratch_unavailable_message("build", "the session temp directory is unavailable")
         assert raised.value.message == (
-            "Cannot prepare private scratch for agent step 'build' (AGENT_SCRATCH_UNAVAILABLE): "
-            "the session temp directory is unavailable"
+            "Cannot prepare private scratch for agent step 'build': the session temp directory is unavailable"
         )
         assert raised.value.remediations == (_REMEDIATION,)
 

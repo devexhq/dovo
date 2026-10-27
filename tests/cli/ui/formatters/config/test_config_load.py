@@ -32,11 +32,11 @@ NOT_FOUND = FormatterCase.identity(
     data=ConfigLoadResult(
         status=ConfigLoadStatus.NOT_FOUND,
         config_path=_CONFIG_PATH,
-        errors=["Configuration file not found at '/workspace/.dovo/config.json' (CONFIG_NOT_FOUND)."],
+        errors=["Configuration file not found at '/workspace/.dovo/config.json'."],
         remediations=[Remediation(message="Run 'dovo init' to initialize Dovo", command="dovo init")],
     ),
     render_expectations=[
-        "Configuration file not found at '/workspace/.dovo/config.json' (CONFIG_NOT_FOUND).",
+        "Configuration file not found at '/workspace/.dovo/config.json'.",
         "Fix:",
         "- Run 'dovo init' to initialize Dovo",
     ],
@@ -113,7 +113,7 @@ CONFIG_LOAD_PAYLOAD_CASES = [
             "raw": None,
             "config": None,
             "warnings": [],
-            "errors": ["Configuration file not found at '/workspace/.dovo/config.json' (CONFIG_NOT_FOUND)."],
+            "errors": ["Configuration file not found at '/workspace/.dovo/config.json'."],
             "remediations": [{"message": "Run 'dovo init' to initialize Dovo", "command": "dovo init"}],
             "diagnostics": [],
             "error_code": None,

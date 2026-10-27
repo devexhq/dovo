@@ -120,7 +120,7 @@ class ConfigLoadRequiredTests:
     def test_load_required_raises_config_load_error_on_missing_config(
         self, workspace_paths_no_config: WorkspacePaths
     ) -> None:
-        with pytest.raises(ConfigLoadError, match="CONFIG_NOT_FOUND"):
+        with pytest.raises(ConfigLoadError, match="Configuration file not found at"):
             Config.load_required(workspace_paths_no_config)
 
 
@@ -150,7 +150,7 @@ class ConfigAccessorTests:
 
         message = str(exc_info.value)
         assert str(paths.root_dir) in message
-        assert "CONFIG_NOT_FOUND" in message
+        assert "Configuration file not found at" in message
         assert "Fix:\n- Run 'dovo init' to create '.dovo/config.json'" in message
 
 

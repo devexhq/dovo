@@ -49,7 +49,7 @@ class GenerateDefaultConfigRemediationTests:
         finally:
             parent.chmod(0o700)
 
-        assert result.errors == [f"CONFIG_PATH_NOT_WRITABLE at {(parent / 'config.json').resolve().as_posix()}"]
+        assert result.errors == [f"Config path '{(parent / 'config.json').resolve().as_posix()}' is not writable."]
         assert result.remediations == [
             Remediation(message=f"Ensure write permissions for '{parent.resolve().as_posix()}' directory")
         ]

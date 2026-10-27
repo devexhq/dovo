@@ -184,8 +184,8 @@ class GitRunnerExecTests:
         assert caught.failure.diagnostic is not None
         assert read_single_event(frozen_diagnostic_clock)["operation"] == "worktree.create"
 
-    def test_exec_raises_timeout_ending_git_timeout(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Raise GitError GIT_TIMEOUT whose message ends "('git status') (GIT_TIMEOUT)" when dovo.core.git.runner.subprocess.run raises TimeoutExpired."""
+    def test_exec_raises_git_timeout_naming_the_command(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Raise GitError GIT_TIMEOUT whose message ends "('git status')" when dovo.core.git.runner.subprocess.run raises TimeoutExpired."""
 
         def _time_out(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
             raise subprocess.TimeoutExpired(cmd=["git", "status"], timeout=1)
@@ -195,16 +195,16 @@ class GitRunnerExecTests:
         with pytest.raises(GitError) as excinfo:
             GitRunner().exec(["status"], git_repo)
 
-        assert str(excinfo.value).endswith("('git status') (GIT_TIMEOUT)")
+        assert str(excinfo.value).endswith("('git status')")
         assert excinfo.value.error_code == ErrorCode.GIT_TIMEOUT
 
     def test_run_raises_command_error_on_nonzero_exit_when_checked(self, git_repo: Path) -> None:
-        """Raise GitError GIT_FAILED "Git execution failed ('git git rev-parse --verify nope'): fatal: Needed a single revision" from run."""
+        """Raise GitError GIT_FAILED "Git execution failed ('git rev-parse --verify nope'): fatal: Needed a single revision" from run."""
         with pytest.raises(GitError) as excinfo:
             GitRunner().run(["rev-parse", "--verify", "nope"], git_repo)
 
         assert excinfo.value.message == (
-            "Git execution failed ('git git rev-parse --verify nope'): fatal: Needed a single revision"
+            "Git execution failed ('git rev-parse --verify nope'): fatal: Needed a single revision"
         )
         assert excinfo.value.error_code == ErrorCode.GIT_FAILED
 
@@ -223,8 +223,7 @@ class GitRunnerExecTests:
 
         assert excinfo.value.error_code is ErrorCode.GIT_FAILED
         assert (
-            excinfo.value.message
-            == "Git execution failed ('git git show-ref --verify --quiet refs/heads/x'): fatal: bad"
+            excinfo.value.message == "Git execution failed ('git show-ref --verify --quiet refs/heads/x'): fatal: bad"
         )
 
     def test_get_current_branch_propagates_fs_not_found(self, tmp_path: Path) -> None:
