@@ -3,7 +3,9 @@
 
 The slice flow's plan run writes `## Feature contract` and `## Work plan` into
 the epic's body with `render`; each code run then picks its slice with `next`,
-takes it with `claim` and records its pull request with `land`. The work plan
+takes it with `claim` once its own plan is approved, and records its pull
+request with `land`, which repoints the work plan at the code session when its
+report amended later slices or the contract. The work plan
 is a table for people plus a `<!-- dovo:workplan {json} -->` comment that this
 script alone parses and rewrites. Every body write re-reads the body first and
 aborts when it changed since this run read it. `next` writes its outputs as
@@ -25,6 +27,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 CONTRACT_HEADING = "## Feature contract"
+QUESTIONS_INTRO = "Open questions, each with a recommended answer until the user settles it:"
 WORKPLAN_HEADING = "## Work plan"
 WORKPLAN_COMMENT_RE = re.compile(r"<!-- dovo:workplan (\{.*\}) -->")
 READY_LABEL = "dovo:ready"
@@ -319,6 +322,11 @@ def render_workplan(plan: WorkPlan, landed: str) -> str:
     return text + ("\n" + landed.strip("\n") + "\n" if landed.strip() else "")
 
 
+def with_contract(body: str, contract: dict[str, object], questions: str) -> str:
+    """Return body with its `## Feature contract` section rendered from contract and questions, before the work plan."""
+    return set_section(body, CONTRACT_HEADING, render_contract(contract, questions), before=WORKPLAN_HEADING)
+
+
 def with_workplan(body: str, plan: WorkPlan, landed: str) -> str:
     """Return body with its `## Work plan` section replaced by plan and landed."""
     return set_section(body, WORKPLAN_HEADING, render_workplan(plan, landed))
@@ -459,17 +467,31 @@ def _open_question(item: dict[str, object]) -> str:
     return f"- **{_text(item, 'id')}**{blocked}: {_text(item, 'summary')} **Recommended:** {_text(item, 'assumed')}"
 
 
+def render_questions(open_questions: list[dict[str, object]]) -> str:
+    """Return the open questions block listed under `### Decisions`, or "" when there are none."""
+    if not open_questions:
+        return ""
+    return "\n".join([QUESTIONS_INTRO, *(_open_question(item) for item in open_questions)])
+
+
+def body_questions(body: str) -> str:
+    """Return the open questions block under body's `## Feature contract` as `render_questions` wrote it, or ""."""
+    span = find_section(body, CONTRACT_HEADING)
+    section = body[span[0] : span[1]] if span else ""
+    block = _find_block(section, lambda line: line == QUESTIONS_INTRO, lambda line: not line.strip())
+    return section[block[0] : block[1]].rstrip("\n") if block else ""
+
+
 def _decisions(contract: dict[str, object]) -> str:
-    """Render `### Decisions` as its table, followed by the plan's open questions, leaving out whichever is empty."""
+    """Render `### Decisions` as its table, followed by the open questions block, leaving out whichever is empty."""
     rows = [
         [_text(item, "id"), _text(item, "decision"), _text(item, "why"), _settled_by(item)]
         for item in _items(contract, "decisions")
     ]
     parts = [_table(["ID", "Decision", "Why", "Settled by"], rows)] if rows else []
-    questions = _items(contract, OPEN_QUESTIONS)
+    questions = _text(contract, OPEN_QUESTIONS)
     if questions:
-        listed = "\n".join(_open_question(item) for item in questions)
-        parts.append(f"Open questions, each with a recommended answer until the user settles it:\n{listed}")
+        parts.append(questions)
     return "\n\n".join(parts)
 
 
@@ -546,20 +568,21 @@ CONTRACT_SECTIONS: tuple[tuple[str, tuple[str, ...], Callable[[dict[str, object]
 )
 
 
-def render_contract(contract: dict[str, object], open_questions: list[dict[str, object]]) -> str:
-    """Return the `## Feature contract` section rendered from plan.json's contract and open questions.
+def render_contract(contract: dict[str, object], questions: str) -> str:
+    """Return the `## Feature contract` section rendered from plan.json's contract and an open questions block.
 
     A section whose keys are all missing, null or empty is left out, heading
     and all, so a short contract renders only the sections it has.
 
     Args:
         contract: plan.json's `contract` object.
-        open_questions: plan.json's `open_questions`, listed under Decisions.
+        questions: The open questions block listed under Decisions: `render_questions` of the epic
+            plan's `open_questions`, or the block already on the body, or "".
 
     Returns:
         The section text, ending with a newline.
     """
-    fields: dict[str, object] = {**contract, OPEN_QUESTIONS: open_questions}
+    fields: dict[str, object] = {**contract, OPEN_QUESTIONS: questions}
     grounded_at = _text(contract, "grounded_at")
     parts = [CONTRACT_HEADING, *([f"Grounded at `main@{grounded_at}`."] if grounded_at else [])]
     for title, keys, render in CONTRACT_SECTIONS:
@@ -840,7 +863,7 @@ def cmd_render(issue: int, plan_path: str, session: str, revision: int) -> None:
     if contract is not None:
         raw_questions = _list(_object(data, "plan.json").get("open_questions"))
         questions = [_object(item, "each open question") for item in raw_questions]
-        new = set_section(new, CONTRACT_HEADING, render_contract(contract, questions), before=WORKPLAN_HEADING)
+        new = with_contract(new, contract, render_questions(questions))
     write_body(issue, body, new)
 
 
@@ -891,8 +914,25 @@ def cmd_claim(issue: int, slice_id: str, session: str) -> None:
     write_body(issue, body, with_workplan(body, plan, landed))
 
 
+def amend(issue: int, body: str, plan: WorkPlan, plan_path: str, session: str) -> tuple[str, WorkPlan]:
+    """Return body and plan following plan.json at plan_path, repointed at session when the report amended it.
+
+    The plan is amended when its slice rows differ from the work plan's, or its
+    contract renders differently from the body's `## Feature contract`. An
+    amended contract is re-rendered into body, keeping the open questions the
+    body already lists under Decisions, which the code session's plan.json does
+    not carry.
+    """
+    contract, plan_slices = parse_plan(_load_json(plan_path), issue)
+    rows = merge_rows(plan_slices, plan.slices)
+    amended = body if contract is None else with_contract(body, contract, body_questions(body))
+    if rows == plan.slices and amended == body:
+        return body, plan
+    return amended, WorkPlan(session, None, rows)
+
+
 def cmd_land(issue: int, args: argparse.Namespace) -> int:
-    """Mark the slice in_review with its PR, record its report, follow an amended plan and apply the sweep."""
+    """Mark the slice in_review with its PR, record its report, follow an amended plan or contract and apply the sweep."""
     slice_id: str = args.slice
     session: str = args.session
     pr: int = args.pr
@@ -906,12 +946,10 @@ def cmd_land(issue: int, args: argparse.Namespace) -> int:
         report = Path(args.report).read_text(encoding="utf-8")
     except OSError as error:
         raise WorkplanError(f"cannot read {args.report}: {error}") from error
-    rows = merge_rows(parse_plan(_load_json(args.plan), issue)[1], plan.slices)
-    if rows != plan.slices:
-        plan = WorkPlan(session, None, rows)
+    amended, plan = amend(issue, body, plan, args.plan, session)
     row = find_slice(plan, slice_id)
     row.status, row.pr = "in_review", pr
-    write_body(issue, body, with_workplan(body, plan, add_landed(landed, slice_id, pr, report)))
+    write_body(issue, body, with_workplan(amended, plan, add_landed(landed, slice_id, pr, report)))
     if args.sweep is None:
         return 0
     failures = apply_sweep(Path(args.sweep))

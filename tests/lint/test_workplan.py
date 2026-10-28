@@ -688,12 +688,21 @@ class LandTests:
             "--pr", "1215", "--report", str(report), "--plan", plan_path, *extra,
         )  # fmt: skip
 
+    def _contract_body(self) -> str:
+        """Return an epic body holding INTRO, CONTRACT_SECTION and a work plan whose S1 this code session claimed."""
+        rows = [_row("S1", child=1131, status="in_progress", session=CODE_SESSION), _row("S2", child=1132)]
+        return WORKPLAN.with_workplan(f"{INTRO}\n{CONTRACT_SECTION}", WORKPLAN.WorkPlan(PLAN_SESSION, 3, rows), "")
+
     def test_marks_in_review_and_appends_the_landed_report(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        rows = [_row("S1", child=1131, status="in_progress", session=CODE_SESSION), _row("S2", child=1132)]
-        fake = FakeGh({EPIC: _epic_body(*rows)})
-        plan = {"contract": CONTRACT, "slices": [_slice("S1", child=1131), _slice("S2", child=1132)]}
+        fake = FakeGh({EPIC: self._contract_body()})
+        slice_question = {"id": "OQ-1", "summary": "Rename the helper? (assumed: no)", "assumed": "No."}
+        plan = {
+            "contract": CONTRACT,
+            "slices": [_slice("S1", child=1131, phases=[1, 2]), _slice("S2", child=1132, phases=[])],
+            "open_questions": [slice_question],
+        }
 
         assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0
 
@@ -701,7 +710,23 @@ class LandTests:
         stored = _stored(body)
         assert (stored["plan_session"], stored["plan_revision"]) == (PLAN_SESSION, 3)
         assert (_rows(body)[0]["status"], _rows(body)[0]["pr"]) == ("in_review", 1215)
+        assert body.startswith(f"{INTRO}\n{CONTRACT_SECTION}\n## Work plan\n")
         assert body.endswith("-->\n\n### S1 as landed (#1215)\n#### Departures\n- Renamed a helper.\n")
+
+    def test_amended_contract_is_rerendered_keeping_the_epic_questions_and_repoints(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = FakeGh({EPIC: self._contract_body()})
+        amended = {**CONTRACT, "conventions": [{"rule": "Use ok() everywhere", "entry": None, "new_in": "S1"}]}
+        plan = {"contract": amended, "slices": [_slice("S1", child=1131), _slice("S2", child=1132)]}
+
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0
+
+        body = fake.bodies[EPIC]
+        expected = CONTRACT_SECTION.replace("- Use ok (new;", "- Use ok() everywhere (new;")
+        assert body.startswith(f"{INTRO}\n{expected}\n## Work plan\n")
+        stored = _stored(body)
+        assert (stored["plan_session"], stored["plan_revision"]) == (CODE_SESSION, None)
 
     def test_amended_plan_repoints_the_plan_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         rows = [_row("S1", child=1131, status="in_progress", session=CODE_SESSION), _row("S2", child=1132)]
