@@ -12,7 +12,7 @@ description: >-
 disable-model-invocation: true
 ---
 
-Forked from `dovo-plan-review` at `7253e223`. This copy is temporary: once the slice flow works, it replaces `dovo-plan-review`.
+Forked from `dovo-plan-review` at `de256118`. This copy is temporary: once the slice flow works, it replaces `dovo-plan-review`.
 
 # issue-plan-review
 

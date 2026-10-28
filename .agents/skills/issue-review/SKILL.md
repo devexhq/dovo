@@ -11,7 +11,7 @@ description: >-
 disable-model-invocation: true
 ---
 
-Forked from `dovo-review` at `7253e223`. This copy is temporary: once the slice flow works, it replaces `dovo-review`. Its output files and the `<!-- dovo-review -->` comment marker stay in `dovo-review`'s format, byte for byte, because the scripts that publish and read reviews parse them.
+Forked from `dovo-review` at `de256118`. This copy is temporary: once the slice flow works, it replaces `dovo-review`. Its output files and the `<!-- dovo-review -->` comment marker stay in `dovo-review`'s format, byte for byte, because the scripts that publish and read reviews parse them.
 
 # issue-review
 
