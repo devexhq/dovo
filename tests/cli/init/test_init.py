@@ -134,6 +134,7 @@ class InitCliIntegrationTests:
         assert result.exit_code == 2
         assert "Invalid project ID: must match" in result.stdout
         assert "Pass a valid '--id' matching" in result.stdout
+        assert "Run 'dovo init' without '--id' to generate a project ID." in result.stdout
         assert not (_dovo_dir(tmp_path) / "project.json").exists()
 
     def test_init_cli_with_invalid_id_json_payload_exits_two(self, cli_runner: CliRunner, tmp_path: Path) -> None:
@@ -148,10 +149,8 @@ class InitCliIntegrationTests:
         assert payload["identity_path_relative"] == ".dovo/project.json"
         assert payload["errors"] == [f"Invalid project ID: must match {PROJECT_ID_REGEX}"]
         assert payload["remediations"] == [
-            {
-                "message": f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}', or omit '--id' to generate one.",
-                "command": None,
-            }
+            {"message": f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}'.", "command": None},
+            {"message": "Run 'dovo init' without '--id' to generate a project ID.", "command": "dovo init"},
         ]
         assert not (_dovo_dir(tmp_path) / "project.json").exists()
 

@@ -131,7 +131,8 @@ class InitializeWorkspaceTests:
         assert result.error_code == ErrorCode.PROJECT_ID_INVALID
         assert result.errors == ["Invalid project ID: must match ^[a-z0-9][a-z0-9-_]{2,62}$"]
         assert result.remediations == [
-            Remediation(message=f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}', or omit '--id' to generate one.")
+            Remediation(message=f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}'."),
+            Remediation(message="Run 'dovo init' without '--id' to generate a project ID.", command="dovo init"),
         ]
         assert result.identity_path == Filesystem(git_repo).dovo_dir / "project.json"
         assert result.project_identity is None

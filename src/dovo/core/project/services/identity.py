@@ -39,9 +39,8 @@ def validate_project_id(project_id: str) -> None:
             ErrorCode.PROJECT_ID_INVALID,
             f"Invalid project ID: must match {PROJECT_ID_REGEX}",
             [
-                Remediation(
-                    message=f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}', or omit '--id' to generate one."
-                )
+                Remediation(message=f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}'."),
+                Remediation(message="Run 'dovo init' without '--id' to generate a project ID.", command="dovo init"),
             ],
         )
 
