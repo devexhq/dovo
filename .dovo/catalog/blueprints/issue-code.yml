@@ -291,6 +291,8 @@ steps:
   # Written from everything committed, so it reports the code the final review
   # saw. The plan is republished whether or not it changed: land repoints the
   # work plan at this session only when the report says the plan was amended.
+  # The sweep drafts stay in the worktree, where land reads them through
+  # sweep.json; they are not published, since most slices write none.
   - id: report
     name: Report how the slice departed from the plan and draft the sweep
     type: agent
@@ -327,7 +329,6 @@ steps:
       - { name: plan, path: .agentic/plan.md }
       - { name: plan-questions, path: .agentic/plan.json }
       - { name: sweep, path: .agentic/sweep.json }
-      - { name: sweep-drafts, path: ".agentic/sweep/*.md", required: false }
 
   # Written last, from everything committed, so the PR text matches the code
   # the final review saw rather than the code before the fix rounds.
