@@ -54,6 +54,15 @@ steps:
       ARTIFACT_DEST: .
       ARTIFACT_SESSION_ID: "{{ steps.next.outputs.plan_session }}"
 
+  # The plan step rewrites .agentic/plan.{md,json} in place, so the epic plan
+  # this run starts from is kept beside them: slice planning (and a retry of
+  # it) starts from the copy, the slice plan's review diffs the contract and
+  # slices against it, and land checks the epic's contract three ways with it.
+  - id: keep-epic-plan
+    name: Keep the epic plan this run starts from
+    run: cp .agentic/plan.md .agentic/epic-plan.md && cp .agentic/plan.json .agentic/epic-plan.json
+    timeout_seconds: 120
+
   # --- ready-issue's gate steps, run on the slice's child issue. A step cannot
   # be skipped, so each of them passes straight through when the child is
   # already labelled dovo:ready. ---
@@ -164,7 +173,8 @@ steps:
 
       Follow .agents/skills/issue-plan/SKILL.md if the slash command is not recognized.
       Plan slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked by issue
-      {{ steps.next.outputs.child }}, from the downloaded .agentic/plan.md and .agentic/plan.json.
+      {{ steps.next.outputs.child }}, from the epic plan in .agentic/epic-plan.md and
+      .agentic/epic-plan.json.
       Write its phases to .agentic/plan.md and .agentic/plan.json, keeping the contract and the
       slices as downloaded, then stop; do not implement anything.
     tools: { allow_all: true }
@@ -496,6 +506,11 @@ steps:
            contract section of .agentic/plan.md and the contract in .agentic/plan.json to match
            what landed. Never reverse a decision settled by the user (`settled_by.kind` `user`):
            report it under Departures instead.
+         - If this slice settled one of the epic's open questions (listed under Decisions in the
+           epic's Feature contract, `gh issue view ${{ inputs.issue }} --json body`), add a
+           decision to the contract whose `id` is that question's id (such as `OQ-2`), with the
+           answer that landed and `settled_by` naming this slice. land then drops the question
+           from the epic's open questions; a question with no such decision stays open.
          Keep plan.json in the shape the issue-plan skill defines (`.agents/skills/issue-plan/SKILL.md`),
          and say under Later slices affected what was amended. Never change this slice or an
          earlier one.
@@ -568,6 +583,7 @@ steps:
       uv run python scripts/workplan.py land --issue ${{ inputs.issue }}
       --slice {{ steps.next.outputs.slice }} --session "$DOVO_SESSION_ID"
       --pr "$(head -n 1 .agentic/pr-url | sed 's#.*/##')"
-      --report .agentic/slice-report.md --plan .agentic/plan.json --sweep .agentic/sweep.json
+      --report .agentic/slice-report.md --plan .agentic/plan.json --base-plan .agentic/epic-plan.json
+      --sweep .agentic/sweep.json
     timeout_seconds: 300
     on_failure: prompt_user
