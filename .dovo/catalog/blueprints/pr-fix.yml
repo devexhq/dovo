@@ -31,6 +31,8 @@ steps:
     interaction:
       mode: multiselect
       message: Which feedback on pull request ${{ inputs.pr }} should be fixed? Pick none to change nothing.
+      # Shows feedback.json above the options, so each item's body lines are read before picking.
+      artifact: feedback
       options_from:
         artifact: feedback
         file: .agentic/feedback.json

@@ -110,7 +110,7 @@ def _review(
     }
 
 
-def _comment_item(item_id: str, author: str, url: str, body: str, summary: str) -> dict[str, object]:
+def _comment_item(item_id: str, author: str, url: str, body: list[str], summary: str) -> dict[str, object]:
     """Return the `comment` item expected for a comment or review."""
     return {
         "id": item_id,
@@ -136,7 +136,7 @@ def _check_item(item_id: str, name: str, conclusion: str, url: str) -> dict[str,
         "path": None,
         "line": None,
         "summary": f"{name}: {conclusion}",
-        "body": f"{name}: {conclusion}",
+        "body": [f"{name}: {conclusion}"],
     }
 
 
@@ -240,6 +240,40 @@ class PrFeedbackTests:
     def test_markdown_summary(self, body: str, expected: str) -> None:
         assert FEEDBACK.markdown_summary(body) == expected
 
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            pytest.param("Fix one.\r\nThen two.  ", ["Fix one.", "Then two."], id="plain"),
+            pytest.param("\n\nOne\n\n\n\nTwo\n\n", ["One", "", "Two"], id="blank-runs"),
+            pytest.param(
+                '**<picture><img src="x.svg" alt=""></picture> Minor** · Quick win\n'
+                "<details>\n<summary>Proposed fix</summary>\n<dl>\n<dd>\n\n"
+                "```diff\n-    old()\n+    new()  # list<int>\n```\n</dd>\n</dl>\n</details>",
+                [
+                    "** Minor** · Quick win",
+                    "",
+                    "Proposed fix",
+                    "",
+                    "```diff",
+                    "-    old()",
+                    "+    new()  # list<int>",
+                    "```",
+                ],
+                id="html-dropped-code-kept",
+            ),
+            pytest.param(
+                "Title\n<!-- suggestion_start -->\n<details>\n```suggestion\nnew()\n```\n</details>\n"
+                "<!-- suggestion_end -->\n<!-- ai-agent-prompt:start -->\nPrompt\n<!-- ai-agent-prompt:end -->\n"
+                "<!-- marker -->\nTail",
+                ["Title", "", "Tail"],
+                id="coderabbit-extras",
+            ),
+            pytest.param("<!-- only -->\n<details>\n</details>\n", [], id="markup-only"),
+        ],
+    )
+    def test_body_lines(self, body: str, expected: list[str]) -> None:
+        assert FEEDBACK.body_lines(body) == expected
+
     def test_thread_items(self) -> None:
         threads = [
             _thread("Fix one", author={"__typename": "Bot", "login": "coderabbitai"}),
@@ -260,7 +294,7 @@ class PrFeedbackTests:
                 "path": "scripts/publish_review.py",
                 "line": 9,
                 "summary": "Fix one",
-                "body": "Fix one",
+                "body": ["Fix one"],
             },
             {
                 "id": "T2",
@@ -271,7 +305,7 @@ class PrFeedbackTests:
                 "path": "scripts/publish_review.py",
                 "line": None,
                 "summary": "Fix two",
-                "body": "Fix two",
+                "body": ["Fix two"],
             },
             {
                 "id": "T3",
@@ -282,7 +316,7 @@ class PrFeedbackTests:
                 "path": "scripts/publish_review.py",
                 "line": 9,
                 "summary": "Fix three",
-                "body": "Fix three",
+                "body": ["Fix three"],
             },
         ]
 
@@ -302,7 +336,7 @@ class PrFeedbackTests:
         items = FEEDBACK.finding_items(review)
 
         assert [(item["id"], item["body"]) for item in items] == [
-            (item_id, f"{finding_id}: {finding_id} summary") for item_id, finding_id in expected
+            (item_id, [f"{finding_id}: {finding_id} summary"]) for item_id, finding_id in expected
         ]
         if expected:
             assert items[0] == {
@@ -314,7 +348,7 @@ class PrFeedbackTests:
                 "path": "src/a.py",
                 "line": 3,
                 "summary": f"{expected[0][1]} summary",
-                "body": f"{expected[0][1]}: {expected[0][1]} summary",
+                "body": [f"{expected[0][1]}: {expected[0][1]} summary"],
             }
 
     def test_comment_items(self) -> None:
@@ -344,14 +378,16 @@ class PrFeedbackTests:
         items = FEEDBACK.comment_items(comments, reviews, "me", CUTOFF)
 
         assert items == [
-            _comment_item("C1", "dave", "https://x/r/Edi", "Edited review", "Edited review"),
-            _comment_item("C2", "alice", "https://x/c4", "Edited note", "Edited note"),
+            _comment_item("C1", "dave", "https://x/r/Edi", ["Edited review"], "Edited review"),
+            _comment_item("C2", "alice", "https://x/c4", ["Edited note"], "Edited note"),
             _comment_item(
-                "C3", "carol", "https://x/r/**A", "**Actionable** comments posted: 3", "Actionable comments posted: 3"
+                "C3", "carol", "https://x/r/**A", ["**Actionable** comments posted: 3"], "Actionable comments posted: 3"
             ),
-            _comment_item("C4", "coderabbitai[bot]", "https://x/c2", str(OTHER_COMMENT["body"]), "Walkthrough"),
-            _comment_item("C5", "ghost", "https://x/c7", "Deleted user note", "Deleted user note"),
-            _comment_item("C6", "copilot[bot]", "https://x/r/Bot", "Bot review", "Bot review"),
+            _comment_item(
+                "C4", "coderabbitai[bot]", "https://x/c2", ["## Walkthrough", "Adds comment items."], "Walkthrough"
+            ),
+            _comment_item("C5", "ghost", "https://x/c7", ["Deleted user note"], "Deleted user note"),
+            _comment_item("C6", "copilot[bot]", "https://x/r/Bot", ["Bot review"], "Bot review"),
         ]
 
     def test_check_items(self) -> None:
@@ -427,7 +463,7 @@ class PrFeedbackTests:
                     "path": "scripts/publish_review.py",
                     "line": 9,
                     "summary": "Fix one",
-                    "body": "Fix one",
+                    "body": ["Fix one"],
                     "label": "T1 [review_thread, coderabbitai[bot]] Fix one",
                 },
                 {
@@ -439,7 +475,7 @@ class PrFeedbackTests:
                     "path": "src/a.py",
                     "line": 3,
                     "summary": "B1 summary",
-                    "body": "B1: B1 summary",
+                    "body": ["B1: B1 summary"],
                     "label": "R1 [review_finding, dovo-review] B1 summary",
                 },
             ],

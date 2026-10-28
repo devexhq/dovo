@@ -6,7 +6,9 @@ takes the dovo session on its `Dovo session:` header line, downloads that
 session's plan, plan-questions, review and implementation-report artifacts into
 .agentic/, checks out the pull request's head commit, records its head branch
 in .agentic/pr-branch and its URL in .agentic/pr-url, and writes
-.agentic/feedback.json: every unresolved review thread, with its thread id;
+.agentic/feedback.json, each item's body a list of its readable lines (see
+body_lines), so the triage prompt can show the file: every unresolved review
+thread, with its thread id;
 every finding of the restored review, whatever its verdict and severity;
 every comment and review summary by someone else touched since the dovo-review
 comment's last update; and every failed check on the head commit.
@@ -66,6 +68,12 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
 """
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 HTML_TAG = re.compile(r"</?[A-Za-z][^>]*>")
+CODERABBIT_EXTRAS = re.compile(
+    r"<!-- (?:suggestion_start|ai-agent-prompt:start) -->.*?<!-- (?:suggestion_end|ai-agent-prompt:end) -->", re.DOTALL
+)
+BODY_TAG = re.compile(
+    r"</?(?:a|b|blockquote|br|code|dd|details|div|dl|dt|em|i|img|p|picture|source|span|strong|sub|summary|sup)\b[^>]*>"
+)
 LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
 LINE_MARKERS = re.compile(r"^\s*(?:(?:#{1,6}|>|[-*+]|\d+[.)])\s+)*")
 INLINE_MARKUP = re.compile(r"`|\*\*|__|~~")
@@ -158,6 +166,23 @@ def markdown_summary(body: str) -> str:
     return ""
 
 
+def body_lines(body: str) -> list[str]:
+    """Return body as the lines a reader sees, so a JSON viewer shows one per row.
+
+    CodeRabbit's committable-suggestion and agent-prompt blocks, which repeat the
+    proposed fix, are dropped, then HTML comments and HTML tags; trailing
+    whitespace is trimmed and runs of blank lines collapse to one, with none at
+    either end. Code and the Markdown around it are kept as written.
+    """
+    text = BODY_TAG.sub("", HTML_COMMENT.sub("", CODERABBIT_EXTRAS.sub("", body)))
+    lines: list[str] = []
+    for line in text.splitlines():
+        line = line.rstrip()
+        if line or (lines and lines[-1]):
+            lines.append(line)
+    return lines[:-1] if lines and not lines[-1] else lines
+
+
 def _author_login(author: object) -> str:
     """Return the GraphQL author's login, with `[bot]` added for a Bot, or `ghost` when GitHub returns none."""
     if not isinstance(author, dict) or not author.get("login"):
@@ -193,7 +218,7 @@ def thread_items(threads: list[dict[str, object]]) -> list[dict[str, object]]:
                 "path": thread.get("path"),
                 "line": thread.get("line"),
                 "summary": markdown_summary(body),
-                "body": body,
+                "body": body_lines(body),
             }
         )
     return items
@@ -218,7 +243,7 @@ def finding_items(review: dict[str, object]) -> list[dict[str, object]]:
             "path": finding.get("path"),
             "line": finding.get("line"),
             "summary": finding.get("summary"),
-            "body": f"{finding.get('id')}: {finding.get('summary')}",
+            "body": [f"{finding.get('id')}: {finding.get('summary')}"],
         }
         for index, finding in enumerate(selected, start=1)
     ]
@@ -294,7 +319,7 @@ def comment_items(
             "path": None,
             "line": None,
             "summary": markdown_summary(entry.body),
-            "body": entry.body,
+            "body": body_lines(entry.body),
         }
         for index, entry in enumerate(selected, start=1)
     ]
@@ -316,7 +341,7 @@ def check_items(checks: list[dict[str, object]]) -> list[dict[str, object]]:
             "path": None,
             "line": None,
             "summary": f"{check.get('name')}: {check.get('conclusion')}",
-            "body": f"{check.get('name')}: {check.get('conclusion')}",
+            "body": [f"{check.get('name')}: {check.get('conclusion')}"],
         }
         for index, check in enumerate(failed, start=1)
     ]
