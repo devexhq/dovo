@@ -69,6 +69,8 @@ The global-home refusal applies to a directory whose `.dovo` is `DOVO_HOME` (by 
 
 When `dovo init` fails with an unexpected error while setting up the project identity, or the operating system refuses to read or write `.dovo/project.json` (for example, a permission error), Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record. The error message is unchanged, a `Details logged: <path> (event <event_id>)` line naming that file follows it, and `--format json` lists the record in `diagnostics`; if the record cannot be written, there is no line and `diagnostics` is empty. These failures exit with code `1` and report `failure_mode: "bootstrap"`.
 
+If another `dovo` process holds the workspace lock and the wait times out, `dovo init` prints a Workspace Lock Timeout panel and exits with code `1`, with or without `--format json`; no JSON event is printed. Wait for the other process to finish, then rerun `dovo init`.
+
 ## Examples
 
 ### Initializing a new repository

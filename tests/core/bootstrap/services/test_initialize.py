@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
@@ -13,7 +12,7 @@ from dovo.common.constants import BOOTSTRAP_META_REL
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.common.lock import LockTimeoutError
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.models import Remediation
 from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
 from dovo.core.bootstrap.services.initialize import auto_initialize_workspace, initialize_workspace
@@ -23,6 +22,7 @@ from dovo.core.project.models import PROJECT_ID_REGEX, ProjectIdentity, ProjectI
 from dovo.core.project.services.identity import generate_project_identity, save_project_identity
 from tests.harness.builders import WorkspaceBuilder, init_git_repository
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
+from tests.harness.lock import raise_lock_timeout
 
 
 class InitializeWorkspaceGlobalHomeTests:
@@ -214,11 +214,6 @@ def _fail_identity_io(monkeypatch: pytest.MonkeyPatch, repo: Path, failure: str)
             real_write(path, data, mode=mode)
 
         monkeypatch.setattr("dovo.core.project.services.identity.Filesystem.atomic_write_json", _full_disk)
-    elif failure == "locked":
-        monkeypatch.setattr(
-            "dovo.core.project.services.identity.WorkspaceLock.__enter__",
-            MagicMock(side_effect=LockTimeoutError("lock held")),
-        )
     else:
 
         def _boom(*_args: object, **_kwargs: object) -> None:
@@ -235,9 +230,7 @@ def _expected_identity_message(identity_path: Path, failure: str) -> str:
         return f"Project identity at '{identity_path}' is invalid: {validation.value}."
     if failure == "unreadable":
         return f"Unable to read project identity at '{identity_path}': denied."
-    if failure == "write_failed":
-        return f"Unable to write project identity at '{identity_path}': disk full."
-    return f"Unable to acquire project identity lock at '{identity_path}': lock held."
+    return f"Unable to write project identity at '{identity_path}': disk full."
 
 
 class InitializeIdentityFailureTests:
@@ -249,7 +242,6 @@ class InitializeIdentityFailureTests:
             pytest.param("invalid_schema", ErrorCode.PROJECT_IDENTITY_SCHEMA_INVALID, False, id="invalid_schema"),
             pytest.param("unreadable", ErrorCode.PROJECT_IDENTITY_UNREADABLE, True, id="unreadable"),
             pytest.param("write_failed", ErrorCode.PROJECT_IDENTITY_WRITE_FAILED, True, id="write_failed"),
-            pytest.param("locked", ErrorCode.PROJECT_IDENTITY_LOCKED, False, id="locked"),
         ],
     )
     def test_identity_domain_failure_is_reported_as_bootstrap(
@@ -314,6 +306,42 @@ class InitializeIdentityFailureTests:
             "Rerun with --id <new-id> --force to replace it.",
             "repair ignored when overwrite=True",
         ]
+
+
+class InitializeIdentityLockTimeoutTests:
+    """Contract tests for a workspace lock timeout while provisioning the project identity."""
+
+    def test_initialize_workspace_identity_lock_timeout_propagates_and_keeps_bootstrap_tree(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Raise LockTimeoutError("lock held") unchanged, leave <DOVO_HOME>/logs absent, and keep the bootstrapped .dovo/ with no project.json or config.json."""
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        with pytest.raises(LockTimeoutError, match=r"^lock held$"):
+            initialize_workspace(git_repo)
+
+        assert not resolve_global_paths().logs_dir.exists()
+        dovo_dir = git_repo / ".dovo"
+        assert (dovo_dir / ".gitignore").is_file()
+        assert (dovo_dir / BOOTSTRAP_META_REL).is_file()
+        assert not (dovo_dir / "project.json").exists()
+        assert not (dovo_dir / "config.json").exists()
+
+    def test_auto_initialize_workspace_identity_lock_timeout_restores_preexisting_dovo_dir(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Re-raise LockTimeoutError("lock held") with no note and restore a pre-existing .dovo/ byte for byte."""
+        dovo_dir = git_repo / ".dovo"
+        dovo_dir.mkdir()
+        (dovo_dir / "notes.txt").write_text("mine\n", encoding="utf-8")
+        before = _tree_bytes(dovo_dir)
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        with pytest.raises(LockTimeoutError, match=r"^lock held$") as raised:
+            auto_initialize_workspace(git_repo)
+
+        assert getattr(raised.value, "__notes__", []) == []
+        assert _tree_bytes(dovo_dir) == before
 
 
 class AutoInitializeWorkspaceTests:

@@ -19,7 +19,7 @@ from dovo.cli import app
 from dovo.cli.context import CliContext
 from dovo.cli.ui import ErrorPanelEvent
 from dovo.common.clock import utc_now
-from dovo.common.lock import LockTimeoutError
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.session_id import new_session_id
 from dovo.core.config import ConfigLoadError
 from dovo.core.config.generator import build_default_config
@@ -32,6 +32,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.status.models import DovoStatusResult
 from tests.harness.builders import WorkspaceBuilder
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID, diagnostic_hint, read_single_event
+from tests.harness.lock import raise_lock_timeout
 
 
 class CliSmokeTests:
@@ -161,6 +162,35 @@ class RunCliCrashProtectionTests:
 
         assert exc_info.value.code == 1
         assert "Workspace Lock Timeout" in capsys.readouterr().out
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param(["init"], id="init"),
+            pytest.param(["init", "--format", "json"], id="init-json"),
+            pytest.param(["run", "tests"], id="run-auto-init"),
+        ],
+    )
+    def test_run_cli_identity_lock_timeout_renders_lock_timeout_panel_and_exits_one(
+        self,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        command: list[str],
+    ) -> None:
+        """Print the Workspace Lock Timeout panel with the lock message and no init result, and exit 1."""
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+        monkeypatch.setattr(sys, "argv", ["dovo", "--path", str(git_repo), *command])
+
+        with pytest.raises(SystemExit) as exc_info:
+            cli_module.run_cli()
+
+        stdout = capsys.readouterr().out
+        assert exc_info.value.code == 1
+        assert "Workspace Lock Timeout" in stdout
+        assert "lock held" in stdout
+        assert "WorkspaceInitResult" not in stdout
+        assert "Failed to initialize Dovo" not in stdout
 
     def test_run_cli_unexpected_exception_renders_fatal_panel_and_exits_one(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

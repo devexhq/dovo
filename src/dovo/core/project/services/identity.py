@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.filesystem import Filesystem
-from dovo.common.lock import LockTimeoutError, WorkspaceLock, resolve_lock_file_path
+from dovo.common.lock import WorkspaceLock, resolve_lock_file_path
 from dovo.common.models import Remediation
 from dovo.core.project.exceptions import ProjectIdentityError
 from dovo.core.project.models import (
@@ -69,15 +69,13 @@ def load_project_identity(path: Path) -> ProjectIdentity:
 
 
 def save_project_identity(path: Path, identity: ProjectIdentity) -> None:
-    """Write identity to path atomically under WorkspaceLock, raising ProjectIdentityError when locked or unwritable."""
+    """Write identity to path atomically under WorkspaceLock, raising ProjectIdentityError when unwritable.
+
+    A LockTimeoutError from the lock propagates unchanged.
+    """
     try:
         with WorkspaceLock(resolve_lock_file_path(path.parent)):
             Filesystem.atomic_write_json(path, identity.model_dump(mode="json"))
-    except LockTimeoutError as exc:
-        raise ProjectIdentityError(
-            ErrorCode.PROJECT_IDENTITY_LOCKED,
-            _sentence(f"Unable to acquire project identity lock at '{path}': {exc}"),
-        ) from exc
     except OSError as exc:
         raise ProjectIdentityError(
             ErrorCode.PROJECT_IDENTITY_WRITE_FAILED,
