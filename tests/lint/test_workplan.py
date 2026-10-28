@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -37,8 +38,10 @@ WORKPLAN = _load_script()
 class FakeGh:
     """A `run` double answering the gh calls workplan.py makes, against in-memory issues and pull requests.
 
-    It has `run`'s signature, so it replaces it at the subprocess boundary. `race` is a body that another
-    writer stores right after the first time an issue's body is read, to exercise compare-and-set.
+    It has `run`'s signature, so it replaces it at the subprocess boundary. `race[(issue, n)]` is a body
+    another writer stores right after the n-th read of that issue, to exercise compare-and-set.
+    `failing_links` makes that many sub-issue POSTs fail, and `create_output` replaces what
+    `gh issue create` prints.
     """
 
     def __init__(self, bodies: dict[int, str]) -> None:
@@ -46,12 +49,15 @@ class FakeGh:
         self.labels: dict[int, list[str]] = {}
         self.closed: set[int] = set()
         self.pr_states: dict[int, str] = {}
-        self.race: dict[int, str] = {}
+        self.race: dict[tuple[int, int], str] = {}
+        self.reads: dict[int, int] = {}
         self.edits: list[int] = []
         self.comments: list[tuple[int, str]] = []
         self.created: list[tuple[str, str]] = []
         self.sub_issues: list[tuple[int, str]] = []
         self.removed_labels: list[tuple[int, str]] = []
+        self.failing_links = 0
+        self.create_output: str | None = None
         self.next_number = 1300
 
     def __call__(self, *args: str) -> str:
@@ -72,13 +78,14 @@ class FakeGh:
         return self._api(args)
 
     def _view(self, issue: int, fields: str) -> str:
+        self.reads[issue] = self.reads.get(issue, 0) + 1
+        if (issue, self.reads[issue]) in self.race:
+            self.bodies[issue] = self.race.pop((issue, self.reads[issue]))
         view: dict[str, object] = {
             "body": self.bodies.get(issue, ""),
             "state": "CLOSED" if issue in self.closed else "OPEN",
         }
         view["labels"] = [{"name": name} for name in self.labels.get(issue, [])]
-        if issue in self.race:
-            self.bodies[issue] = self.race.pop(issue)
         return json.dumps({field: view[field] for field in fields.split(",")})
 
     def _edit(self, issue: int, flag: str, value: str) -> str:
@@ -95,12 +102,18 @@ class FakeGh:
         self.next_number += 1
         self.bodies[number] = body
         self.created.append((title, body))
-        return f"Creating issue in o/r\n\nhttps://github.com/o/r/issues/{number}"
+        return self.create_output or f"Creating issue in o/r\n\nhttps://github.com/o/r/issues/{number}"
 
     def _api(self, args: tuple[str, ...]) -> str:
+        endpoint = f"repos/o/r/issues/{EPIC}/sub_issues"
         if args[-2:] == ("--jq", ".id"):
             return str(90_000 + int(args[2].rsplit("/", 1)[-1]))
-        assert args[2:5] == ("--method", "POST", f"repos/o/r/issues/{EPIC}/sub_issues"), f"ran {args}"
+        if args[2:4] == ("--paginate", endpoint):
+            return "\n".join(str(int(value.rsplit("=", 1)[-1]) - 90_000) for _, value in self.sub_issues)
+        assert args[2:5] == ("--method", "POST", endpoint), f"ran {args}"
+        if self.failing_links:
+            self.failing_links -= 1
+            raise subprocess.CalledProcessError(1, list(args), stderr="HTTP 502")
         self.sub_issues.append((EPIC, args[-1]))
         return "{}"
 
@@ -388,7 +401,7 @@ class RenderTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         fake = FakeGh({42: INTRO})
-        fake.race[42] = "Someone else's edit.\n"
+        fake.race[(42, 2)] = "Someone else's edit.\n"
         plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
 
         code = _main(monkeypatch, fake, "render", "--issue", "42", "--plan", plan, "--session", "s", "--revision", "1")
@@ -515,6 +528,72 @@ class NextTests:
         assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 1
 
         assert capsys.readouterr().err == "workplan.py: the issue has no work plan; run `workplan.py render` first\n"
+
+    def test_link_failure_records_the_child_and_a_rerun_links_it_without_creating(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: _epic_body(_row("S1", stub="Stub for S1."))})
+        fake.failing_links = 1
+
+        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 1
+        assert capsys.readouterr().err == (
+            f"workplan.py: linking #1300 failed (gh api --method POST repos/o/r/issues/{EPIC}/sub_issues "
+            "-F sub_issue_id=91300: HTTP 502); run next again to link it\n"
+        )
+        assert _rows(fake.bodies[EPIC])[0]["child"] == 1300
+        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
+
+        assert len(fake.created) == 1
+        assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
+
+    def test_an_already_linked_child_is_not_linked_again(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131))})
+        fake.sub_issues.append((EPIC, "sub_issue_id=91131"))
+
+        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
+
+        assert fake.sub_issues == [(EPIC, "sub_issue_id=91131")]
+        assert fake.created == []
+
+    def test_record_conflict_is_retried_on_the_new_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        body = _epic_body(_row("S1", stub="Stub for S1."))
+        fake = FakeGh({EPIC: body})
+        fake.race[(EPIC, 4)] = f"Edited meanwhile.\n{body}"
+
+        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
+
+        assert fake.bodies[EPIC].startswith("Edited meanwhile.\n")
+        assert _rows(fake.bodies[EPIC])[0]["child"] == 1300
+        assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
+
+    def test_record_conflict_twice_refuses_naming_the_created_child(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        body = _epic_body(_row("S1", stub="Stub for S1."))
+        fake = FakeGh({EPIC: body})
+        fake.race[(EPIC, 4)] = f"Edited once.\n{body}"
+        fake.race[(EPIC, 6)] = f"Edited twice.\n{body}"
+
+        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 1
+
+        assert capsys.readouterr().err == (
+            f"workplan.py: created #1300 but #{EPIC}'s body kept changing; record #1300 as S1's child\n"
+        )
+        assert fake.sub_issues == []
+
+    def test_unreadable_create_output_refuses_with_the_raw_output(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: _epic_body(_row("S1", stub="Stub for S1."))})
+        fake.create_output = "created, somewhere"
+
+        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 1
+
+        assert capsys.readouterr().err == (
+            "workplan.py: created a child issue for S1 but cannot read its number from gh's output "
+            "'created, somewhere'; record it as S1's child by hand\n"
+        )
+        assert fake.edits == []
 
 
 class ClaimTests:

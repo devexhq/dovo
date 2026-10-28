@@ -712,24 +712,64 @@ def write_body(issue: int, read: str, new: str) -> str:
     return new
 
 
-def create_child(epic: int, row: Slice) -> int:
-    """Create row's child issue from its stub as a native sub-issue of epic and return its number."""
-    url = _with_file(
+def create_child(row: Slice) -> int:
+    """Create row's child issue from its stub and return its number.
+
+    Raises:
+        WorkplanError: When the issue was created but its number cannot be read from gh's output.
+    """
+    output = _with_file(
         row.stub or "", lambda path: run("gh", "issue", "create", "--title", row.title, "--body-file", path)
     )
-    number = int(url.splitlines()[-1].rstrip("/").rsplit("/", 1)[-1])
+    try:
+        return int(output.splitlines()[-1].rstrip("/").rsplit("/", 1)[-1])
+    except (ValueError, IndexError) as error:
+        raise WorkplanError(
+            f"created a child issue for {row.id} but cannot read its number from gh's output {output!r}; "
+            f"record it as {row.id}'s child by hand"
+        ) from error
+
+
+def record_child(issue: int, body: str, slice_id: str, child: int) -> str:
+    """Record child as slice_id's child in issue's work plan and return the new body.
+
+    When the body changed since body was read, it is re-read and the record
+    re-applied once.
+
+    Raises:
+        WorkplanError: When the body changed again, naming the created child.
+    """
+    for attempt in range(2):
+        if attempt:
+            body = read_body(issue)
+        plan, landed = split_workplan(body)
+        row = find_slice(plan, slice_id)
+        row.child, row.stub = child, None
+        try:
+            return write_body(issue, body, with_workplan(body, plan, landed))
+        except WorkplanError:
+            continue
+    raise WorkplanError(f"created #{child} but #{issue}'s body kept changing; record #{child} as {slice_id}'s child")
+
+
+def link_child(epic: int, child: int) -> None:
+    """Make child a native sub-issue of epic, unless it already is one."""
     repository = run("gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")
-    child_id = run("gh", "api", f"repos/{repository}/issues/{number}", "--jq", ".id")
-    run(
-        "gh",
-        "api",
-        "--method",
-        "POST",
-        f"repos/{repository}/issues/{epic}/sub_issues",
-        "-F",
-        f"sub_issue_id={child_id}",
-    )
-    return number
+    endpoint = f"repos/{repository}/issues/{epic}/sub_issues"
+    if str(child) in run("gh", "api", "--paginate", endpoint, "--jq", ".[].number").split():
+        return
+    child_id = run("gh", "api", f"repos/{repository}/issues/{child}", "--jq", ".id")
+    run("gh", "api", "--method", "POST", endpoint, "-F", f"sub_issue_id={child_id}")
+
+
+def _after_creating(child: int, step: str, hint: str, action: Callable[[], object]) -> None:
+    """Run action, turning a failed gh call into a refusal that names the created child and how to resume."""
+    try:
+        action()
+    except subprocess.CalledProcessError as error:
+        command: list[str] = error.cmd
+        stderr = str(error.stderr or "").strip()
+        raise WorkplanError(f"{step} #{child} failed ({' '.join(command)}: {stderr}); {hint}") from error
 
 
 def apply_sweep_entry(entry: dict[str, object], base: Path) -> None:
@@ -802,17 +842,27 @@ def cmd_render(issue: int, plan_path: str, session: str, revision: int) -> None:
 
 
 def cmd_next(issue: int) -> dict[str, str]:
-    """Pick the next slice, creating its child issue when it has none, and return the step outputs."""
+    """Pick the next slice, creating and linking its child issue as needed, and return the step outputs.
+
+    A created child is recorded in the work plan before it is linked, so a run
+    that fails after creating it resumes by linking that child, never by creating another.
+    """
     body = read_body(issue)
     current, landed = split_workplan(body)
     plan = refresh_merged(current, pr_state)
     body = write_body(issue, body, with_workplan(body, plan, landed))
     row = pick(plan, issue_closed)
-    if row.child is None:
+    child = row.child
+    if child is None:
         write_body(issue, body, body)  # compare only: refuse before creating an issue if the body moved
-        row.child = create_child(issue, row)
-        row.stub = None
-        write_body(issue, body, with_workplan(body, plan, landed))
+        created = create_child(row)
+        hint = f"record #{created} as {row.id}'s child"
+        _after_creating(created, "recording", hint, lambda: record_child(issue, body, row.id, created))
+        row.child, row.stub = created, None
+        child = created
+    if child != issue:
+        linked = child
+        _after_creating(linked, "linking", "run next again to link it", lambda: link_child(issue, linked))
     return {
         "slice": row.id,
         "child": str(row.child),
