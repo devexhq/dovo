@@ -57,12 +57,12 @@ When the file does not exist (including missing parent `.dovo/`):
 
 ### FR-4: Malformed JSON
 When the file exists but is not valid JSON:
-- `error_code` is `CONFIG_MALFORMED_JSON`
+- `error_code` is `CONFIG_JSON_INVALID`
 - `errors` carries the path and parse detail (line/col when available)
 
 ### FR-5: Wrong root type
 When JSON parses but the root is not an object:
-- `error_code` is `CONFIG_ROOT_NOT_OBJECT`
+- `error_code` is `CONFIG_ROOT_INVALID`
 - `errors` names the path
 - schema validation is not run on non-objects
 
@@ -72,7 +72,7 @@ When the root is an object that fails config schema v1 or Pydantic mapping:
 - `errors` is a non-empty list of human-readable messages (jsonschema paths/messages)
 
 ### FR-7: Path collisions and read failures
-- Path exists and is a directory → `error_code` is `CONFIG_PATH_IS_DIRECTORY`
+- Path exists and is a directory → `error_code` is `CONFIG_PATH_INVALID`
 - Open/read fails (permissions or OS error) → `error_code` is `CONFIG_UNREADABLE`
 - Include path and a short Fix hint in `errors`
 
@@ -133,10 +133,10 @@ Fix:
 ## Error cases to handle
 
 1. Config file missing or parent `.dovo/` missing → `CONFIG_NOT_FOUND` + init guidance
-2. `config.json` path is a directory → `CONFIG_PATH_IS_DIRECTORY`
+2. `config.json` path is a directory → `CONFIG_PATH_INVALID`
 3. Permission denied on read → `CONFIG_UNREADABLE`
-4. Empty file / truncated JSON → `CONFIG_MALFORMED_JSON`
-5. JSON root array or scalar → `CONFIG_ROOT_NOT_OBJECT`
+4. Empty file / truncated JSON → `CONFIG_JSON_INVALID`
+5. JSON root array or scalar → `CONFIG_ROOT_INVALID`
 6. Object missing required V1 keys or wrong field types → `CONFIG_SCHEMA_INVALID` with per-error list
 
 ---
