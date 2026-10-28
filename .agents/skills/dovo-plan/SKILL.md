@@ -20,7 +20,7 @@ Plan when the issue adds or changes a command, DTO/`*Result` model, status enum,
 
 ## Hard boundaries
 
-- **Never run tooling that mutates or validates.** Read-only `git` and read-only `gh` are the only commands you need.
+- **Never run tooling that mutates or validates.** Read-only `git` and read-only `gh` are the only commands you need. The only exception is the `.agentic/` workspace reset in Step 1.
 - **Never edit `src/` or `tests/`, commit, push or touch PR state.**
 - **Never plan from memory.** Every path, symbol and signature in the plan comes from a file read this session.
 - **Never plan a test whose contract is already pinned elsewhere.** Name what each new test uniquely pins.
