@@ -22,7 +22,7 @@ An issue is a working document. Aim for a sensible issue, not a perfect one: whe
 1. **Authoritative (no soft decisions):**
    - Everything in the issue body is **required** except **Owned elsewhere** and **Notes for the planner**. The FRs, NFRs and Definition of done define the work.
    - **Owned elsewhere** lists only work another named issue owns, one bullet per item: `#n owns <X>`. It is a pointer the planner and reviewer check for collisions, never a ban: it does not stop a change from fixing a line its own work would otherwise leave false (R17).
-   - **No ownerless deferral.** Work the issue leaves undone on purpose names the issue that does it, as an **Owned elsewhere** bullet. When no issue owns it yet, create one first. Never write "later", "a follow-up" or "not this issue" without an issue number.
+   - **No ownerless deferral.** Work the issue leaves undone on purpose names the issue that does it, as an **Owned elsewhere** bullet. When no issue owns it yet, create one first. Never use a deferral word (`later`, `follow-up`, `future`, `not this issue`, `separately`) without an issue number.
    - **Notes for the planner** holds things noticed but not asked for, one line each. A note is never a prohibition; work that must be done is an FR or a new issue.
    - Never mark work as optional, stretch, nice-to-have, "if implemented," "consider," or "v1 maybe."
    - Never present unresolved product forks ("either X or Y"). Decide before writing; put the decision in Scope, FR/NFR, or Pre-determined data.
@@ -34,7 +34,7 @@ An issue is a working document. Aim for a sensible issue, not a perfect one: whe
 
 3. **Self-contained (zero issue-tracker tours):**
    - Prefer **in-repo paths** (`AGENTS.md`, `src/dovo/...`, `schemas/v1/...`) over GitHub issue numbers.
-   - Default to **zero** issue links in the body. Only link another issue when it supersedes or duplicates a ticket, or in an **Owned elsewhere** bullet. Parent and blocker relationships are set with `gh` flags (see **Split**), never written into the body.
+   - Default to **zero** issue links in the body. Only link another issue when it supersedes or duplicates a ticket, or in an **Owned elsewhere** bullet. Blocker and sub-issue relationships are set with `gh` flags (see **Split**); a parent names its children only in its **Owned elsewhere** list.
    - Write each **Owned elsewhere** bullet as one issue and the capability it owns, never as an issue range (`- Everything in #9–#20`).
 
 4. **Observable contracts only:**
@@ -167,7 +167,7 @@ Before running `gh issue create` or `gh issue edit`:
    - It has no sub-issues. For a parent, name the first open sub-issue whose blockers are all closed.
    - Every blocker is closed.
    - It has exactly one `dovo-size-*` label.
-3. **Re-ground.** Run **Workflow → Ground** against `origin/main` and compare what you find with the issue. Look for in-scope work that has already shipped, **Owned elsewhere** bullets whose issue is closed or no longer owns the work, paths and symbols that moved or no longer exist, callers the issue does not account for, and internal shapes pinned where an observable contract would do (**Core Principles** 4), including new symbols that would shadow existing ones.
+3. **Re-ground.** Run **Workflow → Ground** against `origin/main` and compare what you find with the issue. Look for in-scope work that has already shipped, **Owned elsewhere** bullets whose issue is closed or no longer owns the work (delete the bullet when the work shipped; otherwise raise the ownerless-deferral finding in step 5), paths and symbols that moved or no longer exist, callers the issue does not account for, and internal shapes pinned where an observable contract would do (**Core Principles** 4), including new symbols that would shadow existing ones.
 4. **Re-check.** Check the body against **Core Principles**, **Split**, **Issue Structure** and the **Pre-Publish Checklist**. A finding that requires a split, or a product decision the issue cannot make for itself, makes the verdict `not_ready`: recommend the split or name the decision, and do not draft around it.
 5. **Rules.** Read every rule in `AGENTS.md`, then check the body against those the change can touch:
    - R1, R3 to R6, R9 to R14, R16 and R17 always apply. R2 applies when the issue touches `cli/` handlers, R7 when it reads secrets or writes log or diagnostic context, R8 when it adds a migration, R15 when it prescribes a test double, and R18 when it changes a page under `docs/` outside `docs/agents/`.
@@ -177,14 +177,19 @@ Before running `gh issue create` or `gh issue edit`:
      - R6: check the issue's lock handling against `WorkspaceLock` and the lock-timeout entry in `docs/agents/architecture/exceptions.md`.
      - R17: search `docs/` and the docstrings of the changed symbols for sentences the change makes false.
    - Also check the body against itself. An FR that does work an **Owned elsewhere** issue owns, contradicts another FR, or a field an output requirement relies on is a finding.
-   - An **Out of scope** section is a `structure` finding. Propose the conversion bullet by bullet: work another existing issue owns becomes an **Owned elsewhere** pointer (`#n owns <X>`); a contract that must not change becomes a guard (an NFR naming it); something noticed but not asked for becomes a line under **Notes for the planner**; anything else is dropped. A bullet that defers work no issue owns is the next finding.
-   - A sentence that defers work ("later", "a follow-up", "not this issue") without naming an issue number is a `structure` finding. When an open issue owns the work, propose the **Owned elsewhere** pointer. When none does, the verdict is `not_ready`: a person creates the owning issue, moves the work into this one, or drops the deferral.
+   - An **Out of scope** section is a `structure` finding. Propose its conversion clause by clause: first split each bullet that mixes several items into one clause per item, then apply these steps to each clause in order. The first step that matches decides the clause:
+     1. **Owned.** Search for an owner: `gh issue list --state open --search "<terms from the clause>"`, the issue's blockers, and any issue its body names. When an open issue owns the clause, it becomes an **Owned elsewhere** pointer, `#n owns <X>`.
+     2. **Contract.** When the clause names a contract a user or caller relies on (outcome, status, exit code, `error_code`, a JSON field, persisted data, or text a doc or a test outside the change depends on), it becomes a guard NFR naming that contract. When an FR or NFR already states it, drop the clause and cite that requirement. When it pins only incidental wording, raise the incidental-wording finding below instead.
+     3. **Ownerless deferral.** When a rule (cite its R-id) or the Goal implies the work must be done, the clause is an ownerless deferral: the next finding, with verdict `not_ready`.
+     4. **Note.** When the clause names a concrete improvement, it becomes a line under **Notes for the planner**.
+     5. **Drop.** Otherwise the clause only restates the issue's boundary; drop it.
+   - A sentence that defers work (`later`, `follow-up`, `future`, `not this issue`, `separately`) without naming an issue number is a `structure` finding. When an open issue owns the work, propose the **Owned elsewhere** pointer. When none does, the verdict is `not_ready`: a person creates the owning issue, moves the work into this one, or drops the deferral.
    - A guard that pins incidental wording, such as "keep X as today", "same as today" or "X is unchanged" for text no doc or test outside the change depends on, or that forbids behaviour of the foundation an Adopt issue adopts, is a finding (**Core Principles** 5). Quote the guard and the foundation behaviour it excludes, such as `catch_failure` recording an `OSError` cause (`src/dovo/common/exceptions.py`).
    - A finding quotes the issue text and either the rule clause it breaks or the sentence it contradicts. Silence is a finding only when following the issue literally breaks the clause. A shape you would prefer, but no rule requires, is not a finding.
    - Fix each finding with an observable contract where one exists (**Core Principles** 4), not with the implementation steps that would satisfy the rule.
    - Report findings only, never a clause-by-clause table.
 6. **Propose.** When every finding can be fixed by editing the title or body, write the full new body to `.agentic/issue-body.md` and the title, on one line, to `.agentic/issue-title`, even when only one of them changes. The verdict is `needs_edits`. With no findings, write neither file; the verdict is `ready`.
-7. **Report.** Write `.agentic/issue-ready.md`: the verdict, the base sha, and one line per finding with its evidence and fix. Write `.agentic/issue-ready-comment.md`, the comment posted with the label: `Ready to plan at <sha> (<YYYY-MM-DD>).`, followed by one bullet per change the edit makes, or `No changes needed.` Write `.agentic/issue-ready.json` to agree with the report:
+7. **Report.** Write `.agentic/issue-ready.md`: the verdict, the base sha, and one line per finding with its evidence and fix. Write `.agentic/issue-ready-comment.md`, the comment posted with the label: `Ready to plan at <sha> (<YYYY-MM-DD>).`, followed by one bullet per change the edit makes, or `No changes needed.` Write `.agentic/issue-ready.json` to agree with the report (the issue numbers and shas below are illustrative):
 
 ```json
 {

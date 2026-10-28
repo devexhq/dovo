@@ -32,7 +32,7 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 - **Never commit, stage, push, or touch PR state.** `/dovo-push` owns that.
 - **All phases, one at a time.** Finish a phase (its FRs, tests and deletion ledger, with its scoped tests green) before starting the next, and never interleave FRs across phases. The phases still order the work and bound each step; they all land in this one run and one PR.
 - **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes and message strings written as literal code in the plan are normative. Do not rename or extend them.
-- **Implement only what the plan's phases ask for.** Never do work the plan's `## Owned elsewhere` says another issue owns, and do not add test files the plan's `### Tests` stubs do not list.
+- **Implement only what the plan's phases ask for.** Never do work the plan's `## Owned elsewhere` says another issue owns unless a phase plans it as a named departure. A sentence your change makes false is fixed regardless (R17), and listed under Plan deviations if unplanned. Do not add test files the plan's `### Tests` stubs do not list.
 - **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, `.agentic/verdict.txt` or `.agentic/feedback.json`.** This skill writes only `.agentic/implementation-report.md` and, in review and feedback mode, `.agentic/fix-commit-msg`, and in feedback mode `.agentic/feedback-outcomes.json`.
 
 ## Before writing code

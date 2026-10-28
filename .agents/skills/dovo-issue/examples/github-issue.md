@@ -1,7 +1,7 @@
 # Example GitHub issue
 
 Canonical example of structure, depth, and tone for Dovo CLI issues.
-The block below is the issue body only (title: `Implement config loader`).
+The block below is the issue body only (title: `Implement config loader`). Its issue numbers are illustrative and do not refer to real issues.
 
 ---
 
