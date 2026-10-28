@@ -47,9 +47,9 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 - **Example:**
   ```python
   except GitError as exc:
-      raise WorktreeError(
-          exc.error_code, f"Git failed {activity} for worktree '{worktree_id}': {exc}"
-      ) from exc.__cause__
+      verb = "timed out" if exc.error_code is ErrorCode.GIT_TIMEOUT else "failed"
+      message = f"Git {verb} {activity} for worktree '{worktree_id}': {exc}"
+      raise WorktreeError(exc.error_code, message) from exc.__cause__
   ```
 
 ## No code tokens in messages
