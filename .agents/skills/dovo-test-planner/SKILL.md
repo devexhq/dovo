@@ -56,7 +56,7 @@ Read before drafting:
 For each service or entrypoint method delegated to, audit reachable status values:
 
 - **Existing-code mode**: For each `BaseResult` subtype returned, list enum values, grep the call chain for assignments, and mark any unassigned value as `DEAD`.
-- **Planning mode (`--plan`)**: Audit the plan's `## Ground truth` and `Traps (explicitly not touched)` to confirm reachable vs. dead status paths.
+- **Planning mode (`--plan`)**: Audit the plan's `## Ground truth` and `## Traps` to confirm reachable vs. dead status paths.
 
 > **Rule**: Do not draft tests for `DEAD` status values.
 

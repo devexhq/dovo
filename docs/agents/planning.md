@@ -13,7 +13,7 @@ gh issue view <number> --json number,title,body
 
 - Link the issue; do not copy its prose. Every `FR-*`, `NFR-*`, numbered error case and Definition of Done item appears by ID in the `## Traceability` table instead, as does every GWT scenario (`GWT-<n>`).
 - Copy **literal** contracts verbatim into the `### Code` block of the phase that implements them: pre-determined data, models, enums, flags, JSON, and exact error and output strings. The implementing agent does not read the issue.
-- Turn each **Out of scope** item into a bullet under `## Traps`. Out of scope means not required, not forbidden: an out-of-scope line the change would leave inconsistent is planned as a departure (below).
+- Copy each **Owned elsewhere** bullet (`#n owns <X>`) into `## Owned elsewhere` as a collision check: the plan does not do that work. It is not a ban, so a line the change would otherwise leave false is still fixed (R17). The issue's **Notes for the planner** are context, never requirements or bans. Never derive a `## Traps` bullet from the issue's scope.
 - The issue's observable contracts bind the plan: CLI behaviour and output, exit codes, persisted formats, entrypoint signatures, result models and the literal values tests assert. Its internal shapes (helper names, module placement, type aliases, how far a change reaches) are the author's best guess before grounding. When Step 2 shows one is wrong, such as a new symbol that duplicates or shadows an existing one, or an injected dependency the change holds but bypasses with a direct call, plan the better design. Add an Open Question whose assumed answer is that design, cite the `path:line` that shows the issue's shape is wrong, and name the departure under **What you're approving**. Never write a Trap that tells the implementer to work around the issue's shape.
 - The issue's **changes** (what it exists to deliver) bind the plan as written. Its **guards** ("reports today's outcome", "same message as today") bind what a user or caller relies on: outcome, status, exit code, `error_code`, persisted data, and text a doc or a test outside the change depends on. When following a guard literally would exclude behaviour of the foundation the issue adopts (an `OSError` on Dovo's own state that `catch_failure` records, and the `diagnostics` entry that follows; see [architecture/exceptions.md](architecture/exceptions.md) and [architecture/diagnostics.md](architecture/diagnostics.md)), or would freeze wording nothing relies on, plan the better behaviour as a departure in the same way: an Open Question with the `path:line` that shows why, named under **What you're approving**.
 - Absent an issue, quote the request in the opening paragraph and number the requirements you derive from it (`FR-1`, …) in a `## Requirements` list after `## What you're approving`.
@@ -86,14 +86,19 @@ Write one fact per bullet. **Challenged**, **Turns on** and **Recommended** appe
 
 <Or "None: new surface only.">
 
-**Unchanged:** <migrations, `config.json` keys, the JSON event envelope, CLI flags, as applicable>.
+**Unchanged:** <each guard from the issue, as a constraint naming what a user or caller relies on; migrations, `config.json` keys, the JSON event envelope, CLI flags, as applicable>.
 
 ---
 
 ## Traps
 
 - **<trap>** (`path:line`). <What goes wrong, and what to do instead.>
-- **Out of scope** (from the issue): <items>.
+
+## Owned elsewhere
+
+- **#<n> owns <X>** (from the issue). <What in this change sits next to it, or "no overlap">.
+
+<Or "None.">
 
 ## GWT Scenarios
 
@@ -188,4 +193,4 @@ class <TestClass>:  # <test file path>
 The plan lives in uncommitted `.agentic/`, so the PR carries what a later reader needs to check it.
 
 - **List the plan's phases in the PR description**, one line per phase with what it ships.
-- **A PR that departs from its ticket updates or comments on the ticket in the same change.** Name each departure (an FR, guard or out-of-scope line not followed as written) in the PR description, and edit the ticket or comment on it so its text matches what ships. Never close a ticket whose text contradicts the code.
+- **A PR that departs from its ticket updates or comments on the ticket in the same change.** Name each departure (an FR or guard not followed as written, or work an **Owned elsewhere** issue owns) in the PR description, and edit the ticket or comment on it so its text matches what ships. Never close a ticket whose text contradicts the code.
