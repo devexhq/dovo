@@ -200,6 +200,7 @@ Steps receive run context through `DOVO_*` environment variables and template pl
 | `DOVO_PREVIOUS_STEP_STATUS` | `previous_step.status` | Recorded status of immediately prior step (`completed`, `failed`, `ignored`, or empty) |
 | `DOVO_PREVIOUS_STEP_EXIT_CODE` | `previous_step.exit_code` | Decimal exit code of immediately prior step (or empty) |
 | `DOVO_STEPS_JSON` | `steps` | JSON array of finished step objects (`[{"id": "...", "name": "...", "index": "...", "status": "...", "exit_code": "..."}]`) — step outputs are never included here (see `outputs.<key>` interpolation below) |
+| `DOVO_SESSION_ID` | `session_id` | ID of the session running the blueprint, the same for every step in the run (or empty when the run has no session) |
 | `DOVO_TEMP` | `tmp.session_dir` | Session scratch directory, shared across all steps in the run (empty when no session ID is set) |
 | `DOVO_RUNNER_TEMP` | `tmp.session_dir` | Alias for `DOVO_TEMP`, for GitHub Actions parity |
 | `DOVO_STEP_TEMP` | `tmp.step_dir` | Step-specific scratch subdirectory under `DOVO_TEMP` |
