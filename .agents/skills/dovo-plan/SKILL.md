@@ -27,13 +27,14 @@ Plan when the issue adds or changes a command, DTO/`*Result` model, status enum,
 
 ## 1. Check the issue and reset the workspace
 
-A parent issue is never planned: its sub-issues are. Before touching `.agentic/`, check:
+A parent issue is never planned here: an epic is planned with `issue-plan`, and a plain parent's sub-issues are planned one at a time. Before touching `.agentic/`, check:
 
 ```bash
+gh issue view <n> --json labels --jq '.labels[].name'
 gh issue view <n> --json subIssues --jq '.subIssues.nodes[] | "#\(.number) \(.state) \(.title)"'
 ```
 
-If this lists anything, stop: report the sub-issues, and name as the one to plan next the first open sub-issue whose blockers are all closed (`gh issue view <m> --json blockedBy --jq '.blockedBy.nodes[] | "#\(.number) \(.state)"'`). Otherwise reset:
+If the labels include `type:epic`, stop and say it is planned with `dovo run issue-plan -i <n>`. If the sub-issues list anything, stop: report the sub-issues, and name as the one to plan next the first open sub-issue whose blockers are all closed (`gh issue view <m> --json blockedBy --jq '.blockedBy.nodes[] | "#\(.number) \(.state)"'`). Otherwise reset:
 
 ```bash
 rm -rf .agentic && mkdir -p .agentic
