@@ -4,8 +4,9 @@ Copied from the slice-flow design at `944de0ce`; the design was revised 2026-10-
 
 **Where it comes from:** #1214 (run by hand), #925's "Target contract" and "Order" sections, and the dry run, which found findings F1–F14 and conflicts C1–C12 between the issues. The same rules apply to every section:
 - **Every sentence has a stated truth.** It is true on `origin/main` at the named sha, true once a named prerequisite lands (`after #n`), or a target the slices deliver.
-- **Cite, don't restate.** A rule already in `docs/agents/architecture/` is cited by anchor. A target surface already described there states only the delta.
+- **Cite, don't restate.** A rule already in `docs/agents/architecture/` is cited by anchor, never re-decided. A target surface already described there states only the delta.
 - **Ownership is explicit.** Nothing is deferred without an owner (#1227).
+- **Only what has something to say.** Problem, Target contract and Shared-surface ownership are required. Every other section is left out when it has nothing to say, never filled with "none" (see "Section guidance").
 
 ---
 
@@ -106,20 +107,22 @@ In the dry run this made #925 the epic, closed #926 and #924 as superseded conta
 
 ## Section guidance
 
-| Section | It must | It must not |
-|---|---|---|
-| Problem | cite evidence and name who is affected | propose a solution |
-| Existing issues | give every related open issue a role | leave a container as a slice |
-| Prerequisites | name the fact each one makes true | list a slice of this epic |
-| Non-goals | give each a kind; give owned and deferred items an owner | defer with no owner |
-| Target contract | give the end state or the delta per surface, with a baseline and `touched_by` | describe how the slices get there, or restate an architecture entry |
-| Conventions | cite entries by anchor; mark whether each exemplar conforms | restate an entry's text |
-| Overrides | quote the sentence it replaces | paraphrase it |
-| Decisions | give a reason and a source for each; confirm inherited ones; recommend an answer to each open question | leave a decision implicit in a slice, or an inherited one unconfirmed |
-| Code inventory | be reproducible from a command at the grounding sha; assign each row a slice | be a hand-made estimate |
-| Ownership | give exactly one owner per surface and aspect | let two slices define the same aspect |
-| Lint gates | land each check with the fix that makes it pass | land a check that fails on main |
-| Checkpoints | place the pilot, shared-surface and baseline reviews | be skipped for a feature of three or more slices |
+The contract scales with how far the shared surfaces spread. An epic whose slices share a surface in one area needs only a short contract: the required sections plus the slices. A section marked "when it has something to say" is left out entirely when it has nothing to say, and its `plan.json` field is `[]` (`null` for `inventory`).
+
+| Section | Written | It must | It must not |
+|---|---|---|---|
+| Problem | required | cite evidence and name who is affected | propose a solution |
+| Existing issues | when another open issue relates | give every related open issue a role | leave a container as a slice |
+| Prerequisites | when a slice needs an outside issue first | name the fact each one makes true | list a slice of this epic |
+| Non-goals | when something is owned elsewhere, excluded or deferred | give each a kind; give owned and deferred items an owner | defer with no owner |
+| Target contract | required | give the end state or the delta per surface, with a baseline and `touched_by` | describe how the slices get there, or restate an architecture entry |
+| Conventions | when the slices follow a rule no architecture entry states, or a named exemplar | cite entries by anchor; mark whether each exemplar conforms | restate an entry's text |
+| Overrides | when an existing issue says something this contract makes wrong | quote the sentence it replaces | paraphrase it |
+| Decisions | when a choice would otherwise be made twice, or an open question remains | give a reason and a source for each; confirm inherited ones; recommend an answer to each open question | leave a decision implicit in a slice, or an inherited one unconfirmed; re-decide a rule an architecture entry already states |
+| Code inventory | when slice sizing rests on counted sites | be reproducible from a command at the grounding sha; assign each row a slice | be a hand-made estimate |
+| Ownership | required | give exactly one owner per surface and aspect | let two slices define the same aspect |
+| Lint gates | when a convention becomes a `tests/lint/` check | land each check with the fix that makes it pass | land a check that fails on main |
+| Checkpoints | with three or more slices | place the pilot, shared-surface and baseline reviews | be skipped for a feature of three or more slices |
 
 **Choosing the pilot.** The pilot is the slice whose conventions most other slices reuse, not necessarily the first in dependency order. Independent slices (in the dry run, catalog `item_type`) may run in parallel lanes after it.
 
@@ -160,12 +163,13 @@ In the dry run this made #925 the epic, closed #926 and #924 as superseded conta
 - `estimate`: `{ "src_docs": 350, "tests": 400, "basis": "inventory rows …" }`
 - `pilot: true` on one slice, and `closing_docs: true` on the last
 
-`issue-plan-review` checks these epic ready criteria mechanically from the fields:
+`issue-plan-review` checks these epic ready criteria mechanically from the fields. An optional section left out is never a failure on its own:
+- `problem`, `target` and `ownership` are non-empty
 - one owner per surface and aspect
 - an acyclic graph, with every `blocked_by` issue an open or closed issue
 - every slice's estimate is within budget
 - one pilot, and the last slice is the closing docs slice
-- checkpoints are placed
+- checkpoints are placed when there are three or more slices
 - every `deferred` non-goal has an owner
 - no inherited decision is unconfirmed
 - every target surface with two or more `touched_by` slices has an ownership row (the "no in-between shape a later slice reverses" rule)

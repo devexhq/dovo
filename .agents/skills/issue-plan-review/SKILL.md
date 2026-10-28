@@ -83,15 +83,17 @@ A miss is Blocking when implementing the plan as written produces a bug, data lo
 
 ## 6a. Check the epic ready criteria
 
-Skip this when `plan.json` `contract` is `null`, and say so. Otherwise check each criterion from the `plan.json` fields, mechanically where the fields allow, and report each failure as a Blocking finding citing the field (`contract.ownership`, `slices[2].estimate`):
+Skip this when `plan.json` `contract` is `null`, and say so. Otherwise check each criterion from the `plan.json` fields, mechanically where the fields allow, and report each failure as a Blocking finding citing the field (`contract.ownership`, `slices[2].estimate`). A contract may be short: only `problem`, `target` and `ownership` are required, and an optional section left out (its field `[]`, or `inventory` `null`) is never a finding on its own.
 
+- **Required sections:** `contract.problem`, `contract.target` and `contract.ownership` are non-empty.
+- **Contract earned:** three or more issues share an owned surface, or a decision would otherwise be made twice. Below that, report a Warning whose Fix is plain issues with Owned elsewhere pointers.
 - **One owner per surface and aspect:** no two `contract.ownership` rows share a `surface` and `aspect`, and no slice `stub` restates a rule another slice owns.
 - **No in-between shape a later slice reverses:** every `contract.target` surface with two or more `touched_by` slices has an ownership row.
 - **A sound slice graph:** `depends_on` names only slice ids, the graph is acyclic, and every `blocked_by` number is an existing issue outside the epic (`gh issue view <n> --json state`).
-- **Every related issue has a role:** each sub-issue of the epic and each issue the contract names appears in `contract.existing_issues`, and no container is a slice (contract-template.md, "Mapping existing issues").
+- **Every related issue has a role:** each sub-issue of the epic and each slice's existing `child` appears in `contract.existing_issues`, and no container is a slice (contract-template.md, "Mapping existing issues").
 - **Size:** every slice's `estimate.src_docs` is under about 400 and `src_docs` plus `tests` under about 900, or the plan says why the slice cannot be split.
 - **Pilot and closing docs:** exactly one slice has `pilot: true`, and the last slice, and only it, has `closing_docs: true`.
-- **Checkpoints:** `contract.checkpoints` places one after the pilot and a baseline before the closing docs slice.
+- **Checkpoints:** with three or more slices, `contract.checkpoints` places one after the pilot and a baseline before the closing docs slice.
 - **No ownerless deferral:** every `non_goals` item of kind `deferred` or `owned` has `owners`, and no `stub` defers work without naming the slice or issue that does it (#1227).
 - **Decisions confirmed:** no `decisions` item with `settled_by.kind` `inherited` lacks `confirmed`, and every open question that blocks a slice carries a recommended answer.
 - **Plan-challenge:** each `/dovo-plan-challenge` finding is resolved in the plan or recorded in `contract.decisions`. Before the challenge has run, list this under **For the human** instead of as a finding.

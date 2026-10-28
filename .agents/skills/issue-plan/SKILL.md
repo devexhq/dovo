@@ -44,7 +44,13 @@ Decide whether the issue is an epic or a plain issue before touching `.agentic/`
 gh issue view <n> --json body,milestone,subIssues --jq '.subIssues.nodes[] | "#\(.number) \(.state) \(.title)"'
 ```
 
-The issue is planned as an epic when it lists sub-issues, when its body already holds `## Feature contract`, or when the user names it as the container for a milestone's group of issues. Otherwise it is a plain issue. Read each related issue's blockers with `gh issue view <m> --json blockedBy --jq '.blockedBy.nodes[] | "#\(.number) \(.state)"'`. Then reset:
+The plan's shape scales with how far the shared surfaces spread, not with how many issues there are. Read the issue, its sub-issues, and any group the user names (such as a milestone's issues), and sort them:
+
+- **One issue, or issues that share no surface:** plain issues. Plan the issue as a plain issue; related issues get **Owned elsewhere** pointers, not a contract.
+- **Several issues sharing a surface in one area:** one epic with a short contract (Step 2a).
+- **Issues changing a surface other areas depend on, or setting rules other work will cite:** several sibling epics, with a foundation epic whose pilot runs first. Plan only the epic asked for, and name the siblings and the foundation under What you're approving. Epics never nest.
+
+Write an epic contract only when three or more issues share an owned surface, or a decision would otherwise be made twice. Below that, plan a plain issue, even when the issue lists sub-issues or names a milestone group. An issue whose body already holds `## Feature contract` is an epic. Read each related issue's blockers with `gh issue view <m> --json blockedBy --jq '.blockedBy.nodes[] | "#\(.number) \(.state)"'`. Then reset:
 
 ```bash
 rm -rf .agentic && mkdir -p .agentic
@@ -58,7 +64,9 @@ Follow planning.md Steps 1-2: read the issue's contract (or the user's request, 
 
 ## 2a. Write the feature contract (epic only)
 
-Skip this on a plain issue. On an epic, write the contract before any phase or slice, following [contract-template.md](contract-template.md): its sections in order, the rules every section follows, its section guidance, and "Mapping existing issues", which gives every sub-issue and related open issue a role (epic, child, split, superseded container, prerequisite or sibling epic) before any slice is written. Ground the code inventory from commands run at the grounding sha, never estimates. Each open question carries a recommended answer and the slices it blocks.
+Skip this on a plain issue. On an epic, write the contract before any phase or slice, following [contract-template.md](contract-template.md): its sections in order, the rules every section follows, its section guidance, and "Mapping existing issues", which gives every sub-issue and related open issue a role (epic, child, split, superseded container, prerequisite or sibling epic) before any slice is written.
+
+Keep the contract as short as the surface spread allows. Problem, Target contract and Shared-surface ownership are required, alongside the slices. Every other section is written only when it has something to say, and left out otherwise, never filled with "none". Cite rules already in `docs/agents/architecture/` instead of re-deciding them. When written, the code inventory comes from commands run at the grounding sha, never estimates. Each open question carries a recommended answer and the slices it blocks.
 
 ## 3. Size and phase
 
@@ -73,7 +81,7 @@ On a plain issue, all phases form one slice, `S1`, whose `child` is the issue it
 - **Order by dependency.** `depends_on` names slice ids, `blocked_by` names prerequisite issues outside the epic, and the graph is acyclic.
 - **Slice 1 is the pilot**, unless another slice's conventions are reused by more slices; then that slice is the pilot. Its "as landed" report updates the conventions and decision log before later slices are written in full.
 - **The last slice is the closing docs slice.** It reviews every doc the feature touched against `main` and carries `Fixes #<epic>`.
-- **Place the checkpoints:** after the pilot, after slices that share an owned surface, and a baseline before the closing docs slice.
+- **Place the checkpoints** when the epic has three or more slices: after the pilot, after slices that share an owned surface, and a baseline before the closing docs slice.
 - **Map each slice to a child issue.** An existing work issue the contract maps to the slice is its `child`. Otherwise `child` is `null` and the slice carries a `stub`: the markdown body of its child issue, written to the #1227 shape:
   - the slice's FRs, NFRs and guards, and its Definition of done, citing the epic's contract sections by heading instead of restating them
   - **Owned elsewhere**: `#n owns <X>` or `Sx owns <X>` pointers from the ownership table, for collision checks, never bans
@@ -132,7 +140,7 @@ Write `.agentic/plan.json` alongside the markdown. `.dovo/catalog/blueprints/fea
 - `issue` is the issue number, or `null` when planning from a plain-language request. `grounded_at` is the short sha from the plan's "Grounded against" line. `phases` is the number of rows in the Phases table.
 - `open_questions` lists every numbered Open Question in order, each with the `OQ-<n>` id from `plan.md`. `summary` is the one-line question followed by ` (assumed: <short answer>)`, since it is the only text the blueprint's pick-list shows for the question; `assumed` is the full answer the plan is written against, `why` the reason with its `path:line`, `alternatives` the rejected answers (`[]` when none), and `phases` the phase numbers whose instructions change if the answer changes.
 - `open_questions` is `[]` when the plan says "None." On an epic, each item may add `"blocks": ["S3"]`, the slices it blocks.
-- `contract` is `null` on a plain issue. On an epic it is exactly the `contract` object in [contract-template.md](contract-template.md) under "`plan.json` shape", agreeing with the plan's `## Feature contract`.
+- `contract` is `null` on a plain issue. On an epic it is exactly the `contract` object in [contract-template.md](contract-template.md) under "`plan.json` shape", agreeing with the plan's `## Feature contract`. A section left out of the markdown keeps its key, as `[]` (or `null` for `inventory`).
 - `slices` lists every slice in dependency order, one per row of the plan's `## Slices` table. `id` is `S<n>`; `phases` the phase numbers it lands; `depends_on` slice ids; `blocked_by` prerequisite issue numbers outside the epic; `child` the child issue number, or `null` until it is created; `owns` the surfaces and aspects the slice owns in the ownership table; `lint_gates` the `tests/lint/` checks it lands; `estimate` the `src_docs` and `tests` changed-line estimates with their `basis`; `stub` the child issue's markdown body when `child` is `null`, otherwise `null`.
 - On an epic, exactly one slice has `pilot: true` and only the last has `closing_docs: true`. A plain issue's one slice has both `false`, `child` equal to `issue` and `stub` `null`.
 - These fields only add to the shape above: `issue`, `plan`, `grounded_at`, `phases` and `open_questions` keep their meaning.
