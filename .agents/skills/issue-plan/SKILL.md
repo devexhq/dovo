@@ -41,7 +41,8 @@ Plan when the issue adds or changes a command, DTO/`*Result` model, status enum,
 Decide whether the issue is an epic or a plain issue before touching `.agentic/`:
 
 ```bash
-gh issue view <n> --json body,milestone,subIssues --jq '.subIssues.nodes[] | "#\(.number) \(.state) \(.title)"'
+gh issue view <n> --json body,milestone --jq '"milestone: \(.milestone.title // "none")", .body'
+gh issue view <n> --json subIssues --jq '.subIssues.nodes[] | "#\(.number) \(.state) \(.title)"'
 ```
 
 The plan's shape scales with how far the shared surfaces spread, not with how many issues there are. Read the issue, its sub-issues, and any group the user names (such as a milestone's issues), and sort them:
@@ -50,7 +51,16 @@ The plan's shape scales with how far the shared surfaces spread, not with how ma
 - **Several issues sharing a surface in one area:** one epic with a short contract (Step 2a).
 - **Issues changing a surface other areas depend on, or setting rules other work will cite:** several sibling epics, with a foundation epic whose pilot runs first. Plan only the epic asked for, and name the siblings and the foundation under What you're approving. Epics never nest.
 
-Write an epic contract only when three or more issues share an owned surface, or a decision would otherwise be made twice. Below that, plan a plain issue, even when the issue lists sub-issues or names a milestone group. An issue whose body already holds `## Feature contract` is an epic. Read each related issue's blockers with `gh issue view <m> --json blockedBy --jq '.blockedBy.nodes[] | "#\(.number) \(.state)"'`. Then reset:
+Write an epic contract only when three or more issues share an owned surface, or a decision would otherwise be made twice. Below that, plan a plain issue. A parent issue below the trigger is not planned itself: report its sub-issues, name the first open one whose blockers are all closed as the one to plan next, as a plain issue, one at a time, and stop. An issue whose body already holds `## Feature contract` is an epic.
+
+Read each related issue in full before giving it a role in `existing_issues`, not only its title and blockers:
+
+```bash
+gh issue view <m> --json title,body,labels,milestone,state
+gh issue view <m> --json blockedBy --jq '.blockedBy.nodes[] | "#\(.number) \(.state)"'
+```
+
+Then reset:
 
 ```bash
 rm -rf .agentic && mkdir -p .agentic
