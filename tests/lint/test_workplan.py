@@ -508,9 +508,29 @@ class AdoptTests:
         assert body.startswith(
             f"{INTRO}\n{contract}\n## Work plan\nPlan Session ID: `{PLAN_SESSION}` (plan revision 1)\n"
         )
-        assert body.endswith("-->\n\n### A2 as landed (#1301)\n- Departed.\n" + HAND_TAIL)
-        assert "Maintained by hand" not in body
+        assert body.endswith(
+            "-->\n\n"
+            "### Notes (carried over)\n"
+            "Maintained by hand until `workplan.py` exists.\n"
+            "\n"
+            "A2 depends on A1 only for its conventions.\n"
+            "- #925: S1 is blocked by A2.\n"
+            "\n"
+            "### A2 as landed (#1301)\n"
+            "- Departed.\n" + HAND_TAIL
+        )
         assert "Hand-written contract." not in body
+        assert body.count("| A1 |") == 1
+
+    def test_a_later_render_keeps_the_carried_over_notes(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = FakeGh({EPIC: _hand_body()})
+        assert self._render(tmp_path, monkeypatch, fake, ("A1", "A2", "A7")) == 0
+        adopted = fake.bodies[EPIC]
+
+        assert self._render(tmp_path, monkeypatch, fake, ("A1", "A2", "A7")) == 0
+
+        assert fake.bodies[EPIC] == adopted
+        assert fake.bodies[EPIC].count("### Notes (carried over)") == 1
 
     def test_carries_over_each_rows_child_and_status(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fake = FakeGh({EPIC: _hand_body()})

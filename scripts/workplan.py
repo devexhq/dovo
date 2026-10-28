@@ -29,6 +29,8 @@ from pathlib import Path
 CONTRACT_HEADING = "## Feature contract"
 QUESTIONS_INTRO = "Open questions, each with a recommended answer until the user settles it:"
 WORKPLAN_HEADING = "## Work plan"
+NOTES_HEADING = "### Notes (carried over)"
+LANDED_RE = re.compile(r"### \S+ as landed\b")
 WORKPLAN_COMMENT_RE = re.compile(r"<!-- dovo:workplan (\{.*\}) -->")
 READY_LABEL = "dovo:ready"
 ACTIVE_STATUSES = ("in_progress", "in_review")
@@ -251,14 +253,17 @@ def _table_cells(line: str) -> list[str]:
     return [cell.strip() for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
 
 
+def _split_table(section: str) -> tuple[list[str], str]:
+    """Return the lines of section's first markdown table, and section without them."""
+    lines = section.splitlines(keepends=True)
+    start = next((index for index, line in enumerate(lines) if line.lstrip().startswith("|")), len(lines))
+    end = next((index for index in range(start, len(lines)) if not lines[index].lstrip().startswith("|")), len(lines))
+    return lines[start:end], "".join(lines[:start] + lines[end:])
+
+
 def _hand_table(section: str) -> list[list[str]]:
     """Return the first markdown table in section as rows of cells, header first, without its separator row."""
-    lines: list[str] = []
-    for line in section.splitlines():
-        if line.lstrip().startswith("|"):
-            lines.append(line)
-        elif lines:
-            break
+    lines = [line.rstrip("\r\n") for line in _split_table(section)[0]]
     return [_table_cells(line) for line in lines[:1] + lines[2:]]
 
 
@@ -296,10 +301,17 @@ def _hand_row(cells: list[str], child_at: int | None, status_at: int | None) -> 
 
 
 def _hand_landed(section: str) -> str:
-    """Return the `### <id> as landed` sections of a hand-maintained work plan, each up to the next `### ` heading."""
-    chunks = re.split(r"(?m)^(?=### )", section)
-    landed = [chunk.strip("\n") for chunk in chunks if re.match(r"### \S+ as landed\b", chunk)]
-    return "\n\n".join(landed)
+    """Return what a hand-maintained work plan keeps below the rendered one: its notes, then its landed reports.
+
+    The notes are everything in the section except its heading, its first
+    table and its `### <id> as landed` sections (each up to the next `### `
+    heading), kept verbatim under `### Notes (carried over)`.
+    """
+    without_heading = section.split("\n", 1)[1] if "\n" in section else ""
+    chunks = re.split(r"(?m)^(?=### )", _split_table(without_heading)[1])
+    landed = [chunk.strip("\n") for chunk in chunks if LANDED_RE.match(chunk)]
+    notes = re.sub(r"\n{3,}", "\n\n", "".join(chunk for chunk in chunks if not LANDED_RE.match(chunk))).strip("\n")
+    return "\n\n".join(([f"{NOTES_HEADING}\n{notes}"] if notes else []) + landed)
 
 
 def current_rows(body: str, plan_slices: list[Slice]) -> tuple[list[Slice], str]:
@@ -324,7 +336,8 @@ def adopt_hand_workplan(section: str, plan_slices: list[Slice]) -> tuple[list[Sl
     A `## Work plan` section without a `dovo:workplan` comment is hand-maintained:
     its first table's rows give each slice's id (the first cell), child issue
     (a `Child` column) and status (a `Status` column), and its `### <id> as
-    landed` sections are kept. Everything else in the section is replaced.
+    landed` sections are kept, after the rest of its text, which is kept
+    verbatim under `### Notes (carried over)`.
 
     Raises:
         WorkplanError: When a row's child or status cannot be read, or its id matches no plan.json slice.
