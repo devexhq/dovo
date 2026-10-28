@@ -81,7 +81,7 @@ A stale plan or review must never be read as current.
 
 ## 1b. Load the slice (slice mode)
 
-Never reset `.agentic/` in slice mode: the epic plan, `.agentic/epic-plan.md` and `.agentic/epic-plan.json` (the `issue-code` blueprint copies them from the downloaded plan), is this mode's input. If either is missing, stop and say so; run by hand, copy the downloaded `.agentic/plan.md` and `.agentic/plan.json` to them first. Never edit the epic plan. Start every run from it, so a retry never builds on its own partial output, and delete the files an earlier planning round in this workspace could leave behind, so none is read as current:
+Never reset `.agentic/` in slice mode: the epic plan, `.agentic/epic-plan.md` and `.agentic/epic-plan.json` (the `issue-code` blueprint copies them from the downloaded plan, recording on the slice the child issue its `next` step picked or created), is this mode's input. If either is missing, stop and say so; run by hand, copy the downloaded `.agentic/plan.md` and `.agentic/plan.json` to them first, setting the slice's `child` to its child issue and its `stub` to `null` when the work plan records a child the downloaded plan does not. Never edit the epic plan. Start every run from it, so a retry never builds on its own partial output, and delete the files an earlier planning round in this workspace could leave behind, so none is read as current:
 
 ```bash
 cp .agentic/epic-plan.md .agentic/plan.md && cp .agentic/epic-plan.json .agentic/plan.json

@@ -77,7 +77,7 @@ In an issue plan, read "phase" below as "slice": every requirement maps to the s
 
 ## 6. Check shape and rules
 
-In an issue plan, the phase checks below do not apply: check instead that it writes no phases (`plan.json` `phases` is `0` and every slice's `phases` is `[]`), and that its `## Slices` table and `plan.json` `slices` agree. In a slice plan, they apply to the slice's phases.
+In an issue plan, the template check's Phases table and the phase checks below do not apply: check instead that it writes no phases (`plan.json` `phases` is `0` and every slice's `phases` is `[]`), and that its `## Slices` table and `plan.json` `slices` agree. In a slice plan, they apply to the slice's phases.
 
 - The plan follows the template in [planning.md](../../../docs/agents/planning.md) Step 4, including the Phases table.
 - Each phase is one concern, roughly 400 changed lines or less, passes the gate on its own and ships something. A phase over budget states why it cannot be split.

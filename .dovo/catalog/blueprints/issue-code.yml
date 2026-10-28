@@ -58,9 +58,21 @@ steps:
   # this run starts from is kept beside them: slice planning (and a retry of
   # it) starts from the copy, the slice plan's review diffs the contract and
   # slices against it, and land checks the epic's contract three ways with it.
+  # The copy records the child `next` picked on the slice, since a child
+  # `next` created from the slice's stub is still `null` in the downloaded plan,
+  # and every later step reads the child from plan.json.
   - id: keep-epic-plan
     name: Keep the epic plan this run starts from
-    run: cp .agentic/plan.md .agentic/epic-plan.md && cp .agentic/plan.json .agentic/epic-plan.json
+    run: |
+      cp .agentic/plan.md .agentic/epic-plan.md
+      uv run --quiet python -c '
+      import json, sys
+      plan = json.load(open(".agentic/plan.json"))
+      for row in plan["slices"]:
+          if row["id"] == sys.argv[1]:
+              row["child"], row["stub"] = int(sys.argv[2]), None
+      json.dump(plan, open(".agentic/epic-plan.json", "w"), indent=2)
+      ' "{{ steps.next.outputs.slice }}" "{{ steps.next.outputs.child }}"
     timeout_seconds: 120
 
   # --- ready-issue's gate steps, run on the slice's child issue. A step cannot
@@ -164,6 +176,13 @@ steps:
   # landed" reports of the slices before it. The plan artifacts this session
   # publishes hold the slice's plan, with the epic's contract and slices kept
   # as downloaded. ---
+
+  # main can move while the child issue waits for a person above, so the
+  # slice is planned against main as it is when planning starts.
+  - id: refresh-base
+    name: Check out origin/main again
+    run: git fetch -q origin main && git switch -q --detach origin/main
+    timeout_seconds: 120
 
   - id: plan
     name: Plan the slice

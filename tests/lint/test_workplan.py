@@ -592,6 +592,12 @@ class AdoptTests:
                 "the hand-maintained work plan's table has no `Child` or `Child issue` column",
                 id="no-child-column",
             ),
+            pytest.param(
+                HAND_WORKPLAN.replace("| Status |", "| State |"),
+                ("A1", "A2", "A7"),
+                "the hand-maintained work plan's table has no `Status` column",
+                id="no-status-column",
+            ),
         ],
     )
     def test_refuses_a_row_it_cannot_carry_over_safely(
@@ -1004,6 +1010,17 @@ class LandTests:
         assert (stored["plan_session"], stored["plan_revision"]) == (CODE_SESSION, None)
         assert _rows(fake.bodies[EPIC])[1]["title"] == "Narrower S2"
         assert f"Plan Session ID: `{CODE_SESSION}`\n" in fake.bodies[EPIC]
+
+    def test_refuses_a_plan_that_redefines_a_started_slice(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131, status="in_progress", session=CODE_SESSION))})
+        amended = [_slice("S1", child=1131, title="Rewritten S1")]
+
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": None, "slices": amended})) == 1
+
+        assert capsys.readouterr().err == "workplan.py: the plan changes S1, which already started\n"
+        assert fake.edits == []
 
     def test_applies_sweep_entries_and_skips_a_changed_body(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

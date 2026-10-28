@@ -181,6 +181,27 @@ def merge_rows(plan_slices: list[Slice], current: list[Slice]) -> list[Slice]:
     return [_carry_over(row, by_id.get(row.id)) for row in plan_slices]
 
 
+def _definition(row: Slice) -> tuple[object, ...]:
+    """Return the fields of row that plan.json defines, as opposed to the state the code runs record."""
+    return (row.title, row.depends_on, row.blocked_by, row.closing_docs)
+
+
+def check_started_unchanged(plan_slices: list[Slice], current: list[Slice]) -> None:
+    """Refuse plan_slices when it redefines a slice that has already started; a report amends only later slices.
+
+    Raises:
+        WorkplanError: When a slice that is not pending has a different title, dependencies or closing-docs flag.
+    """
+    planned = {row.id: row for row in plan_slices}
+    changed = [
+        row.id
+        for row in current
+        if row.status != "pending" and row.id in planned and _definition(planned[row.id]) != _definition(row)
+    ]
+    if changed:
+        raise WorkplanError(f"the plan changes {', '.join(changed)}, which already started")
+
+
 def _carry_over(row: Slice, old: Slice | None) -> Slice:
     """Return row with old's child (unless row names one), status, PR and session."""
     if old is None:
@@ -300,13 +321,12 @@ def _column(header: list[str], names: tuple[str, ...]) -> int | None:
     return next((index for index, cell in enumerate(header) if cell.lower() in names), None)
 
 
-def _hand_row(cells: list[str], header: list[str], child_at: int) -> Slice:
+def _hand_row(cells: list[str], header: list[str], child_at: int, status_at: int) -> Slice:
     """Return one hand table row as a work plan row keyed by its first cell, carrying its child and status."""
     slice_id = cells[0].strip("`* ")
     if len(cells) < len(header):
         raise _hand_refusal(slice_id, f"has {len(cells)} cells, fewer than the header's {len(header)}")
-    status_at = _column(header, ("status",))
-    status = _hand_status(slice_id, cells[status_at] if status_at is not None else "")
+    status = _hand_status(slice_id, cells[status_at])
     return Slice(slice_id, slice_id, [], [], False, _hand_child(slice_id, cells[child_at]), None, status)
 
 
@@ -314,8 +334,8 @@ def _hand_rows(section: str) -> list[Slice]:
     """Return the rows of a hand-maintained work plan's first table, refusing any it cannot carry over safely.
 
     Raises:
-        WorkplanError: When the table has no Child column, or a row is short, repeats an id, or has an
-            unreadable child or status.
+        WorkplanError: When the table has no Child or Status column, or a row is short, repeats an id, or
+            has an unreadable child or status.
     """
     table = _hand_table(section)
     if not table:
@@ -324,7 +344,10 @@ def _hand_rows(section: str) -> list[Slice]:
     child_at = _column(header, ("child", "child issue"))
     if child_at is None:
         raise WorkplanError("the hand-maintained work plan's table has no `Child` or `Child issue` column")
-    rows = [_hand_row(cells, header, child_at) for cells in table[1:]]
+    status_at = _column(header, ("status",))
+    if status_at is None:
+        raise WorkplanError("the hand-maintained work plan's table has no `Status` column")
+    rows = [_hand_row(cells, header, child_at, status_at) for cells in table[1:]]
     seen: set[str] = set()
     for row in rows:
         if row.id in seen:
@@ -1095,10 +1118,14 @@ def amend(issue: int, body: str, plan: WorkPlan, args: argparse.Namespace) -> tu
     (see `amend_contract`). The open questions the body lists under Decisions
     are kept, since the code session's plan.json does not carry them, except
     those the amended contract settles.
+
+    Raises:
+        WorkplanError: When the plan redefines a slice that has already started (see `check_started_unchanged`).
     """
     contract, plan_slices = parse_plan(_load_json(args.plan), issue)
     raw_base = _object(_load_json(args.base_plan), "the epic plan.json").get("contract")
     base = None if raw_base is None else _object(raw_base, "the epic plan.json contract")
+    check_started_unchanged(plan_slices, plan.slices)
     rows = merge_rows(plan_slices, plan.slices)
     amended = body if contract is None else amend_contract(issue, body, base, contract)
     if rows == plan.slices and amended == body:
