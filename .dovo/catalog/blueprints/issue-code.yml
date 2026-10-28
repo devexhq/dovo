@@ -8,7 +8,7 @@
 version: 1
 name: issue-code
 id: issue-code
-description: Pick the next ready slice of an issue's work plan, claim it, load the plan from the session that wrote it, ready the slice's child issue if it is not labelled dovo:ready, implement the slice, review and fix blockers and warnings until none remain or only a person can settle them, report how the slice departed from the plan, then open a PR that closes the child issue, post the final review and record the slice as landed in the work plan
+description: Pick the next ready slice of an issue's work plan, load the plan from the session that wrote it, ready the slice's child issue if it is not labelled dovo:ready, claim the slice, implement the slice, review and fix blockers and warnings until none remain or only a person can settle them, report how the slice departed from the plan, then open a PR that closes the child issue, post the final review and record the slice as landed in the work plan
 summary: Next slice of a work plan to a reviewed PR
 
 inputs:
@@ -26,21 +26,15 @@ steps:
     run: git fetch -q origin main && git switch -q --detach origin/main
     timeout_seconds: 120
 
-  # Refuses, and says why, when a slice is already in progress or in review,
-  # or when no slice is ready; the run stops there.
+  # Picks without claiming. Refuses, with its reason on stderr, when a slice is
+  # in progress or in review, when an active slice's PR was closed unmerged, or
+  # when no slice is ready; the run stops there. The run's failure line shows
+  # only the exit code, so the reason is read with
+  # `dovo logs <session> --step next`.
   - id: next
     name: Pick the next slice
     run: uv run python scripts/workplan.py next --issue ${{ inputs.issue }}
     timeout_seconds: 300
-
-  # Claimed before the child issue is readied, so a second run started while
-  # this one waits on a person refuses rather than taking the same slice.
-  - id: claim
-    name: Claim the slice for this session
-    run: >-
-      uv run python scripts/workplan.py claim --issue ${{ inputs.issue }}
-      --slice {{ steps.next.outputs.slice }} --session "$DOVO_SESSION_ID"
-    timeout_seconds: 120
 
   # The latest revisions of the session the work plan points at: the planning
   # session, or the code session of the last slice that amended the plan.
@@ -155,6 +149,15 @@ steps:
       gh issue edit {{ steps.next.outputs.child }} --add-label dovo:ready
       gh issue comment {{ steps.next.outputs.child }} --body-file .agentic/issue-ready-comment.md
     timeout_seconds: 300
+
+  # Claimed only once the child issue is ready, so a child that turns out
+  # not_ready leaves the slice pending rather than stuck in progress.
+  - id: claim
+    name: Claim the slice for this session
+    run: >-
+      uv run python scripts/workplan.py claim --issue ${{ inputs.issue }}
+      --slice {{ steps.next.outputs.slice }} --session "$DOVO_SESSION_ID"
+    timeout_seconds: 120
 
   # --- feature-dev's code and review loops, scoped to the slice. ---
 
@@ -339,10 +342,12 @@ steps:
       Everything is already committed, so read it with `git log --oneline origin/main..HEAD` and
       `git diff origin/main...HEAD` instead of the uncommitted diff, and ignore `.dovo/run`. The
       skill's stop when nothing is uncommitted does not apply here: always rewrite both files.
-      End .agentic/pr-description with these closing lines, each on a line of its own, exactly as
-      given, in this order, and with no other closing keyword (Fixes, Closes, Resolves) anywhere
-      else in the description. A literal \n between them separates two lines:
+      End .agentic/pr-description with the closing lines between the two markers below, one or
+      two of them, exactly as given and in this order, each on a line of its own. Use no other
+      closing keyword (Fixes, Closes, Resolves) anywhere else in the description.
+      --- closing lines ---
       {{ steps.next.outputs.closing_lines }}
+      --- end of closing lines ---
       Do not touch .agentic/commit-msg or .agentic/pr-branch, and do not commit, stage or push.
     tools: { allow_all: true }
     timeout_seconds: 900
