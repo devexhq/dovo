@@ -459,17 +459,18 @@ def _open_question(item: dict[str, object]) -> str:
     return f"- **{_text(item, 'id')}**{blocked}: {_text(item, 'summary')} **Recommended:** {_text(item, 'assumed')}"
 
 
-def _decisions(contract: dict[str, object], open_questions: list[dict[str, object]]) -> str:
-    """Render `### Decisions` as its table, followed by the plan's open questions."""
+def _decisions(contract: dict[str, object]) -> str:
+    """Render `### Decisions` as its table, followed by the plan's open questions, leaving out whichever is empty."""
     rows = [
         [_text(item, "id"), _text(item, "decision"), _text(item, "why"), _settled_by(item)]
         for item in _items(contract, "decisions")
     ]
-    text = _table(["ID", "Decision", "Why", "Settled by"], rows)
-    if open_questions:
-        questions = "\n".join(_open_question(item) for item in open_questions)
-        text += f"\n\nOpen questions, each with a recommended answer until the user settles it:\n{questions}"
-    return text
+    parts = [_table(["ID", "Decision", "Why", "Settled by"], rows)] if rows else []
+    questions = _items(contract, OPEN_QUESTIONS)
+    if questions:
+        listed = "\n".join(_open_question(item) for item in questions)
+        parts.append(f"Open questions, each with a recommended answer until the user settles it:\n{listed}")
+    return "\n\n".join(parts)
 
 
 def _inventory(contract: dict[str, object]) -> str:
@@ -527,25 +528,29 @@ def _checkpoints(contract: dict[str, object]) -> str:
     return _bullets([_checkpoint(item) for item in _items(contract, "checkpoints")])
 
 
-CONTRACT_SECTIONS: tuple[tuple[str, Callable[[dict[str, object]], str]], ...] = (
-    ("Problem", lambda contract: _text(contract, "problem") or "None."),
-    ("Existing issues", _existing_issues),
-    ("Prerequisites", _prerequisites),
-    ("Non-goals", _non_goals),
-    ("Target contract", _target),
-    ("Conventions", _conventions),
-    ("Overrides", _overrides),
-)
-CONTRACT_SECTIONS_AFTER_DECISIONS: tuple[tuple[str, Callable[[dict[str, object]], str]], ...] = (
-    ("Code inventory", _inventory),
-    ("Shared-surface ownership", _ownership),
-    ("Lint gates", _lint_gates),
-    ("Checkpoints", _checkpoints),
+OPEN_QUESTIONS = "open_questions"
+# Each section in template order, the contract keys it renders, and its renderer.
+CONTRACT_SECTIONS: tuple[tuple[str, tuple[str, ...], Callable[[dict[str, object]], str]], ...] = (
+    ("Problem", ("problem",), lambda contract: _text(contract, "problem")),
+    ("Existing issues", ("existing_issues",), _existing_issues),
+    ("Prerequisites", ("prerequisites",), _prerequisites),
+    ("Non-goals", ("non_goals",), _non_goals),
+    ("Target contract", ("target",), _target),
+    ("Conventions", ("conventions", "exemplars"), _conventions),
+    ("Overrides", ("overrides",), _overrides),
+    ("Decisions", ("decisions", OPEN_QUESTIONS), _decisions),
+    ("Code inventory", ("inventory",), _inventory),
+    ("Shared-surface ownership", ("ownership",), _ownership),
+    ("Lint gates", ("lint_gates",), _lint_gates),
+    ("Checkpoints", ("checkpoints",), _checkpoints),
 )
 
 
 def render_contract(contract: dict[str, object], open_questions: list[dict[str, object]]) -> str:
     """Return the `## Feature contract` section rendered from plan.json's contract and open questions.
+
+    A section whose keys are all missing, null or empty is left out, heading
+    and all, so a short contract renders only the sections it has.
 
     Args:
         contract: plan.json's `contract` object.
@@ -554,14 +559,12 @@ def render_contract(contract: dict[str, object], open_questions: list[dict[str, 
     Returns:
         The section text, ending with a newline.
     """
-    parts = [CONTRACT_HEADING, f"Grounded at `main@{_text(contract, 'grounded_at')}`."]
-    sections = [
-        *((title, render(contract)) for title, render in CONTRACT_SECTIONS),
-        ("Decisions", _decisions(contract, open_questions)),
-        *((title, render(contract)) for title, render in CONTRACT_SECTIONS_AFTER_DECISIONS),
-    ]
-    for title, text in sections:
-        parts += ["", f"### {title}", text]
+    fields: dict[str, object] = {**contract, OPEN_QUESTIONS: open_questions}
+    grounded_at = _text(contract, "grounded_at")
+    parts = [CONTRACT_HEADING, *([f"Grounded at `main@{grounded_at}`."] if grounded_at else [])]
+    for title, keys, render in CONTRACT_SECTIONS:
+        if any(fields.get(key) for key in keys):
+            parts += ["", f"### {title}", render(fields)]
     return "\n".join(parts) + "\n"
 
 

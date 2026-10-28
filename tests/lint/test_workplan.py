@@ -340,6 +340,53 @@ class RenderTests:
             ("S2", None, "Stub for S2."),
         ]
 
+    def test_short_contract_renders_only_its_sections(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        empty: dict[str, object] = {
+            key: [] for key in ("existing_issues", "prerequisites", "non_goals", "conventions", "exemplars")
+        }
+        empty.update({key: [] for key in ("overrides", "decisions", "lint_gates", "checkpoints")})
+        contract = {
+            **empty,
+            "inventory": None,
+            "problem": "Output shapes disagree.",
+            "target": [
+                {
+                    "surface": "JSON envelope",
+                    "entry": None,
+                    "end_state": "one envelope",
+                    "baseline": {"as_of": "main@944de0ce", "text": "two envelopes"},
+                    "touched_by": ["S1"],
+                }
+            ],
+            "ownership": [{"surface": "envelope", "aspect": "create", "owner": "S1", "extended_by": []}],
+        }
+        plan = {"contract": contract, "slices": [_slice("S1", child=1131)], "open_questions": []}
+        fake = FakeGh({EPIC: ""})
+        path = _write_json(tmp_path / "plan.json", plan)
+
+        code = _main(
+            monkeypatch, fake, "render", "--issue", str(EPIC), "--plan", path, "--session", "s", "--revision", "1"
+        )
+
+        assert code == 0
+        assert fake.bodies[EPIC].split("## Work plan\n")[0] == (
+            "## Feature contract\n"
+            "\n"
+            "### Problem\n"
+            "Output shapes disagree.\n"
+            "\n"
+            "### Target contract\n"
+            "- **JSON envelope**: one envelope\n"
+            "  - Baseline (main@944de0ce): two envelopes\n"
+            "  - Touched by: S1.\n"
+            "\n"
+            "### Shared-surface ownership\n"
+            "| Surface | Aspect | Owner | Extended by |\n"
+            "|---|---|---|---|\n"
+            "| envelope | create | S1 | — |\n"
+            "\n"
+        )
+
     def test_rerender_keeps_slice_state_and_landed_reports(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
