@@ -9,13 +9,16 @@ the comment is refused unless review.json's verdict, action and blocking count
 agree and the pull request head is the commit the review covered. With
 --session, the header also names the dovo session that produced the review, so
 pr-fix can restore that run's state. Every API call targets the pull request's
-own repository.
+own repository. In the comment, each findings table is rebuilt as an HTML table
+with one row per field, so no Issue or Fix text is cut off at GitHub's width.
 """
 
 from __future__ import annotations
 
 import argparse
+import html
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -34,6 +37,11 @@ APPROVED_ACTIONS = ("none", "needs_human")
 CHANGES_REQUIRED_ACTIONS = ("fix", "replan", "needs_human")
 REVIEW_JSON = AGENTIC_DIR / "review.json"
 REVIEW_MD = AGENTIC_DIR / "review.md"
+FINDING_HEADER = ("ID", "Location", "Rule", "Issue", "Fix")
+FINDING_FIELDS = FINDING_HEADER[1:]
+CELL_SEPARATOR = re.compile(r"(?<!\\)\|")
+TABLE_RULE = re.compile(r"^\|(?:\s*:?-+:?\s*\|)+$")
+BLOCK_START = re.compile(r"^(?:[-+*>#]|\d+[.)])(?=\s|$)")
 
 
 class PublishReviewError(RuntimeError):
@@ -52,8 +60,83 @@ def run(*args: str) -> str:
     return subprocess.run(args, check=True, capture_output=True, text=True).stdout.strip()
 
 
+def _cells(line: str) -> list[str] | None:
+    """Return the cells of a Markdown table row with each escaped pipe unescaped, or None when line is not a row."""
+    stripped = line.strip()
+    if len(stripped) < 2 or not (stripped.startswith("|") and stripped.endswith("|")):
+        return None
+    return [cell.strip().replace("\\|", "|") for cell in CELL_SEPARATOR.split(stripped[1:-1])]
+
+
+def _cell_markdown(text: str) -> str:
+    """Return a finding cell's text as one Markdown paragraph for an HTML table cell.
+
+    A leading block marker, such as the `-` of a finding with no rule, is
+    escaped so it is not rendered as a list.
+    """
+    return f"\\{text}" if BLOCK_START.match(text) else text
+
+
+def _finding_rows(cells: list[str]) -> list[str]:
+    """Return one finding's HTML rows: its ID spanning one row per FINDING_FIELDS label, each label beside its text.
+
+    The text sits between blank lines inside its cell, so GitHub renders it as Markdown.
+    """
+    finding_id, *values = cells
+    rows: list[str] = []
+    for position, (label, value) in enumerate(zip(FINDING_FIELDS, values, strict=True)):
+        lead = f'<td rowspan="{len(FINDING_FIELDS)}"><b>{html.escape(finding_id)}</b></td>' if position == 0 else ""
+        rows += [f"<tr>{lead}<td>{label}</td><td>", "", _cell_markdown(value), "", "</td></tr>"]
+    return rows
+
+
+def _finding_table_at(lines: list[str], index: int) -> list[list[str]] | None:
+    """Return the rows' cells of the findings table whose header is lines[index], or None.
+
+    None when no `| ID | Location | Rule | Issue | Fix |` header and rule line
+    start there, when the table has no rows, or when a row does not have five cells.
+    """
+    if _cells(lines[index]) != list(FINDING_HEADER) or index + 1 >= len(lines):
+        return None
+    if not TABLE_RULE.match(lines[index + 1].strip()):
+        return None
+    rows: list[list[str]] = []
+    for line in lines[index + 2 :]:
+        cells = _cells(line)
+        if cells is None:
+            break
+        rows.append(cells)
+    if not rows or any(len(cells) != len(FINDING_HEADER) for cells in rows):
+        return None
+    return rows
+
+
+def finding_tables_html(report: str) -> str:
+    """Return report with each findings table rebuilt as an HTML table, everything else as written.
+
+    A Markdown table gives Issue and Fix a fifth of the width each and GitHub
+    cuts off what does not fit. In the HTML table each finding's ID spans four
+    rows, Location, Rule, Issue and Fix, whose text takes the remaining width.
+    A table with no rows or a malformed row is left as Markdown.
+    """
+    lines = report.splitlines()
+    out: list[str] = []
+    index = 0
+    while index < len(lines):
+        rows = _finding_table_at(lines, index)
+        if rows is None:
+            out.append(lines[index])
+            index += 1
+            continue
+        out += ["<table>", *(row for cells in rows for row in _finding_rows(cells)), "</table>"]
+        index += len(rows) + 2
+    return "\n".join(out) + ("\n" if report.endswith("\n") else "")
+
+
 def comment_body(review: dict[str, object], report: str, *, session: str | None) -> str:
     """Return the comment: the marker, a header stamped from review.json, a blank line, then review.md.
+
+    review.md's findings tables are rebuilt by finding_tables_html.
 
     The header is exactly:
         <!-- dovo-review -->
@@ -76,7 +159,7 @@ def comment_body(review: dict[str, object], report: str, *, session: str | None)
     )
     if session is not None:
         header += f"{SESSION_LABEL}`{session}`\n"
-    return f"{header}\n{report}"
+    return f"{header}\n{finding_tables_html(report)}"
 
 
 def find_own_comment(comments: list[dict[str, object]], viewer: str, *, marker: str = MARKER) -> int | None:

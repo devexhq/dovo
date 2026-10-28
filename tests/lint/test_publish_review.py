@@ -13,6 +13,18 @@ import pytest
 from tests.lint.astlib import REPO_ROOT
 
 PR_HEAD = "a" * 40
+FINDINGS_REPORT = (
+    "### Warnings\n"
+    "\n"
+    "| ID | Location | Rule | Issue | Fix |\n"
+    "|---|---|---|---|---|\n"
+    "| W1 | `src/a.py:9` | - | `_raise_interrupt` is not `x::y_z` \\| ok. | Rename it. |\n"
+    "| W2 | **plan** | `R17` | Stale. | Reword. |\n"
+    "\n"
+    "### Nits\n"
+    "\n"
+    "none\n"
+)
 
 
 def _load_publisher() -> ModuleType:
@@ -65,6 +77,84 @@ class PublishReviewTests:
             "\n"
             "## dovo-review - round 2\n"
         )
+
+    def test_comment_body_rebuilds_finding_tables(self) -> None:
+        review = {"head": PR_HEAD, "verdict": "APPROVE", "action": "none", "round": 2}
+
+        body = PUBLISHER.comment_body(review, FINDINGS_REPORT, session=None)
+
+        assert body.endswith(f"\n{PUBLISHER.finding_tables_html(FINDINGS_REPORT)}")
+        assert '<td rowspan="4"><b>W1</b></td>' in body
+
+    def test_finding_tables_html(self) -> None:
+        html = PUBLISHER.finding_tables_html(FINDINGS_REPORT)
+
+        assert html == (
+            "### Warnings\n"
+            "\n"
+            "<table>\n"
+            '<tr><td rowspan="4"><b>W1</b></td><td>Location</td><td>\n'
+            "\n"
+            "`src/a.py:9`\n"
+            "\n"
+            "</td></tr>\n"
+            "<tr><td>Rule</td><td>\n"
+            "\n"
+            "\\-\n"
+            "\n"
+            "</td></tr>\n"
+            "<tr><td>Issue</td><td>\n"
+            "\n"
+            "`_raise_interrupt` is not `x::y_z` | ok.\n"
+            "\n"
+            "</td></tr>\n"
+            "<tr><td>Fix</td><td>\n"
+            "\n"
+            "Rename it.\n"
+            "\n"
+            "</td></tr>\n"
+            '<tr><td rowspan="4"><b>W2</b></td><td>Location</td><td>\n'
+            "\n"
+            "**plan**\n"
+            "\n"
+            "</td></tr>\n"
+            "<tr><td>Rule</td><td>\n"
+            "\n"
+            "`R17`\n"
+            "\n"
+            "</td></tr>\n"
+            "<tr><td>Issue</td><td>\n"
+            "\n"
+            "Stale.\n"
+            "\n"
+            "</td></tr>\n"
+            "<tr><td>Fix</td><td>\n"
+            "\n"
+            "Reword.\n"
+            "\n"
+            "</td></tr>\n"
+            "</table>\n"
+            "\n"
+            "### Nits\n"
+            "\n"
+            "none\n"
+        )
+
+    @pytest.mark.parametrize(
+        "report",
+        [
+            pytest.param("| ID | Location | Rule | Issue | Fix |\n|---|---|---|---|---|\n\nnone\n", id="no-rows"),
+            pytest.param(
+                "| ID | Location | Rule | Issue | Fix |\n|---|---|---|---|---|\n| B1 | `a.py` | - |\n", id="short-row"
+            ),
+            pytest.param("| ID | Location | Rule | Issue | Fix |\nnot a rule line\n", id="no-rule-line"),
+            pytest.param(
+                "| Requirement | Verdict | Evidence |\n|---|---|---|\n| FR-1 | met | `a.py` |\n", id="other-table"
+            ),
+        ],
+    )
+    def test_finding_tables_html_keeps_other_markdown(self, report: str) -> None:
+        assert PUBLISHER.finding_tables_html(report) == report
 
     @pytest.mark.parametrize("session", [pytest.param("", id="empty"), pytest.param("  ", id="blank")])
     def test_main_rejects_empty_session(
