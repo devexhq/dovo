@@ -25,8 +25,14 @@ Every standard step accepts the following fields:
 | `assert` | `StepAssert` | No | `null` | Verification criteria. See [Assertions Schema](assertions-schema.md). |
 | `on_failure` | `string \| FailureSpec` | No | `abort` | Failure handling policy or detailed retry object. |
 | `artifacts` | `list[ArtifactPublishSpec]` | No | `[]` | Files to publish as artifact revisions when the step succeeds. See [`artifacts` Entries](#artifacts-entries). |
-| `max_files` | `integer` | No | `null` | Agent steps only: most files one attempt's patch may touch (at least `1`). Omitted means no limit. A larger patch is rejected with `TOO_MANY_FILES`. Rejected on `run`, `command`, `script`, `internal` and `ask` steps; `uses` steps are not checked at load time. |
+| `max_files` | `integer` | No | `null` | Agent steps only: most files one attempt's patch may touch (at least `1`). Omitted means no limit. See [`max_files` Limit](#max_files-limit). |
 | `interaction` | `object` | Conditional | `null` | Prompt shown to a person. Required when `type: ask`, rejected on every other type. See [`interaction` Block](#interaction-block). |
+
+### `max_files` Limit
+
+When an attempt's patch touches more distinct files than `max_files`, the patch is rejected. The step's error starts with `Patch touches <count> files; max_files is <max_files>.`
+
+`max_files` is rejected on `run`, `command`, `script`, `internal` and `ask` steps. `uses` steps are not checked at load time.
 
 ---
 
