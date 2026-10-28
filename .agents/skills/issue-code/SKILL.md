@@ -14,7 +14,7 @@ description: >-
 disable-model-invocation: true
 ---
 
-Forked from `dovo-code` at `7253e223`. This copy is temporary: once the slice flow works, it replaces `dovo-code`.
+Forked from `dovo-code` at `de256118`. This copy is temporary: once the slice flow works, it replaces `dovo-code`.
 
 # issue-code
 
