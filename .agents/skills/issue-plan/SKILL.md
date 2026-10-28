@@ -62,7 +62,7 @@ The plan's shape scales with how far the shared surfaces spread, not with how ma
 - **Several issues sharing a surface in one area:** one epic with a short contract (Step 2a).
 - **Issues changing a surface other areas depend on, or setting rules other work will cite:** several sibling epics, with a foundation epic whose pilot runs first. Plan only the epic asked for, and name the siblings and the foundation under What you're approving. Epics never nest.
 
-Write an epic contract only when three or more issues share an owned surface, or a decision would otherwise be made twice. Below that, plan a plain issue. A parent issue below the trigger is not planned itself: report its sub-issues, name the first open one whose blockers are all closed as the one to plan next, as a plain issue, one at a time, and stop. An issue whose body already holds `## Feature contract` is an epic.
+An issue labelled `type:epic` (`gh issue view <n> --json labels --jq '.labels[].name'`) is the user's explicit choice: plan it as an epic whatever the trigger below counts, with a contract as short as what its issues share. The trigger decides the shape only for an unlabelled issue. Write an epic contract only when three or more issues share an owned surface, or a decision would otherwise be made twice. Below that, plan a plain issue. An unlabelled parent issue below the trigger is not planned itself: report its sub-issues, name the first open one whose blockers are all closed as the one to plan next, as a plain issue, one at a time, and stop. An issue whose body already holds `## Feature contract` is an epic.
 
 Read each related issue in full before giving it a role in `existing_issues`, not only its title and blockers:
 
