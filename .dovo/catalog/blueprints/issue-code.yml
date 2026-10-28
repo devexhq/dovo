@@ -1,0 +1,382 @@
+# Forked from `feature-dev.yml` and `ready-issue.yml` at `944de0ce`.
+# Temporary: an experimental copy for the slice flow, which replaces
+# feature-dev and the dovo-* skills once it works. Compare fixes to either
+# source against this copy and carry them over. Step ids, timeouts, failure
+# policies and artifact names match feature-dev's wherever the slice flow does
+# not change them, so commit-fixes, post-review, pr_feedback.py and
+# grade_inputs.py work on slice PRs unchanged.
+version: 1
+name: issue-code
+id: issue-code
+description: Pick the next ready slice of an issue's work plan, load the plan from the session that wrote it, ready the slice's child issue if it is not labelled dovo:ready, claim the slice, implement the slice, review and fix blockers and warnings until none remain or only a person can settle them, report how the slice departed from the plan, then open a PR that closes the child issue, post the final review and record the slice as landed in the work plan
+summary: Next slice of a work plan to a reviewed PR
+
+inputs:
+  issue:
+    type: string
+    description: GitHub issue number whose work plan holds the slice (the epic, or a plain issue)
+    required: true
+    aliases: ["-i", "--issue"]
+
+steps:
+  # The session's own worktree, so moving it loses nothing: the slice starts
+  # from main as it is now, where the previous slice merged.
+  - id: base
+    name: Check out origin/main
+    run: git fetch -q origin main && git switch -q --detach origin/main
+    timeout_seconds: 120
+
+  # Picks without claiming. Refuses, with its reason on stderr, when a slice is
+  # in progress or in review, when an active slice's PR was closed unmerged, or
+  # when no slice is ready; the run stops there. The run's failure line shows
+  # only the exit code, so the reason is read with
+  # `dovo logs <session> --step next`.
+  - id: next
+    name: Pick the next slice
+    run: uv run python scripts/workplan.py next --issue ${{ inputs.issue }}
+    timeout_seconds: 300
+
+  # The latest revisions of the session the work plan points at: the planning
+  # session, or the code session of the last slice that amended the plan.
+  - id: load-plan
+    name: Load the plan
+    uses: dovo/download-artifact
+    env:
+      ARTIFACT_NAME: plan
+      ARTIFACT_DEST: .
+      ARTIFACT_SESSION_ID: "{{ steps.next.outputs.plan_session }}"
+
+  - id: load-plan-questions
+    name: Load the plan's JSON
+    uses: dovo/download-artifact
+    env:
+      ARTIFACT_NAME: plan-questions
+      ARTIFACT_DEST: .
+      ARTIFACT_SESSION_ID: "{{ steps.next.outputs.plan_session }}"
+
+  # --- ready-issue's gate steps, run on the slice's child issue. A step cannot
+  # be skipped, so each of them passes straight through when the child is
+  # already labelled dovo:ready. ---
+
+  - id: child-ready
+    name: Check whether the child issue is labelled dovo:ready
+    run: |
+      set -eu
+      labels=$(gh issue view {{ steps.next.outputs.child }} --json labels --jq '.labels[].name')
+      if printf '%s\n' "$labels" | grep -qx 'dovo:ready'; then
+        echo "Issue {{ steps.next.outputs.child }} is labelled dovo:ready."
+        echo "labelled=true" >> "$DOVO_OUTPUT"
+      else
+        echo "Issue {{ steps.next.outputs.child }} is not labelled dovo:ready; readying it."
+        echo "labelled=false" >> "$DOVO_OUTPUT"
+      fi
+    timeout_seconds: 120
+
+  - id: check
+    name: Re-ground and re-check the child issue
+    type: agent
+    prompt: |
+      Child issue already labelled dovo:ready: {{ steps.child-ready.outputs.labelled }}
+
+      If that is true, write only .agentic/issue-ready.md, containing the one line
+      "Issue #{{ steps.next.outputs.child }} is already labelled dovo:ready; not re-checked.",
+      and stop. Otherwise run:
+
+      /dovo-issue ready {{ steps.next.outputs.child }}
+
+      Follow the Ready mode section of .agents/skills/dovo-issue/SKILL.md if the slash command is
+      not recognized. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
+      .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md when the
+      verdict is needs_edits. Do not edit the issue, its labels or its comments.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: issue-ready, path: ".agentic/issue-*" }
+
+  # Any verdict but ready means the current body is stale, so a label left from
+  # an earlier run is removed and never vouches for it; apply adds it back after
+  # the edits. Stops the run before the person is asked unless the verdict is
+  # ready or needs_edits: a not_ready issue needs a split, a decision or a
+  # closed blocker, which no edit here can supply.
+  - id: gate
+    name: Stop when the child issue needs a person
+    run: |
+      set -eu
+      [ "{{ steps.child-ready.outputs.labelled }}" = "true" ] && { echo "Already labelled dovo:ready."; exit 0; }
+      verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
+      echo "Verdict: $verdict"
+      [ "$verdict" = "ready" ] && exit 0
+      labels=$(gh issue view {{ steps.next.outputs.child }} --json labels --jq '.labels[].name')
+      if printf '%s\n' "$labels" | grep -qx 'dovo:ready'; then
+        gh issue edit {{ steps.next.outputs.child }} --remove-label dovo:ready
+      fi
+      [ "$verdict" = "needs_edits" ] && exit 0
+      cat .agentic/issue-ready.md
+      exit 1
+    timeout_seconds: 120
+
+  # Asked on every run, including one where the child is already labelled,
+  # since a step cannot be skipped; denying stops the run with the issue
+  # untouched.
+  - id: approve
+    name: Approve the edits and the label
+    type: ask
+    interaction:
+      mode: confirm
+      message: >-
+        Apply the proposed edits, if any, to child issue {{ steps.next.outputs.child }} and label it
+        dovo:ready? Already labelled: {{ steps.child-ready.outputs.labelled }} (when true, nothing is applied).
+      artifact: issue-ready
+
+  # A command step: the writes to GitHub run exactly as approved, with the
+  # host's gh credentials.
+  - id: apply
+    name: Apply the edits, label the child issue and comment
+    run: |
+      set -eu
+      [ "{{ steps.child-ready.outputs.labelled }}" = "true" ] && { echo "Already labelled dovo:ready; nothing to apply."; exit 0; }
+      verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
+      if [ "$verdict" = "needs_edits" ]; then
+        for proposal in .agentic/issue-title .agentic/issue-body.md; do
+          [ -s "$proposal" ] || { echo "Verdict is needs_edits but $proposal is missing or empty; not labelling."; exit 1; }
+        done
+        gh issue edit {{ steps.next.outputs.child }} --title "$(head -n 1 .agentic/issue-title)" --body-file .agentic/issue-body.md
+      elif [ "$verdict" != "ready" ]; then
+        echo "Unexpected verdict '$verdict'; not labelling."
+        exit 1
+      fi
+      gh label create dovo:ready --color 0e8a16 --description "Re-grounded against main and ready to plan" --force
+      gh issue edit {{ steps.next.outputs.child }} --add-label dovo:ready
+      gh issue comment {{ steps.next.outputs.child }} --body-file .agentic/issue-ready-comment.md
+    timeout_seconds: 300
+
+  # Claimed only once the child issue is ready, so a child that turns out
+  # not_ready leaves the slice pending rather than stuck in progress.
+  - id: claim
+    name: Claim the slice for this session
+    run: >-
+      uv run python scripts/workplan.py claim --issue ${{ inputs.issue }}
+      --slice {{ steps.next.outputs.slice }} --session "$DOVO_SESSION_ID"
+    timeout_seconds: 120
+
+  # --- feature-dev's code and review loops, scoped to the slice. ---
+
+  - id: code-loop
+    name: Implement until the quality gate passes
+    type: loop
+    max_iterations: 5
+    until:
+      - steps.code.outputs.status != "unfixable"
+      - steps.code.outputs.status != "timeout"
+      - steps.code.outputs.status != "provider_error"
+      - steps.code.outputs.status != "blocked"
+      # Workaround for #1141: a failed verify is recorded as ignored with exit
+      # code 0, so only its status shows the failure. Revert to
+      # `steps.verify.exit_code == 0` when #1141 lands.
+      - steps.verify.status == "completed"
+    on_max_iterations: prompt_user
+    do:
+      - id: code
+        name: Implement the slice
+        type: agent
+        prompt: |
+          /issue-code --slice {{ steps.next.outputs.slice }}
+
+          Follow .agents/skills/issue-code/SKILL.md if the slash command is not recognized.
+          Implement slice {{ steps.next.outputs.slice }} of .agentic/plan.md for issue
+          ${{ inputs.issue }}; its child issue is {{ steps.next.outputs.child }}. Do not commit,
+          stage or push.
+          If .agentic/gate.log exists, a previous attempt left the working tree in a failing
+          state: read it, keep the existing work and fix what it reports.
+        tools: { allow_all: true }
+        timeout_seconds: 3600
+        artifacts: [{ name: implementation-report, path: .agentic/implementation-report.md }]
+
+      - id: verify
+        name: Run the quality gate
+        run: uv run dovo run quality > .agentic/gate.log 2>&1
+        timeout_seconds: 1800
+        on_failure: continue
+
+  - id: pr-prep
+    name: Draft the commit message and branch name
+    type: agent
+    prompt: |
+      Run /pr-prep (follow .agents/skills/pr-prep/SKILL.md if the slash
+      command is not recognized). The change implements slice {{ steps.next.outputs.slice }} of
+      issue ${{ inputs.issue }}, tracked by issue {{ steps.next.outputs.child }}.
+      Read the change with `git status` and `git diff`, and ignore `.dovo/run` and `.agentic/`.
+      The commit message and branch name are used now; `pr-describe` rewrites the PR title and
+      description after review. Also write .agentic/pr-branch: one line, a new branch name
+      `<username>/<short-description>`, with the username your own branches use.
+    tools: { allow_all: true }
+    timeout_seconds: 900
+
+  # A command step: it commits the implementation so each review round
+  # reviews, and stamps, a real commit. Nothing is squashed later. A retry
+  # after a failure stays on the branch the first attempt created, and a
+  # branch name that already exists elsewhere still fails the switch.
+  - id: commit
+    name: Commit the implementation
+    run: |
+      set -eu
+      branch=$(head -n 1 .agentic/pr-branch)
+      git fetch -q origin main
+      [ "$(git branch --show-current)" = "$branch" ] || git switch -q -c "$branch"
+      git rm -r -q --cached --ignore-unmatch .dovo/run
+      git add -A
+      git commit -q -F .agentic/commit-msg
+    timeout_seconds: 300
+    on_failure: prompt_user
+
+  # Fixes every blocker and warning without asking, until a review reports
+  # none or sets action needs_human or replan, which only a person can settle:
+  # the run then opens the PR and the posted review carries that decision.
+  # Suggestions and nits stay in the posted review for the human. The round
+  # that ends the loop still runs the fixer, which then changes nothing. After
+  # the last round the run still opens the PR, and the posted review lists what
+  # is left.
+  - id: review-loop
+    name: Review and fix until no blockers or warnings remain or a person must decide
+    type: loop
+    max_iterations: 3
+    until:
+      # Workaround for #1141: a failed remaining is recorded as ignored with
+      # exit code 0, so only its status shows the failure. Revert to
+      # `steps.remaining.exit_code == 0` when #1141 lands.
+      - steps.remaining.status == "completed"
+    on_max_iterations: continue
+    do:
+      - id: review
+        name: Review the change
+        type: agent
+        prompt: |
+          /issue-review --slice {{ steps.next.outputs.slice }}
+
+          Follow .agents/skills/issue-review/SKILL.md if the slash command is not recognized.
+          Review the commits on this branch against origin/main as slice
+          {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked by issue
+          {{ steps.next.outputs.child }}, and write .agentic/review.md, .agentic/review.json
+          and .agentic/verdict.txt. Do not read .agentic/implementation-report.md.
+        tools: { allow_all: true }
+        timeout_seconds: 1800
+        artifacts: [{ name: review, path: ".agentic/review.*" }]
+
+      - id: remaining
+        name: Check for blockers and warnings an agent can fix
+        run: >-
+          uv run python -c 'import json, sys;
+          review = json.load(open(".agentic/review.json"));
+          needs_person = review.get("action") in ("needs_human", "replan");
+          sys.exit(not needs_person and any(f["severity"] in ("BLOCKER", "WARNING") for f in review["findings"]))'
+        on_failure: continue
+
+      - id: fix
+        name: Fix the blockers and warnings
+        type: agent
+        prompt: |
+          /issue-code review --tiers blockers,warnings
+
+          Follow .agents/skills/issue-code/SKILL.md if the slash command is not recognized.
+          If .agentic/review.json lists no BLOCKER or WARNING findings, or its action is
+          needs_human or replan, change nothing and report that you did nothing. Do not commit,
+          stage or push.
+        tools: { allow_all: true }
+        timeout_seconds: 3600
+        artifacts: [{ name: implementation-report, path: .agentic/implementation-report.md }]
+
+      - id: commit-fixes
+        uses: commit-fixes
+
+  # Written from everything committed, so it reports the code the final review
+  # saw. The plan is republished whether or not it changed: land repoints the
+  # work plan at this session only when the report says the plan was amended.
+  # The sweep drafts stay in the worktree, where land reads them through
+  # sweep.json; they are not published, since most slices write none.
+  - id: report
+    name: Report how the slice departed from the plan and draft the sweep
+    type: agent
+    prompt: |
+      Compare `git diff origin/main...HEAD` with slice {{ steps.next.outputs.slice }} of
+      .agentic/plan.md and .agentic/plan.json, with issue ${{ inputs.issue }} and with its child
+      issue {{ steps.next.outputs.child }}. Read both issues with `gh issue view`.
+
+      1. Write .agentic/slice-report.md with bullets under the headings Departures, Later slices
+         affected and Deferred, omitting a heading with nothing under it. Every deferred item
+         names the slice or issue that owns it.
+      2. If a later slice's instructions are now wrong, amend that slice only in
+         .agentic/plan.md and .agentic/plan.json, keeping plan.json in the shape the issue-plan
+         skill defines (`.agents/skills/issue-plan/SKILL.md`), and say under Later slices affected
+         that the plan was amended. Never change this slice or an earlier one.
+      3. Find the open issues whose body this change makes false: the epic's open sub-issues,
+         the issues the feature contract maps, and any open issue citing code this change moved,
+         renamed or removed. Leave out issue ${{ inputs.issue }}, whose body the work plan script
+         owns, and child issue {{ steps.next.outputs.child }}, which this PR closes. For each one:
+         - Fetch its body once with `gh issue view <n> --json body` and take the sha256 of the
+           `body` string, UTF-8 encoded, exactly as that JSON returns it (no newline added).
+         - Write .agentic/sweep/<n>.md: the whole body with only the false sentences corrected.
+         - Write .agentic/sweep/<n>.comment.md: one short paragraph naming slice
+           {{ steps.next.outputs.slice }} of #${{ inputs.issue }} and each sentence changed.
+      4. Write .agentic/sweep.json: a JSON array with one object per issue from step 3, with the
+         keys issue (a number), expected_body_sha256, body_file and comment_file. The file paths
+         are relative to .agentic/, as in "sweep/1060.md". Write [] when no issue is affected.
+
+      Do not edit any issue, and do not commit, stage or push.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: slice-report, path: .agentic/slice-report.md }
+      - { name: plan, path: .agentic/plan.md }
+      - { name: plan-questions, path: .agentic/plan.json }
+      - { name: sweep, path: .agentic/sweep.json }
+
+  # Written last, from everything committed, so the PR text matches the code
+  # the final review saw rather than the code before the fix rounds.
+  - id: pr-describe
+    name: Describe the PR from the reviewed branch
+    type: agent
+    prompt: |
+      Follow .agents/skills/pr-prep/SKILL.md (or run /pr-prep) to draft only .agentic/pr-title
+      and .agentic/pr-description, overwriting both. The change implements slice
+      {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked by issue
+      {{ steps.next.outputs.child }}; .agentic/slice-report.md says how it departed from the plan.
+      Everything is already committed, so read it with `git log --oneline origin/main..HEAD` and
+      `git diff origin/main...HEAD` instead of the uncommitted diff, and ignore `.dovo/run`. The
+      skill's stop when nothing is uncommitted does not apply here: always rewrite both files.
+      End .agentic/pr-description with the closing lines between the two markers below, one or
+      two of them, exactly as given and in this order, each on a line of its own. Use no other
+      closing keyword (Fixes, Closes, Resolves) anywhere else in the description.
+      --- closing lines ---
+      {{ steps.next.outputs.closing_lines }}
+      --- end of closing lines ---
+      Do not touch .agentic/commit-msg or .agentic/pr-branch, and do not commit, stage or push.
+    tools: { allow_all: true }
+    timeout_seconds: 900
+    artifacts:
+      - { name: pr-description, path: .agentic/pr-description }
+
+  # A command step, not an agent step: it inherits the host environment, so git
+  # reaches the user's SSH agent, which agent steps never see.
+  - id: push
+    name: Push and open the PR
+    run: uv run python scripts/pr.py
+    timeout_seconds: 600
+
+  # Pauses on failure rather than finishing without the comment: retry after a
+  # GitHub error, or continue when the publisher refused a review that no
+  # longer matches the PR head (a fix landed after the final review).
+  - id: post-review
+    uses: post-review
+
+  # A command step: the issue bodies are written by the script alone, with the
+  # host's gh credentials. Pauses on failure so a GitHub error can be retried;
+  # the PR is already open.
+  - id: land
+    name: Record the slice as landed and apply the sweep
+    run: >-
+      uv run python scripts/workplan.py land --issue ${{ inputs.issue }}
+      --slice {{ steps.next.outputs.slice }} --session "$DOVO_SESSION_ID"
+      --pr "$(head -n 1 .agentic/pr-url | sed 's#.*/##')"
+      --report .agentic/slice-report.md --plan .agentic/plan.json --sweep .agentic/sweep.json
+    timeout_seconds: 300
+    on_failure: prompt_user
