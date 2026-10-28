@@ -246,6 +246,102 @@ def split_workplan(body: str) -> tuple[WorkPlan, str]:
     return plan, section[match.end() :].strip("\n")
 
 
+def _table_cells(line: str) -> list[str]:
+    """Return one markdown table row's cells, stripped, splitting on unescaped pipes."""
+    return [cell.strip() for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+
+
+def _hand_table(section: str) -> list[list[str]]:
+    """Return the first markdown table in section as rows of cells, header first, without its separator row."""
+    lines: list[str] = []
+    for line in section.splitlines():
+        if line.lstrip().startswith("|"):
+            lines.append(line)
+        elif lines:
+            break
+    return [_table_cells(line) for line in lines[:1] + lines[2:]]
+
+
+def _hand_child(slice_id: str, cell: str) -> int | None:
+    """Return the child issue a hand table's cell records: `#n`, or None when the cell names no issue."""
+    match = re.fullmatch(r"#(\d+)", cell)
+    if match is not None:
+        return int(match.group(1))
+    if re.search(r"#\d", cell):
+        raise WorkplanError(f"the hand-maintained work plan's row {slice_id} has child {cell!r}, which is not one `#n`")
+    return None
+
+
+def _hand_status(slice_id: str, cell: str) -> str:
+    """Return the status a hand table's cell records; only pending and merged carry over without a PR or session."""
+    status = "pending" if cell in ("", NONE_CELL) else cell.lower().replace(" ", "_")
+    if status not in ("pending", "merged"):
+        raise WorkplanError(
+            f"the hand-maintained work plan's row {slice_id} has status {cell!r}, not pending or merged"
+        )
+    return status
+
+
+def _column(header: list[str], word: str) -> int | None:
+    """Return the index of the first header cell containing word, ignoring case, or None."""
+    return next((index for index, cell in enumerate(header) if word in cell.lower()), None)
+
+
+def _hand_row(cells: list[str], child_at: int | None, status_at: int | None) -> Slice:
+    """Return one hand table row as a work plan row keyed by its first cell, carrying its child and status."""
+    slice_id = cells[0].strip("`* ")
+    child = _hand_child(slice_id, cells[child_at]) if child_at is not None and child_at < len(cells) else None
+    status = _hand_status(slice_id, cells[status_at] if status_at is not None and status_at < len(cells) else "")
+    return Slice(slice_id, slice_id, [], [], False, child, None, status)
+
+
+def _hand_landed(section: str) -> str:
+    """Return the `### <id> as landed` sections of a hand-maintained work plan, each up to the next `### ` heading."""
+    chunks = re.split(r"(?m)^(?=### )", section)
+    landed = [chunk.strip("\n") for chunk in chunks if re.match(r"### \S+ as landed\b", chunk)]
+    return "\n\n".join(landed)
+
+
+def current_rows(body: str, plan_slices: list[Slice]) -> tuple[list[Slice], str]:
+    """Return plan_slices merged with the body's work plan rows, and its "as landed" reports.
+
+    A body without a `## Work plan` section gives plan_slices as they are; a
+    hand-maintained one is adopted by `adopt_hand_workplan`.
+    """
+    span = find_section(body, WORKPLAN_HEADING)
+    if span is None:
+        return plan_slices, ""
+    section = body[span[0] : span[1]]
+    if WORKPLAN_COMMENT_RE.search(section) is None:
+        return adopt_hand_workplan(section, plan_slices)
+    current, landed = split_workplan(body)
+    return merge_rows(plan_slices, current.slices), landed
+
+
+def adopt_hand_workplan(section: str, plan_slices: list[Slice]) -> tuple[list[Slice], str]:
+    """Return plan_slices carrying over a hand-maintained work plan's rows, and its "as landed" reports.
+
+    A `## Work plan` section without a `dovo:workplan` comment is hand-maintained:
+    its first table's rows give each slice's id (the first cell), child issue
+    (a `Child` column) and status (a `Status` column), and its `### <id> as
+    landed` sections are kept. Everything else in the section is replaced.
+
+    Raises:
+        WorkplanError: When a row's child or status cannot be read, or its id matches no plan.json slice.
+    """
+    table = _hand_table(section)
+    header = table[0] if table else []
+    rows = [_hand_row(cells, _column(header, "child"), _column(header, "status")) for cells in table[1:]]
+    planned = {row.id for row in plan_slices}
+    unmatched = [row.id for row in rows if row.id not in planned]
+    if unmatched:
+        raise WorkplanError(
+            f"the hand-maintained work plan's row {', '.join(unmatched)} matches no plan.json slice; "
+            "give the slice that id or remove the row"
+        )
+    return merge_rows(plan_slices, rows), _hand_landed(section)
+
+
 def _stored_slice(data: dict[str, object]) -> Slice:
     """Return one slice row from the dovo:workplan comment's JSON."""
     stub = data.get("stub")
@@ -851,14 +947,11 @@ def _load_json(path: str) -> object:
 
 
 def cmd_render(issue: int, plan_path: str, session: str, revision: int) -> None:
-    """Write the feature contract and work plan from plan.json into issue's body."""
+    """Write the feature contract and work plan from plan.json into issue's body, adopting a hand-maintained work plan."""
     data = _load_json(plan_path)
     contract, slices = parse_plan(data, issue)
     body = read_body(issue)
-    landed = ""
-    if find_section(body, WORKPLAN_HEADING) is not None:
-        current, landed = split_workplan(body)
-        slices = merge_rows(slices, current.slices)
+    slices, landed = current_rows(body, slices)
     new = with_workplan(body, WorkPlan(session, revision, slices), landed)
     if contract is not None:
         raw_questions = _list(_object(data, "plan.json").get("open_questions"))

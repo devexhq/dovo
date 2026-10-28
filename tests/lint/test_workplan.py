@@ -461,6 +461,110 @@ class RenderTests:
         assert fake.edits == []
 
 
+# An epic body in the shape of #928's before the work plan script existed: a hand-written contract and a
+# hand-maintained `## Work plan` with prose, a table and no dovo:workplan comment, followed by another section.
+HAND_WORKPLAN = """\
+## Work plan
+
+Maintained by hand until `workplan.py` exists.
+
+| Slice | Scope | Child issue | Depends on | Blocked by | Status |
+|---|---|---|---|---|---|
+| A1 | `dovo init` to summaries; the code names (pilot) | #1112 | — | — | pending |
+| A2 | Config tier loading raises `ConfigError` | #1118 | A1 | #1192 | merged |
+| A7 | Closing docs review | created when next | A1, A2 | — | pending |
+
+A2 depends on A1 only for its conventions.
+- #925: S1 is blocked by A2.
+
+### A2 as landed (#1301)
+- Departed.
+"""
+HAND_TAIL = "\n## References\n\n- Kept.\n"
+
+
+def _hand_body(workplan: str = HAND_WORKPLAN) -> str:
+    """Return INTRO, a hand-written contract, workplan and HAND_TAIL, as one body."""
+    return f"{INTRO}\n## Feature contract\nHand-written contract.\n\n{workplan}{HAND_TAIL}"
+
+
+class AdoptTests:
+    def _render(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake: FakeGh, ids: tuple[str, ...]) -> int:
+        """Render a plan of slices with ids, each with a stub and no child, into EPIC's body."""
+        plan = {"contract": CONTRACT, "slices": [_slice(slice_id) for slice_id in ids], "open_questions": []}
+        path = _write_json(tmp_path / "plan.json", plan)
+        argv = ("render", "--issue", str(EPIC), "--plan", path, "--session", PLAN_SESSION, "--revision", "1")
+        return _main(monkeypatch, fake, *argv)
+
+    def test_replaces_the_hand_section_and_the_contract_and_nothing_else(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = FakeGh({EPIC: _hand_body()})
+
+        assert self._render(tmp_path, monkeypatch, fake, ("A1", "A2", "A7")) == 0
+
+        body = fake.bodies[EPIC]
+        contract = WORKPLAN.render_contract(CONTRACT, "")
+        assert body.startswith(
+            f"{INTRO}\n{contract}\n## Work plan\nPlan Session ID: `{PLAN_SESSION}` (plan revision 1)\n"
+        )
+        assert body.endswith("-->\n\n### A2 as landed (#1301)\n- Departed.\n" + HAND_TAIL)
+        assert "Maintained by hand" not in body
+        assert "Hand-written contract." not in body
+
+    def test_carries_over_each_rows_child_and_status(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = FakeGh({EPIC: _hand_body()})
+
+        assert self._render(tmp_path, monkeypatch, fake, ("A1", "A2", "A3", "A7")) == 0
+
+        assert [(row["id"], row["child"], row["stub"], row["status"]) for row in _rows(fake.bodies[EPIC])] == [
+            ("A1", 1112, None, "pending"),
+            ("A2", 1118, None, "merged"),
+            ("A3", None, "Stub for A3.", "pending"),
+            ("A7", None, "Stub for A7.", "pending"),
+        ]
+
+    @pytest.mark.parametrize(
+        ("workplan", "ids", "reason"),
+        [
+            pytest.param(
+                HAND_WORKPLAN,
+                ("S1", "S2", "S7"),
+                "the hand-maintained work plan's row A1, A2, A7 matches no plan.json slice; "
+                "give the slice that id or remove the row",
+                id="unmatched-row",
+            ),
+            pytest.param(
+                HAND_WORKPLAN.replace("| merged |", "| in progress |"),
+                ("A1", "A2", "A7"),
+                "the hand-maintained work plan's row A2 has status 'in progress', not pending or merged",
+                id="unsafe-status",
+            ),
+            pytest.param(
+                HAND_WORKPLAN.replace("| #1118 |", "| #1118, #1119 |"),
+                ("A1", "A2", "A7"),
+                "the hand-maintained work plan's row A2 has child '#1118, #1119', which is not one `#n`",
+                id="unsafe-child",
+            ),
+        ],
+    )
+    def test_refuses_a_row_it_cannot_carry_over_safely(
+        self,
+        workplan: str,
+        ids: tuple[str, ...],
+        reason: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        fake = FakeGh({EPIC: _hand_body(workplan)})
+
+        assert self._render(tmp_path, monkeypatch, fake, ids) == 1
+
+        assert capsys.readouterr().err == f"workplan.py: {reason}\n"
+        assert fake.edits == []
+
+
 class NextTests:
     @pytest.mark.parametrize(
         ("rows", "picked", "closing"),
