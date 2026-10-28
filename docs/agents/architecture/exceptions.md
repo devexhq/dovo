@@ -27,7 +27,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
   - User-authored catalog definitions (blueprint and step YAML in any catalog tier, `.dovo/catalog/` included) are not Dovo's own state. A failure to read one is reported by its message alone, raised `from None` and never recorded.
   - A failure of an external tool or the environment that the code and message already name (git missing or failing to start) is raised `from None`.
 - **Why:** `catch_failure` records a `DomainError` only when its `__cause__` is an `OSError`, so the cause alone decides whether an event file is written.
-- **Since:** #1109
+- **Since:** #1214
 - **Example:**
   ```python
   except OSError as exc:
