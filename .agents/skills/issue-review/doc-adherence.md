@@ -1,4 +1,4 @@
-Forked from `dovo-review/doc-adherence.md` at `944de0ce`.
+Forked from `dovo-review/doc-adherence.md` at `7253e223`.
 
 # Doc adherence gates
 

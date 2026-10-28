@@ -11,7 +11,7 @@ description: >-
 disable-model-invocation: true
 ---
 
-Forked from `dovo-plan` at `944de0ce`. This copy is temporary: once the slice flow works, it replaces `dovo-plan`.
+Forked from `dovo-plan` at `7253e223`. This copy is temporary: once the slice flow works, it replaces `dovo-plan`.
 
 # issue-plan
 
