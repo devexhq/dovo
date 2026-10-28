@@ -6,7 +6,7 @@
   },
   "worktree": {
     "base_ref": "HEAD",
-    "max_active_worktrees": 10,
+    "max_active_worktrees": 30,
     "default_timeout_seconds": 900
   },
   "default_agent": "claude",
