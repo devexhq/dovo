@@ -66,7 +66,7 @@ Write `.agentic/plan-walkthrough.md`, overwriting any earlier one, in this struc
 
 Write for a person who knows Dovo as a user and a contributor but has not read the plan:
 
-- **Before and after.** One row per user-visible situation the plan changes: a command and condition, in terminal and `--format json` separately when they differ. Bold the cells where a user loses something they have today. Add a row for what stays unchanged when a reader would reasonably expect it to change, such as related commands the issue leaves out of scope. For a change with no user-visible effect, write one row saying so, and what the change is for.
+- **Before and after.** One row per user-visible situation the plan changes: a command and condition, in terminal and `--format json` separately when they differ. Bold the cells where a user loses something they have today. Add a row for what stays unchanged when a reader would reasonably expect it to change, such as related commands the issue does not change. For a change with no user-visible effect, write one row saying so, and what the change is for.
 - **Phases.** Plain outcomes, not file lists. Name a symbol or file only when a reviewer needs it to find the change.
 - **Decisions.** Only those a human might disagree with: open questions answered by the human or accepted with their assumed answer, departures from the issue, and trade-offs. Drop decisions only an implementer would care about. Do not cite `OQ-<n>`, review or challenge ids; state the decision itself.
 - **What to check.** At most five items, each something a person can verify in minutes: a test that pins a contract, a search that must come back empty, a kind of edit that would weaken an assertion.
