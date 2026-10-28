@@ -167,7 +167,7 @@ Before running `gh issue create` or `gh issue edit`:
    - It has no sub-issues. For a parent, name the first open sub-issue whose blockers are all closed.
    - Every blocker is closed.
    - It has exactly one `dovo-size-*` label.
-3. **Re-ground.** Run **Workflow → Ground** against `origin/main` and compare what you find with the issue. Look for in-scope work that has already shipped, **Owned elsewhere** bullets whose issue is closed or no longer owns the work (delete the bullet when the work shipped; otherwise raise the ownerless-deferral finding in step 5), paths and symbols that moved or no longer exist, callers the issue does not account for, and internal shapes pinned where an observable contract would do (**Core Principles** 4), including new symbols that would shadow existing ones.
+3. **Re-ground.** Run **Workflow → Ground** against `origin/main` and compare what you find with the issue. Look for in-scope work that has already shipped, **Owned elsewhere** bullets whose issue is closed or no longer owns the work (delete the bullet when the work shipped; otherwise re-run the owner search in step 1 of the **Out of scope** conversion in step 5, replace the pointer when an open issue now owns the work, and raise the ownerless-deferral finding in step 5 only when no open issue owns it), paths and symbols that moved or no longer exist, callers the issue does not account for, and internal shapes pinned where an observable contract would do (**Core Principles** 4), including new symbols that would shadow existing ones.
 4. **Re-check.** Check the body against **Core Principles**, **Split**, **Issue Structure** and the **Pre-Publish Checklist**. A finding that requires a split, or a product decision the issue cannot make for itself, makes the verdict `not_ready`: recommend the split or name the decision, and do not draft around it.
 5. **Rules.** Read every rule in `AGENTS.md`, then check the body against those the change can touch:
    - R1, R3 to R6, R9 to R14, R16 and R17 always apply. R2 applies when the issue touches `cli/` handlers, R7 when it reads secrets or writes log or diagnostic context, R8 when it adds a migration, R15 when it prescribes a test double, and R18 when it changes a page under `docs/` outside `docs/agents/`.
@@ -189,18 +189,18 @@ Before running `gh issue create` or `gh issue edit`:
    - Fix each finding with an observable contract where one exists (**Core Principles** 4), not with the implementation steps that would satisfy the rule.
    - Report findings only, never a clause-by-clause table.
 6. **Propose.** When every finding can be fixed by editing the title or body, write the full new body to `.agentic/issue-body.md` and the title, on one line, to `.agentic/issue-title`, even when only one of them changes. The verdict is `needs_edits`. With no findings, write neither file; the verdict is `ready`.
-7. **Report.** Write `.agentic/issue-ready.md`: the verdict, the base sha, and one line per finding with its evidence and fix. Write `.agentic/issue-ready-comment.md`, the comment posted with the label: `Ready to plan at <sha> (<YYYY-MM-DD>).`, followed by one bullet per change the edit makes, or `No changes needed.` Write `.agentic/issue-ready.json` to agree with the report (the issue numbers and shas below are illustrative):
+7. **Report.** Write `.agentic/issue-ready.md`: the verdict, the base sha, and one line per finding with its evidence and fix. Write `.agentic/issue-ready-comment.md`, the comment posted with the label: `Ready to plan at <sha> (<YYYY-MM-DD>).`, followed by one bullet per change the edit makes, or `No changes needed.` Write `.agentic/issue-ready.json` to agree with the report (the issue numbers and shas below are illustrative placeholders; do not look them up):
 
 ```json
 {
-  "issue": 923,
+  "issue": 9000,
   "verdict": "needs_edits",
   "grounded_at": "630086c0",
   "findings": [
     {
       "id": "F1",
       "kind": "stale",
-      "summary": "Owned elsewhere says #918 owns making git execution injectable, which shipped in fa99a3eb.",
+      "summary": "Owned elsewhere says #9010 owns making git execution injectable, which shipped in fa99a3eb.",
       "evidence": "src/dovo/core/worktree/worktree.py:39",
       "fix": "Delete the bullet."
     }

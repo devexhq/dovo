@@ -1,7 +1,7 @@
 # Example GitHub issue
 
 Canonical example of structure, depth, and tone for Dovo CLI issues.
-The block below is the issue body only (title: `Implement config loader`). Its issue numbers are illustrative and do not refer to real issues.
+The block below is the issue body only (title: `Implement config loader`). Its issue numbers (#9001 to #9003) are illustrative placeholders, chosen above any real issue number; do not look them up.
 
 ---
 
@@ -27,9 +27,9 @@ The block below is the issue body only (title: `Implement config loader`). Its i
 - Update in-tree callers and tests to the new API in the same change
 
 ### Owned elsewhere
-- #412 owns the CLI subcommands (`dovo config show`, `dovo config set`, `dovo config unset`, `dovo config validate`) and their terminal rendering of effective config and the defaults overlay
-- #413 owns mutating config on disk (dot-path set/unset, typed CLI value parsing, atomic writes)
-- #414 owns config generation, repair and overwrite (the `dovo init` generator)
+- #9001 owns the CLI subcommands (`dovo config show`, `dovo config set`, `dovo config unset`, `dovo config validate`) and their terminal rendering of effective config and the defaults overlay
+- #9002 owns mutating config on disk (dot-path set/unset, typed CLI value parsing, atomic writes)
+- #9003 owns config generation, repair and overwrite (the `dovo init` generator)
 
 ---
 
