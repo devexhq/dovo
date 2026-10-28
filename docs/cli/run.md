@@ -60,7 +60,9 @@ The `path` of a `cleanup` event (including with `--format json`) is relative to 
 7. **Diagnostic logs**: When a run hits an unexpected error, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record and, in terminal output, prints one `Details logged: <path> (event <event_id>)` line per record after the run's warnings and outcome. This covers loading the session record, saving the run's state or status, saving its diff, creating, applying (with `--auto-apply`) or removing its worktree, reconciling interrupted sessions, loading the blueprint (including snapshotting its definitions), and a step launching its process, reading its output, calling its agent provider, publishing its artifacts, resolving its `uses:` step, checking an agent's edit or preparing its private scratch, including when the operating system refuses to create that scratch. The run's errors and warnings, each step's error and the saved session hold the message alone, and a recorded step failure adds no `Details logged:` warning; the step's own warnings, such as a failed optional artifact publish, still appear. When loading the blueprint or the run itself hits any other unexpected error, the run fails with `Unexpected error during engine.run: <error>`. `--format json` output carries no reference to the record. When checking an agent's edit fails, the rejected edit is saved and discarded, or left in the worktree when it cannot be saved.
 8. **Exit Codes**:
    - `0`: Successful run or paused run (with run state saved).
-   - `1`: Failed or cancelled run, or a failed automatic initialization.
+   - `1`: Failed run, or a failed automatic initialization.
+   - Interrupted with `SIGINT` (Ctrl-C): `dovo run` finishes its cleanup, then ends by the same signal, so shells report `130` and a shell loop stops. A run interrupted while a step runs stops the step, is recorded `cancelled` and prints its outcome first; its worktree is removed unless `--keep` was given. A run interrupted at a `prompt_user` failure prompt, an `ask` prompt or a loop `max_iterations` prompt stays paused.
+   - Interrupted with `SIGTERM`: the same, ending by `SIGTERM` (shells report `143`).
 
 ## Examples
 

@@ -29,7 +29,13 @@ from dovo.core.sessions.services.read_logs import read_session_log_events
 from dovo.core.worktree.models import WorktreeSession
 from dovo.engine import RunCoordinator, SessionStateStore
 from dovo.engine.executors import StepExecution
-from dovo.engine.executors.models import AgentProgressUpdate, AskResolution, StepExecutionContext, StepResult
+from dovo.engine.executors.models import (
+    AgentProgressUpdate,
+    AskResolution,
+    ConditionEvaluationResult,
+    StepExecutionContext,
+    StepResult,
+)
 from dovo.engine.failure import USER_CONTINUED_MARKER
 from dovo.engine.models import (
     FailurePromptDecision,
@@ -99,6 +105,19 @@ class _RaisingObserver(NoOpRunObserver):
 
     def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
         raise RuntimeError("observer done")
+
+
+class _InterruptingConditionsObserver(RecordingRunObserver):
+    """RunObserver raising KeyboardInterrupt once a loop iteration's until-conditions are reported."""
+
+    def on_loop_conditions_evaluated(
+        self,
+        loop_id: str,
+        results: list[ConditionEvaluationResult],
+        all_passed: bool,
+        next_iteration: int | None = None,
+    ) -> None:
+        raise KeyboardInterrupt
 
 
 def _step(step_id: str, run: str, **extra: object) -> dict[str, object]:
@@ -366,6 +385,22 @@ class CoordinatorExecuteTests:
         assert outcome.errors == ["Execution cancelled by user."]
         state = _state(engine_paths, sessions_repo, "ctrl-c")
         assert [node.state for node in state.nodes] == [NodeState.CANCELLED, NodeState.PENDING]
+
+    def test_keyboard_interrupt_after_loop_body_completes_keeps_leaf_completed(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        """Raise KeyboardInterrupt from the observer's on_loop_conditions_evaluated after a one-leaf loop body completes; the run is CANCELLED and the body leaf stays COMPLETED."""
+        outcome = _run_new(
+            engine_paths,
+            sessions_repo,
+            "ctrl-c-until",
+            [_loop("loop", [_step("s", "true")], until=["iteration.index >= 99"])],
+            observer=_InterruptingConditionsObserver(),
+        )
+
+        assert (outcome.status, outcome.errors) == (SessionStatus.CANCELLED, ["Execution cancelled by user."])
+        loop = _loop_node(_state(engine_paths, sessions_repo, "ctrl-c-until"))
+        assert [leaf.state for leaf in loop.iterations[0].steps] == [NodeState.COMPLETED]
 
     def test_cancel_during_retry_backoff_keeps_first_attempt_record(
         self,
@@ -1435,20 +1470,48 @@ class CoordinatorLoopCeilingTests:
         loop = _loop_node(_state(engine_paths, sessions_repo, "loop-grant"))
         assert (loop.max_iterations, loop.granted_iterations, len(loop.iterations)) == (1, 3, 3)
 
-    def test_interrupt_at_ceiling_prompt_cancels_run_and_marks_loop_cancelled(
+    def test_interrupted_ceiling_prompt_pauses_run_and_keeps_loop_open(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
+        """A prompter whose prompt_loop_max_iterations raises KeyboardInterrupt yields PAUSED with the ceiling message in errors, the session row paused, and the loop node running with two completed iterations."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
             "loop-ceiling-interrupt",
-            [_loop("loop", [_step("s", "true")], max_iterations=1, until=["iteration.index >= 99"])],
+            [_loop("loop", [_step("s", "true")], until=["iteration.index >= 99"])],
             prompter=ScriptedFailurePrompter([KeyboardInterrupt()]),
         )
 
-        assert outcome.status == SessionStatus.CANCELLED
+        assert (outcome.status, outcome.errors) == (
+            SessionStatus.PAUSED,
+            ["Reached max_iterations (2) without meeting 'until' conditions."],
+        )
+        row = sessions_repo.get("loop-ceiling-interrupt")
+        assert row is not None
+        assert row.status == SessionStatus.PAUSED
         loop = _loop_node(_state(engine_paths, sessions_repo, "loop-ceiling-interrupt"))
-        assert (loop.state, loop.iterations[-1].steps[-1].state) == (NodeState.CANCELLED, NodeState.COMPLETED)
+        assert loop.state == NodeState.RUNNING
+        assert [iteration.state for iteration in loop.iterations] == [NodeState.COMPLETED, NodeState.COMPLETED]
+
+    def test_resume_after_interrupted_ceiling_prompt_asks_it_again(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        """Resuming the paused run with a prompter answering CONTINUE asks the ceiling prompt once at iteration 2 and completes the run."""
+        _run_new(
+            engine_paths,
+            sessions_repo,
+            "loop-ceiling-resume",
+            [_loop("loop", [_step("s", "true")], until=["iteration.index >= 99"])],
+            prompter=ScriptedFailurePrompter([KeyboardInterrupt()]),
+        )
+        prompter = ScriptedFailurePrompter([LoopPromptDecision.CONTINUE])
+
+        outcome = _coordinator(engine_paths, sessions_repo, "loop-ceiling-resume", prompter=prompter).execute()
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert prompter.loop_prompts == [(2, 3)]
+        loop = _loop_node(_state(engine_paths, sessions_repo, "loop-ceiling-resume"))
+        assert (loop.state, len(loop.iterations)) == (NodeState.COMPLETED, 2)
 
 
 class CoordinatorCorruptLoopStateTests:

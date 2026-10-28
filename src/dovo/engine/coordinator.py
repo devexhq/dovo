@@ -463,9 +463,9 @@ class RunCoordinator:
                 return self._outcome(SessionStatus.FAILED)
 
     def _cancel(self) -> RunOutcome:
-        """Terminate child processes, persist the in-flight node as cancelled, and return the CANCELLED outcome."""
+        """Terminate child processes, persist a non-terminal in-flight node as cancelled, and return the CANCELLED outcome."""
         process_registry.terminate_all(grace_seconds=0.5)
-        if self._in_flight is not None:
+        if self._in_flight is not None and self._in_flight.state not in TERMINAL_NODE_STATES:
             self._in_flight.state = NodeState.CANCELLED
             self._commit("while cancelling the run")
         self._errors = ["Execution cancelled by user."]
@@ -671,19 +671,26 @@ class RunCoordinator:
         decision: LoopDecision,
         events: LoopEventEmitter,
     ) -> NodeTransitionKind | None:
-        """Apply a prompt_user ceiling: grant three more iterations (None), continue, or abort."""
+        """Apply a prompt_user ceiling: grant three more iterations (None), continue, abort, or pause the run when the prompt is interrupted."""
         self._in_flight = loop
         ceiling = loop.iteration_ceiling
         if self._prompter is None or not self._interactive:
             diagnostic = f"Loop '{loop.id}' reached max_iterations ({ceiling}) and run is non-interactive."
             return self._finish_loop(loop, iteration, events, failed=True, diagnostic=diagnostic)
 
-        answer = self._prompter.prompt_loop_max_iterations(
-            loop=loop_block,
-            iteration=iteration.number,
-            diagnostic=decision.diagnostic or "",
-            grant_count=_CEILING_GRANT_COUNT,
-        )
+        diagnostic = decision.diagnostic or ""
+        try:
+            answer = self._prompter.prompt_loop_max_iterations(
+                loop=loop_block,
+                iteration=iteration.number,
+                diagnostic=diagnostic,
+                grant_count=_CEILING_GRANT_COUNT,
+            )
+        except KeyboardInterrupt:
+            self._errors.append(diagnostic)
+            boundary = f"after loop '{loop.id}' ceiling prompt interrupted"
+            paused = self._commit(boundary, SessionStatus.PAUSED, diagnostic)
+            return NodeTransitionKind.PAUSED if paused else NodeTransitionKind.FAILED
         if answer is LoopPromptDecision.GRANT:
             loop.granted_iterations += _CEILING_GRANT_COUNT
             return None if self._commit(f"after loop '{loop.id}' ceiling granted") else NodeTransitionKind.FAILED

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -11,7 +12,13 @@ from pathlib import Path
 
 import pytest
 
-from dovo.common.process import get_isolated_process_kwargs, process_registry, stream_isolated_process
+from dovo.common.process import (
+    get_isolated_process_kwargs,
+    is_process_group_alive,
+    process_registry,
+    stream_isolated_process,
+)
+from tests.harness.poll import wait_until
 
 WINDOWS_CREATION_FLAGS: int = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
 
@@ -49,6 +56,17 @@ SLEEP_SCRIPT = "import time; time.sleep(60)"
 EXIT_WITHOUT_READING_SCRIPT = "import sys; sys.exit(3)"
 FIFO_GATED_SCRIPT = "import sys; print('first', flush=True); open(sys.argv[1]).read(); print('second', flush=True)"
 THREE_LINES_SCRIPT = "print('first'); print('second'); print('third')"
+INTERRUPTED_STREAM_SCRIPT = """
+import sys
+from dovo.common.interrupt import install_interrupt_handlers, reraise_interrupt_signal
+from dovo.common.process import stream_isolated_process
+
+install_interrupt_handlers()
+try:
+    stream_isolated_process(["sh", "-c", 'echo $$ > "$1"; exec sleep 300', "sh", sys.argv[1]])
+except KeyboardInterrupt:
+    reraise_interrupt_signal()
+"""
 
 
 def _python(script: str, *args: str) -> list[str]:
@@ -188,3 +206,25 @@ class StreamIsolatedProcessTests:
             stream_isolated_process([str(tmp_path / "no-such-executable")])
 
         assert len(process_registry) == registered_before
+
+    def test_sigterm_during_stream_isolated_process_terminates_child_and_stops_group(self, tmp_path: Path) -> None:
+        """SIGTERM a child that installed the handlers and runs stream_isolated_process on a command writing its PGID and sleeping; the child's returncode is -SIGTERM and that group is gone within 5 s."""
+        if sys.platform == "win32":
+            pytest.skip("POSIX signals and process groups required")
+        pid_file = tmp_path / "step.pid"
+        child = subprocess.Popen(
+            _python(INTERRUPTED_STREAM_SCRIPT, str(pid_file)), stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        try:
+            assert wait_until(lambda: pid_file.exists() and pid_file.read_text().endswith("\n"), timeout=10)
+            pgid = int(pid_file.read_text())
+
+            child.send_signal(signal.SIGTERM)
+            child.communicate(timeout=15.0)
+
+            assert child.returncode == -signal.SIGTERM
+            assert wait_until(lambda: not is_process_group_alive(pgid), timeout=5.0)
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.communicate()

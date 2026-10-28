@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import signal
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from e2e.conftest import DOVO_HOME, DovoRunner, find_event, write_blueprint
+from dovo.common.process import is_process_group_alive
+from e2e.conftest import DOVO_HOME, DovoProcessStarter, DovoRunner, find_event, parse_json, write_blueprint
+from tests.harness.poll import wait_until
 
 
 def _get_project_id(project: Path) -> str:
@@ -326,3 +329,53 @@ steps:
         project_id = _get_project_id(initialized_project)
         sessions_dir = DOVO_HOME / "storage" / "projects" / project_id / "sessions"
         assert not sessions_dir.exists() or not any(sessions_dir.iterdir())
+
+
+@pytest.mark.e2e
+@pytest.mark.fixture
+class RunInterruptCliTests:
+    """E2E tests for `dovo run` receiving SIGINT or SIGTERM while a step runs."""
+
+    @pytest.mark.parametrize(
+        "signum",
+        [pytest.param(signal.SIGINT, id="sigint"), pytest.param(signal.SIGTERM, id="sigterm")],
+    )
+    def test_run_interrupted_during_step_records_cancelled_and_stops_step_group(
+        self,
+        start_dovo: DovoProcessStarter,
+        run_dovo: DovoRunner,
+        initialized_project: Path,
+        tmp_path: Path,
+        signum: int,
+    ) -> None:
+        """Signal `dovo run` once its step wrote its PGID, then see returncode -signum, "Blueprint Run Cancelled" in stdout, `session show` status cancelled, and no process in that group within 5 s."""
+        pid_file = tmp_path / "step.pid"
+        write_blueprint(
+            initialized_project,
+            "interrupt-bp",
+            f"""version: "1.0"
+name: interrupt-bp
+id: interrupt-bp
+steps:
+  - id: long-step
+    run: echo $$ > '{pid_file}' && exec sleep 300
+""",
+            runner=run_dovo,
+        )
+        session_id = f"interrupt-{signum}"
+
+        process = start_dovo(["run", "interrupt-bp", "--session-id", session_id], cwd=initialized_project)
+        assert wait_until(lambda: pid_file.exists() and pid_file.read_text().endswith("\n"), timeout=10)
+        pgid = int(pid_file.read_text())
+        process.send_signal(signum)
+        stdout, _ = process.communicate(timeout=15)
+
+        assert process.returncode == -signum
+        assert "Blueprint Run Cancelled" in stdout
+        assert wait_until(lambda: not is_process_group_alive(pgid), timeout=5.0)
+        show = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
+        payload = parse_json(show.stdout).get("payload", {})
+        assert isinstance(payload, dict)
+        session_record = payload.get("session", {})
+        assert isinstance(session_record, dict)
+        assert session_record.get("status") == "cancelled"

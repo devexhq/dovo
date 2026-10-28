@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 from pathlib import Path
 
 import pytest
@@ -46,7 +47,7 @@ steps:
             cwd=initialized_project,
         )
 
-        assert pty_result.exit_code == 130
+        assert pty_result.exit_code == -signal.SIGINT
         assert "Step 'step-two' failed" in pty_result.transcript
         assert "Select option [r/c/a]:" in pty_result.transcript
 
@@ -101,7 +102,7 @@ steps:
             prompt_replies=[("Select option [r/c/a]: ", "\x03")],
             cwd=initialized_project,
         )
-        assert run_result.exit_code == 130
+        assert run_result.exit_code == -signal.SIGINT
 
         before_resume = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         before_data = parse_json(before_resume.stdout)
@@ -163,7 +164,7 @@ steps:
             prompt_replies=[("Select option [r/c/a]: ", "\x03")],
             cwd=initialized_project,
         )
-        assert run_result.exit_code == 130
+        assert run_result.exit_code == -signal.SIGINT
 
         (initialized_project / "targeted_fix.txt").write_text("targeted ok", encoding="utf-8")
 
