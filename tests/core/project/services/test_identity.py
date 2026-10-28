@@ -171,7 +171,10 @@ class ProjectIdentityServiceTests:
         assert raised.value.message == "Invalid project ID: must match ^[a-z0-9][a-z0-9-_]{2,62}$"
         assert raised.value.remediations == (
             Remediation(message=f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}'."),
-            Remediation(message="Run 'dovo init' without '--id' to generate a project ID.", command="dovo init"),
+            Remediation(
+                message="Run 'dovo init' without '--id' to keep the existing project ID or generate a new one.",
+                command="dovo init",
+            ),
         )
 
     def test_validate_project_id_valid_returns_none(self) -> None:
