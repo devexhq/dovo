@@ -28,7 +28,7 @@ Plan when the issue adds or changes a command, DTO/`*Result` model, status enum,
 | Invocation | Input | Job |
 |---|---|---|
 | `/issue-plan [<issue-number>]` | the issue | **Issue mode.** On an epic, write the feature contract and the slice table; on a plain issue, write one slice. Every slice gets its scope, dependencies, child or stub, ownership and estimate, and **no phases**. Steps 1, 2, 2a, 3, 3a, 4, 5 and 6. |
-| `/issue-plan --slice <id>` | `.agentic/plan.md` and `.agentic/plan.json` as downloaded from the work plan's plan session, the epic's body and the slice's child issue | **Slice mode.** Phase that one slice, against `origin/main` as it is now, and nothing else. Steps 1b, 2, 3, 4, 5 and 6. |
+| `/issue-plan --slice <id>` | `.agentic/epic-plan.md` and `.agentic/epic-plan.json`, the epic plan as downloaded from the work plan's plan session; the epic's body; the slice's child issue | **Slice mode.** Phase that one slice, against `origin/main` as it is now, and nothing else. Steps 1b, 2, 3, 4, 5 and 6. |
 
 Detail is written just in time: a slice's phases are planned when its `issue-code` run starts, after the slices before it have landed and their "as landed" reports have updated the contract, never when the issue is sliced. A phase written early goes stale as slices land.
 
@@ -42,7 +42,7 @@ Detail is written just in time: a slice's phases are planned when its `issue-cod
 
 ## Hard boundaries
 
-- **Never run tooling that mutates or validates.** Read-only `git` and read-only `gh` are the only commands you need. The only exceptions are the `.agentic/` workspace reset in Step 1 and the stale-file cleanup in Step 1b.
+- **Never run tooling that mutates or validates.** Read-only `git` and read-only `gh` are the only commands you need. The only exceptions are the `.agentic/` workspace reset in Step 1 and the epic-plan copy and stale-file cleanup in Step 1b.
 - **Never edit `src/` or `tests/`, commit, push or touch PR state.**
 - **Never plan from memory.** Every path, symbol and signature in the plan comes from a file read this session.
 - **Never plan a test whose contract is already pinned elsewhere.** Name what each new test uniquely pins.
@@ -81,13 +81,14 @@ A stale plan or review must never be read as current.
 
 ## 1b. Load the slice (slice mode)
 
-Never reset `.agentic/` in slice mode: the downloaded `.agentic/plan.md` and `.agentic/plan.json` are this mode's input. If either is missing, stop and say so. Delete only the files an earlier planning round in this workspace could leave behind, so none is read as current:
+Never reset `.agentic/` in slice mode: the epic plan, `.agentic/epic-plan.md` and `.agentic/epic-plan.json` (the `issue-code` blueprint copies them from the downloaded plan), is this mode's input. If either is missing, stop and say so; run by hand, copy the downloaded `.agentic/plan.md` and `.agentic/plan.json` to them first. Never edit the epic plan. Start every run from it, so a retry never builds on its own partial output, and delete the files an earlier planning round in this workspace could leave behind, so none is read as current:
 
 ```bash
+cp .agentic/epic-plan.md .agentic/plan.md && cp .agentic/epic-plan.json .agentic/plan.json
 rm -f .agentic/plan-review.md .agentic/plan-review.json .agentic/plan-challenge.md .agentic/plan-challenge.json .agentic/plan-walkthrough.md .agentic/evidence.md
 ```
 
-Then read, and keep in view for the whole run:
+Then read, from the epic plan, and keep in view for the whole run:
 
 - **The slice:** the `slices` entry whose `id` is `<id>`. An id not in `slices` stops the run and names the valid ids. Its `child` is the slice's child issue; `plan.json` `issue` is the epic, or the plain issue itself.
 - **The epic's binding contract:** `plan.json` `contract` (none when it is `null`) and the plan's `## Feature contract`, with the ownership rows of this slice and of the slices it depends on.
@@ -133,7 +134,7 @@ On a plain issue, the whole issue is one slice, `S1`, whose `child` is the issue
 
 In issue mode, `.agentic/plan.md` holds, in this order: the header and grounding line from planning.md Step 4, What you're approving (open questions with their assumed answers, changes to existing behaviour, what stays unchanged), on an epic the `## Feature contract` from Step 2a, Owned elsewhere, a `## Slices` table (id, title, depends on, blocked by, child, pilot or closing docs, estimate), and Traceability mapping each requirement of the issue to the slice that lands it. It has no Phases table, Artifact inventory or phase sections; say under What you're approving that each slice is phased and approved in its own `issue-code` run.
 
-In slice mode, the header names the child issue, `# Issue #<child>: <child title>`, and the line after it names the slice and the epic: `Slice <id> of #<epic>.` Copy the downloaded plan's `## Feature contract` and `## Slices` sections, and its `## Instructions from the approver` when present, verbatim after What you're approving: they are the epic's, and this plan never changes them. The rest follows the paragraph below, for this slice alone.
+In slice mode, the header names the child issue, `# Issue #<child>: <child title>`, and the line after it names the slice and the epic: `Slice <id> of #<epic>.` Copy the epic plan's `## Feature contract` and `## Slices` sections, and its `## Instructions from the approver` when present, verbatim after What you're approving: they are the epic's, and this plan never changes them. The rest follows the paragraph below, for this slice alone.
 
 Structure `.agentic/plan.md` per planning.md Step 4, in this order: What you're approving (open questions with their assumed answers, changes to existing behaviour, what stays unchanged), Traps, Owned elsewhere, GWT Scenarios, the Phases table with its deletion ledger, Traceability, Artifact inventory, one section per phase, and cross-cutting doc updates. Link the issue rather than copying its prose; copy only literal contracts, into the phase that implements them.
 
@@ -189,7 +190,7 @@ Write `.agentic/plan.json` alongside the markdown. `.dovo/catalog/blueprints/fea
 - On an epic, exactly one slice has `pilot: true` and only the last has `closing_docs: true`. A plain issue's one slice has both `false`, `child` equal to `issue` and `stub` `null`.
 - These fields only add to the shape above: `issue`, `plan`, `grounded_at`, `phases` and `open_questions` keep their meaning.
 - **Issue mode** writes no phases: `phases` is `0`, every slice's `phases` is `[]`, and each open question's `phases` is `[]`, with `blocks` naming the slices whose scope changes if the answer changes.
-- **Slice mode** keeps `issue`, `contract` and `slices` exactly as downloaded, except that this slice's `phases` lists the phase numbers of this plan's Phases table and every other slice's `phases` is `[]`. `grounded_at`, `phases` and `open_questions` are this slice's own: `open_questions` lists only the questions this plan raises, since the epic's were settled when the issue was sliced and stay listed on the epic's body.
+- **Slice mode** keeps `issue`, `contract` and `slices` exactly as in `.agentic/epic-plan.json`, except that this slice's `phases` lists the phase numbers of this plan's Phases table and every other slice's `phases` is `[]`. `grounded_at`, `phases` and `open_questions` are this slice's own: `open_questions` lists only the questions this plan raises. The epic's open questions belong to the epic plan and stay listed on the epic's body, open with their assumed answers, until a slice's report settles one by adding a `contract.decisions` entry with the question's id, or the epic is re-sliced.
 
 ## 6. Hand off
 
