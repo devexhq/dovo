@@ -248,13 +248,13 @@ steps:
         name: Review the change
         type: agent
         prompt: |
-          /issue-review
+          /issue-review --slice {{ steps.next.outputs.slice }}
 
           Follow .agents/skills/issue-review/SKILL.md if the slash command is not recognized.
           Review the commits on this branch against origin/main as slice
           {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked by issue
           {{ steps.next.outputs.child }}, and write .agentic/review.md, .agentic/review.json
-          and .agentic/verdict.txt.
+          and .agentic/verdict.txt. Do not read .agentic/implementation-report.md.
         tools: { allow_all: true }
         timeout_seconds: 1800
         artifacts: [{ name: review, path: ".agentic/review.*" }]
@@ -268,15 +268,13 @@ steps:
           sys.exit(not needs_person and any(f["severity"] in ("BLOCKER", "WARNING") for f in review["findings"]))'
         on_failure: continue
 
-      # A slice PR is an ordinary PR, so the fixer stays dovo-code's review
-      # mode, as pr-fix does.
       - id: fix
         name: Fix the blockers and warnings
         type: agent
         prompt: |
-          /dovo-code review --tiers blockers,warnings
+          /issue-code review --tiers blockers,warnings
 
-          Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
+          Follow .agents/skills/issue-code/SKILL.md if the slash command is not recognized.
           If .agentic/review.json lists no BLOCKER or WARNING findings, or its action is
           needs_human or replan, change nothing and report that you did nothing. Do not commit,
           stage or push.
@@ -303,7 +301,7 @@ steps:
          names the slice or issue that owns it.
       2. If a later slice's instructions are now wrong, amend that slice only in
          .agentic/plan.md and .agentic/plan.json, keeping plan.json in the shape the issue-plan
-         skill defines (.agents/skills/issue-plan/SKILL.md), and say under Later slices affected
+         skill defines (`.agents/skills/issue-plan/SKILL.md`), and say under Later slices affected
          that the plan was amended. Never change this slice or an earlier one.
       3. Find the open issues whose body this change makes false: the epic's open sub-issues,
          the issues the feature contract maps, and any open issue citing code this change moved,

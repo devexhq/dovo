@@ -182,7 +182,7 @@ steps:
         - Addressing a finding or challenge may make an open question moot, change its assumed
           answer or raise a new one: remove, rewrite or add entries under Open questions to match.
         - Keep .agentic/plan.json in the shape the issue-plan skill defines
-          (.agents/skills/issue-plan/SKILL.md), including its contract and slices, and in
+          (`.agents/skills/issue-plan/SKILL.md`), including its contract and slices, and in
           agreement with .agentic/plan.md.
       Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
     tools: { allow_all: true }
@@ -220,7 +220,7 @@ steps:
           question from Open questions into Decisions as answered by the human, and remove it
           from open_questions in .agentic/plan.json.
         - Keep .agentic/plan.json in the shape the issue-plan skill defines
-          (.agents/skills/issue-plan/SKILL.md), including its contract and slices, and in
+          (`.agents/skills/issue-plan/SKILL.md`), including its contract and slices, and in
           agreement with .agentic/plan.md.
       Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
     tools: { allow_all: true }
