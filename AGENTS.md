@@ -52,9 +52,9 @@ ID, with the `path:line` that breaks it.
 - **R4. Business failures reach the caller as a result, not an exception.**
   A public entrypoint (a method of the entrypoint class in
   `core/<pkg>/<pkg>.py`, or an `engine/services/` runner, called from a layer
-  above) returns a `*Result` subclassing `BaseResult` whose `status`,
-  `error_code` and `errors` (or `.ok`, where the result defines it) the caller
-  branches on. Code behind an entrypoint returns plain values and signals a
+  above) returns a `*Result` subclassing `BaseResult`, and the caller branches
+  on its `error_code`, or on `ok`, which is true exactly when `error_code` is
+  null ([results.md](docs/agents/architecture/results.md)). Code behind an entrypoint returns plain values and signals a
   business failure by raising its package's one `DomainError` subclass, which
   carries an `ErrorCode`, a message and remediations; the entrypoint catches it
   once, with `catch_failure`, and copies the failure into its result.
@@ -62,7 +62,7 @@ ID, with the `path:line` that breaks it.
   so code behind an entrypoint does not catch broad `Exception` to report it.
   Only a site that recovers or collects per-item failures and continues
   catches there, and it records what it caught. Helpers get no `*Result` or `*Status`
-  of their own, and no table or `match` maps one status or error code onto
+  of their own (one may build its entrypoint's result), and no table or `match` maps one status or error code onto
   another. `error_code` is a failure's only classification: a status value
   never names a failure cause, so a new status enum or value holds only
   outcomes `error_code` cannot express. Each package has exactly one

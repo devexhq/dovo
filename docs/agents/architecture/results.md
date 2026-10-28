@@ -13,11 +13,12 @@ What a public entrypoint returns and what a caller branches on. These entries ho
 ## Helpers return plain values
 
 - **Decision:** services and helpers behind an entrypoint return plain values, domain models or `@dataclass(frozen=True, slots=True)`.
-  - They never return a `*Result`, and never define a `*Status` enum to classify their own failures.
+  - They never define a `*Result` model or a `*Status` enum of their own.
+  - A helper may build its entrypoint's own result type only when it is the one helper that builds that result on success, as `collect_worktree_show` builds `WorktreeShowResult` for `Worktree.show`. The entrypoint still catches the helper's failures and copies them into that result.
   - They signal a business failure by raising their package's `DomainError` (see [exceptions.md](exceptions.md)).
   - A helper that processes many items may catch each item's failure, collect it in its plain return value and continue; the entrypoint turns the collection into its result.
 - **Why:** a failure carries its `ErrorCode` from the raise to the entrypoint, so no hop re-encodes it.
-- **Since:** #1106
+- **Since:** #1214
 
 ## error_code is the only failure classification
 
@@ -52,7 +53,8 @@ What a public entrypoint returns and what a caller branches on. These entries ho
 
 ## errors and error_code agree
 
-- **Decision:** `errors` is non-empty exactly when `error_code` is set, and `BaseResult` rejects a result where they disagree.
+- **Decision:** `errors` is non-empty exactly when `error_code` is set.
+  - A result that sets one without the other is a programmer error, never a way to report a failure.
 - **Why:** a failure without a code cannot be branched on, and a code without a message cannot be shown.
 - **Since:** #925
 
