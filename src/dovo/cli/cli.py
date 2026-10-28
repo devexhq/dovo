@@ -24,6 +24,7 @@ from dovo.common.diagnostic_log import (
     reset_cli_command,
 )
 from dovo.common.filesystem import Filesystem, WorkspaceNotInitializedError
+from dovo.common.interrupt import install_interrupt_handlers, reraise_interrupt_signal
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.version import get_version
 from dovo.core.config import ConfigLoadError
@@ -224,7 +225,16 @@ def _exception_details(exc: BaseException) -> str:
 
 
 def run_cli() -> None:
-    """Main entrypoint with global crash protection."""
+    """Main entrypoint: route interrupts to KeyboardInterrupt and, once an interrupted command has unwound, end the process by the signal it received."""
+    install_interrupt_handlers()
+    try:
+        _run_app()
+    finally:
+        reraise_interrupt_signal()
+
+
+def _run_app() -> None:
+    """Run the Typer app, mapping lock timeouts, config load failures and unexpected errors to panels and exit 1."""
     try:
         app()
     except LockTimeoutError as exc:

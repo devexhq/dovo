@@ -20,6 +20,7 @@ from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.models import CatalogScan
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
+from dovo.core.worktree import Worktree
 from dovo.engine import Engine, EngineError, RunRequest, SessionStateStore
 from dovo.engine.models import FailurePromptDecision, RunOutcome
 from dovo.engine.state_models import ExecutionStateTree, SessionJsonPayload
@@ -744,3 +745,28 @@ class EngineFinalizeFallbackTests:
         assert row is not None
         assert outcome.warnings == ["Execution state for session 'corrupt-1' is corrupt."]
         assert row.status == SessionStatus.COMPLETED
+
+
+class EngineRunInterruptTests:
+    def test_interrupt_during_auto_apply_propagates_and_leaves_row_running(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Raise KeyboardInterrupt from the worktree apply of a completed --auto-apply run; it propagates out of the engine and the session row's status stays running."""
+        workspace = WorkspaceBuilder(tmp_path / "git-workspace").with_git().with_database().build()
+        paths = initialized_workspace_paths(workspace)
+        sessions = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        blueprint = _catalog_blueprint(paths, "apply-interrupt", [{"id": "s1", "run": "echo change > tracked.txt"}])
+
+        def interrupted_apply(*args: object, **kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(Worktree, "apply", interrupted_apply)
+
+        with pytest.raises(KeyboardInterrupt):
+            _engine(paths, sessions).run(
+                blueprint, RunRequest(session_id="apply-interrupt", use_worktree=True, auto_apply=True)
+            )
+
+        row = sessions.get("apply-interrupt")
+        assert row is not None
+        assert row.status == SessionStatus.RUNNING

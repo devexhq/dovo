@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import dataclasses
+import signal
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -147,6 +148,14 @@ class CliNonStrictConfigCommandsCliIntegrationTests:
 
 class RunCliCrashProtectionTests:
     """Direct tests for run_cli()'s top-level exception-to-panel mapping."""
+
+    @pytest.fixture(autouse=True)
+    def _restore_signal_handlers(self) -> Iterator[None]:
+        """Restore the worker's SIGINT/SIGTERM handlers that run_cli() replaces."""
+        saved = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
+        yield
+        for signum, handler in saved.items():
+            signal.signal(signum, handler)
 
     def test_run_cli_lock_timeout_renders_error_panel_and_exits_one(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

@@ -119,6 +119,30 @@ class DovoRunner:
         )
 
 
+class DovoProcessStarter:
+    """Starter launching the dovo CLI binary as a background subprocess with the e2e environment."""
+
+    def __init__(self, binary_path: str, default_cwd: Path, default_env: dict[str, str]) -> None:
+        self._binary_path = binary_path
+        self._default_cwd = default_cwd
+        self._default_env = default_env
+        self.started: list[subprocess.Popen[str]] = []
+
+    def __call__(self, args: list[str], cwd: Path | str | None = None) -> subprocess.Popen[str]:
+        """Start `dovo <args>` with captured text stdout/stderr and return the running process."""
+        process = subprocess.Popen(
+            [self._binary_path, *args],
+            cwd=Path(cwd) if cwd is not None else self._default_cwd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=self._default_env.copy(),
+        )
+        self.started.append(process)
+        return process
+
+
 class DovoPtyRunner:
     """Runner executing the dovo CLI binary in a pseudo-terminal for interactive prompts."""
 
@@ -345,6 +369,21 @@ def run_dovo(dovo_binary_path: str, default_subprocess_env: dict[str, str]) -> D
         default_cwd=E2E_ROOT,
         default_env=default_subprocess_env,
     )
+
+
+@pytest.fixture
+def start_dovo(dovo_binary_path: str, default_subprocess_env: dict[str, str]) -> Generator[DovoProcessStarter]:
+    """Provide a callable starting background dovo CLI processes, killing any still alive on teardown."""
+    starter = DovoProcessStarter(
+        binary_path=dovo_binary_path,
+        default_cwd=E2E_ROOT,
+        default_env=default_subprocess_env,
+    )
+    yield starter
+    for process in starter.started:
+        if process.poll() is None:
+            process.kill()
+            process.communicate()
 
 
 @pytest.fixture

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import atexit
 import os
-import signal
 import sys
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
-from types import FrameType, TracebackType
+from types import TracebackType
+
+from dovo.common.interrupt import deferred_interrupts
 
 LockWaitNotifier = Callable[[Path, str | None, float], None]
 
@@ -30,7 +31,7 @@ DEFAULT_LOCK_TIMEOUT_SECONDS = 30.0
 _LOCK_REGISTRY: dict[Path, int] = {}
 _FD_REGISTRY: dict[Path, int] = {}
 _REGISTRY_LOCK = threading.Lock()
-_signal_handlers_installed = False
+_exit_cleanup_registered = False
 
 
 class LockTimeoutError(RuntimeError):
@@ -50,26 +51,14 @@ def _cleanup_registered_locks() -> None:
         _FD_REGISTRY.clear()
 
 
-def _signal_handler(signum: int, frame: FrameType | None) -> None:
-    """Emergency signal handler releasing held file locks before exit."""
-    _cleanup_registered_locks()
-    sys.exit(128 + signum)
-
-
-def _ensure_signal_handlers() -> None:
-    """Register exit and signal handlers once per process."""
-    global _signal_handlers_installed
+def _ensure_exit_cleanup() -> None:
+    """Register the exit-time lock cleanup once per process."""
+    global _exit_cleanup_registered
     with _REGISTRY_LOCK:
-        if _signal_handlers_installed:
+        if _exit_cleanup_registered:
             return
         atexit.register(_cleanup_registered_locks)
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            try:
-                signal.signal(sig, _signal_handler)
-            except (ValueError, OSError, AttributeError):
-                # Signals might not be interceptable in non-main threads or some environments
-                pass
-        _signal_handlers_installed = True
+        _exit_cleanup_registered = True
 
 
 def _try_flock_posix(file_descriptor: int) -> bool:
@@ -242,9 +231,11 @@ class WorkspaceLock:
         announced = False
 
         while True:
-            if try_acquire_file_descriptor_lock(file_descriptor):
-                _write_holder_pid(file_descriptor)
-                return True
+            with deferred_interrupts():
+                if try_acquire_file_descriptor_lock(file_descriptor):
+                    _write_holder_pid(file_descriptor)
+                    self._register(file_descriptor)
+                    return True
 
             holder_pid = _read_holder_pid(self.lock_path)
             if not announced:
@@ -257,7 +248,7 @@ class WorkspaceLock:
 
     def acquire(self) -> WorkspaceLock:
         """Acquire the file lock, supporting in-process re-entrancy."""
-        _ensure_signal_handlers()
+        _ensure_exit_cleanup()
 
         with _REGISTRY_LOCK:
             depth = _LOCK_REGISTRY.get(self.lock_path, 0)
@@ -271,13 +262,20 @@ class WorkspaceLock:
         file_descriptor = self._open_lock_file()
         try:
             self._poll_lock(file_descriptor)
-        except Exception:
-            try:
-                os.close(file_descriptor)
-            except Exception:
-                pass
+        except BaseException:
+            if self.is_locked:
+                self.release()
+            else:
+                try:
+                    os.close(file_descriptor)
+                except Exception:
+                    pass
             raise
 
+        return self
+
+    def _register(self, file_descriptor: int) -> None:
+        """Record file_descriptor as this process's held lock at depth one."""
         with _REGISTRY_LOCK:
             _LOCK_REGISTRY[self.lock_path] = 1
             _FD_REGISTRY[self.lock_path] = file_descriptor
@@ -285,37 +283,36 @@ class WorkspaceLock:
             self._is_nested = False
             self._local_depth = 1
 
-        return self
-
     def release(self) -> None:
         """Release the file lock, decrementing re-entrancy depth."""
         if not self.is_locked:
             return
 
-        file_descriptor: int | None = None
-        with _REGISTRY_LOCK:
-            if not self.is_locked:
-                return
-            self._local_depth -= 1
-            depth = _LOCK_REGISTRY.get(self.lock_path, 0)
-            if depth > 1:
-                _LOCK_REGISTRY[self.lock_path] = depth - 1
-                if self._local_depth == 0:
-                    self._file_descriptor = None
-                return
+        with deferred_interrupts():
+            file_descriptor: int | None = None
+            with _REGISTRY_LOCK:
+                if not self.is_locked:
+                    return
+                self._local_depth -= 1
+                depth = _LOCK_REGISTRY.get(self.lock_path, 0)
+                if depth > 1:
+                    _LOCK_REGISTRY[self.lock_path] = depth - 1
+                    if self._local_depth == 0:
+                        self._file_descriptor = None
+                    return
 
-            _LOCK_REGISTRY.pop(self.lock_path, None)
-            file_descriptor = _FD_REGISTRY.pop(self.lock_path, None)
-            self._file_descriptor = None
+                _LOCK_REGISTRY.pop(self.lock_path, None)
+                file_descriptor = _FD_REGISTRY.pop(self.lock_path, None)
+                self._file_descriptor = None
 
-        if file_descriptor is not None:
-            try:
-                unlock_file_descriptor(file_descriptor)
-            finally:
+            if file_descriptor is not None:
                 try:
-                    os.close(file_descriptor)
-                except Exception:
-                    pass
+                    unlock_file_descriptor(file_descriptor)
+                finally:
+                    try:
+                        os.close(file_descriptor)
+                    except Exception:
+                        pass
 
     def __enter__(self) -> WorkspaceLock:
         """Context manager entry point acquiring workspace lock."""
