@@ -3,7 +3,8 @@ name: issue-code
 description: >-
   Experimental slice-flow copy of dovo-code, used only by the issue-code
   blueprint or when asked for by name; use dovo-code otherwise. Implement one
-  slice of the approved plan in .agentic/plan.md for Dovo CLI, working through
+  slice of the approved plan in .agentic/plan.md for Dovo CLI, as phased just
+  in time by /issue-plan --slice, working through
   that slice's phases one by one in order, following the epic contract, the
   slice's child issue and the rules and exemplars in AGENTS.md, running scoped
   tests while building and the full quality gate once the slice is complete,
@@ -24,11 +25,11 @@ Turn every phase of one slice of `.agentic/plan.md` into working code, one phase
 
 | Invocation | Input | Job |
 |---|---|---|
-| `/issue-code --slice <id>` | `.agentic/plan.md`, `.agentic/plan.json` | Implement every phase the slice lists in `plan.json` `slices[].phases`, in the plan's `## Phases` table order, and no other phase. Start at the first of those phases whose artifacts are not yet in the tree, so an interrupted run resumes where it stopped; say which phases you skipped as already present. Without `--slice`, implement the plan's only slice; when it has several, stop and name them. An id not in `slices` stops the run before any edit and names the valid ids. |
+| `/issue-code --slice <id>` | `.agentic/plan.md`, `.agentic/plan.json` | Implement every phase the slice lists in `plan.json` `slices[].phases`, in the plan's `## Phases` table order, and no other phase. Start at the first of those phases whose artifacts are not yet in the tree, so an interrupted run resumes where it stopped; say which phases you skipped as already present. Without `--slice`, implement the plan's only slice; when it has several, stop and name them. An id not in `slices` stops the run before any edit and names the valid ids, and a slice whose `phases` is `[]` has not been phased yet: stop before any edit and say `/issue-plan --slice <id>` runs first. |
 | `/issue-code review [--tiers <tiers> \| --fix <ids>]` | `.agentic/review.md`, `.agentic/review.json` | Fix review findings by tier or by id |
 | `/issue-code feedback --fix <ids>` | `.agentic/feedback.json` | Fix the selected pull request feedback items by id |
 
-If the input file is missing, stop and say so. Do not reconstruct a plan from the conversation: run `/issue-plan` first.
+If the input file is missing, stop and say so. Do not reconstruct a plan from the conversation: run `/issue-plan --slice <id>` first.
 
 ## Hard boundaries
 
@@ -45,7 +46,7 @@ Read [AGENTS.md](../../../AGENTS.md): its rules R1–R18 are what the reviewer w
 
 Then build the slice's brief, and keep it in view for the whole run:
 
-- **The epic contract:** `plan.json` `contract` is binding. Its target contract, conventions, decisions and shared-surface ownership bind this slice. Skip this when `contract` is `null`. Compare it with the `## Feature contract` section of the epic's body (`gh issue view <epic> --json body`, `<epic>` being `plan.json` `issue`). When the body has that section and it says something the plan's `contract` does not, the contract has drifted: never switch to either silently. Write the drift (each differing section, quoted from both) to `.agentic/implementation-report.md`, flag it 🚨, and stop before any edit.
+- **The epic contract:** `plan.json` `contract` is binding. Its target contract, conventions, decisions and shared-surface ownership bind this slice. Skip this when `contract` is `null`. Compare it with the `## Feature contract` section of the epic's body (`gh issue view <epic> --json body`, `<epic>` being `plan.json` `issue`). The open questions the body lists under Decisions are the epic plan's, not part of `contract`, so they are never drift. When the body has that section and it says something else the plan's `contract` does not, the contract has drifted: never switch to either silently. Write the drift (each differing section, quoted from both) to `.agentic/implementation-report.md`, flag it 🚨, and stop before any edit.
 - **The slice's child issue:** `gh issue view <child> --json number,title,body` for the slice's `child`, read live, since it is readied just before coding. Its FRs, NFRs, guards and Definition of done are what the reviewer checks this slice against. Its **Owned elsewhere** pointers name work this slice must not do.
 - **Sibling open issues that could collide:** list the epic's other open sub-issues (`gh issue view <epic> --json subIssues`) and any open issue naming a path this slice touches (`gh issue list --state open --search "<path>"`). Name each in the implementation report with the surface it shares, and leave its owned work to it.
 

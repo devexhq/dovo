@@ -3,7 +3,9 @@
 
 The slice flow's plan run writes `## Feature contract` and `## Work plan` into
 the epic's body with `render`; each code run then picks its slice with `next`,
-takes it with `claim` and records its pull request with `land`. The work plan
+takes it with `claim` once its own plan is approved, and records its pull
+request with `land`, which repoints the work plan at the code session when its
+report amended later slices or the contract. The work plan
 is a table for people plus a `<!-- dovo:workplan {json} -->` comment that this
 script alone parses and rewrites. Every body write re-reads the body first and
 aborts when it changed since this run read it. `next` writes its outputs as
@@ -25,7 +27,10 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 CONTRACT_HEADING = "## Feature contract"
+QUESTIONS_INTRO = "Open questions, each with a recommended answer until the user settles it:"
 WORKPLAN_HEADING = "## Work plan"
+NOTES_HEADING = "### Notes (carried over)"
+LANDED_RE = re.compile(r"### \S+ as landed\b")
 WORKPLAN_COMMENT_RE = re.compile(r"<!-- dovo:workplan (\{.*\}) -->")
 READY_LABEL = "dovo:ready"
 ACTIVE_STATUSES = ("in_progress", "in_review")
@@ -176,6 +181,27 @@ def merge_rows(plan_slices: list[Slice], current: list[Slice]) -> list[Slice]:
     return [_carry_over(row, by_id.get(row.id)) for row in plan_slices]
 
 
+def _definition(row: Slice) -> tuple[object, ...]:
+    """Return the fields of row that plan.json defines, as opposed to the state the code runs record."""
+    return (row.title, row.depends_on, row.blocked_by, row.closing_docs)
+
+
+def check_started_unchanged(plan_slices: list[Slice], current: list[Slice]) -> None:
+    """Refuse plan_slices when it redefines a slice that has already started; a report amends only later slices.
+
+    Raises:
+        WorkplanError: When a slice that is not pending has a different title, dependencies or closing-docs flag.
+    """
+    planned = {row.id: row for row in plan_slices}
+    changed = [
+        row.id
+        for row in current
+        if row.status != "pending" and row.id in planned and _definition(planned[row.id]) != _definition(row)
+    ]
+    if changed:
+        raise WorkplanError(f"the plan changes {', '.join(changed)}, which already started")
+
+
 def _carry_over(row: Slice, old: Slice | None) -> Slice:
     """Return row with old's child (unless row names one), status, PR and session."""
     if old is None:
@@ -241,6 +267,147 @@ def split_workplan(body: str) -> tuple[WorkPlan, str]:
     except (json.JSONDecodeError, KeyError, ValueError) as error:
         raise WorkplanError(f"the dovo:workplan comment is malformed: {error}") from error
     return plan, section[match.end() :].strip("\n")
+
+
+def lf(text: str) -> str:
+    """Return text with CRLF line endings, as a GitHub web edit writes them, normalized to LF."""
+    return text.replace("\r\n", "\n")
+
+
+def _table_cells(line: str) -> list[str]:
+    """Return one markdown table row's cells, stripped, splitting on unescaped pipes."""
+    return [cell.strip() for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+
+
+def _split_table(section: str) -> tuple[list[str], str]:
+    """Return the lines of section's first markdown table, and section without them."""
+    lines = section.splitlines(keepends=True)
+    start = next((index for index, line in enumerate(lines) if line.lstrip().startswith("|")), len(lines))
+    end = next((index for index in range(start, len(lines)) if not lines[index].lstrip().startswith("|")), len(lines))
+    return lines[start:end], "".join(lines[:start] + lines[end:])
+
+
+def _hand_table(section: str) -> list[list[str]]:
+    """Return the first markdown table in section as rows of cells, header first, without its separator row."""
+    lines = [line.rstrip("\n") for line in _split_table(section)[0]]
+    return [_table_cells(line) for line in lines[:1] + lines[2:]]
+
+
+def _hand_refusal(slice_id: str, problem: str) -> WorkplanError:
+    """Return the refusal for a hand-maintained work plan row that cannot be carried over safely."""
+    return WorkplanError(f"the hand-maintained work plan's row {slice_id} {problem}")
+
+
+def _hand_child(slice_id: str, cell: str) -> int | None:
+    """Return the child issue a hand table's cell records: `#n`, or None for an empty cell or "created when next"."""
+    match = re.fullmatch(r"#(\d+)", cell)
+    if match is not None:
+        return int(match.group(1))
+    if cell in ("", NONE_CELL, "-") or cell.lower().startswith("created when"):
+        return None
+    raise _hand_refusal(slice_id, f'has child {cell!r}, which is not one `#n`, empty or "created when next"')
+
+
+def _hand_status(slice_id: str, cell: str) -> str:
+    """Return the status a hand table's cell records; only pending and merged carry over without a PR or session."""
+    status = "pending" if cell in ("", NONE_CELL, "-") else cell.lower().replace(" ", "_")
+    if status not in ("pending", "merged"):
+        raise _hand_refusal(slice_id, f"has status {cell!r}, not pending or merged")
+    return status
+
+
+def _column(header: list[str], names: tuple[str, ...]) -> int | None:
+    """Return the index of the first header cell that is exactly one of names, ignoring case, or None."""
+    return next((index for index, cell in enumerate(header) if cell.lower() in names), None)
+
+
+def _hand_row(cells: list[str], header: list[str], child_at: int, status_at: int) -> Slice:
+    """Return one hand table row as a work plan row keyed by its first cell, carrying its child and status."""
+    slice_id = cells[0].strip("`* ")
+    if len(cells) < len(header):
+        raise _hand_refusal(slice_id, f"has {len(cells)} cells, fewer than the header's {len(header)}")
+    status = _hand_status(slice_id, cells[status_at])
+    return Slice(slice_id, slice_id, [], [], False, _hand_child(slice_id, cells[child_at]), None, status)
+
+
+def _hand_rows(section: str) -> list[Slice]:
+    """Return the rows of a hand-maintained work plan's first table, refusing any it cannot carry over safely.
+
+    Raises:
+        WorkplanError: When the table has no Child or Status column, or a row is short, repeats an id, or
+            has an unreadable child or status.
+    """
+    table = _hand_table(section)
+    if not table:
+        return []
+    header = table[0]
+    child_at = _column(header, ("child", "child issue"))
+    if child_at is None:
+        raise WorkplanError("the hand-maintained work plan's table has no `Child` or `Child issue` column")
+    status_at = _column(header, ("status",))
+    if status_at is None:
+        raise WorkplanError("the hand-maintained work plan's table has no `Status` column")
+    rows = [_hand_row(cells, header, child_at, status_at) for cells in table[1:]]
+    seen: set[str] = set()
+    for row in rows:
+        if row.id in seen:
+            raise _hand_refusal(row.id, "appears twice")
+        seen.add(row.id)
+    return rows
+
+
+def _hand_landed(section: str) -> str:
+    """Return what a hand-maintained work plan keeps below the rendered one: its notes, then its landed reports.
+
+    The notes are everything in the section except its heading, its first
+    table and its `### <id> as landed` sections (each up to the next `### `
+    heading), kept verbatim under `### Notes (carried over)`.
+    """
+    without_heading = section.split("\n", 1)[1] if "\n" in section else ""
+    chunks = re.split(r"(?m)^(?=### )", _split_table(without_heading)[1])
+    landed = [chunk.strip("\n") for chunk in chunks if LANDED_RE.match(chunk)]
+    notes = re.sub(r"\n{3,}", "\n\n", "".join(chunk for chunk in chunks if not LANDED_RE.match(chunk))).strip("\n")
+    return "\n\n".join(([f"{NOTES_HEADING}\n{notes}"] if notes else []) + landed)
+
+
+def current_rows(body: str, plan_slices: list[Slice]) -> tuple[list[Slice], str]:
+    """Return plan_slices merged with the body's work plan rows, and its "as landed" reports.
+
+    A body without a `## Work plan` section gives plan_slices as they are; a
+    hand-maintained one is adopted by `adopt_hand_workplan`.
+    """
+    span = find_section(body, WORKPLAN_HEADING)
+    if span is None:
+        return plan_slices, ""
+    section = body[span[0] : span[1]]
+    if WORKPLAN_COMMENT_RE.search(section) is None:
+        return adopt_hand_workplan(lf(section), plan_slices)
+    current, landed = split_workplan(body)
+    return merge_rows(plan_slices, current.slices), landed
+
+
+def adopt_hand_workplan(section: str, plan_slices: list[Slice]) -> tuple[list[Slice], str]:
+    """Return plan_slices carrying over a hand-maintained work plan's rows, and its "as landed" reports.
+
+    A `## Work plan` section without a `dovo:workplan` comment is hand-maintained:
+    its first table's rows give each slice's id (the first cell), child issue
+    (the `Child` or `Child issue` column) and status (a `Status` column), and
+    its `### <id> as landed` sections are kept, after the rest of its text,
+    which is kept verbatim under `### Notes (carried over)`. section has LF
+    line endings.
+
+    Raises:
+        WorkplanError: When a row cannot be carried over safely, or its id matches no plan.json slice.
+    """
+    rows = _hand_rows(section)
+    planned = {row.id for row in plan_slices}
+    unmatched = [row.id for row in rows if row.id not in planned]
+    if unmatched:
+        raise WorkplanError(
+            f"the hand-maintained work plan's row {', '.join(unmatched)} matches no plan.json slice; "
+            "give the slice that id or remove the row"
+        )
+    return merge_rows(plan_slices, rows), _hand_landed(section)
 
 
 def _stored_slice(data: dict[str, object]) -> Slice:
@@ -317,6 +484,11 @@ def render_workplan(plan: WorkPlan, landed: str) -> str:
     parts.append(f"<!-- dovo:workplan {_comment_json(plan)} -->")
     text = "\n".join(parts) + "\n"
     return text + ("\n" + landed.strip("\n") + "\n" if landed.strip() else "")
+
+
+def with_contract(body: str, contract: dict[str, object], questions: str) -> str:
+    """Return body with its `## Feature contract` section rendered from contract and questions, before the work plan."""
+    return set_section(body, CONTRACT_HEADING, render_contract(contract, questions), before=WORKPLAN_HEADING)
 
 
 def with_workplan(body: str, plan: WorkPlan, landed: str) -> str:
@@ -459,17 +631,31 @@ def _open_question(item: dict[str, object]) -> str:
     return f"- **{_text(item, 'id')}**{blocked}: {_text(item, 'summary')} **Recommended:** {_text(item, 'assumed')}"
 
 
+def render_questions(open_questions: list[dict[str, object]]) -> str:
+    """Return the open questions block listed under `### Decisions`, or "" when there are none."""
+    if not open_questions:
+        return ""
+    return "\n".join([QUESTIONS_INTRO, *(_open_question(item) for item in open_questions)])
+
+
+def body_questions(body: str) -> str:
+    """Return the open questions block under body's `## Feature contract` as `render_questions` wrote it, or ""."""
+    span = find_section(body, CONTRACT_HEADING)
+    section = lf(body[span[0] : span[1]]) if span else ""
+    block = _find_block(section, lambda line: line == QUESTIONS_INTRO, lambda line: not line.strip())
+    return section[block[0] : block[1]].rstrip("\n") if block else ""
+
+
 def _decisions(contract: dict[str, object]) -> str:
-    """Render `### Decisions` as its table, followed by the plan's open questions, leaving out whichever is empty."""
+    """Render `### Decisions` as its table, followed by the open questions block, leaving out whichever is empty."""
     rows = [
         [_text(item, "id"), _text(item, "decision"), _text(item, "why"), _settled_by(item)]
         for item in _items(contract, "decisions")
     ]
     parts = [_table(["ID", "Decision", "Why", "Settled by"], rows)] if rows else []
-    questions = _items(contract, OPEN_QUESTIONS)
+    questions = _text(contract, OPEN_QUESTIONS)
     if questions:
-        listed = "\n".join(_open_question(item) for item in questions)
-        parts.append(f"Open questions, each with a recommended answer until the user settles it:\n{listed}")
+        parts.append(questions)
     return "\n\n".join(parts)
 
 
@@ -546,20 +732,21 @@ CONTRACT_SECTIONS: tuple[tuple[str, tuple[str, ...], Callable[[dict[str, object]
 )
 
 
-def render_contract(contract: dict[str, object], open_questions: list[dict[str, object]]) -> str:
-    """Return the `## Feature contract` section rendered from plan.json's contract and open questions.
+def render_contract(contract: dict[str, object], questions: str) -> str:
+    """Return the `## Feature contract` section rendered from plan.json's contract and an open questions block.
 
     A section whose keys are all missing, null or empty is left out, heading
     and all, so a short contract renders only the sections it has.
 
     Args:
         contract: plan.json's `contract` object.
-        open_questions: plan.json's `open_questions`, listed under Decisions.
+        questions: The open questions block listed under Decisions: `render_questions` of the epic
+            plan's `open_questions`, or the block already on the body, or "".
 
     Returns:
         The section text, ending with a newline.
     """
-    fields: dict[str, object] = {**contract, OPEN_QUESTIONS: open_questions}
+    fields: dict[str, object] = {**contract, OPEN_QUESTIONS: questions}
     grounded_at = _text(contract, "grounded_at")
     parts = [CONTRACT_HEADING, *([f"Grounded at `main@{grounded_at}`."] if grounded_at else [])]
     for title, keys, render in CONTRACT_SECTIONS:
@@ -828,19 +1015,16 @@ def _load_json(path: str) -> object:
 
 
 def cmd_render(issue: int, plan_path: str, session: str, revision: int) -> None:
-    """Write the feature contract and work plan from plan.json into issue's body."""
+    """Write the feature contract and work plan from plan.json into issue's body, adopting a hand-maintained work plan."""
     data = _load_json(plan_path)
     contract, slices = parse_plan(data, issue)
     body = read_body(issue)
-    landed = ""
-    if find_section(body, WORKPLAN_HEADING) is not None:
-        current, landed = split_workplan(body)
-        slices = merge_rows(slices, current.slices)
+    slices, landed = current_rows(body, slices)
     new = with_workplan(body, WorkPlan(session, revision, slices), landed)
     if contract is not None:
         raw_questions = _list(_object(data, "plan.json").get("open_questions"))
         questions = [_object(item, "each open question") for item in raw_questions]
-        new = set_section(new, CONTRACT_HEADING, render_contract(contract, questions), before=WORKPLAN_HEADING)
+        new = with_contract(new, contract, render_questions(questions))
     write_body(issue, body, new)
 
 
@@ -891,8 +1075,66 @@ def cmd_claim(issue: int, slice_id: str, session: str) -> None:
     write_body(issue, body, with_workplan(body, plan, landed))
 
 
+def settle_questions(questions: str, contract: dict[str, object]) -> str:
+    """Return the open questions block without the questions contract's decisions now settle.
+
+    A slice's report settles an epic open question by adding a `decisions`
+    entry whose `id` is the question's id (such as `OQ-2`). The block is ""
+    when no question is left.
+    """
+    decided = {_text(item, "id") for item in _items(contract, "decisions")}
+    lines = questions.split("\n")
+    kept = [line for line in lines[1:] if not any(line.startswith(f"- **{qid}**") for qid in decided)]
+    return "\n".join([lines[0], *kept]) if kept else ""
+
+
+def amend_contract(issue: int, body: str, base: dict[str, object] | None, contract: dict[str, object]) -> str:
+    """Return body with its `## Feature contract` rendered from contract, checked three ways against base.
+
+    base is the contract this run started from. When the body still renders as
+    base, it takes contract, dropping the open questions contract settles; when
+    it already renders as contract, it is returned unchanged.
+
+    Raises:
+        WorkplanError: When the body renders as neither, because someone edited it during the run.
+    """
+    questions = body_questions(body)
+    amended = with_contract(body, contract, settle_questions(questions, contract))
+    if lf(amended) == lf(body):
+        return body
+    if base is not None and lf(with_contract(body, base, questions)) == lf(body):
+        return amended
+    raise WorkplanError(
+        f"#{issue}'s Feature contract was edited during this run: it is neither the contract this run started "
+        "from nor the amended one; reconcile it by hand and run land again"
+    )
+
+
+def amend(issue: int, body: str, plan: WorkPlan, args: argparse.Namespace) -> tuple[str, WorkPlan]:
+    """Return body and plan following `--plan`, repointed at this session when the report amended it.
+
+    The plan is amended when its slice rows differ from the work plan's, or its
+    contract differs from `--base-plan`'s, the epic plan this run started from
+    (see `amend_contract`). The open questions the body lists under Decisions
+    are kept, since the code session's plan.json does not carry them, except
+    those the amended contract settles.
+
+    Raises:
+        WorkplanError: When the plan redefines a slice that has already started (see `check_started_unchanged`).
+    """
+    contract, plan_slices = parse_plan(_load_json(args.plan), issue)
+    raw_base = _object(_load_json(args.base_plan), "the epic plan.json").get("contract")
+    base = None if raw_base is None else _object(raw_base, "the epic plan.json contract")
+    check_started_unchanged(plan_slices, plan.slices)
+    rows = merge_rows(plan_slices, plan.slices)
+    amended = body if contract is None else amend_contract(issue, body, base, contract)
+    if rows == plan.slices and amended == body:
+        return body, plan
+    return amended, WorkPlan(args.session, None, rows)
+
+
 def cmd_land(issue: int, args: argparse.Namespace) -> int:
-    """Mark the slice in_review with its PR, record its report, follow an amended plan and apply the sweep."""
+    """Mark the slice in_review with its PR, record its report, follow an amended plan or contract and apply the sweep."""
     slice_id: str = args.slice
     session: str = args.session
     pr: int = args.pr
@@ -906,12 +1148,10 @@ def cmd_land(issue: int, args: argparse.Namespace) -> int:
         report = Path(args.report).read_text(encoding="utf-8")
     except OSError as error:
         raise WorkplanError(f"cannot read {args.report}: {error}") from error
-    rows = merge_rows(parse_plan(_load_json(args.plan), issue)[1], plan.slices)
-    if rows != plan.slices:
-        plan = WorkPlan(session, None, rows)
+    amended, plan = amend(issue, body, plan, args)
     row = find_slice(plan, slice_id)
     row.status, row.pr = "in_review", pr
-    write_body(issue, body, with_workplan(body, plan, add_landed(landed, slice_id, pr, report)))
+    write_body(issue, body, with_workplan(amended, plan, add_landed(landed, slice_id, pr, report)))
     if args.sweep is None:
         return 0
     failures = apply_sweep(Path(args.sweep))
@@ -950,6 +1190,9 @@ def build_parser() -> argparse.ArgumentParser:
     land.add_argument("--pr", type=int, required=True, help="The slice's pull request number.")
     land.add_argument("--report", required=True, help="Path to slice-report.md.")
     land.add_argument("--plan", required=True, help="Path to plan.json, amended or not.")
+    land.add_argument(
+        "--base-plan", required=True, help="Path to the epic plan.json this run started from (.agentic/epic-plan.json)."
+    )
     land.add_argument("--sweep", help="Path to sweep.json.")
     return parser
 
