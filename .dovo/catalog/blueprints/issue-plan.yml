@@ -5,7 +5,7 @@
 version: 1
 name: issue-plan
 id: issue-plan
-description: Ready a GitHub issue (re-ground it against main, re-check it and, once a person approves, apply the edits and label it dovo:ready), plan it in slices of one PR each with the issue-plan skill, review and challenge the plan once and fold in every finding and fold-routed challenge, answer its open questions, walk the approver through it, then write the feature contract and the work plan into the issue body
+description: Ready a GitHub issue (re-ground it against main, re-check it and, once a person approves, apply the edits and label it dovo:ready), slice it into PRs with the issue-plan skill (the feature contract and the slice table on an epic, one slice on a plain issue, and no phases, which each slice's issue-code run plans just in time), review and challenge the plan once and fold in every finding and fold-routed challenge, answer its open questions, walk the approver through it, then write the feature contract and the work plan into the issue body
 summary: Issue to an approved work plan on the ticket, with human gates
 
 inputs:
@@ -93,17 +93,19 @@ steps:
     timeout_seconds: 300
 
   # --- feature-dev's planning half, on the issue-plan skills. feature-dev's
-  # `ready` check is dropped: the steps above have just labelled the issue. ---
+  # `ready` check is dropped: the steps above have just labelled the issue.
+  # The plan slices the issue and writes no phases: issue-code phases each
+  # slice just in time, after the slices before it have landed. ---
 
   - id: plan
-    name: Plan the issue in slices
+    name: Slice the issue
     type: agent
     prompt: |
       /issue-plan ${{ inputs.issue }}
 
       Follow .agents/skills/issue-plan/SKILL.md if the slash command is not recognized.
       Write the plan to .agentic/plan.md and its open questions, contract and slices to
-      .agentic/plan.json, then stop; do not implement anything.
+      .agentic/plan.json, with no phases, then stop; do not implement anything.
     tools: { allow_all: true }
     timeout_seconds: 1800
     artifacts:
@@ -139,9 +141,10 @@ steps:
       Follow .agents/skills/dovo-plan-challenge/SKILL.md if the slash command is not recognized.
       Challenge .agentic/plan.md and write challenges to .agentic/plan-challenge.md and
       .agentic/plan-challenge.json. Do not read .agentic/plan-review.md or .agentic/plan-review.json.
-      The plan groups its phases into slices, one PR each, listed under slices in
-      .agentic/plan.json. Each slice lands on its own, so challenge how the phases are sliced
-      and ordered as well as the design.
+      The plan splits the issue into slices, one PR each, listed under slices in
+      .agentic/plan.json, and writes no phases: each slice is phased, challenged and approved
+      in its own issue-code run. Each slice lands on its own, so challenge the contract and
+      how the work is sliced and ordered, not phases.
     tools: { allow_all: true }
     timeout_seconds: 1800
     artifacts:
@@ -240,8 +243,9 @@ steps:
 
       Follow .agents/skills/dovo-plan-walkthrough/SKILL.md if the slash command is not recognized.
       Explain .agentic/plan.md to the person approving it and write .agentic/plan-walkthrough.md.
-      The plan groups its phases into slices, one PR each, listed under slices in
-      .agentic/plan.json: say which phases each slice holds and the order the slices land in.
+      The plan splits the issue into slices, one PR each, listed under slices in
+      .agentic/plan.json: say what each slice delivers and the order the slices land in, and
+      that each slice's phases are planned and approved in its own issue-code run.
       Do not change the plan, implement anything, commit or push.
     tools: { allow_all: true }
     timeout_seconds: 1800
