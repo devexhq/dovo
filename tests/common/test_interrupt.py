@@ -48,6 +48,18 @@ except KeyboardInterrupt:
     reraise_interrupt_signal()
 """
 
+IGNORED_CHILD = """
+import os
+import signal
+from dovo.common.interrupt import install_interrupt_handlers, reraise_interrupt_signal
+
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+install_interrupt_handlers()
+os.kill(os.getpid(), signal.SIGTERM)
+reraise_interrupt_signal()
+print("IGNORED", flush=True)
+"""
+
 
 def _start(script: str) -> subprocess.Popen[str]:
     """Start script under the current interpreter with captured text stdout and stderr."""
@@ -57,8 +69,12 @@ def _start(script: str) -> subprocess.Popen[str]:
 def _read_line(process: subprocess.Popen[str]) -> str:
     """Return the next stdout line of process, failing the test when none arrives within 10 s."""
     assert process.stdout is not None
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
         return executor.submit(process.stdout.readline).result(timeout=10.0).strip()
+    finally:
+        # Waiting would block on the readline; the caller kills the child, which ends it
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 class InterruptHandlerTests:
@@ -89,6 +105,14 @@ class InterruptHandlerTests:
         )
 
         assert (completed.returncode, completed.stdout.splitlines()) == (0, ["RETURNED"])
+
+    def test_signal_ignored_at_install_stays_ignored(self) -> None:
+        """A child that ignores SIGTERM before installing the handlers and then sends itself SIGTERM keeps running: reraise_interrupt_signal() returns and the child prints IGNORED and exits 0."""
+        completed = subprocess.run(
+            [sys.executable, "-c", IGNORED_CHILD], capture_output=True, text=True, timeout=30.0, check=False
+        )
+
+        assert (completed.returncode, completed.stdout.splitlines()) == (0, ["IGNORED"])
 
     def test_signal_inside_deferred_interrupts_raises_after_the_block(self) -> None:
         """A child that installed the handlers sends itself SIGTERM inside deferred_interrupts() and prints INSIDE after the kill; its except KeyboardInterrupt prints AFTER and calls reraise_interrupt_signal(); stdout is INSIDE then AFTER and the returncode is -SIGTERM."""

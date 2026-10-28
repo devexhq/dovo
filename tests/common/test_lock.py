@@ -248,5 +248,9 @@ def _start_interrupt_child(script: str, workspace: Path) -> subprocess.Popen[str
 def _read_line(proc: subprocess.Popen[str]) -> str:
     """Return the next stdout line of proc, failing the test when none arrives within 10 s."""
     assert proc.stdout is not None
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
         return executor.submit(proc.stdout.readline).result(timeout=10.0).strip()
+    finally:
+        # Waiting would block on the readline; the caller kills the child, which ends it
+        executor.shutdown(wait=False, cancel_futures=True)

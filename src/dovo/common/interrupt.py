@@ -14,8 +14,10 @@ _received_signal: int | None = None
 
 
 def install_interrupt_handlers() -> None:
-    """Route SIGINT and SIGTERM to KeyboardInterrupt, recording the first signal number received."""
+    """Route SIGINT and SIGTERM to KeyboardInterrupt, recording the first signal number received; leave a signal the process inherited as ignored ignored."""
     for sig in _INTERRUPT_SIGNALS:
+        if signal.getsignal(sig) is signal.SIG_IGN:
+            continue
         try:
             signal.signal(sig, _raise_interrupt)
         except (ValueError, OSError):
@@ -24,7 +26,7 @@ def install_interrupt_handlers() -> None:
 
 
 def reraise_interrupt_signal() -> None:
-    """When an interrupt signal was recorded, flush stdout and stderr, restore its default disposition and send it to this process; return when none was recorded."""
+    """When an interrupt signal was recorded, flush stdout and stderr, restore its default disposition and send it to this process, or exit 128 + signum on Windows; return when none was recorded."""
     signum = _received_signal
     if signum is None:
         return
@@ -33,10 +35,11 @@ def reraise_interrupt_signal() -> None:
             stream.flush()
         except (OSError, ValueError):
             pass
+    if sys.platform == "win32":
+        # os.kill on Windows terminates the process with exit code signum, which collides with a usage error
+        sys.exit(128 + signum)
     signal.signal(signum, signal.SIG_DFL)
     os.kill(os.getpid(), signum)
-    # Reached only where os.kill does not end the process by the signal (Windows)
-    sys.exit(128 + signum)
 
 
 @contextmanager
