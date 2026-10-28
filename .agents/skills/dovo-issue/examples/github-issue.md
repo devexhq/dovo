@@ -26,11 +26,10 @@ The block below is the issue body only (title: `Implement config loader`).
 - Unit tests for the success path and every load error code
 - Update in-tree callers and tests to the new API in the same change
 
-### Out of scope
-- CLI subcommands (`dovo config show`, `dovo config set`, `dovo config unset`, `dovo config validate`)
-- Terminal rendering of effective config or defaults overlay
-- Mutating config on disk (dot-path set/unset, typed CLI value parsing, atomic writes)
-- Config generation, repair, or overwrite (`dovo init` generator)
+### Owned elsewhere
+- #412 owns the CLI subcommands (`dovo config show`, `dovo config set`, `dovo config unset`, `dovo config validate`) and their terminal rendering of effective config and the defaults overlay
+- #413 owns mutating config on disk (dot-path set/unset, typed CLI value parsing, atomic writes)
+- #414 owns config generation, repair and overwrite (the `dovo init` generator)
 
 ---
 

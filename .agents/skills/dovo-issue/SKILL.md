@@ -20,8 +20,10 @@ An issue is a working document. Aim for a sensible issue, not a perfect one: whe
 ## Core Principles
 
 1. **Authoritative (no soft decisions):**
-   - Everything in the issue body is **required** unless under **Out of scope**.
-   - **Out of scope** means not required, never forbidden. It bounds the work; it does not stop the planner from changing an out-of-scope line that the in-scope change would otherwise leave inconsistent.
+   - Everything in the issue body is **required** except **Owned elsewhere** and **Notes for the planner**. The FRs, NFRs and Definition of done define the work.
+   - **Owned elsewhere** lists only work another named issue owns, one bullet per item: `#n owns <X>`. It is a pointer the planner and reviewer check for collisions, never a ban: it does not stop a change from fixing a line its own work would otherwise leave false (R17).
+   - **No ownerless deferral.** Work the issue leaves undone on purpose names the issue that does it, as an **Owned elsewhere** bullet. When no issue owns it yet, create one first. Never write "later", "a follow-up" or "not this issue" without an issue number.
+   - **Notes for the planner** holds things noticed but not asked for, one line each. A note is never a prohibition; work that must be done is an FR or a new issue.
    - Never mark work as optional, stretch, nice-to-have, "if implemented," "consider," or "v1 maybe."
    - Never present unresolved product forks ("either X or Y"). Decide before writing; put the decision in Scope, FR/NFR, or Pre-determined data.
 
@@ -32,8 +34,8 @@ An issue is a working document. Aim for a sensible issue, not a perfect one: whe
 
 3. **Self-contained (zero issue-tracker tours):**
    - Prefer **in-repo paths** (`AGENTS.md`, `src/dovo/...`, `schemas/v1/...`) over GitHub issue numbers.
-   - Default to **zero** issue links in the body. Only link another issue when it supersedes or duplicates a ticket. Parent and blocker relationships are set with `gh` flags (see **Split**), never written into the body.
-   - Write **Out of scope** as capability bullets, never as issue ranges (`- Everything in #9–#20`).
+   - Default to **zero** issue links in the body. Only link another issue when it supersedes or duplicates a ticket, or in an **Owned elsewhere** bullet. Parent and blocker relationships are set with `gh` flags (see **Split**), never written into the body.
+   - Write each **Owned elsewhere** bullet as one issue and the capability it owns, never as an issue range (`- Everything in #9–#20`).
 
 4. **Observable contracts only:**
    - FRs, error cases and **Pre-determined data** state what a test can observe without reading the implementation. For user-facing work, that means CLI commands, flags, output, exit codes, YAML and `config.json` fields, and files on disk. For an internal surface, it means the entrypoint's signature, result model and statuses.
@@ -42,7 +44,7 @@ An issue is a working document. Aim for a sensible issue, not a perfect one: whe
 
 5. **Changes and guards:**
    - A **change** is what the issue exists to deliver ("`validate_patch_text` raises `GitError` with a `PATCH_*` code"). It binds the planner exactly as written.
-   - A **guard** says what must not regress ("the agent step reports today's outcome"). It binds what a user or caller relies on: outcome, status, exit code, `error_code`, persisted data, and text that a doc or a test outside the change depends on. Name that text when it matters; never guard incidental wording with "same as today".
+   - A **guard** is the only way an issue says something must not change: an NFR, or a sentence in an FR, that names the contract. It says what must not regress ("the agent step reports today's outcome"). It binds what a user or caller relies on: outcome, status, exit code, `error_code`, persisted data, and text that a doc or a test outside the change depends on. Name that text when it matters; never guard incidental wording with "same as today".
    - A guard never excludes the behaviour of the foundation an Adopt issue adopts. When adopting `catch_failure` adds a `diagnostics` entry to a failure caused by an `OSError` on Dovo's own state (`docs/agents/architecture/exceptions.md` and `diagnostics.md`), that entry is part of the adoption, and a guard that forbids it is wrong.
    - The planner may depart from a guard, never from a change, with an Open Question that names the departure ([planning.md](../../../docs/agents/planning.md) Step 1).
 
@@ -81,7 +83,7 @@ Label every issue except a split's parent `dovo-size-s`, `dovo-size-m` or `dovo-
 
 Every split has a parent issue and native GitHub sub-issues:
 
-- **Parent:** the Goal / User Story, one short paragraph on why the children are ordered as they are, and an **Out of scope** list for the whole feature. No FRs, data, error cases or Definition of Done: GitHub tracks progress through the sub-issues. When splitting an existing issue, edit it into the parent (`gh issue edit <n> --body-file …`) so its number, links and discussion survive.
+- **Parent:** the Goal / User Story, one short paragraph on why the children are ordered as they are, and an **Owned elsewhere** list naming which child owns each part of the feature (`#n owns <X>`). No FRs, data, error cases or Definition of Done: GitHub tracks progress through the sub-issues. When splitting an existing issue, edit it into the parent (`gh issue edit <n> --body-file …`) so its number, links and discussion survive.
 - **Sub-issues:** full issues in the structure below, each self-contained. The planner reads only the sub-issue, never the parent or its siblings, so every requirement and literal contract it needs is in its own body. Create each with `gh issue create --parent <parent> --label dovo-size-<s|m|l>`, adding `--blocked-by <n>` when it cannot ship before another sub-issue.
 
 For example, "prompts as a catalog type that agent steps can reference" becomes a parent with three sub-issues: a bug fix on the shared catalog delete path; prompts as a catalog type with `dovo prompt` commands, blocked by the fix; and `prompt_file` on agent steps, blocked by the catalog type.
@@ -108,8 +110,8 @@ Use the sections below in order, and include a section only when it applies (e.g
 ### In scope
 - <mandatory deliverable>
 
-### Out of scope
-- <capabilities not built in this issue; self-contained stop list>
+### Owned elsewhere
+- <omit if none; otherwise `#n owns <X>`, one bullet per item another existing issue owns>
 
 ### Shared surfaces changed
 - <omit if none; otherwise name each renamed/modified type, field, or file and its new shape; for a persisted format, what happens to data written before the change>
@@ -142,14 +144,18 @@ Use the sections below in order, and include a section only when it applies (e.g
 ## Definition of done
 
 - <ONLY checks not already obvious from FR/NFR: cross-FR integration bars, grep bars confirming deleted legacy symbols have zero references in src/ and tests/, or doc gates>
+
+## Notes for the planner
+
+- <omit if none; one line per thing noticed but not asked for, never a prohibition>
 ```
 
 ## Pre-Publish Checklist
 
 Before running `gh issue create` or `gh issue edit`:
-1. Scan the draft for shim-inducing words (`unchanged`, `untouched`, `as before`, `alongside`, `keep`, `compatib`, `shim`, `legacy`). Delete them or convert them into a **Shared surfaces changed** bullet and a grep removal bar in **Definition of done**. Scan also for guard words (`today`, `same`, `identical`, `does not change`): rewrite each guard to name what a user or caller relies on (**Core Principles** 5).
+1. Scan the draft for shim-inducing words (`unchanged`, `untouched`, `as before`, `alongside`, `keep`, `compatib`, `shim`, `legacy`). Delete them or convert them into a **Shared surfaces changed** bullet and a grep removal bar in **Definition of done**. Scan also for guard words (`today`, `same`, `identical`, `does not change`): rewrite each guard to name what a user or caller relies on (**Core Principles** 5). Scan also for deferral words (`later`, `follow-up`, `future`, `not this issue`, `separately`): each names the issue that does the work as an **Owned elsewhere** bullet, or you create that issue first (**Core Principles** 1).
 2. Re-check the finished draft against **Split**: one kind, neither rule broken, a review load that fits one sitting, and a `dovo-size-*` label.
-3. When publishing a split, create or edit the parent first, then the sub-issues in dependency order so each `--blocked-by` names an issue that exists. Confirm with `gh api repos/{owner}/{repo}/issues/<parent>/sub_issues --jq '.[].number'`.
+3. When publishing a split, create or edit the parent first, then the sub-issues in dependency order so each `--blocked-by` names an issue that exists, then edit the parent's **Owned elsewhere** list to name the children. Confirm with `gh api repos/{owner}/{repo}/issues/<parent>/sub_issues --jq '.[].number'`.
 
 ## Ready mode
 
@@ -161,7 +167,7 @@ Before running `gh issue create` or `gh issue edit`:
    - It has no sub-issues. For a parent, name the first open sub-issue whose blockers are all closed.
    - Every blocker is closed.
    - It has exactly one `dovo-size-*` label.
-3. **Re-ground.** Run **Workflow → Ground** against `origin/main` and compare what you find with the issue. Look for in-scope work that has already shipped, out-of-scope items that are now done, paths and symbols that moved or no longer exist, callers the issue does not account for, and internal shapes pinned where an observable contract would do (**Core Principles** 4), including new symbols that would shadow existing ones.
+3. **Re-ground.** Run **Workflow → Ground** against `origin/main` and compare what you find with the issue. Look for in-scope work that has already shipped, **Owned elsewhere** bullets whose issue is closed or no longer owns the work, paths and symbols that moved or no longer exist, callers the issue does not account for, and internal shapes pinned where an observable contract would do (**Core Principles** 4), including new symbols that would shadow existing ones.
 4. **Re-check.** Check the body against **Core Principles**, **Split**, **Issue Structure** and the **Pre-Publish Checklist**. A finding that requires a split, or a product decision the issue cannot make for itself, makes the verdict `not_ready`: recommend the split or name the decision, and do not draft around it.
 5. **Rules.** Read every rule in `AGENTS.md`, then check the body against those the change can touch:
    - R1, R3 to R6, R9 to R14, R16 and R17 always apply. R2 applies when the issue touches `cli/` handlers, R7 when it reads secrets or writes log or diagnostic context, R8 when it adds a migration, R15 when it prescribes a test double, and R18 when it changes a page under `docs/` outside `docs/agents/`.
@@ -170,8 +176,10 @@ Before running `gh issue create` or `gh issue edit`:
      - R4: check the issue's catch sites, error classes, error codes, results and any mapping of one status or error code onto another against `docs/agents/architecture/exceptions.md` and `results.md`.
      - R6: check the issue's lock handling against `WorkspaceLock` and the lock-timeout entry in `docs/agents/architecture/exceptions.md`.
      - R17: search `docs/` and the docstrings of the changed symbols for sentences the change makes false.
-   - Also check the body against itself. An FR that contradicts **Out of scope**, another FR, or a field an output requirement relies on is a finding.
-   - A guard that pins incidental wording, or that forbids behaviour of the foundation an Adopt issue adopts, is a finding (**Core Principles** 5). Quote the guard and the foundation behaviour it excludes, such as `catch_failure` recording an `OSError` cause (`src/dovo/common/exceptions.py`).
+   - Also check the body against itself. An FR that does work an **Owned elsewhere** issue owns, contradicts another FR, or a field an output requirement relies on is a finding.
+   - An **Out of scope** section is a `structure` finding. Propose the conversion bullet by bullet: work another existing issue owns becomes an **Owned elsewhere** pointer (`#n owns <X>`); a contract that must not change becomes a guard (an NFR naming it); something noticed but not asked for becomes a line under **Notes for the planner**; anything else is dropped. A bullet that defers work no issue owns is the next finding.
+   - A sentence that defers work ("later", "a follow-up", "not this issue") without naming an issue number is a `structure` finding. When an open issue owns the work, propose the **Owned elsewhere** pointer. When none does, the verdict is `not_ready`: a person creates the owning issue, moves the work into this one, or drops the deferral.
+   - A guard that pins incidental wording, such as "keep X as today", "same as today" or "X is unchanged" for text no doc or test outside the change depends on, or that forbids behaviour of the foundation an Adopt issue adopts, is a finding (**Core Principles** 5). Quote the guard and the foundation behaviour it excludes, such as `catch_failure` recording an `OSError` cause (`src/dovo/common/exceptions.py`).
    - A finding quotes the issue text and either the rule clause it breaks or the sentence it contradicts. Silence is a finding only when following the issue literally breaks the clause. A shape you would prefer, but no rule requires, is not a finding.
    - Fix each finding with an observable contract where one exists (**Core Principles** 4), not with the implementation steps that would satisfy the rule.
    - Report findings only, never a clause-by-clause table.
@@ -187,7 +195,7 @@ Before running `gh issue create` or `gh issue edit`:
     {
       "id": "F1",
       "kind": "stale",
-      "summary": "Out of scope lists making git execution injectable, which shipped in fa99a3eb.",
+      "summary": "Owned elsewhere says #918 owns making git execution injectable, which shipped in fa99a3eb.",
       "evidence": "src/dovo/core/worktree/worktree.py:39",
       "fix": "Delete the bullet."
     }

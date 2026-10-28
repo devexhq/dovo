@@ -62,7 +62,8 @@ A miss is Blocking when implementing the plan as written produces a bug, data lo
 
 - Every FR, NFR, numbered error case, Definition of Done item and GWT scenario maps to a phase and to at least one planned test in `## Traceability`. List the gaps.
 - Every command the plan adds or changes has the R13 runner matrix: success, a failure path, `--format json` and each option it binds.
-- Nothing out of scope, or named under Traps as not touched, is planned, except a departure the plan names under What you're approving with an Open Question.
+- Nothing an issue under `## Owned elsewhere` owns is planned, except a departure the plan names under What you're approving with an Open Question.
+- Planned surface no FR, NFR, guard or Definition of Done item asks for is judged on its own merits: it stands when a rule requires it (R10's callers, R17's false sentences); otherwise it is a Warning whose Fix removes it.
 - Each planned test pins a contract no other test pins (R12), and sibling cases are planned as one parametrized test.
 - Each Open Question states the answer the plan assumes, and `.agentic/plan.json` lists the same Open Questions with the same ids and assumed answers. A missing or disagreeing `plan.json` is a Warning: the blueprint asks the human from it. A Decision that changes public surface or a persisted format without an Open Question is a finding.
 

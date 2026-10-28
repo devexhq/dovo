@@ -51,7 +51,7 @@ Follow planning.md Step 3. Estimate the changed lines per FR and group FRs into 
 
 ## 4. Write the plan
 
-Structure `.agentic/plan.md` per planning.md Step 4, in this order: What you're approving (open questions with their assumed answers, changes to existing behaviour, what stays unchanged), Traps, GWT Scenarios, the Phases table with its deletion ledger, Traceability, Artifact inventory, one section per phase, and cross-cutting doc updates. Link the issue rather than copying its prose; copy only literal contracts, into the phase that implements them.
+Structure `.agentic/plan.md` per planning.md Step 4, in this order: What you're approving (open questions with their assumed answers, changes to existing behaviour, what stays unchanged), Traps, Owned elsewhere, GWT Scenarios, the Phases table with its deletion ledger, Traceability, Artifact inventory, one section per phase, and cross-cutting doc updates. Link the issue rather than copying its prose; copy only literal contracts, into the phase that implements them.
 
 When grounding shows one of the issue's internal shapes is wrong, follow planning.md Step 1: plan the better design, assume it in an Open Question with the `path:line` that shows why, and name the departure. Only the issue's observable contracts are binding; an issue sentence is not by itself a reason to plan a duplicate symbol or a dependency the code holds but never calls. A guard ("same message as today") binds only what a user or caller relies on, and planning.md Step 1 allows a named departure from it in the same way.
 
