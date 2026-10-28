@@ -21,8 +21,8 @@ steps:
   # The session's own worktree, so moving it loses nothing: the check grounds
   # against main as it is now, not the commit the session started from.
   - id: base
-    name: Check out origin/main
-    run: git fetch -q origin main && git switch -q --detach origin/main
+    name: Check out origin/luckner/slice-flow-smoke
+    run: git fetch -q origin luckner/slice-flow-smoke && git switch -q --detach origin/luckner/slice-flow-smoke
     timeout_seconds: 120
 
   - id: check

@@ -22,8 +22,8 @@ steps:
   # The session's own worktree, so moving it loses nothing: the slice starts
   # from main as it is now, where the previous slice merged.
   - id: base
-    name: Check out origin/main
-    run: git fetch -q origin main && git switch -q --detach origin/main
+    name: Check out origin/luckner/slice-flow-smoke
+    run: git fetch -q origin luckner/slice-flow-smoke && git switch -q --detach origin/luckner/slice-flow-smoke
     timeout_seconds: 120
 
   # Picks without claiming. Refuses, with its reason on stderr, when a slice is
@@ -221,7 +221,7 @@ steps:
     run: |
       set -eu
       branch=$(head -n 1 .agentic/pr-branch)
-      git fetch -q origin main
+      git fetch -q origin luckner/slice-flow-smoke
       [ "$(git branch --show-current)" = "$branch" ] || git switch -q -c "$branch"
       git rm -r -q --cached --ignore-unmatch .dovo/run
       git add -A
@@ -254,7 +254,7 @@ steps:
           /issue-review --slice {{ steps.next.outputs.slice }}
 
           Follow .agents/skills/issue-review/SKILL.md if the slash command is not recognized.
-          Review the commits on this branch against origin/main as slice
+          Review the commits on this branch against origin/luckner/slice-flow-smoke as slice
           {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked by issue
           {{ steps.next.outputs.child }}, and write .agentic/review.md, .agentic/review.json
           and .agentic/verdict.txt. Do not read .agentic/implementation-report.md.
@@ -295,7 +295,7 @@ steps:
     name: Report how the slice departed from the plan and draft the sweep
     type: agent
     prompt: |
-      Compare `git diff origin/main...HEAD` with slice {{ steps.next.outputs.slice }} of
+      Compare `git diff origin/luckner/slice-flow-smoke...HEAD` with slice {{ steps.next.outputs.slice }} of
       .agentic/plan.md and .agentic/plan.json, with issue ${{ inputs.issue }} and with its child
       issue {{ steps.next.outputs.child }}. Read both issues with `gh issue view`.
 
@@ -339,8 +339,8 @@ steps:
       and .agentic/pr-description, overwriting both. The change implements slice
       {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked by issue
       {{ steps.next.outputs.child }}; .agentic/slice-report.md says how it departed from the plan.
-      Everything is already committed, so read it with `git log --oneline origin/main..HEAD` and
-      `git diff origin/main...HEAD` instead of the uncommitted diff, and ignore `.dovo/run`. The
+      Everything is already committed, so read it with `git log --oneline origin/luckner/slice-flow-smoke..HEAD` and
+      `git diff origin/luckner/slice-flow-smoke...HEAD` instead of the uncommitted diff, and ignore `.dovo/run`. The
       skill's stop when nothing is uncommitted does not apply here: always rewrite both files.
       End .agentic/pr-description with the closing lines between the two markers below, one or
       two of them, exactly as given and in this order, each on a line of its own. Use no other
