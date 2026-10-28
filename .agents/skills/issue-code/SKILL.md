@@ -36,7 +36,7 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 - **The slice's phases, one at a time.** Finish a phase (its FRs, tests and deletion ledger, with its scoped tests green) before starting the next, and never interleave FRs across phases. The phases still order the work and bound each step; the slice's phases all land in this one run and one PR. Another slice's phases are never started, even when the work looks adjacent.
 - **Stay within the size budget.** A slice's `src/` plus docs stay under about 400 changed lines and the whole diff, tests included, under about 900 (`git diff --stat origin/main`). When the diff passes either with work left, stop, flag it 🚨 and report what remains, rather than finishing over budget.
 - **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes and message strings written as literal code in the plan are normative. Do not rename or extend them.
-- **Do not implement anything the plan marks out of scope or names as a trap**, and do not add test files the plan's `### Tests` stubs do not list.
+- **Implement only what the plan's phases ask for.** Never do work the plan's `## Owned elsewhere` says another issue owns, and do not add test files the plan's `### Tests` stubs do not list.
 - **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, `.agentic/verdict.txt` or `.agentic/feedback.json`.** This skill writes only `.agentic/implementation-report.md` and, in review and feedback mode, `.agentic/fix-commit-msg`, and in feedback mode `.agentic/feedback-outcomes.json`.
 
 ## Before writing code
