@@ -179,6 +179,13 @@ steps:
       artifact: plan-walkthrough
       comment: { policy: optional, message: Instructions for the implementer }
 
+  # Installed before the first agent writes code, so its first test run finds
+  # every project dependency.
+  - id: sync
+    name: Install the project's dependencies
+    run: uv sync --all-extras
+    timeout_seconds: 900
+
   - id: code-loop
     name: Implement until the quality gate passes
     type: loop

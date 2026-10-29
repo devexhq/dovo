@@ -39,6 +39,13 @@ steps:
         label_field: label
       comment: { policy: optional, message: Notes for the fixer }
 
+  # Installed at the pull request's head, which restore checked out, before
+  # the fixer writes code, so its first test run finds every project dependency.
+  - id: sync
+    name: Install the project's dependencies
+    run: uv sync --all-extras
+    timeout_seconds: 900
+
   # An empty selection makes every step up to the review a no-op: the fixer
   # changes nothing, the gate is skipped and there is nothing to commit or push.
   - id: fix-loop

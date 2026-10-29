@@ -482,6 +482,13 @@ steps:
       --slice {{ steps.next.outputs.slice }} --session "$DOVO_SESSION_ID"
     timeout_seconds: 120
 
+  # Installed after refresh-base's checkout and before the first agent writes
+  # code, so its first test run finds every project dependency.
+  - id: sync
+    name: Install the project's dependencies
+    run: uv sync --all-extras
+    timeout_seconds: 900
+
   # --- feature-dev's code and review loops, scoped to the slice. ---
 
   - id: code-loop
