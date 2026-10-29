@@ -1,7 +1,7 @@
 version: 1
 name: pr-fix
 id: pr-fix
-description: Restore a pull request's last dovo run state, collect its unresolved review threads and open review findings, fix the ones you pick, then gate, commit, push, reply on the addressed threads, re-review and post the review with this run's session
+description: Restore a pull request's last dovo run state and collect its open feedback, draft a fix, dismiss or defer triage of every item for you to approve, fix the approved fix items, then gate, commit, push, reply on and resolve the addressed review threads, post the outcomes of the review's findings outside the diff, re-review and post the review with this run's session
 summary: One fix round on a pull request
 
 inputs:
@@ -26,21 +26,41 @@ steps:
       - { name: feedback, path: .agentic/feedback.json }
 
   - id: triage
-    name: Choose the feedback to fix
+    name: Draft the triage of the feedback
+    type: agent
+    prompt: |
+      /dovo-code feedback --triage
+
+      Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
+      Write .agentic/triage.json for every item in .agentic/feedback.json.
+      Do not edit any other file, commit, stage or push.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: triage-json, path: .agentic/triage.json }
+
+  # Checks .agentic/triage.json and renders the .agentic/triage.md the person
+  # approves from it, so the approval shows exactly what the fixer and the reply
+  # act on. An invalid triage fails this step and stops the run before the approval.
+  - id: render-triage
+    name: Check the triage and render it for approval
+    run: uv run python scripts/reply_threads.py --render-triage
+    timeout_seconds: 300
+    artifacts:
+      - { name: triage, path: .agentic/triage.md }
+
+  # Denying fails this step, which stops the run before any edit, commit, push or post.
+  - id: approve-triage
+    name: Approve the triage
     type: ask
     interaction:
-      mode: multiselect
-      message: Which feedback on pull request ${{ inputs.pr }} should be fixed? Pick none to change nothing.
-      options_from:
-        artifact: feedback
-        file: .agentic/feedback.json
-        items_path: items
-        value_field: id
-        label_field: label
+      mode: confirm
+      message: Approve this triage of the feedback on pull request ${{ inputs.pr }}? Only its fix items are changed. To change a decision, deny and run pr-fix again.
+      artifact: triage
       comment: { policy: optional, message: Notes for the fixer }
 
-  # An empty selection makes every step up to the review a no-op: the fixer
-  # changes nothing, the gate is skipped and there is nothing to commit or push.
+  # A triage with no fix item makes every step up to the reply a no-op: the
+  # fixer changes nothing, the gate is skipped and there is nothing to commit or push.
   - id: fix-loop
     name: Fix until the quality gate passes
     type: loop
@@ -57,14 +77,15 @@ steps:
     on_max_iterations: prompt_user
     do:
       - id: fix
-        name: Fix the selected feedback
+        name: Fix the approved fix items
         type: agent
         prompt: |
-          /dovo-code feedback --fix {{ steps.triage.outputs.selected }}
+          /dovo-code feedback
 
           Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
+          Fix the fix items of the approved triage in .agentic/triage.json.
           Do not commit, stage or push.
-          Notes: {{ steps.triage.outputs.comment }}
+          Notes: {{ steps.approve-triage.outputs.comment }}
           If .agentic/gate.log exists, a previous attempt left the working tree in a failing
           state: read it, keep the existing work and fix what it reports.
         tools: { allow_all: true }
@@ -74,7 +95,7 @@ steps:
 
       - id: verify
         name: Run the quality gate
-        run: '[ "{{ steps.triage.outputs.selected_count }}" = 0 ] || uv run dovo run quality > .agentic/gate.log 2>&1'
+        run: '[ -z "$(git status --porcelain)" ] || uv run dovo run quality > .agentic/gate.log 2>&1'
         timeout_seconds: 1800
         on_failure: continue
 
@@ -89,12 +110,13 @@ steps:
     timeout_seconds: 300
     on_failure: prompt_user
 
-  # Replies once on each selected review thread with its outcome from
-  # .agentic/feedback-outcomes.json and resolves the fixed ones. A retry skips
-  # threads that already hold this round's reply, so it posts only what is missing.
+  # Replies once on each triaged review thread with its outcome, resolves the
+  # fixed and dismissed ones, and posts one outcome comment for the review's
+  # findings outside the diff. A retry skips what is already posted, so it
+  # posts only what is missing.
   - id: reply
-    name: Reply on the addressed review threads
-    run: uv run python scripts/reply_threads.py --selected '{{ steps.triage.outputs.selected }}'
+    name: Reply on and resolve the addressed review threads
+    run: uv run python scripts/reply_threads.py
     timeout_seconds: 300
     on_failure: prompt_user
 
