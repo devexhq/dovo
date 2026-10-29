@@ -58,7 +58,7 @@ class Call:
 
 @dataclass
 class Turn:
-    """One assistant event that carried tool calls, with the log line it sits on."""
+    """One model response that carried tool calls, with the log line of its first tool_use event."""
 
     line: int
     calls: list[Call]
@@ -123,8 +123,8 @@ def _content(event: dict[str, object]) -> list[dict[str, object]]:
     return [block for block in content if isinstance(block, dict)] if isinstance(content, list) else []
 
 
-def _turn(number: int, event: dict[str, object], uses: dict[str, tuple[Call, int]]) -> Turn | None:
-    """Return the tool-calling Turn of a top-level assistant event, registering its calls in uses."""
+def _calls(number: int, event: dict[str, object], uses: dict[str, tuple[Call, int]]) -> list[Call]:
+    """Return the tool calls of an assistant event, registering them in uses."""
     calls = []
     for block in _content(event):
         if block.get("type") != "tool_use":
@@ -134,7 +134,14 @@ def _turn(number: int, event: dict[str, object], uses: dict[str, tuple[Call, int
         call = Call(str(block.get("name")), target, file_path)
         calls.append(call)
         uses[str(block.get("id"))] = (call, number)
-    return Turn(number, calls) if calls else None
+    return calls
+
+
+def _message_id(event: dict[str, object]) -> str | None:
+    """Return the message.id of a stream-json event, or None when it has none."""
+    message = event.get("message")
+    value = message.get("id") if isinstance(message, dict) else None
+    return str(value) if value else None
 
 
 def _failures(number: int, event: dict[str, object], uses: dict[str, tuple[Call, int]]) -> list[FailedCall]:
@@ -150,28 +157,52 @@ def _failures(number: int, event: dict[str, object], uses: dict[str, tuple[Call,
 def parse_agent_log(path: Path, step: str, iteration: int | None, attempt: int) -> AgentLog | None:
     """Return the parsed stream-json of path, or None when it holds no Claude Code events.
 
-    Subagent turns (those with a parent_tool_use_id) are left out.
+    Claude Code emits each content block of a response as its own assistant event, so events sharing a
+    message.id form one turn. Subagent turns (those with a parent_tool_use_id) are left out.
     """
     log = AgentLog(path.name, step, iteration, attempt)
     uses: dict[str, tuple[Call, int]] = {}
+    responses: dict[str, Turn] = {}
     events = read_events(path)
     for number, event in events:
-        _apply_event(log, number, event, uses)
+        _apply_event(log, number, event, uses, responses)
     return log if any(event.get("type") in STREAM_TYPES for _, event in events) else None
 
 
-def _apply_event(log: AgentLog, number: int, event: dict[str, object], uses: dict[str, tuple[Call, int]]) -> None:
-    """Add one stream-json event to log: the result, a top-level tool-calling turn, or failed tool results."""
+def _apply_event(
+    log: AgentLog,
+    number: int,
+    event: dict[str, object],
+    uses: dict[str, tuple[Call, int]],
+    responses: dict[str, Turn],
+) -> None:
+    """Add one stream-json event to log: the result, top-level tool calls, or failed tool results."""
     kind = event.get("type")
     if kind == "result":
         log.result = event
     if event.get("parent_tool_use_id"):
         return
-    turn = _turn(number, event, uses) if kind == "assistant" else None
-    if turn is not None:
-        log.turns.append(turn)
+    if kind == "assistant":
+        _add_calls(log, number, event, _calls(number, event, uses), responses)
     if kind == "user":
         log.failed.extend(_failures(number, event, uses))
+
+
+def _add_calls(
+    log: AgentLog, number: int, event: dict[str, object], calls: list[Call], responses: dict[str, Turn]
+) -> None:
+    """Add calls to the turn of the event's response, opening that turn on its first tool_use event."""
+    if not calls:
+        return
+    message_id = _message_id(event)
+    turn = responses.get(message_id) if message_id else None
+    if turn is not None:
+        turn.calls.extend(calls)
+        return
+    turn = Turn(number, calls)
+    log.turns.append(turn)
+    if message_id:
+        responses[message_id] = turn
 
 
 def scan_logs(log_dir: Path) -> tuple[list[AgentLog], dict[tuple[str, int | None, int], str], list[Evidence]]:
