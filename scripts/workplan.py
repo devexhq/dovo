@@ -10,6 +10,10 @@ is a table for people plus a `<!-- dovo:workplan {json} -->` comment that this
 script alone parses and rewrites. Every body write re-reads the body first and
 aborts when it changed since this run read it. `next` writes its outputs as
 `key=value` lines, and `closing_lines` as a heredoc block, to `$DOVO_OUTPUT`.
+With `--hold`, `next` also writes the holds file a blueprint's `ask` step lists:
+`{"holds": []}` once a slice is picked, or one hold per slice that waits on a
+person (an open blocker, an unmerged slice, a pull request in review), in which
+case it exits 0 without outputs instead of refusing.
 """
 
 from __future__ import annotations
@@ -36,10 +40,20 @@ READY_LABEL = "dovo:ready"
 ACTIVE_STATUSES = ("in_progress", "in_review")
 HEREDOC_DELIMITER = "WORKPLAN_EOF"
 NONE_CELL = "—"
+SIZES = ("s", "m", "l")
+SIZE_LABEL_PREFIX = "dovo-size-"
 
 
 class WorkplanError(RuntimeError):
     """Raised when a subcommand refuses; the message is the one-line reason."""
+
+
+class WorkplanWait(WorkplanError):
+    """Raised when no slice can start until a person acts; holds maps each waiting slice id to why it waits."""
+
+    def __init__(self, message: str, holds: dict[str, str]) -> None:
+        super().__init__(message)
+        self.holds = holds
 
 
 @dataclass
@@ -56,6 +70,7 @@ class Slice:
     status: str = "pending"
     pr: int | None = None
     session: str | None = None
+    size: str | None = None
 
 
 @dataclass
@@ -103,6 +118,15 @@ def _optional_int(value: object, what: str) -> int | None:
     return value
 
 
+def _size(value: object, slice_id: str) -> str | None:
+    """Return a slice's review size, `s`, `m` or `l`, or None for a plan written before slices carried one."""
+    if value is None:
+        return None
+    if value not in SIZES:
+        raise WorkplanError(f"slice {slice_id} size must be s, m or l, not {value!r}")
+    return str(value)
+
+
 def _plan_slice(raw: object, issue: int, plain: bool) -> Slice:
     """Return one plan.json slice as a pending row; a plain issue's only slice defaults its child to the issue."""
     data = _object(raw, "each plan.json slice")
@@ -123,6 +147,7 @@ def _plan_slice(raw: object, issue: int, plain: bool) -> Slice:
         closing_docs=data.get("closing_docs") is True,
         child=child,
         stub=str(stub) if child is None else None,
+        size=_size(data.get("size"), slice_id),
     )
 
 
@@ -203,12 +228,13 @@ def check_started_unchanged(plan_slices: list[Slice], current: list[Slice]) -> N
 
 
 def _carry_over(row: Slice, old: Slice | None) -> Slice:
-    """Return row with old's child (unless row names one), status, PR and session."""
+    """Return row with old's child and size (unless row names them), status, PR and session."""
     if old is None:
         return row
     child = row.child if row.child is not None else old.child
     stub = row.stub if child is None else None
-    return replace(row, child=child, stub=stub, status=old.status, pr=old.pr, session=old.session)
+    size = row.size if row.size is not None else old.size
+    return replace(row, child=child, stub=stub, size=size, status=old.status, pr=old.pr, session=old.session)
 
 
 # --- body sections -----------------------------------------------------------
@@ -425,6 +451,7 @@ def _stored_slice(data: dict[str, object]) -> Slice:
         status=str(data["status"]),
         pr=_optional_int(data.get("pr"), "pr"),
         session=None if session is None else str(session),
+        size=_size(data.get("size"), str(data["id"])),
     )
 
 
@@ -787,11 +814,28 @@ def refresh_merged(plan: WorkPlan, pr_state: Callable[[int], str]) -> WorkPlan:
 
 def _active_problem(plan: WorkPlan) -> str | None:
     """Return why no new slice may start while another is active, or None."""
-    for row in plan.slices:
-        if row.status in ACTIVE_STATUSES:
-            pr = f" (#{row.pr})" if row.pr is not None else ""
-            return f"{row.id} is {row.status}{pr}; finish it before starting another slice"
-    return None
+    active = _active_slice(plan)
+    return None if active is None else _active_message(active)
+
+
+def _active_slice(plan: WorkPlan) -> Slice | None:
+    """Return the first slice in progress or in review, or None."""
+    return next((row for row in plan.slices if row.status in ACTIVE_STATUSES), None)
+
+
+def _active_message(row: Slice) -> str:
+    """Return why no new slice may start while row is active."""
+    pr = f" (#{row.pr})" if row.pr is not None else ""
+    return f"{row.id} is {row.status}{pr}; finish it before starting another slice"
+
+
+def _active_refusal(plan: WorkPlan) -> WorkplanError | None:
+    """Return the refusal for an active slice: a wait while its pull request is in review, else an error; or None."""
+    active = _active_slice(plan)
+    if active is None:
+        return None
+    problem = _active_message(active)
+    return WorkplanWait(problem, {active.id: problem}) if active.status == "in_review" else WorkplanError(problem)
 
 
 def _wait_reason(row: Slice, merged: set[str], is_closed: Callable[[int], bool]) -> str | None:
@@ -809,23 +853,25 @@ def pick(plan: WorkPlan, is_closed: Callable[[int], bool]) -> Slice:
     """Return the first pending slice whose depends_on slices are merged and whose blocked_by issues are closed.
 
     Raises:
-        WorkplanError: When a slice is in progress or in review, or no pending slice is ready, saying why.
+        WorkplanWait: When a slice's pull request is in review, or no pending slice is ready, saying why;
+            a person settles either by merging or closing what the slice waits on.
+        WorkplanError: When a slice is in progress, or every slice is merged.
     """
-    problem = _active_problem(plan)
-    if problem is not None:
-        raise WorkplanError(problem)
+    refusal = _active_refusal(plan)
+    if refusal is not None:
+        raise refusal
     merged = {row.id for row in plan.slices if row.status == "merged"}
-    reasons: list[str] = []
+    reasons: dict[str, str] = {}
     for row in plan.slices:
         if row.status != "pending":
             continue
         reason = _wait_reason(row, merged, is_closed)
         if reason is None:
             return row
-        reasons.append(reason)
+        reasons[row.id] = reason
     if not reasons:
         raise WorkplanError("every slice is merged")
-    raise WorkplanError(f"no slice is ready: {'; '.join(reasons)}")
+    raise WorkplanWait(f"no slice is ready: {'; '.join(reasons.values())}", reasons)
 
 
 def find_slice(plan: WorkPlan, slice_id: str) -> Slice:
@@ -902,14 +948,23 @@ def write_body(issue: int, read: str, new: str) -> str:
     return new
 
 
+def _no_size_note(row: Slice, child: int) -> None:
+    """Say on stderr that child gets no size label because row's work plan predates slice sizes."""
+    sys.stderr.write(
+        f"workplan.py: {row.id} has no size in the work plan, so #{child} gets no {SIZE_LABEL_PREFIX}* label; "
+        "label it by hand\n"
+    )
+
+
 def create_child(row: Slice) -> int:
-    """Create row's child issue from its stub and return its number.
+    """Create row's child issue from its stub, labelled with the slice's size, and return its number.
 
     Raises:
         WorkplanError: When the issue was created but its number cannot be read from gh's output.
     """
+    label = () if row.size is None else ("--label", f"{SIZE_LABEL_PREFIX}{row.size}")
     output = _with_file(
-        row.stub or "", lambda path: run("gh", "issue", "create", "--title", row.title, "--body-file", path)
+        row.stub or "", lambda path: run("gh", "issue", "create", "--title", row.title, "--body-file", path, *label)
     )
     try:
         return int(output.splitlines()[-1].rstrip("/").rsplit("/", 1)[-1])
@@ -940,6 +995,17 @@ def record_child(issue: int, body: str, slice_id: str, child: int) -> str:
         except WorkplanError:
             continue
     raise WorkplanError(f"created #{child} but #{issue}'s body kept changing; record #{child} as {slice_id}'s child")
+
+
+def label_size(row: Slice, child: int) -> None:
+    """Label an existing child with row's size, unless it already has a size label, which is never overridden."""
+    labels = [_object(label, "a label").get("name") for label in _list(view_issue(child, "labels").get("labels"))]
+    if any(str(name).startswith(SIZE_LABEL_PREFIX) for name in labels):
+        return
+    if row.size is None:
+        _no_size_note(row, child)
+        return
+    run("gh", "issue", "edit", str(child), "--add-label", f"{SIZE_LABEL_PREFIX}{row.size}")
 
 
 def link_child(epic: int, child: int) -> None:
@@ -1033,6 +1099,8 @@ def cmd_next(issue: int) -> dict[str, str]:
 
     A created child is recorded in the work plan before it is linked, so a run
     that fails after creating it resumes by linking that child, never by creating another.
+    The child carries the slice's `dovo-size-*` label: a created child is created
+    with it, and an existing child without one gets it.
     """
     body = read_body(issue)
     current, landed = split_workplan(body)
@@ -1043,10 +1111,14 @@ def cmd_next(issue: int) -> dict[str, str]:
     if child is None:
         write_body(issue, body, body)  # compare only: refuse before creating an issue if the body moved
         created = create_child(row)
+        if row.size is None:
+            _no_size_note(row, created)
         hint = f"record #{created} as {row.id}'s child"
         _after_creating(created, "recording", hint, lambda: record_child(issue, body, row.id, created))
         row.child, row.stub = created, None
         child = created
+    else:
+        label_size(row, child)
     if child != issue:
         linked = child
         _after_creating(linked, "linking", "run next again to link it", lambda: link_child(issue, linked))
@@ -1057,6 +1129,32 @@ def cmd_next(issue: int) -> dict[str, str]:
         "plan_revision": "" if plan.plan_revision is None else str(plan.plan_revision),
         "closing_lines": closing_lines(issue, row),
     }
+
+
+def write_holds(path: Path, holds: dict[str, str]) -> None:
+    """Write holds to path as `{"holds": [{"id", "label"}]}`, the list a blueprint's `ask` step offers."""
+    items = [{"id": slice_id, "label": reason} for slice_id, reason in holds.items()]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"holds": items}, indent=2) + "\n", encoding="utf-8")
+
+
+def cmd_next_or_hold(issue: int, hold: Path | None) -> dict[str, str]:
+    """Run `next`; with a hold path, write its holds and return no outputs when the slices wait on a person.
+
+    Raises:
+        WorkplanError: When `next` refuses for any other reason, or waits without a hold path.
+    """
+    try:
+        outputs = cmd_next(issue)
+    except WorkplanWait as wait:
+        if hold is None:
+            raise
+        write_holds(hold, wait.holds)
+        sys.stderr.write(f"workplan.py: holding: {wait}\n")
+        return {}
+    if hold is not None:
+        write_holds(hold, {})
+    return outputs
 
 
 def cmd_claim(issue: int, slice_id: str, session: str) -> None:
@@ -1183,6 +1281,11 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--issue", type=int, required=True, help="The epic (or plain issue) number.")
     render.add_argument("--plan", required=True, help="Path to plan.json.")
     render.add_argument("--revision", type=int, required=True, help="The plan artifact's revision.")
+    nxt.add_argument(
+        "--hold",
+        type=Path,
+        help="Write the slices waiting on a person here and exit 0 without outputs, instead of refusing.",
+    )
     for sub in (claim, land):
         sub.add_argument("--slice", required=True, help="The slice id, such as S2.")
     for sub in (render, claim, land):
@@ -1203,7 +1306,9 @@ def dispatch(args: argparse.Namespace) -> int:
     if args.command == "render":
         cmd_render(issue, args.plan, args.session, args.revision)
     elif args.command == "next":
-        write_outputs(cmd_next(issue))
+        outputs = cmd_next_or_hold(issue, args.hold)
+        if outputs:
+            write_outputs(outputs)
     elif args.command == "claim":
         cmd_claim(issue, args.slice, args.session)
     else:

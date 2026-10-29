@@ -27,7 +27,7 @@ Plan when the issue adds or changes a command, DTO/`*Result` model, status enum,
 
 | Invocation | Input | Job |
 |---|---|---|
-| `/issue-plan [<issue-number>]` | the issue | **Issue mode.** On an epic, write the feature contract and the slice table; on a plain issue, write one slice. Every slice gets its scope, dependencies, child or stub, ownership and estimate, and **no phases**. Steps 1, 2, 2a, 3, 3a, 4, 5 and 6. |
+| `/issue-plan [<issue-number>]` | the issue | **Issue mode.** On an epic, write the feature contract and the slice table; on a plain issue, write one slice. Every slice gets its scope, dependencies, child or stub, ownership, estimate and size, and **no phases**. Steps 1, 2, 2a, 3, 3a, 4, 5 and 6. |
 | `/issue-plan --slice <id>` | `.agentic/epic-plan.md` and `.agentic/epic-plan.json`, the epic plan as downloaded from the work plan's plan session; the epic's body; the slice's child issue | **Slice mode.** Phase that one slice, against `origin/main` as it is now, and nothing else. Steps 1b, 2, 3, 4, 5 and 6. |
 
 Detail is written just in time: a slice's phases are planned when its `issue-code` run starts, after the slices before it have landed and their "as landed" reports have updated the contract, never when the issue is sliced. A phase written early goes stale as slices land.
@@ -37,7 +37,7 @@ Detail is written just in time: a slice's phases are planned when its `issue-cod
 - **A slice is one PR.** A phase stays what planning.md says: a reviewable chunk inside a slice. Where planning.md says the phases land in one PR, read "the phases of one slice land in one PR".
 - **An epic** is an issue whose body holds, or will hold, `## Feature contract` and `## Work plan`. Epics never nest: an epic is never a slice of another epic.
 - **A plain issue** is any other issue. It gets a one-slice plan with `contract: null`, and its one slice's child is the issue itself. Once slice mode phases it, that plan behaves like a `dovo-plan` plan.
-- **Each slice is tracked by a child issue**, a native sub-issue of the epic. A child that does not exist yet is created just in time from the slice's `stub`, when the slice comes up, not by this skill.
+- **Each slice is tracked by a child issue**, a native sub-issue of the epic. A child that does not exist yet is created just in time from the slice's `stub`, labelled with the slice's `size`, when the slice comes up, not by this skill.
 - **Closing keywords:** every slice PR ends with `Fixes #<child>` then `Refs #<epic>`; the closing docs slice ends with `Fixes #<child>` then `Fixes #<epic>`; a one-slice plan on a plain issue uses only `Fixes #<issue>`.
 
 ## Hard boundaries
@@ -118,21 +118,25 @@ Follow planning.md Step 3. Estimate the changed lines per FR and group FRs into 
 On a plain issue, the whole issue is one slice, `S1`, whose `child` is the issue itself. On an epic:
 
 - **Size each slice.** `src/` plus docs stay under about 400 changed lines, and the whole PR, tests included, under about 900. Tests are estimated separately. A slice over budget says why it cannot be split.
+- **Give each slice a review size**, its `size`, by the descriptions of the repository's `dovo-size-*` labels: `s` for one area and a few files, `m` for a couple of areas, `l` for many areas (packages, formats, command groups, skills, catalog or scripts). `workplan.py next` labels the slice's child issue `dovo-size-<size>` when it creates it, and labels an existing child that has no size label, so the child passes ready mode's size gate; it never overrides a size label a person set. A plain issue's one slice takes the size of the issue's own `dovo-size-*` label.
 - **One responsibility per slice.** A slice never delivers a shape another slice must reverse, and every surface two slices touch has one owner in the contract's Shared-surface ownership table; the other slice says "after Sx" and does not restate it.
 - **Order by dependency.** `depends_on` names slice ids, `blocked_by` names prerequisite issues outside the epic, and the graph is acyclic.
 - **Slice 1 is the pilot**, unless another slice's conventions are reused by more slices; then that slice is the pilot. Its "as landed" report updates the conventions and decision log before later slices are written in full.
 - **The last slice is the closing docs slice.** It reviews every doc the feature touched against `main` and carries `Fixes #<epic>`.
 - **Place the checkpoints** when the epic has three or more slices: after the pilot, after slices that share an owned surface, and a baseline before the closing docs slice.
-- **Map each slice to a child issue.** An existing work issue the contract maps to the slice is its `child`. Otherwise `child` is `null` and the slice carries a `stub`: the markdown body of its child issue, written to the #1227 shape:
-  - the slice's FRs, NFRs and guards, and its Definition of done, citing the epic's contract sections by heading instead of restating them
-  - **Owned elsewhere**: `#n owns <X>` or `Sx owns <X>` pointers from the ownership table, for collision checks, never bans
-  - **Notes for the planner**: one line each, for things noticed but not asked for
-  - no Out of scope section and no ownerless deferral: work left undone names the slice or issue that does it
-  - "unchanged" stated only as an NFR or guard naming the contract, never "keep X as today" for incidental wording
+- **Map each slice to a child issue.** An existing work issue the contract maps to the slice is its `child`. Otherwise `child` is `null` and the slice carries a `stub`: the markdown body of its child issue. `workplan.py next` creates the child from it as written, and ready mode then checks it as a full issue that the planner reads alone, so write it in the issue template of `.agents/skills/dovo-issue/SKILL.md` (**Issue Structure**, **Split** and **Core Principles**), its sections in that order:
+  - One opening line naming the slice and the epic, `Slice <id> of #<epic>.`, then `## Goal / User Story`.
+  - `## Scope`, with `### In scope`; `### Owned elsewhere`, from the ownership table, one bullet per item, each in the form `#n owns <X>` and no other (a slice whose child issue does not exist yet is owned through the epic: `#<epic> owns <X> (slice S3)`); and `### Shared surfaces changed`, naming each type, field or file the slice reshapes and, for a persisted format such as a JSON file another script reads, what happens to data written before the change.
+  - `## Functional requirements` and `## Non-functional requirements`, numbered `FR-<n>` and `NFR-<n>`, with "unchanged" stated only as an NFR or guard naming the contract, never "keep X as today" for incidental wording.
+  - `## Pre-determined data`, holding every literal contract the requirements use (shapes, keys, codes, messages, paths), copied from the contract or the issue it comes from. A citation such as "#1258's Pre-determined data" never replaces the copy.
+  - `## Error cases to handle`, when the slice has failure paths, and `## Definition of done`, holding only checks the FRs and NFRs do not already state (cross-FR bars, grep bars, doc gates).
+  - `## Notes for the planner` last, when there is anything to note: one line each, for things noticed but not asked for, never a prohibition.
+  - No other issue link outside **Owned elsewhere**, apart from the opening line and citations of the epic's contract by section heading or decision ID (`#<epic> D4`, `#<epic>, Decisions D3`), which **Core Principles** 3 allows a slice child.
+  - No Out of scope section and no ownerless deferral: work left undone names the issue that does it.
 
 ## 4. Write the plan
 
-In issue mode, `.agentic/plan.md` holds, in this order: the header and grounding line from planning.md Step 4, What you're approving (open questions with their assumed answers, changes to existing behaviour, what stays unchanged), on an epic the `## Feature contract` from Step 2a, Owned elsewhere, a `## Slices` table (id, title, depends on, blocked by, child, pilot or closing docs, estimate), and Traceability mapping each requirement of the issue to the slice that lands it. It has no Phases table, Artifact inventory or phase sections; say under What you're approving that each slice is phased and approved in its own `issue-code` run.
+In issue mode, `.agentic/plan.md` holds, in this order: the header and grounding line from planning.md Step 4, What you're approving (open questions with their assumed answers, changes to existing behaviour, what stays unchanged), on an epic the `## Feature contract` from Step 2a, Owned elsewhere, a `## Slices` table (id, title, depends on, blocked by, child, pilot or closing docs, estimate, size), and Traceability mapping each requirement of the issue to the slice that lands it. It has no Phases table, Artifact inventory or phase sections; say under What you're approving that each slice is phased and approved in its own `issue-code` run.
 
 In slice mode, the header names the child issue, `# Issue #<child>: <child title>`, and the line after it names the slice and the epic: `Slice <id> of #<epic>.` Copy the epic plan's `## Feature contract` and `## Slices` sections, and its `## Instructions from the approver` when present, verbatim after What you're approving: they are the epic's, and this plan never changes them. The rest follows the paragraph below, for this slice alone.
 
@@ -176,6 +180,7 @@ Write `.agentic/plan.json` alongside the markdown. `.dovo/catalog/blueprints/fea
       "pilot": false,
       "closing_docs": false,
       "estimate": { "src_docs": 180, "tests": 220, "basis": "Phases table estimates" },
+      "size": "s",
       "stub": null
     }
   ]
@@ -186,8 +191,8 @@ Write `.agentic/plan.json` alongside the markdown. `.dovo/catalog/blueprints/fea
 - `open_questions` lists every numbered Open Question in order, each with the `OQ-<n>` id from `plan.md`. `summary` is the one-line question followed by ` (assumed: <short answer>)`, since it is the only text the blueprint's pick-list shows for the question; `assumed` is the full answer the plan is written against, `why` the reason with its `path:line`, `alternatives` the rejected answers (`[]` when none), and `phases` the phase numbers whose instructions change if the answer changes.
 - `open_questions` is `[]` when the plan says "None." On an epic, each item may add `"blocks": ["S3"]`, the slices it blocks.
 - `contract` is `null` on a plain issue. On an epic it is exactly the `contract` object in [contract-template.md](contract-template.md) under "`plan.json` shape", agreeing with the plan's `## Feature contract`. A section left out of the markdown keeps its key, as `[]` (or `null` for `inventory`).
-- `slices` lists every slice in dependency order, one per row of the plan's `## Slices` table. `id` is `S<n>`, unless the issue's body already holds a hand-maintained `## Work plan` table (one without a `dovo:workplan` comment): then every row of that table keeps its id (such as `A1`) on the slice it becomes, since the work plan script adopts the table by id, carrying each row's child and status, and refuses a row no slice matches; `phases` the phase numbers it lands; `depends_on` slice ids; `blocked_by` prerequisite issue numbers outside the epic; `child` the child issue number, or `null` until it is created; `owns` the surfaces and aspects the slice owns in the ownership table; `lint_gates` the `tests/lint/` checks it lands; `estimate` the `src_docs` and `tests` changed-line estimates with their `basis`; `stub` the child issue's markdown body when `child` is `null`, otherwise `null`.
-- On an epic, exactly one slice has `pilot: true` and only the last has `closing_docs: true`. A plain issue's one slice has both `false`, `child` equal to `issue` and `stub` `null`.
+- `slices` lists every slice in dependency order, one per row of the plan's `## Slices` table. `id` is `S<n>`, unless the issue's body already holds a hand-maintained `## Work plan` table (one without a `dovo:workplan` comment): then every row of that table keeps its id (such as `A1`) on the slice it becomes, since the work plan script adopts the table by id, carrying each row's child and status, and refuses a row no slice matches; `phases` the phase numbers it lands; `depends_on` slice ids; `blocked_by` prerequisite issue numbers outside the epic; `child` the child issue number, or `null` until it is created; `owns` the surfaces and aspects the slice owns in the ownership table; `lint_gates` the `tests/lint/` checks it lands; `estimate` the `src_docs` and `tests` changed-line estimates with their `basis`; `size` the slice's review size, `s`, `m` or `l` (Step 3a), which the work plan stores so `workplan.py next` can label the child; `stub` the child issue's markdown body when `child` is `null`, otherwise `null`.
+- On an epic, exactly one slice has `pilot: true` and only the last has `closing_docs: true`. A plain issue's one slice has both `false`, `child` equal to `issue`, `size` matching the issue's `dovo-size-*` label and `stub` `null`.
 - These fields only add to the shape above: `issue`, `plan`, `grounded_at`, `phases` and `open_questions` keep their meaning.
 - **Issue mode** writes no phases: `phases` is `0`, every slice's `phases` is `[]`, and each open question's `phases` is `[]`, with `blocks` naming the slices whose scope changes if the answer changes.
 - **Slice mode** keeps `issue`, `contract` and `slices` exactly as in `.agentic/epic-plan.json`, except that this slice's `phases` lists the phase numbers of this plan's Phases table and every other slice's `phases` is `[]`. `grounded_at`, `phases` and `open_questions` are this slice's own: `open_questions` lists only the questions this plan raises. The epic's open questions belong to the epic plan and stay listed on the epic's body, open with their assumed answers, until a slice's report settles one by adding a `contract.decisions` entry with the question's id, or the epic is re-sliced.
