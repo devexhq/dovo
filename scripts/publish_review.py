@@ -3,15 +3,14 @@
 
 Reads .agentic/review.json and .agentic/review.md (written by the /dovo-review
 skill). Each round's findings are posted as one pull request review: a finding
-on a line of the pull request's diff is an inline comment there, and the rest
-go in the review body. A finding whose `thread` is set continues on that
-review thread with a marked reply instead, unresolving it; a finding whose
-`thread` is not on the pull request is posted as new, and one naming a thread
-of the pull request that is not the viewer's finding thread is refused. Every
-earlier-round dovo finding thread no finding continues is resolved. A retry for
-the same commit and round reuses that review and posts no reply twice.
+whose line is on the pull request's diff is an inline comment, on its whole
+line range when one hunk holds it, with a suggested fix and a prompt for an AI
+agent; the rest go in the review body under an outside-diff block. The post reads, replies on and resolves no review
+thread. A retry reuses the viewer's latest `🤖 **Agentic Review**` review on
+the reviewed commit only when its body and inline comment bodies equal what
+this run would post; otherwise a new review is posted on that commit.
 The comment then holds review.md without its finding sections, with a findings
-line linking the review, and starts with a marker line.
+line linking the review as `[review](<URL>)`, and starts with a marker line.
 Every later run edits that same comment instead of adding another. The header
 under the marker is stamped from review.json, never from the report's prose, and
 the comment is refused unless review.json's verdict, action and blocking count
@@ -24,12 +23,14 @@ own repository.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import subprocess
 import sys
 import tempfile
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urlparse
@@ -46,8 +47,8 @@ APPROVED_ACTIONS = ("none", "needs_human")
 CHANGES_REQUIRED_ACTIONS = ("fix", "replan", "needs_human")
 REVIEW_JSON = AGENTIC_DIR / "review.json"
 REVIEW_MD = AGENTIC_DIR / "review.md"
-REVIEW_MARKER = "<!-- dovo-review-findings head={head} round={round} -->"
-FINDING_MARKER = "<!-- dovo-finding id={id} severity={severity} rule={rule} round={round} -->"
+REVIEW_HEADING = "🤖 **Agentic Review**"
+FINDING_MARKER = "<!-- dovo-finding id={id} severity={severity} rule={rule} -->"
 SEVERITY_LABELS = {  # (count of one, any other count)
     "BLOCKER": ("blocking", "blocking"),
     "WARNING": ("warning", "warnings"),
@@ -57,9 +58,25 @@ SEVERITY_LABELS = {  # (count of one, any other count)
 FINDING_SECTIONS = ("### Blocking", "### Warnings", "### Suggestions", "### Nits", "### Earlier rounds")
 HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,\d+)? @@")
 FINDINGS_FIX = "; run /dovo-review again"
+FINDING_KEYS = ("severity", "path", "start_line", "line", "rule", "summary", "issue", "fix", "also_affects")
 FINDING_MARKER_LINE = re.compile(
-    r"^<!-- dovo-finding id=(?P<id>\S+) severity=(?P<severity>BLOCKER|WARNING|SUGGESTION|NIT)"
-    r" rule=(?P<rule>\S+) round=(?P<round>[1-9]\d*) -->$"
+    r"^<!-- dovo-finding id=(?P<id>\S+) severity=(?P<severity>BLOCKER|WARNING|SUGGESTION|NIT) rule=(?P<rule>\S+) -->$"
+)
+ALSO_AFFECTS_ENTRY = re.compile(r"^\S+:[1-9]\d*(?:-[1-9]\d*)?$")
+BACKTICK_RUN = re.compile(r"`+")
+SEVERITY_NAMES = {"BLOCKER": "Blocker", "WARNING": "Warning", "SUGGESTION": "Suggestion", "NIT": "Nit"}
+SEVERITY_DOTS = {"BLOCKER": "🔴", "WARNING": "🟠", "SUGGESTION": "🔵", "NIT": "⚪"}
+BUG_SEVERITIES = ("BLOCKER", "WARNING")
+PROMPT = (
+    "Review the code at the location below. A potential issue has been identified by an AI agent.\n"
+    "Verify if this is a real issue. If it is, propose a fix; if not, explain why it's not valid.\n"
+    "\n"
+    "Location: {location}\n"
+    "\n"
+    "Potential issue: {issue}"
+)
+OUTSIDE_DIFF_CAUTION = (
+    "> [!CAUTION]\n> Some comments are outside the diff and can't be posted inline due to GitHub limitations."
 )
 LONG_REVIEW_ID = "9" * 20
 THREADS_QUERY = """
@@ -86,7 +103,15 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
     pullRequest(number: $number) {
       reviews(first: 100, after: $endCursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { author { __typename login } body url submittedAt lastEditedAt }
+        nodes {
+          author { __typename login }
+          body
+          url
+          submittedAt
+          lastEditedAt
+          commit { oid }
+          comments(first: 100) { nodes { body } }
+        }
       }
     }
   }
@@ -102,11 +127,6 @@ mutation($thread: ID!) {
   resolveReviewThread(input: {threadId: $thread}) { thread { isResolved } }
 }
 """
-UNRESOLVE_MUTATION = """
-mutation($thread: ID!) {
-  unresolveReviewThread(input: {threadId: $thread}) { thread { isResolved } }
-}
-"""
 
 
 class PublishReviewError(RuntimeError):
@@ -119,15 +139,10 @@ class Posting(NamedTuple):
     host: str
     repository: str
     number: int
-    payload: dict[str, object] | None  # the review to create; None when the round needs none
-    reused_url: str | None  # this round's review already on the pull request
+    payload: dict[str, object] | None  # the review to create; None when there is no finding or one is reused
+    reused_url: str | None  # the identical review already on the pull request
     comment_id: int | None  # the viewer's dovo-review comment, or None to create it
     comment_for: Callable[[str | None], str]  # the comment body linking a review URL, or unlinked for None
-    viewer: str  # the authenticated `gh` user's login
-    continued: list[tuple[str, str, bool]]  # (thread id, continuation body, whether the thread is resolved)
-    replies: dict[str, list[dict[str, object]]]  # each continued thread's comments, for already_replied
-    resolve: list[str]  # earlier-round finding threads no finding continues
-    detached: list[tuple[str, str]]  # (finding id, the thread it named) for each finding posted as new
 
 
 def run(*args: str) -> str:
@@ -190,77 +205,139 @@ def find_own_comment(comments: list[dict[str, object]], viewer: str, *, marker: 
     return None
 
 
-def review_marker(head: str, round_number: int) -> str:
-    """Return `<!-- dovo-review-findings head=<head> round=<round_number> -->`."""
-    return REVIEW_MARKER.format(head=head, round=round_number)
-
-
-def finding_marker(finding: dict[str, object], round_number: int) -> str:
-    """Return FINDING_MARKER for finding in round_number, writing `-` for a None rule."""
+def finding_marker(finding: dict[str, object]) -> str:
+    """Return FINDING_MARKER for finding, writing `-` for a None rule."""
     rule = finding.get("rule")
     return FINDING_MARKER.format(
-        id=finding.get("id"), severity=finding.get("severity"), rule="-" if rule is None else rule, round=round_number
+        id=finding.get("id"), severity=finding.get("severity"), rule="-" if rule is None else rule
     )
 
 
 def parse_finding_marker(line: str) -> dict[str, object] | None:
-    """Return `{id, severity, rule, round}` from a finding marker line, rule None for `-`, or None when it is not one."""
+    """Return `{id, severity, rule}` from a finding marker line, rule None for `-`, or None when it is not one."""
     match = FINDING_MARKER_LINE.match(line)
     if match is None:
         return None
     rule = match["rule"]
-    return {
-        "id": match["id"],
-        "severity": match["severity"],
-        "rule": None if rule == "-" else rule,
-        "round": int(match["round"]),
-    }
+    return {"id": match["id"], "severity": match["severity"], "rule": None if rule == "-" else rule}
 
 
-def finding_block(finding: dict[str, object], round_number: int) -> str:
-    """Return the finding_marker line, the `#### <id> · `<location>` · <rule>` heading, the Issue and the Fix paragraph.
+def finding_block(finding: dict[str, object]) -> str:
+    """Return the `#### <id> · `<location>` · <rule>` heading, the Issue and the Fix paragraph, then the finding_marker line after a blank line.
 
-    The location is `path:line`, `path` when line is None, and left out with its separator when path is None;
-    the rule part is left out when rule is None, and the marker writes `-` for it.
+    The location is finding_location's, and is left out with its separator when path is None; the rule part
+    is left out when rule is None, and the marker writes `-` for it.
     """
     parts = [str(finding["id"])]
-    path, line, rule = finding.get("path"), finding.get("line"), finding.get("rule")
-    if path is not None:
-        parts.append(f"`{path}`" if line is None else f"`{path}:{line}`")
+    location, rule = finding_location(finding), finding.get("rule")
+    if location is not None:
+        parts.append(f"`{location}`")
     if rule is not None:
         parts.append(str(rule))
     return (
-        f"{finding_marker(finding, round_number)}\n#### {' · '.join(parts)}\n\n"
-        f"**Issue:** {finding['issue']}\n\n**Fix:** {finding['fix']}"
+        f"#### {' · '.join(parts)}\n\n"
+        f"**Issue:** {finding['issue']}\n\n**Fix:** {finding['fix']}\n\n{finding_marker(finding)}"
     )
 
 
-def commentable_lines(patch: str | None) -> frozenset[int]:
-    """Return the right-side line numbers of patch's hunks (context and added lines), empty when patch is None."""
-    lines: set[int] = set()
-    current: int | None = None
+def finding_location(finding: dict[str, object]) -> str | None:
+    """Return `path:line`, `path:<start_line>-<line>` for a range, `path` without a line, or None without a path."""
+    path, start, line = finding.get("path"), finding.get("start_line"), finding.get("line")
+    if path is None:
+        return None
+    if line is None:
+        return str(path)
+    return f"{path}:{line}" if start is None else f"{path}:{start}-{line}"
+
+
+def agent_prompt(finding: dict[str, object]) -> str:
+    """Return PROMPT for finding, its Location `<path>#L<start>-L<line>` (start being start_line, or line when null), or `<path>` when line is null."""
+    path, start, line = finding.get("path"), finding.get("start_line"), finding.get("line")
+    location = str(path) if line is None else f"{path}#L{line if start is None else start}-L{line}"
+    return PROMPT.format(location=location, issue=finding["issue"])
+
+
+def _fence(text: str) -> str:
+    """Return a backtick fence one longer than the longest backtick run in text, and at least three long (OQ-2)."""
+    longest = max((len(run) for run in BACKTICK_RUN.findall(text)), default=0)
+    return "`" * max(3, longest + 1)
+
+
+def inline_body(finding: dict[str, object]) -> str:
+    """Return #1267's inline finding: heading, Bug or Issue label, severity, Suggested fix, the fenced agent_prompt, Also affects when set, then the marker."""
+    severity = str(finding["severity"])
+    label = "**Bug:**" if severity in BUG_SEVERITIES else "**Issue:**"
+    prompt = agent_prompt(finding)
+    fence = _fence(prompt)
+    also_affects = finding.get("also_affects")
+    entries = [f"`{entry}`" for entry in also_affects] if isinstance(also_affects, list) else []
+    also = f"**Also affects:** {', '.join(entries)}\n" if entries else ""
+    return (
+        f"{REVIEW_HEADING}\n\n{label} {finding['summary']}\n**Severity:** {SEVERITY_NAMES[severity]}\n\n"
+        f"<details><summary><b>Suggested fix</b></summary>\n\n{finding['fix']}\n</details>\n\n"
+        f"<details><summary><b>Prompt for an AI agent</b></summary>\n\n{fence}text\n{prompt}\n{fence}\n</details>\n\n"
+        f"{also}{finding_marker(finding)}"
+    )
+
+
+def outside_entry(finding: dict[str, object]) -> str:
+    """Return one collapsed out-of-diff entry: the `<dot> <b><Severity></b> · <summary> · <code><location></code>` summary line, then finding_block in a blockquote.
+
+    The summary and location are html.escape(..., quote=False)d in the summary line only.
+    """
+    severity = str(finding["severity"])
+    parts = [
+        f"{SEVERITY_DOTS[severity]} <b>{SEVERITY_NAMES[severity]}</b>",
+        html.escape(str(finding["summary"]), quote=False),
+    ]
+    location = finding_location(finding)
+    if location is not None:
+        parts.append(f"<code>{html.escape(location, quote=False)}</code>")
+    return (
+        f"<details>\n<summary>{' · '.join(parts)}</summary><blockquote>\n\n"
+        f"{finding_block(finding)}\n\n</blockquote></details>"
+    )
+
+
+def review_body(findings: list[dict[str, object]]) -> str:
+    """Return REVIEW_HEADING alone with no finding, else the heading, OUTSIDE_DIFF_CAUTION and the outside-diff block of each outside_entry."""
+    if not findings:
+        return REVIEW_HEADING
+    entries = "".join(f"{outside_entry(finding)}\n\n" for finding in findings)
+    return (
+        f"{REVIEW_HEADING}\n\n{OUTSIDE_DIFF_CAUTION}\n\n<details>\n"
+        f"<summary>⚠️ <b>Outside diff range comments ({len(findings)})</b></summary><blockquote>\n\n"
+        f"{entries}</blockquote></details>"
+    )
+
+
+def commentable_hunks(patch: str | None) -> tuple[frozenset[int], ...]:
+    """Return each hunk's right-side line numbers (context and added lines), in order, empty when patch is None."""
+    hunks: list[set[int]] = []
+    current = 0
     for text in (patch or "").split("\n"):
         header = HUNK_HEADER.match(text)
         if header is not None:
             current = int(header["start"])
-        elif current is not None and text[:1] in ("+", " "):
-            lines.add(current)
+            hunks.append(set())
+        elif hunks and text[:1] in ("+", " "):
+            hunks[-1].add(current)
             current += 1
-    return frozenset(lines)
+    return tuple(frozenset(hunk) for hunk in hunks)
 
 
-def _is_commentable(finding: dict[str, object], lines: dict[str, frozenset[int]]) -> bool:
-    """Return whether finding's line is a commentable line of its path's diff."""
-    path, line = finding.get("path"), finding.get("line")
-    return isinstance(path, str) and isinstance(line, int) and line in lines.get(path, frozenset())
-
-
-def split_findings(
-    findings: list[dict[str, object]], lines: dict[str, frozenset[int]]
-) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    """Return (inline, body): findings whose line is commentable in their path's diff, then the rest, in order."""
-    inline = [finding for finding in findings if _is_commentable(finding, lines)]
-    return inline, [finding for finding in findings if not _is_commentable(finding, lines)]
+def inline_comment(finding: dict[str, object], hunks: tuple[frozenset[int], ...]) -> dict[str, object] | None:
+    """Return finding's review comment when its line is in one of hunks: multi-line when one hunk holds start_line through line, else single-line on line; None otherwise."""
+    path, start, line = finding.get("path"), finding.get("start_line"), finding.get("line")
+    if not isinstance(line, int):
+        return None
+    holding = next((hunk for hunk in hunks if line in hunk), None)
+    if holding is None:
+        return None
+    comment: dict[str, object] = {"path": path, "line": line, "side": "RIGHT", "body": inline_body(finding)}
+    if isinstance(start, int) and set(range(start, line + 1)) <= holding:
+        return {"path": path, "start_line": start, "start_side": "RIGHT", **comment}
+    return comment
 
 
 def _findings(review: dict[str, object]) -> list[dict[str, object]]:
@@ -269,42 +346,31 @@ def _findings(review: dict[str, object]) -> list[dict[str, object]]:
     return [finding for finding in findings if isinstance(finding, dict)] if isinstance(findings, list) else []
 
 
-def review_payload(review: dict[str, object], lines: dict[str, frozenset[int]]) -> dict[str, object] | None:
-    """Return the `COMMENT` review on review's head for its new findings, or None when it has none to post.
+def review_payload(review: dict[str, object], hunks: dict[str, tuple[frozenset[int], ...]]) -> dict[str, object] | None:
+    """Return the `COMMENT` review on review's head for its findings, or None when it has none.
 
-    A finding whose `thread` is set continues that thread instead, and counts as inline. The body is the
-    review marker, `**Findings posted: <n>** (<i> inline, <b> below)`, then each body finding's block after
-    a blank line; each inline finding is `{path, line, side: "RIGHT", body: <block>}`.
+    Each finding is the inline_comment its path's hunks give it, or else an entry of the review_body.
     """
     findings = _findings(review)
-    new = [finding for finding in findings if finding.get("thread") is None]
-    if not new:
+    if not findings:
         return None
-    round_number = int(str(review["round"]))
-    inline, body = split_findings(new, lines)
-    text = (
-        f"{review_marker(str(review['head']), round_number)}\n"
-        f"**Findings posted: {len(findings)}** ({len(findings) - len(body)} inline, {len(body)} below)"
-    )
-    text += "".join(f"\n\n{finding_block(finding, round_number)}" for finding in body)
-    comments = [
-        {
-            "path": finding["path"],
-            "line": finding["line"],
-            "side": "RIGHT",
-            "body": finding_block(finding, round_number),
-        }
-        for finding in inline
-    ]
-    return {"commit_id": review["head"], "event": "COMMENT", "body": text, "comments": comments}
+    comments: list[dict[str, object]] = []
+    outside: list[dict[str, object]] = []
+    for finding in findings:
+        path = finding.get("path")
+        comment = inline_comment(finding, hunks.get(path, ()) if isinstance(path, str) else ())
+        if comment is None:
+            outside.append(finding)
+        else:
+            comments.append(comment)
+    return {"commit_id": review["head"], "event": "COMMENT", "body": review_body(outside), "comments": comments}
 
 
-def findings_line(findings: list[dict[str, object]], round_number: int, review_url: str | None) -> str:
+def findings_line(findings: list[dict[str, object]], review_url: str | None) -> str:
     """Return the dovo-review comment's findings line, or `**Findings:** none` with no finding.
 
     The line is `**Findings:** <b> blocking · <w> warnings · <s> suggestions · <n> nits`, each label
-    singular for a count of one (`1 warning`), then ` · [round <n> review](<review_url>)` when
-    review_url is set.
+    singular for a count of one (`1 warning`), then ` · [review](<review_url>)` when review_url is set.
     """
     if not findings:
         return "**Findings:** none"
@@ -313,7 +379,7 @@ def findings_line(findings: list[dict[str, object]], round_number: int, review_u
         count = sum(finding.get("severity") == severity for finding in findings)
         parts.append(f"{count} {one if count == 1 else other}")
     if review_url is not None:
-        parts.append(f"[round {round_number} review]({review_url})")
+        parts.append(f"[review]({review_url})")
     return f"**Findings:** {' · '.join(parts)}"
 
 
@@ -338,99 +404,11 @@ def trim_report(report: str, line: str) -> str:
     return "".join(kept).rstrip() + "\n"
 
 
-def continuation_body(finding: dict[str, object], round_number: int) -> str:
-    """Return the finding's marker line, then the line `Still open in round <round_number> as <id>.`."""
-    return f"{finding_marker(finding, round_number)}\nStill open in round {round_number} as {finding['id']}."
-
-
 def thread_comments(thread: dict[str, object]) -> list[dict[str, object]]:
-    """Return a THREADS_QUERY node's comment nodes, in order."""
+    """Return a THREADS_QUERY or REVIEWS_QUERY node's comment nodes, in order."""
     comments = thread.get("comments")
     nodes = comments.get("nodes") if isinstance(comments, dict) else None
     return [node for node in nodes if isinstance(node, dict)] if isinstance(nodes, list) else []
-
-
-def _opening_marker(thread: dict[str, object]) -> tuple[object, dict[str, object] | None]:
-    """Return the login of the thread's first comment and parse_finding_marker of its first line."""
-    comments = thread_comments(thread)
-    if not comments:
-        return None, None
-    author = comments[0].get("author")
-    login = author.get("login") if isinstance(author, dict) else None
-    lines = str(comments[0].get("body") or "").splitlines()
-    return login, parse_finding_marker(lines[0]) if lines else None
-
-
-def finding_threads(threads: list[dict[str, object]], viewer: str) -> dict[str, dict[str, object]]:
-    """Return the threads whose first comment is by viewer and starts with a finding marker, by thread id."""
-    found: dict[str, dict[str, object]] = {}
-    for thread in threads:
-        login, marker = _opening_marker(thread)
-        if login == viewer and marker is not None:
-            found[str(thread["id"])] = thread
-    return found
-
-
-def thread_problem(
-    review: dict[str, object], threads: list[dict[str, object]], dovo_threads: dict[str, dict[str, object]], number: int
-) -> str | None:
-    """Return Error 3's message for the first finding whose thread is in threads but not in dovo_threads, or None.
-
-    A thread not in threads at all is not refused: detach_unlisted posts that finding as new.
-    """
-    listed = {thread.get("id") for thread in threads}
-    for finding in _findings(review):
-        thread = finding.get("thread")
-        if thread is not None and thread in listed and thread not in dovo_threads:
-            return (
-                f"review.json finding {finding['id']} names thread {thread}, "
-                f"which is not a dovo finding thread on pull request #{number}"
-            )
-    return None
-
-
-def detach_unlisted(
-    review: dict[str, object], threads: list[dict[str, object]]
-) -> tuple[dict[str, object], list[tuple[str, str]]]:
-    """Return a copy of review with `thread` None on each finding whose thread is not in threads.
-
-    Also returns those findings' (id, thread), in order, so each can be reported as posted new.
-    """
-    listed = {thread.get("id") for thread in threads}
-    findings: list[dict[str, object]] = []
-    detached: list[tuple[str, str]] = []
-    for finding in _findings(review):
-        thread = finding.get("thread")
-        if thread is not None and thread not in listed:
-            detached.append((str(finding["id"]), str(thread)))
-            finding = {**finding, "thread": None}
-        findings.append(finding)
-    return {**review, "findings": findings}, detached
-
-
-def threads_to_resolve(review: dict[str, object], dovo_threads: dict[str, dict[str, object]]) -> list[str]:
-    """Return the unresolved dovo_threads whose first marker's round is below review's round and that no finding continues."""
-    continued = {finding.get("thread") for finding in _findings(review)}
-    round_number = int(str(review["round"]))
-    resolve: list[str] = []
-    for thread_id, thread in dovo_threads.items():
-        marker = _opening_marker(thread)[1] or {}
-        earlier = int(str(marker.get("round", round_number))) < round_number
-        if earlier and not thread.get("isResolved") and thread_id not in continued:
-            resolve.append(thread_id)
-    return resolve
-
-
-def _continuations(
-    review: dict[str, object], dovo_threads: dict[str, dict[str, object]]
-) -> list[tuple[str, str, bool]]:
-    """Return (thread id, continuation body, whether resolved) for each finding of review that continues a dovo thread."""
-    round_number = int(str(review["round"]))
-    return [
-        (thread, continuation_body(finding, round_number), bool(dovo_threads[thread].get("isResolved")))
-        for finding in _findings(review)
-        if isinstance(thread := finding.get("thread"), str)
-    ]
 
 
 def _is_count(value: object) -> bool:
@@ -524,16 +502,46 @@ def _is_text(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _finding_problem(finding: dict[str, object], round_number: int) -> str | None:
+def _range_problem(finding: dict[str, object]) -> str | None:
+    """Return Error 4's message when start_line is set but not an integer from 1 to below an integer line; None otherwise."""
+    finding_id = finding["id"]
+    start, line = finding["start_line"], finding.get("line")
+    if start is None or (_is_count(start) and _is_count(line) and 0 < int(str(start)) < int(str(line))):
+        return None
+    return (
+        f"review.json finding {finding_id} has start_line {start!r}, which is not a line before its line{FINDINGS_FIX}"
+    )
+
+
+def _also_affects_problem(finding: dict[str, object]) -> str | None:
+    """Return Error 8's message when also_affects is missing or not a list, or holds an entry ALSO_AFFECTS_ENTRY does not match."""
+    finding_id = finding["id"]
+    entries = finding.get("also_affects")
+    if not isinstance(entries, list):
+        return f"review.json finding {finding_id} has no also_affects{FINDINGS_FIX}"
+    for entry in entries:
+        if not isinstance(entry, str) or ALSO_AFFECTS_ENTRY.match(entry) is None:
+            return (
+                f"review.json finding {finding_id} has also_affects entry {entry!r}, "
+                f"which is not path:line or path:start-end{FINDINGS_FIX}"
+            )
+    return None
+
+
+def _finding_problem(finding: dict[str, object]) -> str | None:
     """Return why the finding, whose id is already a usable token, cannot be posted, or None when it can."""
     finding_id = finding["id"]
-    for key in ("issue", "fix"):
+    for key in FINDING_KEYS:
+        if key not in finding:
+            return f"review.json finding {finding_id} has no {key}{FINDINGS_FIX}"
+    for key in ("summary", "issue", "fix"):
         if not _is_text(finding.get(key)):
             return f"review.json finding {finding_id} has no {key}{FINDINGS_FIX}"
-    if "thread" not in finding or not (finding["thread"] is None or _is_text(finding["thread"])):
-        return f"review.json finding {finding_id} has no thread{FINDINGS_FIX}"
-    expected = {key: finding.get(key) for key in ("id", "severity", "rule")} | {"round": round_number}
-    if parse_finding_marker(finding_marker(finding, round_number)) != expected:
+    problem = _range_problem(finding) or _also_affects_problem(finding)
+    if problem is not None:
+        return problem
+    expected = {key: finding.get(key) for key in ("id", "severity", "rule")}
+    if parse_finding_marker(finding_marker(finding)) != expected:
         return f"review.json finding {finding_id} cannot be written as a finding marker{FINDINGS_FIX}"
     return None
 
@@ -541,8 +549,9 @@ def _finding_problem(finding: dict[str, object], round_number: int) -> str | Non
 def findings_problem(review: dict[str, object]) -> str | None:
     """Return why review.json's findings cannot be posted, or None when every one can (Error case 4).
 
-    Each finding needs an `id` with no whitespace, non-empty `issue` and `fix`, a `thread` key holding
-    null or a thread id, and an `id`, `severity` and `rule` that its finding marker parses back to.
+    Each finding needs an `id` with no whitespace, every key in FINDING_KEYS, non-empty `summary`, `issue`
+    and `fix`, a `start_line` that is null or a line before `line`, an `also_affects` list of `path:line` or
+    `path:start-end` entries, and an `id`, `severity` and `rule` that its finding marker parses back to.
     """
     findings = review.get("findings")
     if not isinstance(findings, list):
@@ -553,7 +562,7 @@ def findings_problem(review: dict[str, object]) -> str | None:
         finding_id = finding.get("id")
         if not isinstance(finding_id, str) or finding_id.split() != [finding_id]:
             return f"review.json findings[{index}] has no id{FINDINGS_FIX}"
-        problem = _finding_problem(finding, int(str(review["round"])))
+        problem = _finding_problem(finding)
         if problem is not None:
             return problem
     return None
@@ -570,7 +579,7 @@ def size_problem(payload: dict[str, object] | None) -> str | None:
     for comment in comments if isinstance(comments, list) else []:
         text = str(comment["body"])
         if len(text) > MAX_COMMENT_CHARS:
-            marker = parse_finding_marker(text.splitlines()[0]) or {}
+            marker = parse_finding_marker(text.splitlines()[-1]) or {}
             return (
                 f"the inline comment for finding {marker.get('id')} is {len(text)} characters; "
                 f"GitHub accepts at most {MAX_COMMENT_CHARS}"
@@ -664,18 +673,45 @@ def list_comments(host: str, repository: str, number: int) -> list[dict[str, obj
     return [json.loads(line) for line in output.splitlines() if line.strip()]
 
 
-def own_review(reviews: list[dict[str, object]], viewer: str, marker: str) -> dict[str, object] | None:
-    """Return the first REVIEWS_QUERY node by viewer (`author.login`) whose body's first line is marker, else None."""
-    for review in reviews:
-        author = review.get("author")
-        login = author.get("login") if isinstance(author, dict) else None
-        if login == viewer and str(review.get("body") or "").splitlines()[:1] == [marker]:
-            return review
-    return None
+def _is_heading_review(review: dict[str, object], viewer: str, commit: str) -> bool:
+    """Return whether the REVIEWS_QUERY node is viewer's (`author.login`), submitted, on commit and headed REVIEW_HEADING."""
+    author = review.get("author")
+    reviewed = review.get("commit")
+    return (
+        (author.get("login") if isinstance(author, dict) else None) == viewer
+        and (reviewed.get("oid") if isinstance(reviewed, dict) else None) == commit
+        and bool(review.get("submittedAt"))
+        and str(review.get("body") or "").splitlines()[:1] == [REVIEW_HEADING]
+    )
 
 
-def list_files(host: str, repository: str, number: int) -> dict[str, frozenset[int]]:
-    """Return each changed file's commentable_lines, by path.
+def latest_review(reviews: list[dict[str, object]], viewer: str, commit: str) -> dict[str, object] | None:
+    """Return viewer's latest submitted REVIEWS_QUERY node, by submittedAt, on commit whose body's first line is REVIEW_HEADING, else None."""
+    candidates = [review for review in reviews if _is_heading_review(review, viewer, commit)]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda review: datetime.fromisoformat(str(review["submittedAt"])))
+
+
+def matching_review(
+    reviews: list[dict[str, object]], viewer: str, payload: dict[str, object]
+) -> dict[str, object] | None:
+    """Return latest_review on payload's commit_id when its body and inline comment bodies equal payload's, else None.
+
+    Bodies are compared without surrounding whitespace, and inline comment bodies as sorted lists.
+    """
+    latest = latest_review(reviews, viewer, str(payload["commit_id"]))
+    if latest is None:
+        return None
+    comments = payload["comments"]
+    expected = sorted(str(comment["body"]).strip() for comment in comments) if isinstance(comments, list) else []
+    posted = sorted(str(node.get("body") or "").strip() for node in thread_comments(latest))
+    same_body = str(latest.get("body") or "").strip() == str(payload["body"]).strip()
+    return latest if same_body and posted == expected else None
+
+
+def list_files(host: str, repository: str, number: int) -> dict[str, tuple[frozenset[int], ...]]:
+    """Return each changed file's commentable_hunks, by path.
 
     Runs `gh api --hostname <host> --paginate repos/<repository>/pulls/<number>/files --jq '.[] | {filename, patch}'`.
     """
@@ -690,7 +726,7 @@ def list_files(host: str, repository: str, number: int) -> dict[str, frozenset[i
         ".[] | {filename, patch}",
     )
     files = [json.loads(line) for line in output.splitlines() if line.strip()]
-    return {str(file["filename"]): commentable_lines(file.get("patch")) for file in files}
+    return {str(file["filename"]): commentable_hunks(file.get("patch")) for file in files}
 
 
 def write_comment(host: str, endpoint: list[str], body: str) -> str:
@@ -796,44 +832,25 @@ def prepare(pr: str, *, session: str | None) -> Posting:
     host, repository = pr_repository(pr_url)
     # comment_body and the finding blocks index checked keys, so check the review before building either.
     _raise_on(publish_problem(review, "", pr_head) or report_problem(review, report))
-    round_number = int(str(review["round"]))
     viewer = run("gh", "api", "--hostname", host, "user", "--jq", ".login")
     comment_id = find_own_comment(list_comments(host, repository, number), viewer)
-    threads = list_pr_nodes(host, repository, number, THREADS_QUERY, "reviewThreads")
-    dovo_threads = finding_threads(threads, viewer)
-    _raise_on(thread_problem(review, threads, dovo_threads, number))
-    review, detached = detach_unlisted(review, threads)
-    continued = _continuations(review, dovo_threads)
-    replies = {thread: thread_comments(dovo_threads[thread]) for thread, _, _ in continued}
     reviews = list_pr_nodes(host, repository, number, REVIEWS_QUERY, "reviews")
-    reused = own_review(reviews, viewer, review_marker(pr_head, round_number))
+    payload = review_payload(review, list_files(host, repository, number))
+    reused = None if payload is None else matching_review(reviews, viewer, payload)
     reused_url = None if reused is None else str(reused.get("url"))
-    payload = None if reused is not None else review_payload(review, list_files(host, repository, number))
+    payload = None if reused is not None else payload
     findings = _findings(review)
 
     def comment_for(url: str | None) -> str:
-        return comment_body(review, trim_report(report, findings_line(findings, round_number, url)), session=session)
+        return comment_body(review, trim_report(report, findings_line(findings, url)), session=session)
 
     longest_url = reused_url or (f"{pr_url}#pullrequestreview-{LONG_REVIEW_ID}" if payload is not None else None)
     _raise_on(publish_problem(review, comment_for(longest_url), pr_head) or size_problem(payload))
-    return Posting(
-        host,
-        repository,
-        number,
-        payload,
-        reused_url,
-        comment_id,
-        comment_for,
-        viewer,
-        continued,
-        replies,
-        threads_to_resolve(review, dovo_threads),
-        detached,
-    )
+    return Posting(host, repository, number, payload, reused_url, comment_id, comment_for)
 
 
 def apply(posting: Posting) -> str:
-    """Create the review unless reused or not needed, continue and resolve threads, then write the comment.
+    """Create the review unless reused or not needed, then write the comment.
 
     Returns the lines to report.
     """
@@ -844,11 +861,6 @@ def apply(posting: Posting) -> str:
     elif posting.payload is not None:
         url = create_review(posting.host, posting.repository, posting.number, posting.payload)
         lines += f"Posted pull request review: {url}\n"
-    for finding_id, thread in posting.detached:
-        lines += f"Posted finding {finding_id} as new: thread {thread} is not on pull request #{posting.number}\n"
-    replied, resolved = continue_findings(posting.host, posting.viewer, posting)
-    if replied or resolved:
-        lines += f"Continued {replied} finding threads and resolved {resolved}\n"
     body = posting.comment_for(url)
     if posting.comment_id is None:
         comment_url = write_comment(
@@ -857,25 +869,6 @@ def apply(posting: Posting) -> str:
         return f"{lines}Posted review comment: {comment_url}\n"
     endpoint = ["-X", "PATCH", f"repos/{posting.repository}/issues/comments/{posting.comment_id}"]
     return f"{lines}Updated review comment: {write_comment(posting.host, endpoint, body)}\n"
-
-
-def continue_findings(host: str, viewer: str, posting: Posting) -> tuple[int, int]:
-    """Reply on and unresolve each continued thread, then resolve posting.resolve; return (replies posted, threads resolved).
-
-    A thread that already holds the exact continuation reply by viewer gets no second one.
-    """
-    replied = 0
-    for thread, body, is_resolved in posting.continued:
-        if not already_replied(posting.replies[thread], viewer, body):
-            thread_graphql(
-                host, REPLY_MUTATION, thread, f"body={body}", jq=".data.addPullRequestReviewThreadReply.comment.url"
-            )
-            replied += 1
-        if is_resolved:
-            thread_graphql(host, UNRESOLVE_MUTATION, thread, jq=".data.unresolveReviewThread.thread.isResolved")
-    for thread in posting.resolve:
-        thread_graphql(host, RESOLVE_MUTATION, thread, jq=".data.resolveReviewThread.thread.isResolved")
-    return replied, len(posting.resolve)
 
 
 def publish(pr: str, *, session: str | None) -> str:
@@ -888,10 +881,10 @@ def publish(pr: str, *, session: str | None) -> str:
 
 
 def main() -> int:
-    """Post this round's findings as a pull request review, continue and resolve dovo finding threads, then post or update the dovo-review comment."""
+    """Post this round's findings as a pull request review, then post or update the pull request's one dovo-review comment."""
     parser = argparse.ArgumentParser(
         description=(
-            "Post this round's findings as a pull request review, continue and resolve dovo finding threads, "
+            "Post this round's findings as a pull request review, "
             "then post or update the pull request's one dovo-review comment."
         )
     )

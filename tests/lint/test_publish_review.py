@@ -20,7 +20,6 @@ PR_URL = "https://github.com/o/r/pull/7"
 REVIEW_URL = f"{PR_URL}#pullrequestreview-11"
 COMMENT_URL = f"{PR_URL}#issuecomment-5"
 TABLE_HEADER = "| ID | Location | Rule | Issue | Fix |"
-REVIEW_MARKER = f"<!-- dovo-review-findings head={PR_HEAD} round=1 -->"
 
 
 def _load_publisher() -> ModuleType:
@@ -61,12 +60,13 @@ def _finding(
         "id": finding_id,
         "severity": severity,
         "path": path,
+        "start_line": None,
         "line": line,
         "rule": rule,
         "summary": f"{finding_id} summary",
         "issue": f"{finding_id} issue.",
         "fix": f"{finding_id} fix.",
-        "thread": None,
+        "also_affects": [],
     }
     finding.update(overrides)
     return finding
@@ -77,13 +77,28 @@ FINDINGS = [
     _finding("W1", "WARNING", "src/a.py", 40),
     _finding("N1", "NIT", None, None, rule=None),
 ]
-DIFF_LINES = {"src/a.py": frozenset({3, 4})}
-PATCH = "@@ -1,2 +3,2 @@\n line\n+added"
-B1_BLOCK = "<!-- dovo-finding id=B1 severity=BLOCKER rule=R4 round=1 -->\n#### B1 · `src/a.py:3` · R4\n\n**Issue:** B1 issue.\n\n**Fix:** B1 fix."
-W1_BLOCK = "<!-- dovo-finding id=W1 severity=WARNING rule=R4 round=1 -->\n#### W1 · `src/a.py:40` · R4\n\n**Issue:** W1 issue.\n\n**Fix:** W1 fix."
-N1_BLOCK = (
-    "<!-- dovo-finding id=N1 severity=NIT rule=- round=1 -->\n#### N1\n\n**Issue:** N1 issue.\n\n**Fix:** N1 fix."
+HUNKS = {"src/a.py": (frozenset({3, 4}), frozenset({10, 11, 12}))}
+PATCH = "@@ -1,2 +3,2 @@\n line\n+added\n@@ -8,2 +10,3 @@\n x\n+y\n z"
+PROMPT_INTRO = (
+    "Review the code at the location below. A potential issue has been identified by an AI agent.\n"
+    "Verify if this is a real issue. If it is, propose a fix; if not, explain why it's not valid.\n"
 )
+SUGGESTED_FIX = "<details><summary><b>Suggested fix</b></summary>"
+PROMPT_DETAILS = "<details><summary><b>Prompt for an AI agent</b></summary>"
+OUTSIDE_HEAD = (
+    "🤖 **Agentic Review**\n\n> [!CAUTION]\n"
+    "> Some comments are outside the diff and can't be posted inline due to GitHub limitations.\n\n"
+    "<details>\n<summary>⚠️ <b>Outside diff range comments "
+)
+B1_BLOCK = (
+    "#### B1 · `src/a.py:3` · R4\n\n**Issue:** B1 issue.\n\n**Fix:** B1 fix.\n\n"
+    "<!-- dovo-finding id=B1 severity=BLOCKER rule=R4 -->"
+)
+W1_BLOCK = (
+    "#### W1 · `src/a.py:40` · R4\n\n**Issue:** W1 issue.\n\n**Fix:** W1 fix.\n\n"
+    "<!-- dovo-finding id=W1 severity=WARNING rule=R4 -->"
+)
+N1_BLOCK = "#### N1\n\n**Issue:** N1 issue.\n\n**Fix:** N1 fix.\n\n<!-- dovo-finding id=N1 severity=NIT rule=- -->"
 REPORT_HEAD = f"**Verdict:** CHANGES REQUIRED · **Action:** fix\n**Reviewed commit:** `{PR_HEAD}`\n\nOne blocker.\n\n"
 FINDING_TABLES = (
     f"### Blocking\n\n{TABLE_HEADER}\n|---|---|---|---|---|\n| B1 | `src/a.py:3` | R4 | B1 issue. | B1 fix. |\n\n"
@@ -105,26 +120,65 @@ def _write_review(root: Path, review: dict[str, object], report: str) -> None:
     (agentic / "review.md").write_text(report, encoding="utf-8")
 
 
-def _own_review(body: str, login: str = "me") -> dict[str, object]:
-    """Return a REVIEWS_QUERY node by login with body and REVIEW_URL."""
-    return {"author": {"__typename": "User", "login": login}, "body": body, "url": REVIEW_URL}
+def _own_review(
+    body: str,
+    login: str = "me",
+    *,
+    inline: tuple[str, ...] = (),
+    commit: str = PR_HEAD,
+    submitted: str | None = "2026-10-19T09:00:00Z",
+    url: str = REVIEW_URL,
+) -> dict[str, object]:
+    """Return a REVIEWS_QUERY node by login on commit with body, inline comment bodies, submittedAt and url."""
+    return {
+        "author": {"__typename": "User", "login": login},
+        "body": body,
+        "url": url,
+        "submittedAt": submitted,
+        "lastEditedAt": None,
+        "commit": {"oid": commit},
+        "comments": {"nodes": [{"body": text} for text in inline]},
+    }
 
 
-def _thread_node(thread_id: str, comments: list[tuple[str, str]], *, resolved: bool = False) -> dict[str, object]:
-    """Return a THREADS_QUERY node whose comments are (login, body) pairs, in order."""
-    nodes = [{"author": {"__typename": "User", "login": login}, "body": body} for login, body in comments]
-    return {"id": thread_id, "isResolved": resolved, "path": "src/a.py", "line": 3, "comments": {"nodes": nodes}}
+HEADING = PUBLISHER.REVIEW_HEADING
+OLDER_URL = f"{PR_URL}#pullrequestreview-10"
+MATCH_REVIEW = _changes_required(findings=[*FINDINGS, _finding("S1", "SUGGESTION", "src/a.py", 4)])
 
 
-ROUND_1_B1 = "<!-- dovo-finding id=B1 severity=BLOCKER rule=R4 round=1 -->\n#### B1\n\n**Issue:** x\n\n**Fix:** y"
-ROUND_1_W1 = "<!-- dovo-finding id=W1 severity=WARNING rule=R4 round=1 -->\n#### W1\n\n**Issue:** x\n\n**Fix:** y"
-CONTINUATION = "<!-- dovo-finding id=B1 severity=BLOCKER rule=R4 round=2 -->\nStill open in round 2 as B1."
-ROUND_2_REPORT = REPORT_HEAD + FINDING_TABLES
+def _payload(review: dict[str, object]) -> dict[str, object]:
+    """Return review_payload of review on PATCH's diff, which must post a review."""
+    payload = PUBLISHER.review_payload(review, HUNKS)
+    assert payload is not None
+    return payload
 
 
-def _round_2(*findings: dict[str, object]) -> dict[str, object]:
-    """Return a round-2 CHANGES_REQUIRED review.json payload with findings."""
-    return _changes_required(round=2, findings=list(findings))
+def _inline_bodies(payload: dict[str, object]) -> tuple[str, ...]:
+    """Return the bodies of payload's inline comments, in order."""
+    comments = payload["comments"]
+    assert isinstance(comments, list)
+    return tuple(str(comment["body"]) for comment in comments)
+
+
+def _posted(
+    payload: dict[str, object],
+    *,
+    body: str | None = None,
+    inline: tuple[str, ...] | None = None,
+    login: str = "me",
+    commit: str = PR_HEAD,
+    submitted: str | None = "2026-10-19T09:00:00Z",
+    url: str = REVIEW_URL,
+) -> dict[str, object]:
+    """Return login's REVIEWS_QUERY node for payload as posted, with body and inline bodies replaced when given."""
+    return _own_review(
+        str(payload["body"]) if body is None else body,
+        login,
+        inline=_inline_bodies(payload) if inline is None else inline,
+        commit=commit,
+        submitted=submitted,
+        url=url,
+    )
 
 
 class PublishReviewTests:
@@ -381,17 +435,111 @@ class PublishReviewTests:
     @pytest.mark.parametrize(
         ("patch", "expected"),
         [
+            pytest.param("@@ -1,2 +5,3 @@\n a\n+b\n c", (frozenset({5, 6, 7}),), id="one-hunk"),
             pytest.param(
-                "@@ -1,3 +1,4 @@\n a\n-b\n+c\n+d\n e\n@@ -20,2 +30,2 @@ def f():\n x\n+y\n\\ No newline at end of file",
-                frozenset({1, 2, 3, 4, 30, 31}),
+                "@@ -1,3 +1,4 @@\n a\n+c\n+d\n e\n@@ -20,2 +30,2 @@ def f():\n x\n+y\n\\ No newline at end of file",
+                (frozenset({1, 2, 3, 4}), frozenset({30, 31})),
                 id="two-hunks",
             ),
-            pytest.param("@@ -1,1 +1,2 @@\n+a\u2028+b\n c", frozenset({1, 2}), id="line-separator-in-line"),
-            pytest.param(None, frozenset(), id="no-patch"),
+            pytest.param("@@ -1,3 +1,2 @@\n a\n-b\n-c\n+d", (frozenset({1, 2}),), id="removed-lines-skipped"),
+            pytest.param("@@ -1,1 +1,2 @@\n+a\u2028+b\n c", (frozenset({1, 2}),), id="line-separator-in-line"),
+            pytest.param(None, (), id="no-patch"),
+            pytest.param(PATCH, HUNKS["src/a.py"], id="fixture-patch"),
         ],
     )
-    def test_commentable_lines(self, patch: str | None, expected: frozenset[int]) -> None:
-        assert PUBLISHER.commentable_lines(patch) == expected
+    def test_commentable_hunks(self, patch: str | None, expected: tuple[frozenset[int], ...]) -> None:
+        assert PUBLISHER.commentable_hunks(patch) == expected
+
+    @pytest.mark.parametrize(
+        ("finding", "location"),
+        [
+            pytest.param(_finding("W1", "WARNING", "src/a.py", 3), "src/a.py#L3-L3", id="single-line"),
+            pytest.param(_finding("W1", "WARNING", "src/a.py", 5, start_line=3), "src/a.py#L3-L5", id="ranged"),
+            pytest.param(_finding("W1", "WARNING", "src/b.py", None), "src/b.py", id="null-line"),
+        ],
+    )
+    def test_agent_prompt(self, finding: dict[str, object], location: str) -> None:
+        assert PUBLISHER.agent_prompt(finding) == (
+            f"{PROMPT_INTRO}\nLocation: {location}\n\nPotential issue: W1 issue."
+        )
+
+    @pytest.mark.parametrize(
+        ("finding", "expected"),
+        [
+            pytest.param(
+                _finding("W1", "WARNING", "src/a.py", 5, start_line=3, also_affects=["src/b.py:1", "src/b.py:2-4"]),
+                f"{PUBLISHER.REVIEW_HEADING}\n\n**Bug:** W1 summary\n**Severity:** Warning\n\n"
+                f"{SUGGESTED_FIX}\n\nW1 fix.\n</details>\n\n"
+                f"{PROMPT_DETAILS}\n\n```text\n{PROMPT_INTRO}\nLocation: src/a.py#L3-L5\n\n"
+                "Potential issue: W1 issue.\n```\n</details>\n\n"
+                "**Also affects:** `src/b.py:1`, `src/b.py:2-4`\n"
+                "<!-- dovo-finding id=W1 severity=WARNING rule=R4 -->",
+                id="warning-with-also-affects",
+            ),
+            pytest.param(
+                _finding("N1", "NIT", "src/a.py", 3, rule=None),
+                f"{PUBLISHER.REVIEW_HEADING}\n\n**Issue:** N1 summary\n**Severity:** Nit\n\n"
+                f"{SUGGESTED_FIX}\n\nN1 fix.\n</details>\n\n"
+                f"{PROMPT_DETAILS}\n\n```text\n{PROMPT_INTRO}\nLocation: src/a.py#L3-L3\n\n"
+                "Potential issue: N1 issue.\n```\n</details>\n\n"
+                "<!-- dovo-finding id=N1 severity=NIT rule=- -->",
+                id="nit-without",
+            ),
+            pytest.param(
+                _finding("S1", "SUGGESTION", "src/a.py", 3, issue="Quote:\n```\nx\n```"),
+                f"{PUBLISHER.REVIEW_HEADING}\n\n**Issue:** S1 summary\n**Severity:** Suggestion\n\n"
+                f"{SUGGESTED_FIX}\n\nS1 fix.\n</details>\n\n"
+                f"{PROMPT_DETAILS}\n\n````text\n{PROMPT_INTRO}\nLocation: src/a.py#L3-L3\n\n"
+                "Potential issue: Quote:\n```\nx\n```\n````\n</details>\n\n"
+                "<!-- dovo-finding id=S1 severity=SUGGESTION rule=R4 -->",
+                id="fenced-issue",
+            ),
+        ],
+    )
+    def test_inline_body(self, finding: dict[str, object], expected: str) -> None:
+        assert PUBLISHER.inline_body(finding) == expected
+
+    @pytest.mark.parametrize(
+        ("findings", "expected"),
+        [
+            pytest.param([], PUBLISHER.REVIEW_HEADING, id="all-inline"),
+            pytest.param(
+                [
+                    _finding("W1", "WARNING", "src/a.py", 40, start_line=38),
+                    _finding("N1", "NIT", "docs/x.md", None, rule=None),
+                ],
+                f"{OUTSIDE_HEAD}(2)</b></summary><blockquote>\n\n"
+                "<details>\n<summary>🟠 <b>Warning</b> · W1 summary · <code>src/a.py:38-40</code></summary>"
+                "<blockquote>\n\n#### W1 · `src/a.py:38-40` · R4\n\n**Issue:** W1 issue.\n\n**Fix:** W1 fix.\n\n"
+                "<!-- dovo-finding id=W1 severity=WARNING rule=R4 -->\n\n</blockquote></details>\n\n"
+                "<details>\n<summary>⚪ <b>Nit</b> · N1 summary · <code>docs/x.md</code></summary>"
+                "<blockquote>\n\n#### N1 · `docs/x.md`\n\n**Issue:** N1 issue.\n\n**Fix:** N1 fix.\n\n"
+                "<!-- dovo-finding id=N1 severity=NIT rule=- -->\n\n</blockquote></details>\n\n"
+                "</blockquote></details>",
+                id="two-entries",
+            ),
+            pytest.param(
+                [_finding("B1", "BLOCKER", None, None)],
+                f"{OUTSIDE_HEAD}(1)</b></summary><blockquote>\n\n"
+                "<details>\n<summary>🔴 <b>Blocker</b> · B1 summary</summary>"
+                "<blockquote>\n\n#### B1 · R4\n\n**Issue:** B1 issue.\n\n**Fix:** B1 fix.\n\n"
+                "<!-- dovo-finding id=B1 severity=BLOCKER rule=R4 -->\n\n</blockquote></details>\n\n"
+                "</blockquote></details>",
+                id="no-path",
+            ),
+            pytest.param(
+                [_finding("S1", "SUGGESTION", "src/a.py", 40, summary="a < b && c")],
+                f"{OUTSIDE_HEAD}(1)</b></summary><blockquote>\n\n"
+                "<details>\n<summary>🔵 <b>Suggestion</b> · a &lt; b &amp;&amp; c · <code>src/a.py:40</code></summary>"
+                "<blockquote>\n\n#### S1 · `src/a.py:40` · R4\n\n**Issue:** S1 issue.\n\n**Fix:** S1 fix.\n\n"
+                "<!-- dovo-finding id=S1 severity=SUGGESTION rule=R4 -->\n\n</blockquote></details>\n\n"
+                "</blockquote></details>",
+                id="escaped-summary",
+            ),
+        ],
+    )
+    def test_review_body(self, findings: list[dict[str, object]], expected: str) -> None:
+        assert PUBLISHER.review_body(findings) == expected
 
     @pytest.mark.parametrize(
         ("finding", "expected"),
@@ -399,39 +547,67 @@ class PublishReviewTests:
             pytest.param(FINDINGS[0], B1_BLOCK, id="full"),
             pytest.param(
                 _finding("W2", "WARNING", "src/b.py", None),
-                "<!-- dovo-finding id=W2 severity=WARNING rule=R4 round=1 -->\n#### W2 · `src/b.py` · R4\n\n"
-                "**Issue:** W2 issue.\n\n**Fix:** W2 fix.",
+                "#### W2 · `src/b.py` · R4\n\n**Issue:** W2 issue.\n\n**Fix:** W2 fix.\n\n"
+                "<!-- dovo-finding id=W2 severity=WARNING rule=R4 -->",
                 id="line-none",
             ),
             pytest.param(
                 _finding("S1", "SUGGESTION", None, None),
-                "<!-- dovo-finding id=S1 severity=SUGGESTION rule=R4 round=1 -->\n#### S1 · R4\n\n"
-                "**Issue:** S1 issue.\n\n**Fix:** S1 fix.",
+                "#### S1 · R4\n\n**Issue:** S1 issue.\n\n**Fix:** S1 fix.\n\n"
+                "<!-- dovo-finding id=S1 severity=SUGGESTION rule=R4 -->",
                 id="path-none",
             ),
             pytest.param(
                 _finding("N2", "NIT", "src/b.py", 7, rule=None),
-                "<!-- dovo-finding id=N2 severity=NIT rule=- round=1 -->\n#### N2 · `src/b.py:7`\n\n"
-                "**Issue:** N2 issue.\n\n**Fix:** N2 fix.",
+                "#### N2 · `src/b.py:7`\n\n**Issue:** N2 issue.\n\n**Fix:** N2 fix.\n\n"
+                "<!-- dovo-finding id=N2 severity=NIT rule=- -->",
                 id="rule-none",
             ),
         ],
     )
     def test_finding_block(self, finding: dict[str, object], expected: str) -> None:
-        assert PUBLISHER.finding_block(finding, 1) == expected
+        assert PUBLISHER.finding_block(finding) == expected
 
-    def test_review_payload(self) -> None:
-        payload = PUBLISHER.review_payload(_changes_required(), DIFF_LINES)
+    @pytest.mark.parametrize(
+        ("finding", "expected_comment"),
+        [
+            pytest.param(
+                _finding("B1", "BLOCKER", "src/a.py", 3),
+                {"path": "src/a.py", "line": 3, "side": "RIGHT"},
+                id="single-line",
+            ),
+            pytest.param(
+                _finding("B1", "BLOCKER", "src/a.py", 12, start_line=10),
+                {"path": "src/a.py", "start_line": 10, "start_side": "RIGHT", "line": 12, "side": "RIGHT"},
+                id="multi-line",
+            ),
+            pytest.param(
+                _finding("B1", "BLOCKER", "src/a.py", 11, start_line=3),
+                {"path": "src/a.py", "line": 11, "side": "RIGHT"},
+                id="hunk-crossing",
+            ),
+            pytest.param(_finding("B1", "BLOCKER", "src/a.py", 40), None, id="outside"),
+        ],
+    )
+    def test_review_payload(self, finding: dict[str, object], expected_comment: dict[str, object] | None) -> None:
+        payload = PUBLISHER.review_payload(_changes_required(findings=[finding]), HUNKS)
 
+        inline = [] if expected_comment is None else [{**expected_comment, "body": PUBLISHER.inline_body(finding)}]
+        outside = [finding] if expected_comment is None else []
         assert payload == {
             "commit_id": PR_HEAD,
             "event": "COMMENT",
-            "body": f"{REVIEW_MARKER}\n**Findings posted: 3** (1 inline, 2 below)\n\n{W1_BLOCK}\n\n{N1_BLOCK}",
-            "comments": [{"path": "src/a.py", "line": 3, "side": "RIGHT", "body": B1_BLOCK}],
+            "body": PUBLISHER.review_body(outside),
+            "comments": inline,
         }
 
+    def test_review_payload_keeps_hunk_crossing_range_in_prompt(self) -> None:
+        payload = _payload(_changes_required(findings=[_finding("B1", "BLOCKER", "src/a.py", 11, start_line=3)]))
+
+        assert "\nLocation: src/a.py#L3-L11\n" in _inline_bodies(payload)[0]
+
     def test_review_payload_without_findings(self) -> None:
-        assert PUBLISHER.review_payload(_review(), DIFF_LINES) is None
+        assert PUBLISHER.review_payload(_review(), HUNKS) is None
 
     @pytest.mark.parametrize(
         ("findings", "url", "expected"),
@@ -439,7 +615,7 @@ class PublishReviewTests:
             pytest.param(
                 [_finding(f"{s[0]}1", s, None, None) for s in ("BLOCKER", "WARNING", "SUGGESTION", "NIT")],
                 REVIEW_URL,
-                f"**Findings:** 1 blocking · 1 warning · 1 suggestion · 1 nit · [round 2 review]({REVIEW_URL})",
+                f"**Findings:** 1 blocking · 1 warning · 1 suggestion · 1 nit · [review]({REVIEW_URL})",
                 id="singular-linked",
             ),
             pytest.param(
@@ -452,7 +628,7 @@ class PublishReviewTests:
         ],
     )
     def test_findings_line(self, findings: list[dict[str, object]], url: str | None, expected: str) -> None:
-        assert PUBLISHER.findings_line(findings, 2, url) == expected
+        assert PUBLISHER.findings_line(findings, url) == expected
 
     def test_trim_report(self) -> None:
         report = (
@@ -495,19 +671,75 @@ class PublishReviewTests:
                 id="missing-issue",
             ),
             pytest.param(
+                _review(findings=[{k: v for k, v in FINDINGS[1].items() if k != "summary"}]),
+                "review.json finding W1 has no summary",
+                id="no-summary",
+            ),
+            pytest.param(
+                _review(findings=[_finding("W1", "WARNING", None, None, summary="")]),
+                "review.json finding W1 has no summary",
+                id="blank-summary",
+            ),
+            pytest.param(
+                _review(findings=[{k: v for k, v in FINDINGS[1].items() if k != "rule"}]),
+                "review.json finding W1 has no rule",
+                id="no-rule",
+            ),
+            pytest.param(
                 _review(findings=[_finding("W1", "WARNING", None, None, fix=" ")]),
                 "review.json finding W1 has no fix",
                 id="blank-fix",
             ),
             pytest.param(
-                _review(findings=[{k: v for k, v in FINDINGS[1].items() if k != "thread"}]),
-                "review.json finding W1 has no thread",
-                id="missing-thread",
+                _review(findings=[{k: v for k, v in FINDINGS[1].items() if k != "start_line"}]),
+                "review.json finding W1 has no start_line",
+                id="no-start-line",
             ),
             pytest.param(
-                _review(findings=[_finding("W1", "WARNING", None, None, thread="")]),
-                "review.json finding W1 has no thread",
-                id="empty-thread",
+                _review(findings=[_finding("W1", "WARNING", "src/b.py", 5, start_line=5)]),
+                "review.json finding W1 has start_line 5, which is not a line before its line",
+                id="start-line-not-below",
+            ),
+            pytest.param(
+                _review(findings=[_finding("W1", "WARNING", "src/b.py", 5, start_line=True)]),
+                "review.json finding W1 has start_line True, which is not a line before its line",
+                id="start-line-bool",
+            ),
+            pytest.param(
+                _review(findings=[_finding("W1", "WARNING", "src/b.py", 5, start_line=0)]),
+                "review.json finding W1 has start_line 0, which is not a line before its line",
+                id="start-line-zero",
+            ),
+            pytest.param(
+                _review(findings=[_finding("W1", "WARNING", "src/b.py", None, start_line=3)]),
+                "review.json finding W1 has start_line 3, which is not a line before its line",
+                id="start-line-without-line",
+            ),
+            pytest.param(
+                _review(
+                    findings=[
+                        _finding(
+                            "W1", "WARNING", "src/b.py", 5, start_line=3, also_affects=["src/b.py:1", "src/b.py:2-4"]
+                        )
+                    ]
+                ),
+                None,
+                id="valid-range",
+            ),
+            pytest.param(
+                _review(findings=[{k: v for k, v in FINDINGS[1].items() if k != "also_affects"}]),
+                "review.json finding W1 has no also_affects",
+                id="no-also-affects",
+            ),
+            pytest.param(
+                _review(findings=[_finding("W1", "WARNING", None, None, also_affects="src/b.py:1")]),
+                "review.json finding W1 has no also_affects",
+                id="also-affects-not-list",
+            ),
+            pytest.param(
+                _review(findings=[_finding("W1", "WARNING", None, None, also_affects=["src/b.py"])]),
+                "review.json finding W1 has also_affects entry 'src/b.py', which is not path:line or path:start-end",
+                id="also-affects-bad-entry",
             ),
             pytest.param(
                 _review(findings=[_finding("W1", "MAJOR", None, None)]),
@@ -530,17 +762,18 @@ class PublishReviewTests:
         ("line", "expected"),
         [
             pytest.param(
-                "<!-- dovo-finding id=W1 severity=WARNING rule=R4 round=2 -->",
-                {"id": "W1", "severity": "WARNING", "rule": "R4", "round": 2},
+                "<!-- dovo-finding id=W1 severity=WARNING rule=R4 -->",
+                {"id": "W1", "severity": "WARNING", "rule": "R4"},
                 id="marker",
             ),
             pytest.param(
-                "<!-- dovo-finding id=N1 severity=NIT rule=- round=1 -->",
-                {"id": "N1", "severity": "NIT", "rule": None, "round": 1},
+                "<!-- dovo-finding id=N1 severity=NIT rule=- -->",
+                {"id": "N1", "severity": "NIT", "rule": None},
                 id="no-rule",
             ),
             pytest.param("#### W1 · R4", None, id="not-a-marker"),
-            pytest.param("<!-- dovo-finding id=W1 severity=WARNING rule=R12, R13 round=2 -->", None, id="spaced-rule"),
+            pytest.param("<!-- dovo-finding id=W1 severity=WARNING rule=R12, R13 -->", None, id="spaced-rule"),
+            pytest.param("<!-- dovo-finding id=W1 severity=WARNING rule=R4 round=1 -->", None, id="old-round-marker"),
         ],
     )
     def test_parse_finding_marker(self, line: str, expected: dict[str, object] | None) -> None:
@@ -549,14 +782,61 @@ class PublishReviewTests:
     @pytest.mark.parametrize(
         ("reviews", "expected"),
         [
-            pytest.param([_own_review(f"{REVIEW_MARKER}\nx")], REVIEW_URL, id="own"),
-            pytest.param([_own_review(f"{REVIEW_MARKER}\nx", login="bob")], None, id="other-author"),
-            pytest.param([_own_review(REVIEW_MARKER.replace("round=1", "round=2"))], None, id="other-round"),
-            pytest.param([_own_review(f"Quoting:\n{REVIEW_MARKER}")], None, id="marker-not-first-line"),
+            pytest.param(
+                [
+                    _own_review(f"{HEADING}\nx", url=OLDER_URL, submitted="2026-10-19T10:00:00Z"),
+                    _own_review(f"{HEADING}\ny", submitted="2026-10-19T11:00:00Z"),
+                    _own_review(f"{HEADING}\nz", url=OLDER_URL, submitted="2026-10-19T09:00:00+00:00"),
+                ],
+                REVIEW_URL,
+                id="latest-of-two",
+            ),
+            pytest.param([_own_review(f"{HEADING}\nx", commit="b" * 40)], None, id="other-commit"),
+            pytest.param([_own_review("")], None, id="not-heading"),
+            pytest.param([_own_review(f"{HEADING}\nx", login="bob")], None, id="other-author"),
+            pytest.param([_own_review(f"{HEADING}\nx", submitted=None)], None, id="pending"),
         ],
     )
-    def test_own_review(self, reviews: list[dict[str, object]], expected: str | None) -> None:
-        found = PUBLISHER.own_review(reviews, "me", REVIEW_MARKER)
+    def test_latest_review(self, reviews: list[dict[str, object]], expected: str | None) -> None:
+        found = PUBLISHER.latest_review(reviews, "me", PR_HEAD)
+
+        assert (found or {}).get("url") == expected
+
+    @pytest.mark.parametrize(
+        ("reviews", "expected"),
+        [
+            pytest.param(lambda payload: [_posted(payload)], REVIEW_URL, id="identical"),
+            pytest.param(
+                lambda payload: [_posted(payload, inline=tuple(reversed(_inline_bodies(payload))))],
+                REVIEW_URL,
+                id="inline-reordered",
+            ),
+            pytest.param(lambda payload: [_posted(payload, body=f"{payload['body']}\nmore")], None, id="other-body"),
+            pytest.param(
+                lambda payload: [_posted(payload, inline=(*_inline_bodies(payload)[:1], "other"))],
+                None,
+                id="other-inline-body",
+            ),
+            pytest.param(lambda payload: [_posted(payload, commit="b" * 40)], None, id="other-commit"),
+            pytest.param(lambda payload: [_posted(payload, login="bob")], None, id="other-author"),
+            pytest.param(lambda payload: [_posted(payload, submitted=None)], None, id="pending"),
+            pytest.param(lambda payload: [_own_review("")], None, id="empty-thread-reply-review"),
+            pytest.param(
+                lambda payload: [
+                    _posted(payload, url=OLDER_URL, submitted="2026-10-19T09:00:00Z"),
+                    _own_review(f"{HEADING}\nother", submitted="2026-10-19T10:00:00Z"),
+                ],
+                None,
+                id="older-identical-behind-newer",
+            ),
+        ],
+    )
+    def test_matching_review(
+        self, reviews: Callable[[dict[str, object]], list[dict[str, object]]], expected: str | None
+    ) -> None:
+        payload = _payload(MATCH_REVIEW)
+
+        found = PUBLISHER.matching_review(reviews(payload), "me", payload)
 
         assert (found or {}).get("url") == expected
 
@@ -573,13 +853,13 @@ class PublishReviewTests:
             f"Posted pull request review: {REVIEW_URL}\nPosted review comment: {COMMENT_URL}\n"
         )
         assert writes == [
-            ("review", PUBLISHER.review_payload(review, DIFF_LINES)),
+            ("review", PUBLISHER.review_payload(review, HUNKS)),
             (
                 "comment",
                 "POST",
                 f"<!-- dovo-review -->\nReviewed commit: `{PR_HEAD}`\nVerdict: CHANGES_REQUIRED · Action: fix · Round: 1\n"
                 f"\n{REPORT_HEAD}**Findings:** 1 blocking · 1 warning · 0 suggestions · 1 nit · "
-                f"[round 1 review]({REVIEW_URL})\n\n### Rejected findings\n\nnone\n",
+                f"[review]({REVIEW_URL})\n\n### Rejected findings\n\nnone\n",
             ),
         ]
         assert TABLE_HEADER not in str(writes[1][2])
@@ -600,22 +880,38 @@ class PublishReviewTests:
         )
         assert writes == []
 
-    def test_main_reuses_round_review(
+    def test_main_reuses_identical_review(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         writes: list[tuple[object, ...]] = []
         own_comment: dict[str, object] = {"id": 5, "user": "me", "body": "<!-- dovo-review -->\nold"}
-        reviews = (_own_review(f"{REVIEW_MARKER}\n**Findings posted: 3**"),)
+        reviews = (_posted(_payload(_changes_required()), url=OLDER_URL),)
         fake = _fake_gh(writes, comments=(own_comment,), reviews=reviews)
         _setup(tmp_path, monkeypatch, _changes_required(), f"{REPORT_HEAD}{FINDING_TABLES}", writes, fake)
 
         assert PUBLISHER.main() == 0
 
         assert capsys.readouterr().out == (
-            f"Reused pull request review: {REVIEW_URL}\nUpdated review comment: {COMMENT_URL}\n"
+            f"Reused pull request review: {OLDER_URL}\nUpdated review comment: {COMMENT_URL}\n"
         )
         assert [write[:2] for write in writes] == [("comment", "PATCH")]
-        assert f"[round 1 review]({REVIEW_URL})" in str(writes[0][2])
+        assert f"[review]({OLDER_URL})" in str(writes[0][2])
+
+    def test_main_posts_new_review_when_findings_differ(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        writes: list[tuple[object, ...]] = []
+        reviews = (_posted(_payload(_changes_required(findings=FINDINGS[:1])), url=OLDER_URL),)
+        fake = _fake_gh(writes, reviews=reviews)
+        _setup(tmp_path, monkeypatch, _changes_required(), f"{REPORT_HEAD}{FINDING_TABLES}", writes, fake)
+
+        assert PUBLISHER.main() == 0
+
+        assert capsys.readouterr().out == (
+            f"Posted pull request review: {REVIEW_URL}\nPosted review comment: {COMMENT_URL}\n"
+        )
+        assert writes[0] == ("review", _payload(_changes_required()))
+        assert f"[review]({REVIEW_URL})" in str(writes[1][2])
 
     def test_main_posts_no_review_without_findings(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         writes: list[tuple[object, ...]] = []
@@ -646,7 +942,7 @@ class PublishReviewTests:
         findings = [{**finding, "issue": "x" * 65_536} if finding["id"] == part else finding for finding in FINDINGS]
         review = _changes_required(findings=findings)
         _setup(tmp_path, monkeypatch, review, REPORT_HEAD, writes)
-        payload = PUBLISHER.review_payload(review, DIFF_LINES)
+        payload = PUBLISHER.review_payload(review, HUNKS)
         length = len(payload["body"] if part == "N1" else payload["comments"][0]["body"])
 
         assert PUBLISHER.main() == 1
@@ -685,174 +981,20 @@ class PublishReviewTests:
         assert err.endswith("HTTP 422\n\n")
         assert writes == []
 
-    def test_continuation_body(self) -> None:
-        finding = _finding("W3", "WARNING", "src/a.py", 46)
-
-        assert PUBLISHER.continuation_body(finding, 2) == (
-            "<!-- dovo-finding id=W3 severity=WARNING rule=R4 round=2 -->\nStill open in round 2 as W3."
-        )
-
-    @pytest.mark.parametrize(
-        ("thread", "expected"),
-        [
-            pytest.param("PRRT_D", None, id="viewer-finding-thread"),
-            pytest.param("PRRT_X", None, id="not-listed"),
-            pytest.param(
-                "PRRT_F",
-                "review.json finding B1 names thread PRRT_F, which is not a dovo finding thread on pull request #7",
-                id="other-author",
-            ),
-            pytest.param(
-                "PRRT_P",
-                "review.json finding B1 names thread PRRT_P, which is not a dovo finding thread on pull request #7",
-                id="no-marker",
-            ),
-        ],
-    )
-    def test_thread_problem(self, thread: str, expected: str | None) -> None:
-        threads = [
-            _thread_node("PRRT_D", [("me", ROUND_1_B1)]),
-            _thread_node("PRRT_F", [("bob", ROUND_1_B1)]),
-            _thread_node("PRRT_P", [("me", "Plain note.")]),
-        ]
-        review = _round_2(_finding("B1", "BLOCKER", "src/a.py", 3, thread=thread))
-
-        problem = PUBLISHER.thread_problem(review, threads, PUBLISHER.finding_threads(threads, "me"), 7)
-
-        assert problem == expected
-
-    def test_detach_unlisted(self) -> None:
-        review = _round_2(
-            _finding("B1", "BLOCKER", "src/a.py", 3, thread="PRRT_D"),
-            _finding("W1", "WARNING", "src/a.py", 4, thread="PRRT_GONE"),
-            _finding("N1", "NIT", None, None),
-        )
-
-        detached_review, detached = PUBLISHER.detach_unlisted(review, [_thread_node("PRRT_D", [("me", ROUND_1_B1)])])
-
-        assert [finding["thread"] for finding in detached_review["findings"]] == ["PRRT_D", None, None]
-        assert detached == [("W1", "PRRT_GONE")]
-
-    def test_threads_to_resolve(self) -> None:
-        threads = [
-            _thread_node("PRRT_OPEN", [("me", ROUND_1_W1)]),
-            _thread_node("PRRT_CONTINUED", [("me", ROUND_1_B1)], resolved=True),
-            _thread_node("PRRT_DONE", [("me", ROUND_1_W1)], resolved=True),
-            _thread_node("PRRT_NEW", [("me", CONTINUATION)]),
-        ]
-        review = _round_2(_finding("B1", "BLOCKER", "src/a.py", 3, thread="PRRT_CONTINUED"))
-
-        assert PUBLISHER.threads_to_resolve(review, PUBLISHER.finding_threads(threads, "me")) == ["PRRT_OPEN"]
-
-    def test_review_payload_skips_continued(self) -> None:
-        continued = _finding("B1", "BLOCKER", "src/a.py", 3, thread="PRRT_D")
-        n1 = {**FINDINGS[2], "id": "N2"}
-
-        payload = PUBLISHER.review_payload(_round_2(continued, n1), DIFF_LINES)
-
-        assert payload is not None
-        assert payload["comments"] == []
-        assert str(payload["body"]).splitlines()[1] == "**Findings posted: 2** (1 inline, 1 below)"
-        assert PUBLISHER.review_payload(_round_2(continued), DIFF_LINES) is None
-
-    def test_main_continues_and_resolves(
+    def test_main_refuses_review_json_without_start_line(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         writes: list[tuple[object, ...]] = []
-        threads = (
-            _thread_node("PRRT_A", [("me", ROUND_1_B1)], resolved=True),
-            _thread_node("PRRT_B", [("me", ROUND_1_W1)]),
-            _thread_node("PRRT_C", [("alice", "Rename it.")]),
-        )
-        review = _round_2(_finding("B1", "BLOCKER", "src/a.py", 3, thread="PRRT_A"), FINDINGS[2])
-        _setup(tmp_path, monkeypatch, review, ROUND_2_REPORT, writes, _fake_gh(writes, threads=threads))
-
-        assert PUBLISHER.main() == 0
-
-        assert capsys.readouterr().out == (
-            f"Posted pull request review: {REVIEW_URL}\nContinued 1 finding threads and resolved 1\n"
-            f"Posted review comment: {COMMENT_URL}\n"
-        )
-        assert [write[:2] for write in writes] == [
-            ("review", PUBLISHER.review_payload(review, DIFF_LINES)),
-            ("reply", "PRRT_A"),
-            ("unresolve", "PRRT_A"),
-            ("resolve", "PRRT_B"),
-            ("comment", "POST"),
-        ]
-        assert writes[1] == ("reply", "PRRT_A", CONTINUATION)
-
-    def test_main_continues_once_on_retry(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        writes: list[tuple[object, ...]] = []
-        threads = (
-            _thread_node("PRRT_A", [("me", ROUND_1_B1), ("me", CONTINUATION)]),
-            _thread_node("PRRT_B", [("me", ROUND_1_W1)], resolved=True),
-        )
-        reviews = (_own_review(REVIEW_MARKER.replace("round=1", "round=2")),)
-        own_comment: dict[str, object] = {"id": 5, "user": "me", "body": "<!-- dovo-review -->\nold"}
-        review = _round_2(_finding("B1", "BLOCKER", "src/a.py", 3, thread="PRRT_A"), FINDINGS[2])
-        fake = _fake_gh(writes, comments=(own_comment,), reviews=reviews, threads=threads)
-        _setup(tmp_path, monkeypatch, review, ROUND_2_REPORT, writes, fake)
-
-        assert PUBLISHER.main() == 0
-
-        assert capsys.readouterr().out == (
-            f"Reused pull request review: {REVIEW_URL}\nUpdated review comment: {COMMENT_URL}\n"
-        )
-        assert [write[:2] for write in writes] == [("comment", "PATCH")]
-
-    def test_main_posts_no_review_when_all_continued(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        writes: list[tuple[object, ...]] = []
-        threads = (
-            _thread_node("PRRT_A", [("me", ROUND_1_B1)]),
-            _thread_node("PRRT_B", [("me", ROUND_1_W1)]),
-        )
-        review = _round_2(_finding("B1", "BLOCKER", "src/a.py", 3, thread="PRRT_A"))
-        _setup(tmp_path, monkeypatch, review, ROUND_2_REPORT, writes, _fake_gh(writes, threads=threads))
-
-        assert PUBLISHER.main() == 0
-
-        assert [write[:2] for write in writes] == [("reply", "PRRT_A"), ("resolve", "PRRT_B"), ("comment", "POST")]
-        assert str(writes[2][2]).endswith(
-            f"`{PR_HEAD}`\n\nOne blocker.\n\n**Findings:** 1 blocking · 0 warnings · 0 suggestions · 0 nits\n"
-        )
-
-    def test_main_refuses_foreign_thread(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        writes: list[tuple[object, ...]] = []
-        threads = (_thread_node("PRRT_C", [("alice", "Rename it.")]),)
-        review = _round_2(_finding("B1", "BLOCKER", "src/a.py", 3, thread="PRRT_C"))
-        _setup(tmp_path, monkeypatch, review, ROUND_2_REPORT, writes, _fake_gh(writes, threads=threads))
+        s1_finding = {key: value for key, value in FINDINGS[1].items() if key != "start_line"} | {"thread": None}
+        review = _review(verdict="CHANGES_REQUIRED", action="fix", counts={"blocking": 1}, findings=[s1_finding])
+        _setup(tmp_path, monkeypatch, review, REPORT_HEAD, writes)
 
         assert PUBLISHER.main() == 1
 
         assert capsys.readouterr().err == (
-            "publish_review.py: review.json finding B1 names thread PRRT_C, "
-            "which is not a dovo finding thread on pull request #7\n"
+            "publish_review.py: review.json finding W1 has no start_line; run /dovo-review again\n"
         )
         assert writes == []
-
-    def test_main_posts_unlisted_thread_as_new(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        writes: list[tuple[object, ...]] = []
-        review = _round_2(_finding("B1", "BLOCKER", "src/a.py", 3, thread="PRRT_GONE"))
-        _setup(tmp_path, monkeypatch, review, ROUND_2_REPORT, writes)
-
-        assert PUBLISHER.main() == 0
-
-        assert capsys.readouterr().out == (
-            f"Posted pull request review: {REVIEW_URL}\n"
-            "Posted finding B1 as new: thread PRRT_GONE is not on pull request #7\n"
-            f"Posted review comment: {COMMENT_URL}\n"
-        )
-        assert [write[0] for write in writes] == ["review", "comment"]
-        payload = writes[0][1]
-        assert isinstance(payload, dict)
-        assert [comment["path"] for comment in payload["comments"]] == ["src/a.py"]
 
 
 def _setup(
@@ -878,20 +1020,19 @@ def _fake_gh(
     *,
     comments: tuple[dict[str, object], ...] = (),
     reviews: tuple[dict[str, object], ...] = (),
-    threads: tuple[dict[str, object], ...] = (),
     files: tuple[dict[str, object], ...] = ({"filename": "src/a.py", "patch": PATCH},),
     failing: str | None = None,
 ) -> Callable[..., str]:
     """Return a `run` double answering one post to PR #7 by `me`, recording each write in writes.
 
-    It answers `gh pr view`, the viewer, the issue comments, the `reviews` and `reviewThreads` GraphQL
-    listings and the changed files. A review POST is recorded as ("review", <payload>) and answers REVIEW_URL;
-    a comment write as ("comment", "POST" or "PATCH", <body>) and answers COMMENT_URL; a thread mutation as
-    ("reply", thread, body), ("unresolve", thread) or ("resolve", thread). failing="review" makes the review
-    POST raise CalledProcessError with `HTTP 422`.
+    It answers `gh pr view`, the viewer, the issue comments, the `reviews` GraphQL listing and the changed
+    files, and fails on any other GraphQL call, so a review thread read or mutation fails the test. A review
+    POST is recorded as ("review", <payload>) and answers REVIEW_URL; a comment write as ("comment", "POST"
+    or "PATCH", <body>) and answers COMMENT_URL. failing="review" makes the review POST raise
+    CalledProcessError with `HTTP 422`.
     """
 
-    listings = {"reviews": reviews, "reviewThreads": threads, "files": files, "comments": comments}
+    listings = {"reviews": reviews, "files": files, "comments": comments}
 
     def fake_run(*args: str) -> str:
         if args[:3] == ("gh", "pr", "view"):
@@ -900,7 +1041,7 @@ def _fake_gh(
             return "me"
         if "--input" in args:
             return _post_review(args, writes, failing)
-        return _write_comment(args, writes) or _gh_api(args, writes, listings)
+        return _write_comment(args, writes) or _gh_api(args, listings)
 
     return fake_run
 
@@ -915,12 +1056,11 @@ def _write_comment(args: tuple[str, ...], writes: list[tuple[object, ...]]) -> s
     return COMMENT_URL
 
 
-def _gh_api(
-    args: tuple[str, ...], writes: list[tuple[object, ...]], listings: dict[str, tuple[dict[str, object], ...]]
-) -> str:
-    """Answer a GraphQL call, the changed files or the issue comments from listings, one JSON line per node."""
+def _gh_api(args: tuple[str, ...], listings: dict[str, tuple[dict[str, object], ...]]) -> str:
+    """Answer the `reviews` GraphQL listing, the changed files or the issue comments from listings, one JSON line per node."""
     if args[2] == "graphql":
-        return _graphql(args, writes, listings)
+        assert args[-1] == ".data.repository.pullRequest.reviews.nodes[]", f"ran {args}"
+        return "\n".join(json.dumps(node) for node in listings["reviews"])
     listing = "files" if "repos/o/r/pulls/7/files" in args else "comments"
     assert listing == "files" or "repos/o/r/issues/7/comments" in args, f"ran {args}"
     return "\n".join(json.dumps(node) for node in listings[listing])
@@ -933,20 +1073,3 @@ def _post_review(args: tuple[str, ...], writes: list[tuple[object, ...]], failin
     payload = json.loads(Path(args[args.index("--input") + 1]).read_text(encoding="utf-8"))
     writes.append(("review", payload))
     return REVIEW_URL
-
-
-def _graphql(
-    args: tuple[str, ...], writes: list[tuple[object, ...]], listings: dict[str, tuple[dict[str, object], ...]]
-) -> str:
-    """Answer a `gh api graphql` call: a pull request listing from listings, or a thread mutation recorded in writes."""
-    connection = args[-1].removeprefix(".data.repository.pullRequest.").removesuffix(".nodes[]")
-    if connection in listings:
-        return "\n".join(json.dumps(node) for node in listings[connection])
-    fields = [args[index + 1] for index, arg in enumerate(args) if arg == "-f"]
-    calls = {
-        f"query={PUBLISHER.REPLY_MUTATION}": "reply",
-        f"query={PUBLISHER.UNRESOLVE_MUTATION}": "unresolve",
-        f"query={PUBLISHER.RESOLVE_MUTATION}": "resolve",
-    }
-    writes.append((calls[fields[0]], fields[1].removeprefix("thread="), *(f.removeprefix("body=") for f in fields[2:])))
-    return ""
