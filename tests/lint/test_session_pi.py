@@ -38,10 +38,23 @@ def _use(call_id: str, name: str, **tool_input: object) -> dict[str, object]:
     return {"type": "assistant", "message": {"id": call_id, "content": [block]}}
 
 
-def _use_many(call_id: str, names: list[str]) -> dict[str, object]:
-    """Return a top-level assistant event with one Read tool_use block per name."""
-    blocks = [{"type": "tool_use", "id": f"{call_id}{n}", "name": n, "input": {}} for n in names]
-    return {"type": "assistant", "message": {"id": call_id, "content": blocks}}
+def _response(message_id: str, calls: Sequence[tuple[str, Mapping[str, object]]]) -> list[dict[str, object]]:
+    """Return one model response as Claude Code streams it: a text event, then one event per tool_use block."""
+    text: dict[str, object] = {
+        "type": "assistant",
+        "message": {"id": message_id, "content": [{"type": "text", "text": "Working."}]},
+    }
+    uses: list[dict[str, object]] = [
+        {
+            "type": "assistant",
+            "message": {
+                "id": message_id,
+                "content": [{"type": "tool_use", "id": f"{message_id}{n}", "name": name, "input": tool_input}],
+            },
+        }
+        for n, (name, tool_input) in enumerate(calls)
+    ]
+    return [text, *uses]
 
 
 def _result(call_id: str, *, error: bool = False) -> dict[str, object]:
@@ -127,7 +140,7 @@ class TestStepRows:
             _use("b", "Bash", command="ls"),
             _result("b"),
             _use("sub", "Bash", command="hidden") | {"parent_tool_use_id": "a"},
-            _use_many("c", ["Read", "Grep"]),
+            *_response("c", [("Read", {}), ("Grep", {})]),
             _final(),
         ]
         _write_log(tmp_path / "01_code_attempt_1.stdout.log", events)
@@ -160,6 +173,15 @@ class TestStepRows:
             "input_tokens": 10,
             "output_tokens": 20,
         }
+
+    def test_events_of_one_response_count_as_one_turn(self, tmp_path: Path) -> None:
+        calls = [("Read", {"file_path": "/x/a.py"}), ("Read", {"file_path": "/x/b.py"}), ("Grep", {"pattern": "x"})]
+        events = _response("m1", calls)
+        _write_log(tmp_path / "01_code_attempt_1.stdout.log", [events[0], events[1], _result("m10"), *events[2:]])
+
+        row = PI.analyse(_payload([_step("code")]), tmp_path)["steps"][0]
+
+        assert (row["turns"], row["tool_calls"], row["calls_per_turn"]) == (1, 3, 3.0)
 
     def test_loop_iterations_get_their_own_rows(self, tmp_path: Path) -> None:
         for iteration in (1, 2):
@@ -197,8 +219,17 @@ class TestFlags:
         assert [(f["step"], f["detail"]) for f in flags] == [("code", "10 calls in 10 turns")]
         assert flags[0]["evidence"] == [{"file": "01_code_attempt_1.stdout.log", "line": 2}]
 
-    def test_batched_turns_are_not_flagged(self, tmp_path: Path) -> None:
-        events = [_use_many(f"t{n}", ["Read", "Read"]) for n in range(10)]
+    def test_unbatched_evidence_is_the_first_tool_use_event_of_the_response(self, tmp_path: Path) -> None:
+        events = [event for n in range(10) for event in _response(f"t{n}", [("Bash", {"command": "ls"})])]
+        _write_log(tmp_path / "01_code_attempt_1.stdout.log", [*events, _final()])
+
+        flags = _flags(PI.analyse(_payload([_step("code")]), tmp_path), "unbatched_calls")
+
+        assert [f["detail"] for f in flags] == ["10 calls in 10 turns"]
+        assert flags[0]["evidence"] == [{"file": "01_code_attempt_1.stdout.log", "line": 3}]
+
+    def test_batched_responses_streamed_one_block_per_event_are_not_flagged(self, tmp_path: Path) -> None:
+        events = [event for n in range(10) for event in _response(f"t{n}", [("Read", {}), ("Read", {})])]
         _write_log(tmp_path / "01_code_attempt_1.stdout.log", [*events, _final()])
 
         assert _flags(PI.analyse(_payload([_step("code")]), tmp_path), "unbatched_calls") == []
@@ -216,6 +247,13 @@ class TestFlags:
         assert flags[0]["detail"] == "2 runs of single-call edits; longest 4 to /x/b.py"
         assert [e["edits"] for e in _evidence(flags[0])] == [4, 3]
 
+    def test_edits_made_in_one_response_are_not_serial(self, tmp_path: Path) -> None:
+        edit = ("Edit", {"file_path": "/x/a.py"})
+        events = [*_response("m1", [edit, edit, edit]), *_response("m2", [edit]), *_response("m3", [edit])]
+        _write_log(tmp_path / "01_code_attempt_1.stdout.log", events)
+
+        assert _flags(PI.analyse(_payload([_step("code")]), tmp_path), "serial_edits") == []
+
     def test_file_read_in_three_steps_is_flagged(self, tmp_path: Path) -> None:
         for index, name in enumerate(("a", "b", "c"), start=1):
             _write_log(tmp_path / f"0{index}_{name}_attempt_1.stdout.log", [_use("r", "Read", file_path="/x/z.py")])
@@ -225,6 +263,16 @@ class TestFlags:
 
         assert [f["detail"] for f in flags] == ["/x/z.py read in 3 steps"]
         assert [e["step"] for e in _evidence(flags[0])] == ["a", "b", "c"]
+
+    def test_read_evidence_is_the_read_event_of_its_response(self, tmp_path: Path) -> None:
+        response = _response("m", [("Grep", {"pattern": "x"}), ("Read", {"file_path": "/x/z.py"})])
+        for index, name in enumerate(("a", "b", "c"), start=1):
+            _write_log(tmp_path / f"0{index}_{name}_attempt_1.stdout.log", response)
+        steps = [_step("a"), _step("b"), _step("c")]
+
+        flags = _flags(PI.analyse(_payload(steps), tmp_path), "repeated_reads")
+
+        assert [e["line"] for e in _evidence(flags[0])] == [4, 4, 4]
 
     def test_failed_tool_results_and_repeated_failing_commands(self, tmp_path: Path) -> None:
         events = [
