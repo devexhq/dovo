@@ -7,7 +7,7 @@ description: >-
   code is written: re-ground it against the current tree, hunt for existing
   behaviour and persisted formats it breaks or relies on, then, for an
   issue's plan, check its slicing and the epic ready criteria, or, for one
-  slice's plan (--slice), check that every requirement is in the Phases table and
+  slice's plan (--slice), check that every part of every requirement is in the Phases table and
   cited by a test line, its phasing and its fit with the epic contract, and the AGENTS.md
   rules, then write findings to .agentic/plan-review.md and
   .agentic/plan-review.json. Invoked as /issue-plan-review [--slice <id>] [<plan-path>].
@@ -68,7 +68,7 @@ A miss is Blocking when implementing the plan as written produces a bug, data lo
 
 In an issue plan, read "phase" below as "slice": every requirement maps to the slice that lands it, and the test and R13 checks wait for the slice plans. In a slice plan, the requirements are the child issue's.
 
-- In an issue plan, every FR, NFR, numbered error case and Definition of Done item maps to a slice in `## Traceability`. In a slice plan, which has no Traceability or GWT section, every FR, NFR and numbered error case of the issue is in the Phases table's FRs column and cited by at least one test line under a phase's `### Tests`. List the gaps.
+- In an issue plan, every FR, NFR, numbered error case and Definition of Done item maps to a slice in `## Traceability`. In a slice plan, which has no Traceability or GWT section, every obligation of every FR, NFR and numbered error case of the issue (each sentence a test could observe) is covered by a phase's FRs cell and by at least one test line under that phase's `### Tests`; an id that appears somewhere is not enough. A requirement with an uncovered part is a Warning that quotes the issue sentence and names the phase that should carry it. List the gaps.
 - Every command the plan adds or changes has the R13 runner matrix: success, a failure path, `--format json` and each option it binds.
 - Nothing an issue under `## Owned elsewhere` owns is planned, unless the plan names it as a departure under What you're approving with an Open Question, or it is a sentence the change makes false (R17).
 - Unrequested surface is surface that serves no FR, NFR, guard or Definition of done item. It gets no finding when a rule requires it (R10 callers, R17 sentences) or the plan names it as a departure with an Open Question; otherwise it is a Warning when public and a Suggestion when internal.
@@ -111,7 +111,7 @@ Skip this for an issue plan. Otherwise report each failure as a Blocking finding
 
 - **The epic's plan is unchanged:** diff `plan.json` against `.agentic/epic-plan.json`, the epic plan this run started from, field by field. `contract` is equal, and `slices` is equal with every slice's `phases` left out, so a change to any field (`title`, `depends_on`, `blocked_by`, `child`, `stub`, `owns`, `lint_gates`, `estimate`, `size`, `pilot`, `closing_docs`) is caught. The plan's `## Feature contract` and `## Slices` sections are `.agentic/epic-plan.md`'s, verbatim. A slice plan that changes the contract or another slice is a Blocking finding: the contract changes only when a slice lands. When `.agentic/epic-plan.json` is missing, say so and fall back to the epic's body: `contract` says what its `## Feature contract` says, apart from the open questions listed under Decisions, which are the epic plan's.
 - **Only this slice is phased:** this slice's `phases` lists exactly the Phases table's phase numbers, and every other slice's `phases` is `[]`.
-- **The child issue is covered:** every FR, NFR and numbered error case of the child issue is in the Phases table's FRs column and cited by at least one test line.
+- **The child issue is covered:** every FR, NFR and numbered error case of the child issue is in the Phases table's FRs column and cited by at least one test line. A requirement only part of which is covered is the Warning Step 5 describes, not a Blocking finding.
 - **No other slice's work:** no phase does work the contract's Shared-surface ownership gives to another slice, or that the child issue names under **Owned elsewhere**, unless the plan names it as a departure with an Open Question.
 - **The "as landed" reports are heeded:** every report under the epic's `## Work plan` that names this slice under Later slices affected, or records a convention this slice follows, is reflected in the phases or raised as an Open Question.
 - **Size:** the slice's phases together stay within its budget: `src/` plus docs under about 400 changed lines, and the whole PR under about 900, or the plan says why the slice cannot be split.

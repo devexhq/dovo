@@ -11,7 +11,7 @@ A plan has two readers. The human approving it needs to see, at the top, what ch
 gh issue view <number> --json number,title,body
 ```
 
-- Link the issue; do not copy its prose. Every `FR-*`, `NFR-*` and numbered error case appears by ID in the FRs column of the `## Phases` table instead, and is cited by at least one test line.
+- Link the issue; do not copy its prose. Every `FR-*`, `NFR-*` and numbered error case appears by ID in the FRs column of the `## Phases` table instead, and is cited by at least one test line. A requirement whose parts land in different phases is listed in each of those phases' FRs cells with the part it covers in parentheses (`FR-7 (reply)`, `FR-7 (fixer)`), and each part is cited by at least one test line.
 - Do not copy the issue's **literal** contracts (pre-determined data, models, enums, flags, JSON, and exact error and output strings) into the plan: cite the issue section that holds them (`#<n>, Pre-determined data`). The implementing agent reads the issue alongside the plan. A phase's `### Code` holds only new public surface the issue does not pin literally (Step 4).
 - Copy each **Owned elsewhere** bullet (`#n owns <X>`) into `## Owned elsewhere` as a collision check: the plan does not do that work. It is not a ban, so a line the change would otherwise leave false is still fixed (R17). The issue's **Notes for the planner** are context, never requirements or bans. Never derive a `## Traps` bullet from the issue's scope.
 - The issue's observable contracts bind the plan: CLI behaviour and output, exit codes, persisted formats, entrypoint signatures, result models and the literal values tests assert. Its internal shapes (helper names, module placement, type aliases, how far a change reaches) are the author's best guess before grounding. When Step 2 shows one is wrong, such as a new symbol that duplicates or shadows an existing one, or an injected dependency the change holds but bypasses with a direct call, plan the better design. Add an Open Question whose assumed answer is that design, cite the `path:line` that shows the issue's shape is wrong, and name the departure under **What you're approving**. Never write a Trap that tells the implementer to work around the issue's shape.
@@ -152,7 +152,7 @@ Not needed: <surfaces checked and left alone, e.g. migration, result model, conf
 
 ## Step 5: Save and hand off
 
-1. Verify all planned paths, imports, public surface and phases against R1–R18 in [AGENTS.md](../../AGENTS.md), and that every `FR-*`, `NFR-*` and numbered error case is in the Phases table's FRs column and cited by at least one test line.
+1. Verify all planned paths, imports, public surface and phases against R1–R18 in [AGENTS.md](../../AGENTS.md). Then split every `FR-*`, `NFR-*` and numbered error case into its separate obligations, each sentence a test could observe, and check that each obligation lands in a phase's FRs cell and is cited by at least one test line.
 2. Write `.agentic/plan.md` (and `.agentic/evidence.md` when used) and its open questions to `.agentic/plan.json` (schema in the `dovo-plan` skill), deleting any stale `.agentic/review*`, `.agentic/plan-review*`, `.agentic/plan-challenge*` and `.agentic/plan-walkthrough*`.
 3. Report the plan path, the Phases table, and every numbered Open Question.
 

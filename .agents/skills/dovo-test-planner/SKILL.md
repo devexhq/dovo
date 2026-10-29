@@ -35,8 +35,8 @@ The skill supports two data sources:
   - **Audit**: Grep source code and audit existing test suites under `tests/`.
 - **Planning mode** (`--plan` provided):
   - **Invocation**: `/dovo-test-planner --plan [<path>]` (defaults to `.agentic/plan.md`).
-  - **Data source**: An in-progress plan, specifically `## Ground truth`, `## Artifact inventory`, and `## FR-<n>`.
-  - **Output**: Generates the `### Tests` section (contract-bearing stubs, no index table) formatted to fold directly into the plan.
+  - **Data source**: An in-progress or approved plan, specifically its `## Phases` table, `## Artifact inventory`, and each phase's `### Code` and `### Tests` lines.
+  - **Output**: Contract-bearing stubs (no index table) for the implementer to write into the test files the test lines name. A plan holds one line per test, never stubs, so the output is never folded into the plan.
 
 ---
 
@@ -47,7 +47,7 @@ Read before drafting:
 1. Rules R11-R16 in `AGENTS.md` and `docs/agents/testing.md`.
 2. **Data source**:
    - **Existing-code mode**: The source module and returned models/DTOs (follow imports for `BaseResult` subtypes).
-   - **Planning mode (`--plan`)**: The issue named in the plan's `# Issue #<n>:` header (`gh issue view <n> --json body`) for the contract, and the plan's `## Traceability`, `## Artifact inventory` and relevant `## Phase <p>` section.
+   - **Planning mode (`--plan`)**: The issue named in the plan's `# Issue #<n>:` header (`gh issue view <n> --json body`) for the contract, and the plan's `## Phases` table (which requirements each phase lands), `## Artifact inventory` and relevant `## Phase <p>` section, whose `### Tests` lines name each test, its file and the requirements it pins.
 
 ---
 
@@ -56,7 +56,7 @@ Read before drafting:
 For each service or entrypoint method delegated to, audit reachable status values:
 
 - **Existing-code mode**: For each `BaseResult` subtype returned, list enum values, grep the call chain for assignments, and mark any unassigned value as `DEAD`.
-- **Planning mode (`--plan`)**: Audit the plan's `## Ground truth` and `## Traps` to confirm reachable vs. dead status paths.
+- **Planning mode (`--plan`)**: Audit the plan's `## Traps` and the code its Artifact inventory cites to confirm reachable vs. dead status paths.
 
 > **Rule**: Do not draft tests for `DEAD` status values.
 
@@ -75,7 +75,7 @@ WorktreeListStatus.NOT_INITIALIZED | ❌ never             | declared only — d
 
 Find the CLI command binding wrapping the handler:
 - **Existing-code mode**: The `@<app>.command(...)` function in `app.py`.
-- **Planning mode (`--plan`)**: The planned Typer app/command binding in `## Ground truth` and `## Artifact inventory`.
+- **Planning mode (`--plan`)**: The planned Typer app/command binding in `## Artifact inventory` and the phase's `### Code`.
 
 Record:
 - Coercions before the handler is called (enum parsing, argument casting, default fallbacks).
@@ -90,7 +90,7 @@ Record:
 
 Check what existing tests already cover:
 - **Existing-code mode**: Search `tests/core/<domain>/` for tests asserting the same result fields.
-- **Planning mode (`--plan`)**: Check citations and test coverage in `## Ground truth`.
+- **Planning mode (`--plan`)**: Search `tests/` for tests already asserting the result fields of the symbols the Artifact inventory lists as changed.
 
 Assert wiring at the CLI tier (R13 exit codes and rendered tokens; R14 covers the JSON wire dict in formatter tests under `tests/cli/ui/formatters/`). Do not re-assert domain service fields in CLI tests.
 
@@ -225,7 +225,7 @@ Verify before presenting output:
 | Every test class maps 1:1 to a public symbol | skill convention |
 | No test class named after a private function | skill convention |
 | Every docstring is a single imperative line with the exact contract, and absent when the name already says it | skill convention |
-| Planning mode (`--plan`) emits stubs only, with no separate `Test \| Outcome` index table | `docs/agents/planning.md` |
+| Planning mode (`--plan`) emits one stub per plan test line, with no separate `Test \| Outcome` index table | skill convention |
 | Private helpers verified through public caller tests | skill convention |
 | Interaction/ordering tests included where Step 5 identified sequences | skill convention |
 | Test doubles injected at protocol boundaries only | R11, R15 |
@@ -241,11 +241,9 @@ Verify before presenting output:
 
 ### Planning mode (`--plan`)
 
-In planning mode, emit the `### Tests` section containing contract-bearing stubs, explicitly qualified with the target test file path. A stub carries a single-line imperative docstring stating the exact outcome contract, omitted when the test name and assertion already state it. Do not add a separate `Test | Outcome` index table; it restates the docstrings and drifts from them (`docs/agents/planning.md`):
+In planning mode, emit one contract-bearing stub per `### Tests` line of the plan, grouped by the target test file the line names, for the implementer to write into that file; never paste them into the plan. A stub carries a single-line imperative docstring stating the exact outcome the line states, omitted when the test name and assertion already state it. Do not add a separate `Test | Outcome` index table; it restates the docstrings and drifts from them:
 
 ````markdown
-### Tests
-
 #### Target file: `tests/engine/test_engine.py`
 
 ```python

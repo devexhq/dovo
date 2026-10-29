@@ -80,7 +80,7 @@ Write `.agentic/plan-challenge.md`, overwriting any earlier one, and echo the ch
 
 | ID | Lens | Plan section | Claim | Evidence | Failure | Alternative | Route |
 |---|---|---|---|---|---|---|---|
-| C1 | failure_path | Phase 2 instructions | ... | `path:line` | ... | ... | ask |
+| C1 | failure_path | Phase 2 Code | ... | `path:line` | ... | ... | ask |
 
 ### Rule proposals
 - C1: <the sentence, and the file it belongs in>
@@ -102,7 +102,7 @@ Write `.agentic/plan-challenge.json` alongside the markdown, overwriting any ear
     {
       "id": "C1",
       "lens": "failure_path",
-      "section": "Phase 2 instructions",
+      "section": "Phase 2 Code",
       "claim": "The plan deletes the session directory before it commits the row update, so an interrupted discard leaves a row pointing at nothing.",
       "evidence": "src/dovo/core/sessions/services/discard.py:41",
       "failure": "A run killed between the two writes shows the session in dovo session list, and dovo session show fails on it.",
