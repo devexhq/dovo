@@ -30,4 +30,4 @@ These are `AGENTS.md` directives about how the work was done. Report violations 
 
 - **Plan before code.** A change that adds surface needed a plan per `docs/agents/planning.md`. Skippable only for a single-file change adding no new surface.
 - **Size against the plan.** A diff that runs well past the plan's summed size estimates should have been planned differently. `/issue-code` lands every phase of one slice in one PR, so a diff that spans the slice's phases is expected; one that runs past the slice's estimate or the slice size budget is not.
-- **Gates before commit.** `dovo run quality` had to pass before committing. This skill does not run them (`/issue-code` owns the gate); ask whether they were run and report the answer as reported, never as verified.
+- **Gates before commit.** `dovo run quality` had to pass before committing. This skill does not run them (the `issue-code` blueprint's verify steps own the gate, and `/issue-code` run by hand runs it itself); ask whether they were run and report the answer as reported, never as verified.
