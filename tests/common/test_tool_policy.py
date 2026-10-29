@@ -119,7 +119,7 @@ class ToolPolicySchemaParityTests:
         }
         config = {"version": 1, "project": {"name": "p"}, "agents": {"copilot": {"tools": _POLICY_EXAMPLE}}}
 
-        assert (_BLUEPRINT_VALIDATOR.validate(blueprint).errors, CONFIG_VALIDATOR.validate(config).errors) == ([], [])
+        assert (_BLUEPRINT_VALIDATOR.validate(blueprint), CONFIG_VALIDATOR.validate(config)) == ([], [])
 
     @pytest.mark.parametrize(
         "bad",
@@ -132,5 +132,5 @@ class ToolPolicySchemaParityTests:
         blueprint = {"version": 1, "name": "w", "id": "w", "steps": [{"id": "s", "uses": "x", "tools": bad}]}
         config = {"version": 1, "project": {"name": "p"}, "agents": {"copilot": {"tools": bad}}}
 
-        assert _BLUEPRINT_VALIDATOR.validate(blueprint).errors
-        assert CONFIG_VALIDATOR.validate(config).errors
+        assert _BLUEPRINT_VALIDATOR.validate(blueprint)
+        assert CONFIG_VALIDATOR.validate(config)

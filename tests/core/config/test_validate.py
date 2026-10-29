@@ -188,6 +188,6 @@ class AgentSettingsEnvTests:
         document = build_default_config("demo")
         document["agents"] = {"copilot": payload}
 
-        assert not CONFIG_VALIDATOR.validate(document).ok
+        assert CONFIG_VALIDATOR.validate(document)
         with pytest.raises(ValidationError):
             DovoConfig.model_validate(document)

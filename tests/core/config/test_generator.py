@@ -31,7 +31,7 @@ class BuildDefaultConfigTests:
         payload = build_default_config("demo")
 
         assert (payload["default_agent"], payload["agents"], "agent" in payload) == ("copilot", {}, False)
-        assert CONFIG_VALIDATOR.validate(payload).ok
+        assert CONFIG_VALIDATOR.validate(payload) == []
 
 
 class GenerateDefaultConfigTests:
@@ -116,7 +116,7 @@ class GenerateDefaultConfigRepairTests:
         repaired = json.loads(config_path.read_text(encoding="utf-8"))
         assert summary.inserted_keys == ("default_agent", "agents")
         assert (repaired["default_agent"], repaired["agents"]) == ("copilot", {})
-        assert CONFIG_VALIDATOR.validate(repaired).ok
+        assert CONFIG_VALIDATOR.validate(repaired) == []
 
 
 def _directory_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -161,7 +161,7 @@ def _none(config_path: Path) -> list[Remediation]:
 
 
 def _schema_message(config_path: Path) -> str:
-    errors = CONFIG_VALIDATOR.validate(_INVALID_VERSION_CONFIG).errors
+    errors = CONFIG_VALIDATOR.validate(_INVALID_VERSION_CONFIG)
     return "\n".join(f"Repaired config failed validation: {e}" for e in errors)
 
 

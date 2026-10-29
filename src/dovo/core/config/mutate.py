@@ -219,8 +219,8 @@ def _validate_mutated_config(
     value: JsonValue = None,
 ) -> ConfigSetResult | None:
     """Return a schema-invalid result, or ``None`` when mapping succeeds."""
-    validation = CONFIG_VALIDATOR.validate(updated)
-    if not validation.ok:
+    schema_errors = CONFIG_VALIDATOR.validate(updated)
+    if schema_errors:
         return ConfigSetResult(
             status=ConfigSetStatus.SCHEMA_INVALID,
             config_path=path,
@@ -230,7 +230,7 @@ def _validate_mutated_config(
                 "\n".join(
                     [
                         "Config schema validation failed:",
-                        *(f"- {msg}" for msg in validation.errors),
+                        *(f"- {msg}" for msg in schema_errors),
                     ]
                 )
             ],

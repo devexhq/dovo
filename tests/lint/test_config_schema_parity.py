@@ -117,8 +117,8 @@ class ConfigSchemaParityTests:
         except ValidationError:
             model_valid = False
 
-        schema_valid = CONFIG_VALIDATOR.validate(
+        schema_valid = not CONFIG_VALIDATOR.validate(
             {"version": 1, "project": {"name": "parity"}, "agents": {"copilot": {"mcp_servers": servers}}}
-        ).ok
+        )
 
         assert (model_valid, schema_valid) == (valid, valid)

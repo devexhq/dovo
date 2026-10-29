@@ -111,11 +111,11 @@ def _preflight_config_path(config_path: Path) -> None:
 
 def _validate_and_write(config_path: Path, payload: dict[str, object], *, label: str) -> None:
     """Validate payload against the config schema, then write it atomically; raise ConfigError on either failure."""
-    validation = CONFIG_VALIDATOR.validate(payload)
-    if not validation.ok:
+    schema_errors = CONFIG_VALIDATOR.validate(payload)
+    if schema_errors:
         raise ConfigError(
             ErrorCode.CONFIG_SCHEMA_INVALID,
-            "\n".join(f"{label} config failed validation: {e}" for e in validation.errors),
+            "\n".join(f"{label} config failed validation: {e}" for e in schema_errors),
         )
     try:
         Filesystem.atomic_write_json(config_path, payload)

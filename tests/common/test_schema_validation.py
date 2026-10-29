@@ -24,30 +24,37 @@ def _write_schema(tmp_path: Path) -> Path:
 
 
 class SchemaValidatorTests:
+    def test_validate_returns_empty_list_for_valid_document(self, tmp_path: Path) -> None:
+        validator = SchemaValidator(_write_schema(tmp_path))
+
+        errors = validator.validate({"items": ["OK"], "worktree": {"max_active_worktrees": 5}})
+
+        assert errors == []
+
     def test_validate_renders_list_index_in_brackets(self, tmp_path: Path) -> None:
         validator = SchemaValidator(_write_schema(tmp_path))
 
-        result = validator.validate({"items": ["OK", 5]})
+        errors = validator.validate({"items": ["OK", 5]})
 
-        assert result.errors == ["items[1]: 5 is not of type 'string'"]
+        assert errors == ["items[1]: 5 is not of type 'string'"]
 
     def test_validate_keeps_dotted_path_for_object_keys(self, tmp_path: Path) -> None:
         validator = SchemaValidator(_write_schema(tmp_path))
 
-        result = validator.validate({"worktree": {"max_active_worktrees": "five"}})
+        errors = validator.validate({"worktree": {"max_active_worktrees": "five"}})
 
-        assert result.errors == ["worktree.max_active_worktrees: 'five' is not of type 'integer'"]
+        assert errors == ["worktree.max_active_worktrees: 'five' is not of type 'integer'"]
 
     def test_validate_echoes_pattern_instance_by_default(self, tmp_path: Path) -> None:
         validator = SchemaValidator(_write_schema(tmp_path))
 
-        result = validator.validate({"items": ["TOKEN=abc"]})
+        errors = validator.validate({"items": ["TOKEN=abc"]})
 
-        assert "'TOKEN=abc' does not match" in result.errors[0]
+        assert "'TOKEN=abc' does not match" in errors[0]
 
     def test_validate_hides_pattern_instance_when_flag_set(self, tmp_path: Path) -> None:
         validator = SchemaValidator(_write_schema(tmp_path), hide_pattern_instances=True)
 
-        result = validator.validate({"items": ["TOKEN=abc"]})
+        errors = validator.validate({"items": ["TOKEN=abc"]})
 
-        assert result.errors == ["items[0]: does not match pattern '^[A-Z]+$'"]
+        assert errors == ["items[0]: does not match pattern '^[A-Z]+$'"]

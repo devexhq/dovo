@@ -108,8 +108,8 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
             remediations=[Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")],
         )
 
-    validation = CONFIG_VALIDATOR.validate(data)
-    if not validation.ok:
+    schema_errors = CONFIG_VALIDATOR.validate(data)
+    if schema_errors:
         return ConfigLoadResult(
             status=ConfigLoadStatus.SCHEMA_INVALID,
             config_path=target_path,
@@ -118,7 +118,7 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
                 "\n".join(
                     [
                         "Config schema validation failed:",
-                        *(f"- {msg}" for msg in validation.errors),
+                        *(f"- {msg}" for msg in schema_errors),
                     ]
                 )
             ],
@@ -288,13 +288,13 @@ def parse_and_validate_config(raw: dict[str, Any]) -> DovoConfig:
     Raises:
         ValueError: When schema or model validation fails.
     """
-    validation = CONFIG_VALIDATOR.validate(raw)
-    if not validation.ok:
+    schema_errors = CONFIG_VALIDATOR.validate(raw)
+    if schema_errors:
         raise ValueError(
             "\n".join(
                 [
                     "Config schema validation failed:",
-                    *(f"- {msg}" for msg in validation.errors),
+                    *(f"- {msg}" for msg in schema_errors),
                     "Fix:",
                     "- run `dovo config validate` for details",
                     "- or `dovo init --repair` to insert missing keys without overwriting values",
