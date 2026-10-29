@@ -4,6 +4,8 @@ An agent step (`type: agent`) sends its `prompt` to the configured provider. It 
 
 The provider edits the worktree directly. Nothing reaches your source checkout until you apply the worktree.
 
+Dovo puts a short header before the step's `prompt`. Besides keeping the agent inside the worktree, the header asks it to request independent reads together and to make all its edits to a file in one response, so the step needs fewer model round trips.
+
 The step's stdout is one JSON object with a `status` (see [Agent step outcomes](../reference/step-schema.md#agent-step-outcomes)). A planning or review prompt that changes no files finishes as `no_op` and puts its findings in `summary`. Any status other than `proposed_patch` or `no_op` fails the step through its `on_failure` policy. An agent that cannot do the task reports it by writing `unfixable.txt` to its [private scratch](#private-scratch), so a step that did nothing because it could not is not mistaken for `no_op`.
 
 ---
