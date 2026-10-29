@@ -37,7 +37,7 @@ FEEDBACK = _load_script("pr_feedback", "pr_feedback")
 INPUTS = _load_script("grade_inputs", "grade_inputs_under_test")
 
 SHOWN_SESSION = {
-    "session": {"blueprint_name": "feature-dev", "status": "completed"},
+    "session": {"blueprint_name": "issue-code", "status": "completed"},
     "steps": [
         {"kind": "step", "step_id": "plan", "state": "completed", "attempts": 1},
         {"kind": "loop", "step_id": "code-loop", "iterations": 2},
@@ -47,9 +47,11 @@ SHOWN_SESSION = {
         {"kind": "step", "step_id": "post-review", "state": "failed", "attempts": 1},
     ],
 }
+SLICE_PLAN = {"issue": 1259, "phases": 3, "slices": [{"id": "S3", "phases": [1, 2, 3]}]}
 PROCESS = {
-    "blueprint": "feature-dev",
+    "blueprint": "issue-code",
     "status": "completed",
+    "slice_phases": 3,
     "code_loop_iterations": 2,
     "review_loop_iterations": 1,
     "retried_steps": ["push"],
@@ -115,13 +117,28 @@ class GradeInputsSummaryTests:
     def test_review_summary(self, review: dict[str, object] | None, expected: dict[str, object] | None) -> None:
         assert INPUTS.review_summary(review, HEAD) == expected
 
-    def test_process_summary_reads_loops_and_step_outcomes(self) -> None:
-        assert INPUTS.process_summary(SHOWN_SESSION) == PROCESS
+    def test_process_summary_reads_loops_slice_phases_and_step_outcomes(self) -> None:
+        assert INPUTS.process_summary(SHOWN_SESSION, SLICE_PLAN) == PROCESS
+
+    @pytest.mark.parametrize(
+        ("blueprint", "plan"),
+        [
+            pytest.param("issue-code", None, id="issue-code-without-plan"),
+            pytest.param("feature-dev", {"phases": 3}, id="feature-dev"),
+        ],
+    )
+    def test_process_summary_reports_slice_phases_only_for_an_issue_code_plan(
+        self, blueprint: str, plan: dict[str, object] | None
+    ) -> None:
+        payload = {**SHOWN_SESSION, "session": {"blueprint_name": blueprint, "status": "completed"}}
+
+        assert INPUTS.process_summary(payload, plan)["slice_phases"] is None
 
     def test_process_summary_without_steps(self) -> None:
-        assert INPUTS.process_summary({"session": None, "steps": None}) == {
+        assert INPUTS.process_summary({"session": None, "steps": None}, None) == {
             "blueprint": None,
             "status": None,
+            "slice_phases": None,
             "code_loop_iterations": None,
             "review_loop_iterations": None,
             "retried_steps": [],
@@ -179,13 +196,15 @@ def _fake_archive(args: tuple[str, ...], **_: object) -> subprocess.CompletedPro
     return subprocess.CompletedProcess(args, 0, stdout=_archive({"src/dovo/x.py": "x = 1\n"}))
 
 
-def _restore_review(args: tuple[str, ...]) -> str:
-    """Stand in for `dovo artifacts download`: write the review artifact, and fail for every other artifact."""
-    if args[6] != "review":
+def _restore_artifacts(args: tuple[str, ...]) -> str:
+    """Stand in for `dovo artifacts download`: write the plan-questions and review artifacts, and fail for the rest."""
+    documents = {"plan-questions": ("plan.json", SLICE_PLAN), "review": ("review.json", _review(blocking=1))}
+    if args[6] not in documents:
         raise subprocess.CalledProcessError(1, args)
+    filename, document = documents[args[6]]
     dest = Path(args[-1]) / ".agentic"
     dest.mkdir(parents=True, exist_ok=True)
-    (dest / "review.json").write_text(json.dumps(_review(blocking=1)), encoding="utf-8")
+    (dest / filename).write_text(json.dumps(document), encoding="utf-8")
     return ""
 
 
@@ -202,7 +221,7 @@ class _FakeTools:
                 lambda _: json.dumps({"name": "tests", "conclusion": "failure"}),
             ),
             (lambda a: "--paginate" in a, lambda _: "\n".join(json.dumps(comment) for comment in comments)),
-            (lambda a: a[3:5] == ("artifacts", "download"), _restore_review),
+            (lambda a: a[3:5] == ("artifacts", "download"), _restore_artifacts),
             (lambda a: a[3:5] == ("session", "show"), lambda _: json.dumps({"payload": SHOWN_SESSION})),
             (lambda a: a[:2] == ("git", "fetch"), lambda _: ""),
         ]
@@ -219,7 +238,7 @@ class GradeInputsCollectTests:
         [
             pytest.param(
                 [{"id": 3, "user": "me", "body": f"<!-- dovo-review -->\nDovo session: `{SESSION}`\n\nbody"}],
-                {"session": SESSION, "restored": ["review"], "process": PROCESS},
+                {"session": SESSION, "restored": ["plan-questions", "review"], "process": PROCESS},
                 {
                     "head": HEAD,
                     "current": True,

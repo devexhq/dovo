@@ -4,7 +4,8 @@
 Reads the pull request and its check runs on the head commit. When the
 authenticated `gh` user's dovo-review comment names a dovo session, downloads
 that session's plan, plan-questions, review and implementation-report artifacts
-into .agentic/grade-run/ and reads the session's step history. Extracts the
+into .agentic/grade-run/ and reads the session's step history and, for an
+issue-code session, its slice's phase count from the plan. Extracts the
 head commit's files into .agentic/grade-pr/ and its diff into
 .agentic/grade-pr.diff, so the grader reads the pull request without checking
 it out and nothing from it runs. Writes .agentic/grade-inputs.json.
@@ -76,19 +77,32 @@ def _steps(payload: dict[str, object]) -> list[dict[str, object]]:
     return [step for step in raw_steps if isinstance(step, dict)] if isinstance(raw_steps, list) else []
 
 
-def process_summary(payload: dict[str, object]) -> dict[str, object]:
-    """Return a dovo session's blueprint, outcome, loop iterations and retried or failed steps.
+def _slice_phases(blueprint: object, plan: dict[str, object] | None) -> int | None:
+    """Return the phase count of an issue-code session's slice plan, or None for another blueprint or no plan.
+
+    An issue-code session runs one code-loop iteration per phase of its slice,
+    and its slice plan's top-level `phases` is that slice's phase count.
+    """
+    phases = plan.get("phases") if blueprint == "issue-code" and plan is not None else None
+    return phases if isinstance(phases, int) and not isinstance(phases, bool) else None
+
+
+def process_summary(payload: dict[str, object], plan: dict[str, object] | None) -> dict[str, object]:
+    """Return a dovo session's blueprint, outcome, loop iterations, slice phases and retried or failed steps.
 
     Args:
         payload: The payload of `dovo session show <id> --format json`.
+        plan: The session's restored plan.json, or None when none was restored.
     """
     session = payload.get("session")
     session = session if isinstance(session, dict) else {}
     steps = _steps(payload)
     attempts = [step for step in steps if step.get("kind") == "step"]
+    blueprint = session.get("blueprint_name")
     return {
-        "blueprint": session.get("blueprint_name"),
+        "blueprint": blueprint,
         "status": session.get("status"),
+        "slice_phases": _slice_phases(blueprint, plan),
         "code_loop_iterations": _loop_iterations(steps, "code-loop"),
         "review_loop_iterations": _loop_iterations(steps, "review-loop"),
         "retried_steps": sorted({str(step["step_id"]) for step in attempts if (step.get("attempts") or 1) > 1}),
@@ -138,7 +152,8 @@ def restore_run(session: str) -> tuple[list[str], dict[str, object] | None]:
     except (subprocess.CalledProcessError, json.JSONDecodeError):
         return restored, None
     payload = shown.get("payload") if isinstance(shown, dict) else None
-    return restored, process_summary(payload) if isinstance(payload, dict) else None
+    plan = _restored_json(restored, "plan-questions", "plan.json")
+    return restored, process_summary(payload, plan) if isinstance(payload, dict) else None
 
 
 def extract_head(number: int, head: str) -> None:
@@ -152,16 +167,16 @@ def extract_head(number: int, head: str) -> None:
     PR_DIFF.write_text(run("gh", "pr", "diff", str(number)) + "\n", encoding="utf-8")
 
 
-def _restored_review(restored: list[str]) -> dict[str, object] | None:
-    """Return the restored review.json, or None when no review was restored or it does not parse."""
-    path = RUN_DIR / ".agentic" / "review.json"
-    if "review" not in restored or not path.exists():
+def _restored_json(restored: list[str], artifact: str, filename: str) -> dict[str, object] | None:
+    """Return the restored artifact's .agentic/<filename>, or None when it was not restored or is not a JSON object."""
+    path = RUN_DIR / ".agentic" / filename
+    if artifact not in restored or not path.exists():
         return None
     try:
-        review = json.loads(path.read_text(encoding="utf-8"))
+        document = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
-    return review if isinstance(review, dict) else None
+    return document if isinstance(document, dict) else None
 
 
 def collect(pr: str) -> str:
@@ -178,7 +193,7 @@ def collect(pr: str) -> str:
     restored, process = restore_run(session) if session is not None else ([], None)
     extract_head(number, head)
     checks = check_summary(list_checks(host, repository, head))
-    review = review_summary(_restored_review(restored), head)
+    review = review_summary(_restored_json(restored, "review", "review.json"), head)
     document = {
         "pr": pr_summary(view),
         "checks": checks,
