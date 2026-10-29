@@ -920,14 +920,30 @@ class NextSizeTests:
             f"workplan.py: S1 has no size in the work plan, so #{child} gets no dovo-size-* label; label it by hand\n"
         )
 
-    def test_a_stored_size_survives_a_rerender(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131, size=None))})
-        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": [_slice("S1", size="m")]})
+    @pytest.mark.parametrize(
+        ("stored", "planned", "resolved"),
+        [
+            pytest.param(None, "m", "m", id="plan-sizes-an-unsized-row"),
+            pytest.param("s", "m", "m", id="plan-size-wins"),
+            pytest.param("l", None, "l", id="sizeless-plan-keeps-stored-size"),
+        ],
+    )
+    def test_a_rerender_resolves_the_size_from_the_plan_else_the_stored_row(
+        self,
+        stored: str | None,
+        planned: str | None,
+        resolved: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131, size=stored))})
+        slices = [_slice("S1", size=planned)]
+        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices})
         argv = ("render", "--issue", str(EPIC), "--plan", plan, "--session", PLAN_SESSION, "--revision", "4")
 
         assert _main(monkeypatch, fake, *argv) == 0
 
-        assert [(row["id"], row["child"], row["size"]) for row in _rows(fake.bodies[EPIC])] == [("S1", 1131, "m")]
+        assert [(row["id"], row["child"], row["size"]) for row in _rows(fake.bodies[EPIC])] == [("S1", 1131, resolved)]
 
 
 class NextHoldTests:

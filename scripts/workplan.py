@@ -228,12 +228,13 @@ def check_started_unchanged(plan_slices: list[Slice], current: list[Slice]) -> N
 
 
 def _carry_over(row: Slice, old: Slice | None) -> Slice:
-    """Return row with old's child (unless row names one), status, PR and session."""
+    """Return row with old's child and size (unless row names them), status, PR and session."""
     if old is None:
         return row
     child = row.child if row.child is not None else old.child
     stub = row.stub if child is None else None
-    return replace(row, child=child, stub=stub, status=old.status, pr=old.pr, session=old.session)
+    size = row.size if row.size is not None else old.size
+    return replace(row, child=child, stub=stub, size=size, status=old.status, pr=old.pr, session=old.session)
 
 
 # --- body sections -----------------------------------------------------------
