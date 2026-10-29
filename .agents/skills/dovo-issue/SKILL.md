@@ -157,6 +157,7 @@ Before running `gh issue create` or `gh issue edit`:
 1. Scan the draft for shim-inducing words (`unchanged`, `untouched`, `as before`, `alongside`, `keep`, `compatib`, `shim`, `legacy`). Delete them or convert them into a **Shared surfaces changed** bullet and a grep removal bar in **Definition of done**. Scan also for guard words (`today`, `same`, `identical`, `does not change`): rewrite each guard to name what a user or caller relies on (**Core Principles** 5). Scan also for deferral words (`later`, `follow-up`, `future`, `not this issue`, `separately`): each names the issue that does the work as an **Owned elsewhere** bullet, or you create that issue first (**Core Principles** 1).
 2. Re-check the finished draft against **Split**: one kind, neither rule broken, a review load that fits one sitting, and a `dovo-size-*` label.
 3. When publishing a split, create or edit the parent first, then the sub-issues in dependency order so each `--blocked-by` names an issue that exists, then edit the parent's **Owned elsewhere** list to name the children. Confirm with `gh api repos/{owner}/{repo}/issues/<parent>/sub_issues --jq '.[].number'`.
+4. When the request comes from a `/dovo-pi` seed (`.agentic/pi/seed-F<n>.md`) or asks for it, also pass `--label found:dogfooding` to `gh issue create` and keep the seed's `<!-- dovo-pi:fp=<hash> -->` marker, verbatim, as the last line of the body.
 
 ## Ready mode
 
