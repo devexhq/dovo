@@ -631,15 +631,24 @@ def _conventions(contract: dict[str, object]) -> str:
     return _bullets(lines)
 
 
+def _fenced(text: str, indent: str) -> str:
+    """Return text in a `text` fence one backtick longer than its longest backtick run, each line indented."""
+    fence = "`" * max(3, 1 + max((len(run) for run in re.findall(r"`+", text)), default=0))
+    return "\n".join(f"{indent}{line}" if line else line for line in [f"{fence}text", *text.split("\n"), fence])
+
+
+def _override(item: dict[str, object]) -> str:
+    """Render one override bullet, with a multi-line replacement fenced under it so its headings stay in the contract."""
+    quoted = f'- #{_text(item, "issue")}, "{_text(item, "quote")}"'
+    replacement = _text(item, "replacement").strip("\n")
+    if "\n" not in replacement:
+        return f"{quoted} → {replacement}, per {_text(item, 'per')}."
+    return f"{quoted}, per {_text(item, 'per')}, becomes:\n{_fenced(replacement, '  ')}"
+
+
 def _overrides(contract: dict[str, object]) -> str:
     """Render `### Overrides`, quoting each sentence a contract decision makes wrong."""
-    return _bullets(
-        [
-            f'- #{_text(item, "issue")}, "{_text(item, "quote")}" → {_text(item, "replacement")}, '
-            f"per {_text(item, 'per')}."
-            for item in _items(contract, "overrides")
-        ]
-    )
+    return _bullets([_override(item) for item in _items(contract, "overrides")])
 
 
 def _settled_by(item: dict[str, object]) -> str:
@@ -772,6 +781,10 @@ def render_contract(contract: dict[str, object], questions: str) -> str:
 
     Returns:
         The section text, ending with a newline.
+
+    Raises:
+        WorkplanError: When a contract field puts a `## ` heading outside a code fence, which would end the
+            section early, so the body could never be found to render as this contract again.
     """
     fields: dict[str, object] = {**contract, OPEN_QUESTIONS: questions}
     grounded_at = _text(contract, "grounded_at")
@@ -779,7 +792,10 @@ def render_contract(contract: dict[str, object], questions: str) -> str:
     for title, keys, render in CONTRACT_SECTIONS:
         if any(fields.get(key) for key in keys):
             parts += ["", f"### {title}", render(fields)]
-    return "\n".join(parts) + "\n"
+    text = "\n".join(parts) + "\n"
+    if find_section(text, CONTRACT_HEADING) != (0, len(text)):
+        raise WorkplanError("the contract renders a `## ` heading outside a code fence, which would end its section")
+    return text
 
 
 # --- slice selection ----------------------------------------------------------
