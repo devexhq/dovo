@@ -569,7 +569,10 @@ steps:
       # exit code 0, so only its status shows the failure. Revert to
       # `steps.remaining.exit_code == 0` when #1141 lands.
       - steps.remaining.status == "completed"
+      # A round whose fixer changed files, a gate repair included, needs a fresh
+      # review: post-review refuses a review of a commit that is no longer the head.
       - steps.fix-verify.status == "completed"
+      - steps.fix-verify.outputs.changed == "false"
     on_max_iterations: continue
     do:
       - id: review
@@ -614,11 +617,15 @@ steps:
 
       # The fixer runs only scoped checks, so the full gate runs here. A round
       # that changed nothing skips it unless the last round's gate failed.
+      # stdout is only the JSON object `until` reads; the gate's own output goes
+      # to fix-gate.log.
       - id: fix-verify
         name: Run the quality gate on the fixes
         run: |
-          if [ ! -e .agentic/fix-gate.log ] && [ -z "$(git status --porcelain -- . ':!.dovo/run')" ]; then
-            echo "The fixer changed nothing; the gate the code loop passed still holds."
+          if [ -n "$(git status --porcelain -- . ':!.dovo/run')" ]; then changed=true; else changed=false; fi
+          printf '{"changed": "%s"}\n' "$changed"
+          if [ ! -e .agentic/fix-gate.log ] && [ "$changed" = false ]; then
+            echo "The fixer changed nothing; the gate the code loop passed still holds." >&2
             exit 0
           fi
           if uv run dovo run quality > .agentic/fix-gate.log 2>&1; then rm .agentic/fix-gate.log; else exit 1; fi
@@ -627,6 +634,18 @@ steps:
 
       - id: commit-fixes
         uses: commit-fixes
+
+  # fix-gate.log is left only when the last gate on the fixes failed, which a
+  # loop that ran out of rounds lets through. Unresolved findings still publish.
+  - id: fix-gate
+    name: Stop before publishing when the fixes fail the quality gate
+    run: |
+      if [ -e .agentic/fix-gate.log ]; then
+        echo "The review fixes fail the quality gate; fix .agentic/fix-gate.log before resuming." >&2
+        tail -n 40 .agentic/fix-gate.log >&2
+        exit 1
+      fi
+    on_failure: prompt_user
 
   # Written from everything committed, so it reports the code the final review
   # saw. The plan is republished whether or not it changed: land repoints the
