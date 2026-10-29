@@ -8,7 +8,7 @@ use_worktree: false
 inputs:
   path:
     type: string
-    description: Test file, directory or node id to run
+    description: Test files, directories or node ids to run, separated by spaces
     default: tests/
     aliases: ["-p", "--path"]
   fast_fail:
@@ -35,7 +35,10 @@ steps:
       # Dovo's per-step variables leak into the test process and break tests that
       # assert they are unset; clear them so the suite sees a plain environment.
       unset_args=$(env | sed -n 's/^\(DOVO_\(STEP\|STEPS\|ITERATION\|BLUEPRINT\|PREVIOUS\|TEMP\|RUNNER\|OUTPUT\)[A-Z_]*\)=.*/-u \1/p' | tr '\n' ' ')
-      set -- "$TEST_PATH"
+      # Split the paths on whitespace, with globbing off so a node id's brackets stay literal.
+      set -f
+      set -- $TEST_PATH
+      set +f
       case "$FAST_FAIL" in [Tt]rue) set -- "$@" -x ;; esac
       case "$COVERAGE" in [Tt]rue) set -- "$@" --cov=dovo --cov-report=term-missing --cov-fail-under=0 ;; esac
       basetemp=$(mktemp -d /tmp/dovo-pytest.XXXXXX) || exit 1
