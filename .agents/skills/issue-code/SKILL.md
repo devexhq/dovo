@@ -86,8 +86,10 @@ Run once every phase of the slice is complete, never between phases or mid-imple
 uv run ruff format .
 uv run ruff check --fix .
 uv run ty check src tests e2e
-uv run dovo run tests --path tests/<mirrored-path> --fast-fail   # once for each test path the change touched
+uv run dovo run tests --path "tests/<mirrored-path> tests/<other-mirrored-path>" --fast-fail
 ```
+
+Pass every test path the change touched to one `dovo run tests`, separated by spaces, rather than one run per path: each run pays for pytest's startup, collection and worker spin-up again.
 
 Run tests through `dovo run tests`, never bare `pytest`: an agent step inherits Dovo's `DOVO_STEP_*` variables, which break tests that assert they are unset, and `dovo run tests` clears them.
 
