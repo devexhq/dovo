@@ -42,6 +42,7 @@ from publish_review import (
 
 AGENTIC_DIR = Path(".agentic")
 FEEDBACK_JSON = AGENTIC_DIR / "feedback.json"
+TRIAGE_JSON = AGENTIC_DIR / "triage.json"
 PR_BRANCH = AGENTIC_DIR / "pr-branch"
 PR_URL = AGENTIC_DIR / "pr-url"
 RESTORED_ARTIFACTS = ("plan", "plan-questions", "review", "implementation-report")
@@ -467,10 +468,13 @@ def check_out_head(number: int, head_branch: str, head: str, url: str) -> None:
 def collect(pr: int) -> str:
     """Restore pr's dovo state into .agentic/, check out its head and write feedback.json; return the line to report.
 
+    An earlier attempt's triage.json is removed first, so render-triage never shows its decisions for approval.
+
     Raises:
         PrFeedbackError: For errors 2-5 of issue #1124.
         subprocess.CalledProcessError: When a gh request fails, including reading the head commit's checks.
     """
+    TRIAGE_JSON.unlink(missing_ok=True)
     view = open_pull_request(pr)
     number = int(str(view["number"]))
     head = str(view["headRefOid"])

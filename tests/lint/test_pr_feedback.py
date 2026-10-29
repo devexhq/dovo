@@ -735,10 +735,13 @@ class PrFeedbackTests:
         fake_run = _fake_run(ran, reviews=(later, _dovo_review(HEAD, [B1])))
         monkeypatch.setattr(FEEDBACK, "run", fake_run)
         monkeypatch.setattr(PUBLISH, "run", fake_run)
+        agentic = tmp_path / ".agentic"
+        agentic.mkdir()
+        (agentic / "triage.json").write_text('{"T1": {"action": "dismiss"}}\n', encoding="utf-8")
 
         assert FEEDBACK.main() == 0
 
-        agentic = tmp_path / ".agentic"
+        assert not (agentic / "triage.json").exists()
         assert capsys.readouterr().out == (
             f"Restored dovo session {SESSION} and collected 4 feedback items for pull request #7\n"
         )
