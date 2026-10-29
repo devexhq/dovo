@@ -167,7 +167,7 @@ _DIRECT_PROMPT_HEADER = (
     "- Carry out the instruction below.\n"
     "- If it asks for planning or review, report your findings in your final message and leave the working tree unchanged.\n"
     "- Stay inside this working directory; do not push, open a PR, or touch remotes.\n"
-    "- Do not modify files under .dovo/.\n\n"
+    "- Under .dovo/, modify only .dovo/catalog/ and .dovo/run/; leave every other file under .dovo/ unchanged.\n\n"
 )
 _REMEDIATION_PROMPT_HEADER = (
     "You are a coding agent running directly in this worktree checkout. "
@@ -176,7 +176,7 @@ _REMEDIATION_PROMPT_HEADER = (
     "- Stay inside this working directory; do not push, open a PR, or "
     "touch remotes.\n"
     "- Prefer leaving tests green.\n"
-    "- Do not modify files under .dovo/.\n"
+    "- Under .dovo/, modify only .dovo/catalog/ and .dovo/run/; leave every other file under .dovo/ unchanged.\n"
     "- When finished, leave the working tree containing only the fix.\n\n"
 )
 _SCRATCH_PROMPT_LINES = (
