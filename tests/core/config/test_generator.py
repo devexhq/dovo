@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.common.schema_validation import CONFIG_VALIDATOR
 from dovo.core.config.generator import build_default_config, generate_default_config
@@ -20,6 +21,35 @@ class BuildDefaultConfigTests:
 
         assert (payload["default_agent"], payload["agents"], "agent" in payload) == ("copilot", {}, False)
         assert CONFIG_VALIDATOR.validate(payload).ok
+
+
+class GenerateDefaultConfigTests:
+    @pytest.mark.parametrize(
+        ("existing_name", "project_name", "overwrite", "expected_flags", "expected_name"),
+        [
+            pytest.param(None, "demo", False, (True, False, False), "demo", id="create"),
+            pytest.param("original-name", "new-name", False, (False, True, False), "original-name", id="skip-existing"),
+            pytest.param("original-name", "replaced-name", True, (False, False, True), "replaced-name", id="overwrite"),
+        ],
+    )
+    def test_policy_writes_or_skips_config(
+        self,
+        workspace_paths: WorkspacePaths,
+        existing_name: str | None,
+        project_name: str,
+        overwrite: bool,
+        expected_flags: tuple[bool, bool, bool],
+        expected_name: str,
+    ) -> None:
+        """Create a missing config, skip an existing one, or replace it with overwrite."""
+        if existing_name is not None:
+            Filesystem.atomic_write_json(workspace_paths.config_file, build_default_config(existing_name))
+
+        result = generate_default_config(workspace_paths.config_file, project_name, overwrite=overwrite)
+
+        assert (result.created, result.skipped_existing, result.overwritten) == expected_flags
+        written = json.loads(workspace_paths.config_file.read_text(encoding="utf-8"))
+        assert written["project"]["name"] == expected_name
 
 
 class GenerateDefaultConfigRepairTests:

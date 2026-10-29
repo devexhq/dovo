@@ -7,7 +7,6 @@ from pathlib import Path
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.formatters import format_remediations
 from dovo.core.config.exceptions import ConfigLoadError
-from dovo.core.config.generator import ConfigGenerationResult, generate_default_config
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus, load_config
 from dovo.core.config.models import (
     ConcurrencyConfig,
@@ -94,21 +93,6 @@ class Config:
     def unset(self, key: str) -> ConfigUnsetResult:
         """Remove a dot-path configuration key and persist to disk."""
         result = unset_config_value_result(key, config_path=self._paths.config_file)
-        if result.ok:
-            self._cached_config = None
-        return result
-
-    def generate(
-        self,
-        *,
-        overwrite: bool = False,
-        repair: bool = False,
-        project_name: str | None = None,
-    ) -> ConfigGenerationResult:
-        """Generate a default ``config.json`` file in workspace."""
-        _project_name = project_name or self._paths.root_dir.name
-        cfg_path = self._paths.config_file
-        result = generate_default_config(cfg_path, _project_name, overwrite=overwrite, repair=repair)
         if result.ok:
             self._cached_config = None
         return result
