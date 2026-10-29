@@ -162,12 +162,18 @@ def unknown_option_detail(stderr_text: str, detail: str) -> str | None:
     return None
 
 
+_BATCHING_PROMPT_LINES = (
+    "- Batch tool calls: request every independent read, search or command you need in the same response, "
+    "not one per response.\n"
+    "- Plan all edits to a file before making them, then make them in one response, or rewrite the file once.\n"
+)
 _DIRECT_PROMPT_HEADER = (
     "You are a coding agent running directly in this worktree checkout.\n"
     "- Carry out the instruction below.\n"
     "- If it asks for planning or review, report your findings in your final message and leave the working tree unchanged.\n"
     "- Stay inside this working directory; do not push, open a PR, or touch remotes.\n"
-    "- Under .dovo/, modify only .dovo/catalog/ and .dovo/run/; leave every other file under .dovo/ unchanged.\n\n"
+    "- Under .dovo/, modify only .dovo/catalog/ and .dovo/run/; leave every other file under .dovo/ unchanged.\n"
+    f"{_BATCHING_PROMPT_LINES}\n"
 )
 _REMEDIATION_PROMPT_HEADER = (
     "You are a coding agent running directly in this worktree checkout. "
@@ -177,7 +183,8 @@ _REMEDIATION_PROMPT_HEADER = (
     "touch remotes.\n"
     "- Prefer leaving tests green.\n"
     "- Under .dovo/, modify only .dovo/catalog/ and .dovo/run/; leave every other file under .dovo/ unchanged.\n"
-    "- When finished, leave the working tree containing only the fix.\n\n"
+    "- When finished, leave the working tree containing only the fix.\n"
+    f"{_BATCHING_PROMPT_LINES}\n"
 )
 _SCRATCH_PROMPT_LINES = (
     "- Put temporary files only in the directory named by agent_scratch_path; make source edits in this checkout.\n"

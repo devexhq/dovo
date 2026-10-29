@@ -209,7 +209,10 @@ class BuildMutationPromptTests:
             "touch remotes.\n"
             "- Prefer leaving tests green.\n"
             "- Under .dovo/, modify only .dovo/catalog/ and .dovo/run/; leave every other file under .dovo/ unchanged.\n"
-            "- When finished, leave the working tree containing only the fix.\n\n"
+            "- When finished, leave the working tree containing only the fix.\n"
+            "- Batch tool calls: request every independent read, search or command you need in the same response, "
+            "not one per response.\n"
+            "- Plan all edits to a file before making them, then make them in one response, or rewrite the file once.\n\n"
         ) + json.dumps(expected_body, indent=2, ensure_ascii=False)
 
         assert build_mutation_prompt(request) == expected
@@ -228,7 +231,10 @@ class BuildMutationPromptTests:
             "- Carry out the instruction below.\n"
             "- If it asks for planning or review, report your findings in your final message and leave the working tree unchanged.\n"
             "- Stay inside this working directory; do not push, open a PR, or touch remotes.\n"
-            "- Under .dovo/, modify only .dovo/catalog/ and .dovo/run/; leave every other file under .dovo/ unchanged.\n\n"
+            "- Under .dovo/, modify only .dovo/catalog/ and .dovo/run/; leave every other file under .dovo/ unchanged.\n"
+            "- Batch tool calls: request every independent read, search or command you need in the same response, "
+            "not one per response.\n"
+            "- Plan all edits to a file before making them, then make them in one response, or rewrite the file once.\n\n"
         ) + json.dumps(expected_body, indent=2, ensure_ascii=False)
 
         prompt = build_mutation_prompt(request)
@@ -251,7 +257,10 @@ class ScratchPromptTests:
             "- Carry out the instruction below.\n"
             "- If it asks for planning or review, report your findings in your final message and leave the working tree unchanged.\n"
             "- Stay inside this working directory; do not push, open a PR, or touch remotes.\n"
-            "- Under .dovo/, modify only .dovo/catalog/ and .dovo/run/; leave every other file under .dovo/ unchanged.\n\n"
+            "- Under .dovo/, modify only .dovo/catalog/ and .dovo/run/; leave every other file under .dovo/ unchanged.\n"
+            "- Batch tool calls: request every independent read, search or command you need in the same response, "
+            "not one per response.\n"
+            "- Plan all edits to a file before making them, then make them in one response, or rewrite the file once.\n\n"
             "- Put temporary files only in the directory named by agent_scratch_path; make source edits in this checkout.\n"
             "- Do not read or write logs, artifacts, or session directories.\n"
             "- If you cannot complete the instruction, write the reason, in 100 words or less, "
