@@ -41,7 +41,8 @@ class FakeGh:
     It has `run`'s signature, so it replaces it at the subprocess boundary. `race[(issue, n)]` is a body
     another writer stores right after the n-th read of that issue, to exercise compare-and-set.
     `failing_links` makes that many sub-issue POSTs fail, and `create_output` replaces what
-    `gh issue create` prints.
+    `gh issue create` prints. `labels` holds each issue's labels, which `--label` on create and
+    `--add-label` on edit add to.
     """
 
     def __init__(self, bodies: dict[int, str]) -> None:
@@ -56,6 +57,7 @@ class FakeGh:
         self.created: list[tuple[str, str]] = []
         self.sub_issues: list[tuple[int, str]] = []
         self.removed_labels: list[tuple[int, str]] = []
+        self.added_labels: list[tuple[int, str]] = []
         self.failing_links = 0
         self.create_output: str | None = None
         self.next_number = 1300
@@ -71,7 +73,7 @@ class FakeGh:
             self.comments.append((int(args[3]), Path(args[5]).read_text(encoding="utf-8")))
             return ""
         if args[:3] == ("gh", "issue", "create"):
-            return self._create(args[4], Path(args[6]).read_text(encoding="utf-8"))
+            return self._create(args[4], Path(args[6]).read_text(encoding="utf-8"), args[7:])
         if args[:3] == ("gh", "repo", "view"):
             return "o/r"
         assert args[:2] == ("gh", "api"), f"ran {args}"
@@ -92,15 +94,20 @@ class FakeGh:
         if flag == "--remove-label":
             self.removed_labels.append((issue, value))
             return ""
+        if flag == "--add-label":
+            self.added_labels.append((issue, value))
+            self.labels.setdefault(issue, []).append(value)
+            return ""
         assert flag == "--body-file"
         self.bodies[issue] = Path(value).read_text(encoding="utf-8")
         self.edits.append(issue)
         return ""
 
-    def _create(self, title: str, body: str) -> str:
+    def _create(self, title: str, body: str, flags: tuple[str, ...]) -> str:
         number = self.next_number
         self.next_number += 1
         self.bodies[number] = body
+        self.labels[number] = [value for flag, value in zip(flags[::2], flags[1::2], strict=True) if flag == "--label"]
         self.created.append((title, body))
         return self.create_output or f"Creating issue in o/r\n\nhttps://github.com/o/r/issues/{number}"
 
@@ -132,6 +139,7 @@ def _slice(slice_id: str, **overrides: object) -> dict[str, object]:
         "pilot": False,
         "closing_docs": False,
         "estimate": {"src_docs": 100, "tests": 100, "basis": "x"},
+        "size": "s",
         "stub": f"Stub for {slice_id}.",
     }
     data.update(overrides)
@@ -148,6 +156,7 @@ def _row(slice_id: str, **overrides: object) -> object:
         "closing_docs": False,
         "child": None,
         "stub": None,
+        "size": "s",
     }
     defaults.update(overrides)
     return WORKPLAN.Slice(**defaults)
@@ -304,7 +313,7 @@ class RenderTests:
         assert code == 0
         stored = (
             '{"plan_session":"bp_1","plan_revision":2,"slices":[{"id":"S1","title":"Title S1","depends_on":[],'
-            '"blocked_by":[],"closing_docs":false,"child":42,"stub":null,"status":"pending","pr":null,"session":null}]}'
+            '"blocked_by":[],"closing_docs":false,"child":42,"stub":null,"status":"pending","pr":null,"session":null,"size":"s"}]}'
         )
         assert fake.bodies[42] == (
             f"{INTRO}\n"
@@ -422,6 +431,11 @@ class RenderTests:
                 {"contract": CONTRACT, "slices": [_slice("S1", depends_on=["S2"]), _slice("S2")]},
                 "slice S1 depends on S2, which is not an earlier slice",
                 id="forward-dependency",
+            ),
+            pytest.param(
+                {"contract": CONTRACT, "slices": [_slice("S1", size="xl")]},
+                "slice S1 size must be s, m or l, not 'xl'",
+                id="unknown-size",
             ),
         ],
     )
@@ -857,6 +871,153 @@ class NextTests:
             "'created, somewhere'; record it as S1's child by hand\n"
         )
         assert fake.edits == []
+
+
+class NextSizeTests:
+    def test_a_created_child_carries_the_slices_size_label(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = FakeGh({EPIC: _epic_body(_row("S1", stub="Stub for S1.", size="m"))})
+
+        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
+
+        assert fake.labels[1300] == ["dovo-size-m"]
+        assert fake.added_labels == []
+
+    @pytest.mark.parametrize(
+        ("labels", "added"),
+        [
+            pytest.param([], [(1131, "dovo-size-l")], id="unsized"),
+            pytest.param(["bug"], [(1131, "dovo-size-l")], id="other-labels"),
+            pytest.param(["dovo-size-s"], [], id="already-sized"),
+        ],
+    )
+    def test_an_existing_child_gets_the_size_label_only_when_it_has_none(
+        self, labels: list[str], added: list[tuple[int, str]], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131, size="l"))})
+        fake.labels[1131] = list(labels)
+
+        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
+
+        assert fake.added_labels == added
+
+    @pytest.mark.parametrize(
+        ("row", "child"),
+        [
+            pytest.param(_row("S1", stub="Stub for S1.", size=None), 1300, id="created"),
+            pytest.param(_row("S1", child=1131, size=None), 1131, id="existing"),
+        ],
+    )
+    def test_a_work_plan_without_sizes_labels_nothing_and_says_so(
+        self, row: object, child: int, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: _epic_body(row)})
+
+        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
+
+        assert fake.labels.get(child, []) == []
+        assert fake.added_labels == []
+        assert capsys.readouterr().err == (
+            f"workplan.py: S1 has no size in the work plan, so #{child} gets no dovo-size-* label; label it by hand\n"
+        )
+
+    def test_a_stored_size_survives_a_rerender(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131, size=None))})
+        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": [_slice("S1", size="m")]})
+        argv = ("render", "--issue", str(EPIC), "--plan", plan, "--session", PLAN_SESSION, "--revision", "4")
+
+        assert _main(monkeypatch, fake, *argv) == 0
+
+        assert [(row["id"], row["child"], row["size"]) for row in _rows(fake.bodies[EPIC])] == [("S1", 1131, "m")]
+
+
+class NextHoldTests:
+    def _argv(self, hold: Path) -> tuple[str, ...]:
+        return ("next", "--issue", str(EPIC), "--hold", str(hold))
+
+    @pytest.mark.parametrize(
+        ("rows", "holds", "reason"),
+        [
+            pytest.param(
+                [_row("S1", child=1131, blocked_by=[1192]), _row("S2", child=1132, depends_on=["S1"])],
+                [
+                    {"id": "S1", "label": "S1 is blocked by open #1192"},
+                    {"id": "S2", "label": "S2 waits on S1"},
+                ],
+                "no slice is ready: S1 is blocked by open #1192; S2 waits on S1",
+                id="none-ready",
+            ),
+            pytest.param(
+                [_row("S1", child=1131, status="in_review", pr=1215), _row("S2", child=1132)],
+                [{"id": "S1", "label": "S1 is in_review (#1215); finish it before starting another slice"}],
+                "S1 is in_review (#1215); finish it before starting another slice",
+                id="in-review",
+            ),
+        ],
+    )
+    def test_writes_the_holds_and_no_outputs_when_the_slices_wait_on_a_person(
+        self,
+        rows: list[object],
+        holds: list[dict[str, str]],
+        reason: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        hold = tmp_path / ".agentic" / "next-hold.json"
+        fake = FakeGh({EPIC: _epic_body(*rows)})
+        fake.pr_states[1215] = "OPEN"
+
+        assert _main(monkeypatch, fake, *self._argv(hold)) == 0
+
+        assert json.loads(hold.read_text(encoding="utf-8")) == {"holds": holds}
+        assert capsys.readouterr().err == f"workplan.py: holding: {reason}\n"
+        assert not output.exists()
+        assert fake.created == []
+
+    def test_writes_no_holds_when_a_slice_is_picked(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        hold = tmp_path / "next-hold.json"
+        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131, blocked_by=[1192]))})
+        fake.closed.add(1192)
+
+        assert _main(monkeypatch, fake, *self._argv(hold)) == 0
+
+        assert json.loads(hold.read_text(encoding="utf-8")) == {"holds": []}
+        assert output.read_text(encoding="utf-8").splitlines()[:2] == ["slice=S1", "child=1131"]
+
+    @pytest.mark.parametrize(
+        ("rows", "reason"),
+        [
+            pytest.param(
+                [_row("S1", child=1131, status="in_progress", session=CODE_SESSION), _row("S2", child=1132)],
+                "S1 is in_progress; finish it before starting another slice",
+                id="in-progress",
+            ),
+            pytest.param(
+                [_row("S1", child=1131, status="merged", pr=1215)],
+                "every slice is merged",
+                id="all-merged",
+            ),
+        ],
+    )
+    def test_still_refuses_what_no_person_can_settle_by_merging(
+        self,
+        rows: list[object],
+        reason: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        hold = tmp_path / "next-hold.json"
+        fake = FakeGh({EPIC: _epic_body(*rows)})
+
+        assert _main(monkeypatch, fake, *self._argv(hold)) == 1
+
+        assert capsys.readouterr().err == f"workplan.py: {reason}\n"
+        assert not hold.exists()
 
 
 class ClaimTests:

@@ -1,7 +1,7 @@
 version: 1
 name: ready-issue
 id: ready-issue
-description: Re-ground a GitHub issue against main and re-check it against /dovo-issue and the AGENTS.md rules, then, once a person approves, apply the proposed edits and label it dovo:ready with a comment naming the sha it was checked at
+description: Re-ground a GitHub issue against main and re-check it against /dovo-issue and the AGENTS.md rules, holding for a person and re-checking it while it is not ready, then, once a person approves, apply the proposed edits and label it dovo:ready with a comment naming the sha it was checked at
 summary: Issue to dovo:ready with a human gate
 
 inputs:
@@ -12,48 +12,107 @@ inputs:
     aliases: ["-i", "--issue"]
 
 steps:
-  # The session's own worktree, so moving it loses nothing: the check grounds
-  # against main as it is now, not the commit the session started from.
-  - id: base
-    name: Check out origin/main
-    run: git fetch -q origin main && git switch -q --detach origin/main
-    timeout_seconds: 120
+  # A not_ready issue needs a person: a size label, a split, a decision or a
+  # closed blocker, which no edit here can supply. Rather than failing, the run
+  # holds at a prompt that lists the findings, so the person settles them on
+  # GitHub and answers (or leaves the run paused and continues it later with
+  # `dovo resume`). The loop then re-runs the check, since the gate reads the
+  # verdict the check wrote, and ends once the verdict is ready or needs_edits.
+  - id: ready-loop
+    name: Check the issue until no person needs to settle it
+    type: loop
+    max_iterations: 5
+    until:
+      # Workaround for #1141: a failed settled is recorded as ignored with exit
+      # code 0, so only its status shows the failure. Revert to
+      # `steps.settled.exit_code == 0` when #1141 lands.
+      - steps.settled.status == "completed"
+    on_max_iterations: prompt_user
+    do:
+      # The session's own worktree, so moving it loses nothing: each check
+      # grounds against main as it is now, including a blocker merged while
+      # the run was held.
+      - id: base
+        name: Check out origin/main
+        run: git fetch -q origin main && git switch -q --detach origin/main
+        timeout_seconds: 120
 
-  - id: check
-    name: Re-ground and re-check the issue
-    type: agent
-    prompt: |
-      /dovo-issue ready ${{ inputs.issue }}
+      - id: check
+        name: Re-ground and re-check the issue
+        type: agent
+        prompt: |
+          /dovo-issue ready ${{ inputs.issue }}
 
-      Follow the Ready mode section of .agents/skills/dovo-issue/SKILL.md if the slash command is
-      not recognized. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
-      .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md when the
-      verdict is needs_edits. Do not edit the issue, its labels or its comments.
-    tools: { allow_all: true }
-    timeout_seconds: 1800
-    artifacts:
-      - { name: issue-ready, path: ".agentic/issue-*" }
+          Follow the Ready mode section of .agents/skills/dovo-issue/SKILL.md if the slash command is
+          not recognized. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
+          .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md when the
+          verdict is needs_edits. Do not edit the issue, its labels or its comments.
+          Findings of the previous check a person says they settled, if any: {{ steps.hold.outputs.selected }}
+          Their notes: {{ steps.hold.outputs.comment }}
+        tools: { allow_all: true }
+        timeout_seconds: 1800
+        artifacts:
+          - { name: issue-ready, path: ".agentic/issue-*" }
 
-  # Any verdict but ready means the current body is stale, so a label left from
-  # an earlier run is removed and never vouches for it; apply adds it back after
-  # the edits. Stops the run before the person is asked unless the verdict is
-  # ready or needs_edits: a not_ready issue needs a split, a decision or a
-  # closed blocker, which no edit here can supply.
-  - id: gate
-    name: Stop when the issue needs a person
-    run: |
-      set -eu
-      verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
-      echo "Verdict: $verdict"
-      [ "$verdict" = "ready" ] && exit 0
-      labels=$(gh issue view ${{ inputs.issue }} --json labels --jq '.labels[].name')
-      if printf '%s\n' "$labels" | grep -qx 'dovo:ready'; then
-        gh issue edit ${{ inputs.issue }} --remove-label dovo:ready
-      fi
-      [ "$verdict" = "needs_edits" ] && exit 0
-      cat .agentic/issue-ready.md
-      exit 1
-    timeout_seconds: 120
+      # Any verdict but ready means the current body is stale, so a label left
+      # from an earlier run is removed and never vouches for it; apply adds it
+      # back after the edits. Lists what a person must settle: every finding of a
+      # not_ready verdict, and nothing otherwise.
+      - id: gate
+        name: List what a person must settle
+        run: |
+          set -eu
+          verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
+          echo "Verdict: $verdict"
+          echo "verdict=$verdict" >> "$DOVO_OUTPUT"
+          if [ "$verdict" != "ready" ]; then
+            labels=$(gh issue view ${{ inputs.issue }} --json labels --jq '.labels[].name')
+            if printf '%s\n' "$labels" | grep -qx 'dovo:ready'; then
+              gh issue edit ${{ inputs.issue }} --remove-label dovo:ready
+            fi
+          fi
+          uv run --quiet python - <<'PY'
+          import json
+          report = json.load(open(".agentic/issue-ready.json"))
+          findings = report["findings"] if report["verdict"] == "not_ready" else []
+          holds = [{"id": f["id"], "label": f"{f['id']} ({f['kind']}): {f['summary']} Fix: {f['fix']}"} for f in findings]
+          if report["verdict"] == "not_ready" and not holds:
+              holds = [{"id": "report", "label": "The check is not_ready but lists no finding; read its report."}]
+          json.dump({"holds": holds}, open(".agentic/issue-hold.json", "w"), indent=2)
+          PY
+          if [ "$verdict" = "not_ready" ]; then cat .agentic/issue-ready.md; fi
+        timeout_seconds: 120
+        artifacts:
+          - { name: issue-hold, path: .agentic/issue-hold.json }
+          - { name: issue-ready-report, path: .agentic/issue-ready.md }
+
+      # No prompt is shown when the gate lists nothing.
+      - id: hold
+        name: Wait for a person to settle the findings
+        type: ask
+        interaction:
+          mode: multiselect
+          message: >-
+            Issue ${{ inputs.issue }} is not ready to plan, and only a person can settle why: the
+            check's findings are listed below, and its report is attached. Settle them on GitHub (a
+            size label, a split, a decision, a closed blocker), then select the ones you settled to
+            re-check the issue. To stop for now, press Ctrl-C: the run stays paused, and
+            `dovo resume` asks again.
+          artifact: issue-ready-report
+          options_from:
+            artifact: issue-hold
+            file: .agentic/issue-hold.json
+            items_path: holds
+            value_field: id
+            label_field: label
+          comment: { policy: optional, message: "What you changed, for the re-check" }
+
+      # Fails, and so repeats the loop, only when the verdict was not_ready.
+      - id: settled
+        name: Re-check the issue unless no person was needed
+        run: test "{{ steps.gate.outputs.verdict }}" != "not_ready"
+        timeout_seconds: 60
+        on_failure: continue
 
   # Asked on every run, including one with nothing to edit, since a step cannot
   # be skipped; denying stops the run with the issue untouched.

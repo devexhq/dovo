@@ -8,7 +8,7 @@
 version: 1
 name: issue-code
 id: issue-code
-description: Pick the next ready slice of an issue's work plan, load the plan from the session that wrote it, ready the slice's child issue if it is not labelled dovo:ready, plan the slice's phases just in time and review, challenge, answer and approve that plan, claim the slice, implement the slice, review and fix blockers and warnings until none remain or only a person can settle them, report how the slice departed from the plan, then open a PR that closes the child issue, post the final review and record the slice as landed in the work plan
+description: Pick the next ready slice of an issue's work plan, holding for a person while every slice waits on one, load the plan from the session that wrote it, ready the slice's child issue if it is not labelled dovo:ready, holding for a person and re-checking it while it is not ready, plan the slice's phases just in time and review, challenge, answer and approve that plan, claim the slice, implement the slice, review and fix blockers and warnings until none remain or only a person can settle them, report how the slice departed from the plan, then open a PR that closes the child issue, post the final review and record the slice as landed in the work plan
 summary: Next slice of a work plan to a reviewed PR
 
 inputs:
@@ -26,15 +26,59 @@ steps:
     run: git fetch -q origin main && git switch -q --detach origin/main
     timeout_seconds: 120
 
-  # Picks without claiming. Refuses, with its reason on stderr, when a slice is
-  # in progress or in review, when an active slice's PR was closed unmerged, or
-  # when no slice is ready; the run stops there. The run's failure line shows
-  # only the exit code, so the reason is read with
-  # `dovo logs <session> --step next`.
-  - id: next
-    name: Pick the next slice
-    run: uv run python scripts/workplan.py next --issue ${{ inputs.issue }}
-    timeout_seconds: 300
+  # Picks without claiming. When the slices wait on a person (a blocker still
+  # open, a slice not yet merged, a slice's PR in review), `next` lists why in
+  # its holds file instead of refusing, and the run holds at a prompt that lists
+  # them; once the person has merged or closed what they wait on and answers
+  # (or continues a paused run with `dovo resume`), the loop picks again. It
+  # still refuses, with its reason on stderr, when a slice is in progress, when
+  # an active slice's PR was closed unmerged, or when every slice is merged; the
+  # run stops there. The run's failure line shows only the exit code, so the
+  # reason is read with `dovo logs <session> --step next`.
+  - id: pick-loop
+    name: Pick the next slice once nothing it waits on needs a person
+    type: loop
+    max_iterations: 5
+    until:
+      # Workaround for #1141: a failed picked is recorded as ignored with exit
+      # code 0, so only its status shows the failure. Revert to
+      # `steps.picked.exit_code == 0` when #1141 lands.
+      - steps.picked.status == "completed"
+    on_max_iterations: prompt_user
+    do:
+      - id: next
+        name: Pick the next slice
+        run: >-
+          uv run python scripts/workplan.py next --issue ${{ inputs.issue }}
+          --hold .agentic/next-hold.json
+        timeout_seconds: 300
+        artifacts:
+          - { name: next-hold, path: .agentic/next-hold.json }
+
+      # No prompt is shown when a slice was picked.
+      - id: next-hold
+        name: Wait for a person to unblock a slice
+        type: ask
+        interaction:
+          mode: multiselect
+          message: >-
+            No slice of issue ${{ inputs.issue }} can start yet; each slice below says what it waits
+            on. Merge or close it on GitHub, then select the slices you unblocked to pick again. To
+            stop for now, press Ctrl-C: the run stays paused, and `dovo resume` asks again.
+          artifact: next-hold
+          options_from:
+            artifact: next-hold
+            file: .agentic/next-hold.json
+            items_path: holds
+            value_field: id
+            label_field: label
+
+      # Fails, and so repeats the loop, only when next held instead of picking.
+      - id: picked
+        name: Pick again unless a slice was picked
+        run: test -n "{{ steps.next.outputs.slice }}"
+        timeout_seconds: 60
+        on_failure: continue
 
   # The latest revisions of the session the work plan points at: the planning
   # session, or the code session of the last slice that amended the plan.
@@ -93,48 +137,118 @@ steps:
       fi
     timeout_seconds: 120
 
-  - id: check
-    name: Re-ground and re-check the child issue
-    type: agent
-    prompt: |
-      Child issue already labelled dovo:ready: {{ steps.child-ready.outputs.labelled }}
+  # A not_ready child needs a person: a size label, a split, a decision or a
+  # closed blocker, which no edit here can supply. Rather than failing, the run
+  # holds at a prompt that lists the findings, so the person settles them on
+  # GitHub and answers (or leaves the run paused and continues it later with
+  # `dovo resume`). The loop then re-runs the check, since the gate reads the
+  # verdict the check wrote, and ends once the verdict is ready or needs_edits.
+  - id: ready-loop
+    name: Check the child issue until no person needs to settle it
+    type: loop
+    max_iterations: 5
+    until:
+      # Workaround for #1141: a failed settled is recorded as ignored with exit
+      # code 0, so only its status shows the failure. Revert to
+      # `steps.settled.exit_code == 0` when #1141 lands.
+      - steps.settled.status == "completed"
+    on_max_iterations: prompt_user
+    do:
+      # Each check grounds against main as it is now, including a blocker
+      # merged while the run was held.
+      - id: ready-base
+        name: Check out origin/main for the check
+        run: git fetch -q origin main && git switch -q --detach origin/main
+        timeout_seconds: 120
 
-      If that is true, write only .agentic/issue-ready.md, containing the one line
-      "Issue #{{ steps.next.outputs.child }} is already labelled dovo:ready; not re-checked.",
-      and stop. Otherwise run:
+      - id: check
+        name: Re-ground and re-check the child issue
+        type: agent
+        prompt: |
+          Child issue already labelled dovo:ready: {{ steps.child-ready.outputs.labelled }}
 
-      /dovo-issue ready {{ steps.next.outputs.child }}
+          If that is true, write only .agentic/issue-ready.md, containing the one line
+          "Issue #{{ steps.next.outputs.child }} is already labelled dovo:ready; not re-checked.",
+          and stop. Otherwise run:
 
-      Follow the Ready mode section of .agents/skills/dovo-issue/SKILL.md if the slash command is
-      not recognized. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
-      .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md when the
-      verdict is needs_edits. Do not edit the issue, its labels or its comments.
-    tools: { allow_all: true }
-    timeout_seconds: 1800
-    artifacts:
-      - { name: issue-ready, path: ".agentic/issue-*" }
+          /dovo-issue ready {{ steps.next.outputs.child }}
 
-  # Any verdict but ready means the current body is stale, so a label left from
-  # an earlier run is removed and never vouches for it; apply adds it back after
-  # the edits. Stops the run before the person is asked unless the verdict is
-  # ready or needs_edits: a not_ready issue needs a split, a decision or a
-  # closed blocker, which no edit here can supply.
-  - id: gate
-    name: Stop when the child issue needs a person
-    run: |
-      set -eu
-      [ "{{ steps.child-ready.outputs.labelled }}" = "true" ] && { echo "Already labelled dovo:ready."; exit 0; }
-      verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
-      echo "Verdict: $verdict"
-      [ "$verdict" = "ready" ] && exit 0
-      labels=$(gh issue view {{ steps.next.outputs.child }} --json labels --jq '.labels[].name')
-      if printf '%s\n' "$labels" | grep -qx 'dovo:ready'; then
-        gh issue edit {{ steps.next.outputs.child }} --remove-label dovo:ready
-      fi
-      [ "$verdict" = "needs_edits" ] && exit 0
-      cat .agentic/issue-ready.md
-      exit 1
-    timeout_seconds: 120
+          Follow the Ready mode section of .agents/skills/dovo-issue/SKILL.md if the slash command is
+          not recognized. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
+          .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md when the
+          verdict is needs_edits. Do not edit the issue, its labels or its comments.
+          Findings of the previous check a person says they settled, if any: {{ steps.hold.outputs.selected }}
+          Their notes: {{ steps.hold.outputs.comment }}
+        tools: { allow_all: true }
+        timeout_seconds: 1800
+        artifacts:
+          - { name: issue-ready, path: ".agentic/issue-*" }
+
+      # Any verdict but ready means the current body is stale, so a label left
+      # from an earlier run is removed and never vouches for it; apply adds it
+      # back after the edits. Lists what a person must settle: every finding of a
+      # not_ready verdict, and nothing otherwise.
+      - id: gate
+        name: List what a person must settle on the child issue
+        run: |
+          set -eu
+          if [ "{{ steps.child-ready.outputs.labelled }}" = "true" ]; then
+            echo "Already labelled dovo:ready."
+            echo "verdict=labelled" >> "$DOVO_OUTPUT"
+            printf '{"holds": []}\n' > .agentic/issue-hold.json
+            exit 0
+          fi
+          verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
+          echo "Verdict: $verdict"
+          echo "verdict=$verdict" >> "$DOVO_OUTPUT"
+          if [ "$verdict" != "ready" ]; then
+            labels=$(gh issue view {{ steps.next.outputs.child }} --json labels --jq '.labels[].name')
+            if printf '%s\n' "$labels" | grep -qx 'dovo:ready'; then
+              gh issue edit {{ steps.next.outputs.child }} --remove-label dovo:ready
+            fi
+          fi
+          uv run --quiet python - <<'PY'
+          import json
+          report = json.load(open(".agentic/issue-ready.json"))
+          findings = report["findings"] if report["verdict"] == "not_ready" else []
+          holds = [{"id": f["id"], "label": f"{f['id']} ({f['kind']}): {f['summary']} Fix: {f['fix']}"} for f in findings]
+          if report["verdict"] == "not_ready" and not holds:
+              holds = [{"id": "report", "label": "The check is not_ready but lists no finding; read its report."}]
+          json.dump({"holds": holds}, open(".agentic/issue-hold.json", "w"), indent=2)
+          PY
+          if [ "$verdict" = "not_ready" ]; then cat .agentic/issue-ready.md; fi
+        timeout_seconds: 120
+        artifacts:
+          - { name: issue-hold, path: .agentic/issue-hold.json }
+          - { name: issue-ready-report, path: .agentic/issue-ready.md }
+
+      # No prompt is shown when the gate lists nothing.
+      - id: hold
+        name: Wait for a person to settle the child issue's findings
+        type: ask
+        interaction:
+          mode: multiselect
+          message: >-
+            Child issue {{ steps.next.outputs.child }} of slice {{ steps.next.outputs.slice }} is not
+            ready to plan, and only a person can settle why: the check's findings are listed below,
+            and its report is attached. Settle them on GitHub (a size label, a split, a decision, a
+            closed blocker), then select the ones you settled to re-check the issue. To stop for
+            now, press Ctrl-C: the run stays paused, and `dovo resume` asks again.
+          artifact: issue-ready-report
+          options_from:
+            artifact: issue-hold
+            file: .agentic/issue-hold.json
+            items_path: holds
+            value_field: id
+            label_field: label
+          comment: { policy: optional, message: "What you changed, for the re-check" }
+
+      # Fails, and so repeats the loop, only when the verdict was not_ready.
+      - id: settled
+        name: Re-check the child issue unless no person was needed
+        run: test "{{ steps.gate.outputs.verdict }}" != "not_ready"
+        timeout_seconds: 60
+        on_failure: continue
 
   # Asked on every run, including one where the child is already labelled,
   # since a step cannot be skipped; denying stops the run with the issue
@@ -359,8 +473,8 @@ steps:
       comment: { policy: optional, message: Instructions for the implementer }
 
   # Claimed only once the child issue is ready and the slice's plan approved,
-  # so a child that turns out not_ready or a plan the person denies leaves the
-  # slice pending rather than stuck in progress.
+  # so a run stopped while its child issue is held for a person, or a plan the
+  # person denies, leaves the slice pending rather than stuck in progress.
   - id: claim
     name: Claim the slice for this session
     run: >-
