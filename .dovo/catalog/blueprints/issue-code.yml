@@ -472,9 +472,18 @@ steps:
       artifact: plan-walkthrough
       comment: { policy: optional, message: Instructions for the implementer }
 
-  # Claimed only once the child issue is ready and the slice's plan approved,
-  # so a run stopped while its child issue is held for a person, or a plan the
-  # person denies, leaves the slice pending rather than stuck in progress.
+  # Installed after refresh-base's checkout and before the first agent writes
+  # code, so its first test run finds every project dependency. Runs before
+  # claim, so a failed install leaves the slice pending.
+  - id: sync
+    name: Install the project's dependencies
+    run: uv sync --all-extras
+    timeout_seconds: 900
+
+  # Claimed only once the child issue is ready, the slice's plan approved and
+  # the dependencies installed, so a run stopped while its child issue is held
+  # for a person, a plan the person denies, or a failed install leaves the slice
+  # pending rather than stuck in progress.
   - id: claim
     name: Claim the slice for this session
     run: >-
