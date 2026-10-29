@@ -22,7 +22,7 @@ from dovo.core.bootstrap.models import BootstrapOutcome
 from dovo.core.config.exceptions import ConfigError
 from dovo.core.project.models import PROJECT_ID_REGEX, ProjectIdentity
 from tests.harness.builders import init_git_repository
-from tests.harness.diagnostic_log import FROZEN_EVENT_ID, unwrapped
+from tests.harness.diagnostic_log import FROZEN_EVENT_ID
 from tests.harness.lock import raise_lock_timeout
 
 
@@ -358,7 +358,7 @@ class InitCliFailureTests:
     ) -> None:
         """Print the bootstrap line, the config error and the failure heading, and no next-step hint."""
         init_git_repository(tmp_path)
-        message = f"Config path '{(_dovo_dir(tmp_path) / 'config.json').resolve().as_posix()}' is a directory."
+        message = "Config path is a directory."
 
         def _path_invalid(*_args: object, **_kwargs: object) -> None:
             raise ConfigError(ErrorCode.CONFIG_PATH_INVALID, message)
@@ -369,6 +369,6 @@ class InitCliFailureTests:
 
         assert result.exit_code == 1
         assert "Initialized Dovo at" in result.stdout
-        assert unwrapped(message) in unwrapped(result.stdout)
+        assert message in result.stdout
         assert "Initialization Failed!" in result.stdout
         assert "Next:" not in result.stdout
