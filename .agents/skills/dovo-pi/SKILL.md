@@ -36,7 +36,7 @@ uv run python scripts/session_pi.py <id> --out .agentic/pi/extract.json
 Read `.agentic/pi/extract.json`. It holds:
 
 - `session`: id, blueprint, status, start and completion time, wall seconds, error message, `resumes` (session starts beyond the first), total cost and token counts.
-- `steps`: one row per step attempt group (loop steps carry `#<iteration>` in `id`) with `status`, `attempts`, `wall_seconds`, `model_seconds` (API time), `turns` (model responses that called a tool, counted by `message.id`, not by stream event), `tool_calls`, `calls_per_turn`, `cost_usd`, `top_tools`. `type` is `claude` when the step's stdout is Claude Code stream-json, `other` when it is some other format (Copilot, plain commands) and null without a log; metrics are null for anything but `claude`. Report such a step with its wall time and status only.
+- `steps`: one row per step attempt group (loop steps carry `#<iteration>` in `id`) with `status`, `attempts`, `wall_seconds`, `model_seconds` (API time), `turns` (model responses that called a tool, counted by `message.id`, not by stream event; an event without a `message.id` counts as its own turn), `tool_calls`, `calls_per_turn`, `cost_usd`, `top_tools`. `type` is `claude` when the step's stdout is Claude Code stream-json, `other` when it is some other format (Copilot, plain commands) and null without a log; metrics are null for anything but `claude`. Report such a step with its wall time and status only.
 - `flags`: each has `kind`, `step`, `detail`, `evidence` (`file` plus `line` or `ts`, relative to the session's log directory) and a `fingerprint`.
 
 If the script exits non-zero, report its message and stop.

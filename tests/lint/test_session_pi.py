@@ -264,6 +264,16 @@ class TestFlags:
         assert [f["detail"] for f in flags] == ["/x/z.py read in 3 steps"]
         assert [e["step"] for e in _evidence(flags[0])] == ["a", "b", "c"]
 
+    def test_read_evidence_is_the_read_event_of_its_response(self, tmp_path: Path) -> None:
+        response = _response("m", [("Grep", {"pattern": "x"}), ("Read", {"file_path": "/x/z.py"})])
+        for index, name in enumerate(("a", "b", "c"), start=1):
+            _write_log(tmp_path / f"0{index}_{name}_attempt_1.stdout.log", response)
+        steps = [_step("a"), _step("b"), _step("c")]
+
+        flags = _flags(PI.analyse(_payload(steps), tmp_path), "repeated_reads")
+
+        assert [e["line"] for e in _evidence(flags[0])] == [4, 4, 4]
+
     def test_failed_tool_results_and_repeated_failing_commands(self, tmp_path: Path) -> None:
         events = [
             _use("a", "Bash", command="make"),

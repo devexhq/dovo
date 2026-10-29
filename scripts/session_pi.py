@@ -49,11 +49,12 @@ Flag = dict[str, object]
 
 @dataclass
 class Call:
-    """One top-level tool call of an agent turn."""
+    """One top-level tool call of an agent turn, with the log line of its tool_use event."""
 
     name: str
     target: str
     file_path: str | None
+    line: int
 
 
 @dataclass
@@ -123,7 +124,7 @@ def _content(event: dict[str, object]) -> list[dict[str, object]]:
     return [block for block in content if isinstance(block, dict)] if isinstance(content, list) else []
 
 
-def _calls(number: int, event: dict[str, object], uses: dict[str, tuple[Call, int]]) -> list[Call]:
+def _calls(number: int, event: dict[str, object], uses: dict[str, Call]) -> list[Call]:
     """Return the tool calls of an assistant event, registering them in uses."""
     calls = []
     for block in _content(event):
@@ -131,9 +132,9 @@ def _calls(number: int, event: dict[str, object], uses: dict[str, tuple[Call, in
             continue
         tool_input = block.get("input")
         target, file_path = describe(tool_input if isinstance(tool_input, dict) else {})
-        call = Call(str(block.get("name")), target, file_path)
+        call = Call(str(block.get("name")), target, file_path, number)
         calls.append(call)
-        uses[str(block.get("id"))] = (call, number)
+        uses[str(block.get("id"))] = call
     return calls
 
 
@@ -144,13 +145,13 @@ def _message_id(event: dict[str, object]) -> str | None:
     return str(value) if value else None
 
 
-def _failures(number: int, event: dict[str, object], uses: dict[str, tuple[Call, int]]) -> list[FailedCall]:
+def _failures(number: int, event: dict[str, object], uses: dict[str, Call]) -> list[FailedCall]:
     """Return the failed tool results of a user event, matched to their calls."""
     failed = []
     for block in _content(event):
         used = uses.get(str(block.get("tool_use_id")))
         if block.get("type") == "tool_result" and block.get("is_error") and used is not None:
-            failed.append(FailedCall(used[0].name, used[0].target, number))
+            failed.append(FailedCall(used.name, used.target, number))
     return failed
 
 
@@ -161,7 +162,7 @@ def parse_agent_log(path: Path, step: str, iteration: int | None, attempt: int) 
     message.id form one turn. Subagent turns (those with a parent_tool_use_id) are left out.
     """
     log = AgentLog(path.name, step, iteration, attempt)
-    uses: dict[str, tuple[Call, int]] = {}
+    uses: dict[str, Call] = {}
     responses: dict[str, Turn] = {}
     events = read_events(path)
     for number, event in events:
@@ -173,7 +174,7 @@ def _apply_event(
     log: AgentLog,
     number: int,
     event: dict[str, object],
-    uses: dict[str, tuple[Call, int]],
+    uses: dict[str, Call],
     responses: dict[str, Turn],
 ) -> None:
     """Add one stream-json event to log: the result, top-level tool calls, or failed tool results."""
@@ -456,7 +457,7 @@ def _repeated_commands(log: AgentLog, step: str) -> list[Flag]:
 def _reads(log: AgentLog) -> list[tuple[str, int]]:
     """Return the (file, line) of every Read call in the log."""
     return [
-        (call.file_path, turn.line)
+        (call.file_path, call.line)
         for turn in log.turns
         for call in turn.calls
         if call.name == "Read" and call.file_path
