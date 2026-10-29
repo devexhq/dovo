@@ -21,7 +21,15 @@ import sys
 from typing import NamedTuple
 
 from pr_feedback import AGENTIC_DIR, FEEDBACK_JSON, PR_URL
-from publish_review import PublishReviewError, pr_repository, run
+from publish_review import (
+    REPLY_MUTATION,
+    RESOLVE_MUTATION,
+    PublishReviewError,
+    already_replied,
+    pr_repository,
+    run,
+    thread_graphql,
+)
 
 OUTCOMES_JSON = AGENTIC_DIR / "feedback-outcomes.json"
 OUTCOME_LINES = {
@@ -38,16 +46,6 @@ query($thread: ID!) {
       comments(last: 100) { nodes { author { login } body } }
     }
   }
-}
-"""
-REPLY_MUTATION = """
-mutation($thread: ID!, $body: String!) {
-  addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $thread, body: $body}) { comment { url } }
-}
-"""
-RESOLVE_MUTATION = """
-mutation($thread: ID!) {
-  resolveReviewThread(input: {threadId: $thread}) { thread { isResolved } }
 }
 """
 
@@ -124,20 +122,6 @@ def outcomes_problem(outcomes: object, selected: list[str]) -> str | None:
     return next((problem for problem in problems if problem is not None), None)
 
 
-def already_replied(comments: list[dict[str, object]], viewer: str, body: str) -> bool:
-    """Return whether a comment by viewer (GraphQL `author.login`) has body as its text, ignoring surrounding whitespace.
-
-    Matching the whole reply, not only its round marker, keeps a round number
-    reused by a later pr-fix run from hiding a changed outcome.
-    """
-    for comment in comments:
-        author = comment.get("author")
-        login = author.get("login") if isinstance(author, dict) else None
-        if login == viewer and str(comment.get("body") or "").strip() == body:
-            return True
-    return False
-
-
 def _feedback_items(feedback: dict[str, object]) -> dict[str, dict[str, object]]:
     """Return feedback.json's items by id."""
     items = feedback.get("items")
@@ -189,14 +173,6 @@ def read_outcomes(selected: list[str]) -> dict[str, object]:
     return outcomes
 
 
-def _graphql(host: str, query: str, thread: str, *fields: str, jq: str) -> str:
-    """Run `gh api graphql` on host with query, the thread variable and the extra `-f` fields, filtered by jq."""
-    extra = [arg for field in fields for arg in ("-f", field)]
-    return run(
-        "gh", "api", "graphql", "--hostname", host, "-f", f"query={query}", "-f", f"thread={thread}", *extra, "--jq", jq
-    )
-
-
 def post_outcome(host: str, viewer: str, reply: ThreadReply, round_number: int, commit: str) -> tuple[bool, bool]:
     """Reply on reply.thread unless already_replied, then resolve it when fixed and unresolved; return (replied, resolved).
 
@@ -204,11 +180,11 @@ def post_outcome(host: str, viewer: str, reply: ThreadReply, round_number: int, 
         ReplyThreadsError: When a gh call fails, with reply.url and gh's stderr.
     """
     try:
-        state = json.loads(_graphql(host, REPLIES_QUERY, reply.thread, jq=".data.node"))
+        state = json.loads(thread_graphql(host, REPLIES_QUERY, reply.thread, jq=".data.node"))
         body = reply_body(round_number, reply.outcome, reply.note, commit)
         replied = not already_replied(state["comments"]["nodes"], viewer, body)
         if replied:
-            _graphql(
+            thread_graphql(
                 host,
                 REPLY_MUTATION,
                 reply.thread,
@@ -217,7 +193,7 @@ def post_outcome(host: str, viewer: str, reply: ThreadReply, round_number: int, 
             )
         resolved = reply.outcome == "fixed" and not state["isResolved"]
         if resolved:
-            _graphql(host, RESOLVE_MUTATION, reply.thread, jq=".data.resolveReviewThread.thread.isResolved")
+            thread_graphql(host, RESOLVE_MUTATION, reply.thread, jq=".data.resolveReviewThread.thread.isResolved")
     except subprocess.CalledProcessError as error:
         stderr = str(error.stderr or "")
         raise ReplyThreadsError(f"cannot update review thread {reply.url}: {stderr.strip()}") from error

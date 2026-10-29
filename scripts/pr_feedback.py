@@ -7,9 +7,12 @@ session's plan, plan-questions, review and implementation-report artifacts into
 .agentic/, checks out the pull request's head commit, records its head branch
 in .agentic/pr-branch and its URL in .agentic/pr-url, and writes
 .agentic/feedback.json: every unresolved review thread, with its thread id;
-every finding of the restored review, whatever its verdict and severity;
-every comment and review summary by someone else touched since the dovo-review
-comment's last update; and every failed check on the head commit.
+every finding in the body of the viewer's pull request review for the round
+the dovo-review comment names; every comment and review summary by someone
+else touched since the dovo-review comment's last update; and every failed
+check on the head commit. Items for dovo findings, the review's body findings
+and the viewer's finding threads, carry `finding`: the id, severity, rule and
+round of the finding marker that starts them.
 """
 
 from __future__ import annotations
@@ -23,47 +26,33 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
-from publish_review import SESSION_LABEL, find_own_comment, list_comments, pr_repository, run
+from publish_review import (
+    REVIEWS_QUERY,
+    SESSION_LABEL,
+    THREADS_QUERY,
+    find_own_comment,
+    list_comments,
+    list_pr_nodes,
+    own_review,
+    parse_finding_marker,
+    pr_repository,
+    review_marker,
+    run,
+    thread_comments,
+)
 
 AGENTIC_DIR = Path(".agentic")
 FEEDBACK_JSON = AGENTIC_DIR / "feedback.json"
 PR_BRANCH = AGENTIC_DIR / "pr-branch"
 PR_URL = AGENTIC_DIR / "pr-url"
-REVIEW_JSON = AGENTIC_DIR / "review.json"
 RESTORED_ARTIFACTS = ("plan", "plan-questions", "review", "implementation-report")
 SUMMARY_CHARS = 200
 NO_AUTHOR_LABELS = {"review_finding": "dovo-review", "check": "ci"}
 FAILED_CONCLUSIONS = ("failure", "cancelled", "timed_out")
-THREADS_QUERY = """
-query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      reviewThreads(first: 100, after: $endCursor) {
-        pageInfo { hasNextPage endCursor }
-        nodes {
-          id
-          isResolved
-          path
-          line
-          comments(first: 1) { nodes { author { __typename login } body url } }
-        }
-      }
-    }
-  }
-}
-"""
-REVIEWS_QUERY = """
-query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      reviews(first: 100, after: $endCursor) {
-        pageInfo { hasNextPage endCursor }
-        nodes { author { __typename login } body url submittedAt lastEditedAt }
-      }
-    }
-  }
-}
-"""
+HEADER_COMMIT = re.compile(r"^Reviewed commit: `(?P<head>[0-9a-f]{40})`$")
+HEADER_ROUND = re.compile(r" · Round: (?P<round>[1-9]\d*)$")
+BACKTICKED = re.compile(r"`([^`]+)`")
+ISSUE_LABEL = "**Issue:**"
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 HTML_TAG = re.compile(r"</?[A-Za-z][^>]*>")
 LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
@@ -131,6 +120,22 @@ def comment_session(comment: dict[str, object], number: int) -> str:
     return session
 
 
+def header_review(body: str) -> tuple[str, int] | None:
+    """Return the Reviewed commit and Round on the dovo-review comment's header, or None when it names either not.
+
+    The header is the lines before the first blank line, as session_from_comment reads it.
+    """
+    head = round_number = None
+    for line in body.splitlines():
+        if not line.strip():
+            break
+        commit = HEADER_COMMIT.match(line)
+        found = HEADER_ROUND.search(line)
+        head = commit["head"] if commit is not None else head
+        round_number = int(found["round"]) if found is not None else round_number
+    return None if head is None or round_number is None else (head, round_number)
+
+
 def artifact_problem(session: str, name: str) -> str:
     """Return the message for an artifact that could not be downloaded from session."""
     return (
@@ -158,6 +163,38 @@ def markdown_summary(body: str) -> str:
     return ""
 
 
+def finding_blocks(body: str) -> list[str]:
+    """Return each finding block of body: from a finding marker line to before the next one, trailing space stripped."""
+    blocks: list[list[str]] = []
+    for line in body.splitlines():
+        if parse_finding_marker(line) is not None:
+            blocks.append([])
+        if blocks:
+            blocks[-1].append(line)
+    return ["\n".join(block).rstrip() for block in blocks]
+
+
+def block_summary(block: str) -> str:
+    """Return the block's `**Issue:**` paragraph with markup removed, cut to SUMMARY_CHARS."""
+    paragraph: list[str] = []
+    for line in block.splitlines():
+        if paragraph and not line.strip():
+            break
+        if paragraph or line.startswith(ISSUE_LABEL):
+            paragraph.append(line.removeprefix(ISSUE_LABEL))
+    return _plain_line(" ".join(paragraph))[:SUMMARY_CHARS]
+
+
+def block_location(block: str) -> tuple[str | None, int | None]:
+    """Return the path and line in the block heading's backticked location, (path, None) without a line, (None, None) without one."""
+    heading = next((line for line in block.splitlines() if line.startswith("#### ")), "")
+    location = BACKTICKED.search(heading)
+    if location is None:
+        return None, None
+    path, _, line = location[1].rpartition(":")
+    return (path, int(line)) if path and line.isdigit() else (location[1], None)
+
+
 def _author_login(author: object) -> str:
     """Return the GraphQL author's login, with `[bot]` added for a Bot, or `ghost` when GitHub returns none."""
     if not isinstance(author, dict) or not author.get("login"):
@@ -166,23 +203,58 @@ def _author_login(author: object) -> str:
     return f"{login}[bot]" if author.get("__typename") == "Bot" else login
 
 
-def _first_comment(thread: dict[str, object]) -> dict[str, object] | None:
-    """Return the thread's first comment node, or None when it has none."""
-    comments = thread.get("comments")
-    nodes = comments.get("nodes") if isinstance(comments, dict) else None
-    if not isinstance(nodes, list) or not nodes or not isinstance(nodes[0], dict):
-        return None
-    return nodes[0]
+def last_finding(comments: list[dict[str, object]], viewer: str) -> dict[str, object] | None:
+    """Return parse_finding_marker of the last comment by viewer whose first line is a finding marker, or None."""
+    found = None
+    for comment in comments:
+        lines = str(comment.get("body") or "").splitlines()
+        marker = parse_finding_marker(lines[0]) if lines else None
+        if marker is not None and _author_login(comment.get("author")) == viewer:
+            found = marker
+    return found
 
 
-def thread_items(threads: list[dict[str, object]]) -> list[dict[str, object]]:
-    """Return one `review_thread` item per unresolved thread, from its first comment, with ids T1, T2, ... in order."""
+def finding_items(review: dict[str, object] | None) -> list[dict[str, object]]:
+    """Return one `review_finding` item per finding block in the dovo review node's body, ids R1, R2, ...
+
+    Each has `thread` and `author` None, `url` the review's URL, path and line from block_location,
+    `summary` from block_summary, `body` the whole block and `finding` from its marker. None gives [].
+    """
+    if review is None:
+        return []
+    items: list[dict[str, object]] = []
+    for index, block in enumerate(finding_blocks(str(review.get("body") or "")), start=1):
+        path, line = block_location(block)
+        items.append(
+            {
+                "id": f"R{index}",
+                "source": "review_finding",
+                "thread": None,
+                "author": None,
+                "url": review.get("url"),
+                "path": path,
+                "line": line,
+                "summary": block_summary(block),
+                "body": block,
+                "finding": parse_finding_marker(block.splitlines()[0]),
+            }
+        )
+    return items
+
+
+def thread_items(threads: list[dict[str, object]], viewer: str) -> list[dict[str, object]]:
+    """Return one `review_thread` item per unresolved thread, ids T1, T2, ..., with `finding` from last_finding.
+
+    Each comes from the thread's first comment; one that is a finding block takes `summary` from its Issue.
+    """
     items: list[dict[str, object]] = []
     for thread in threads:
-        comment = _first_comment(thread)
-        if thread.get("isResolved") or comment is None:
+        comments = thread_comments(thread)
+        if thread.get("isResolved") or not comments:
             continue
+        comment = comments[0]
         body = str(comment.get("body") or "")
+        is_block = parse_finding_marker(body.splitlines()[0] if body else "") is not None
         items.append(
             {
                 "id": f"T{len(items) + 1}",
@@ -192,36 +264,12 @@ def thread_items(threads: list[dict[str, object]]) -> list[dict[str, object]]:
                 "url": comment.get("url"),
                 "path": thread.get("path"),
                 "line": thread.get("line"),
-                "summary": markdown_summary(body),
+                "summary": block_summary(body) if is_block else markdown_summary(body),
                 "body": body,
+                "finding": last_finding(comments, viewer),
             }
         )
     return items
-
-
-def finding_items(review: dict[str, object]) -> list[dict[str, object]]:
-    """Return one `review_finding` item per finding of any severity, whatever the verdict, ids R1, R2, ...
-
-    Triage picks which ones to fix, so a suggestion on an approved review is listed too.
-    """
-    findings = review.get("findings")
-    if not isinstance(findings, list):
-        return []
-    selected = [finding for finding in findings if isinstance(finding, dict)]
-    return [
-        {
-            "id": f"R{index}",
-            "source": "review_finding",
-            "thread": None,
-            "author": None,
-            "url": None,
-            "path": finding.get("path"),
-            "line": finding.get("line"),
-            "summary": finding.get("summary"),
-            "body": f"{finding.get('id')}: {finding.get('summary')}",
-        }
-        for index, finding in enumerate(selected, start=1)
-    ]
 
 
 class _Entry(NamedTuple):
@@ -295,6 +343,7 @@ def comment_items(
             "line": None,
             "summary": markdown_summary(entry.body),
             "body": entry.body,
+            "finding": None,
         }
         for index, entry in enumerate(selected, start=1)
     ]
@@ -317,15 +366,21 @@ def check_items(checks: list[dict[str, object]]) -> list[dict[str, object]]:
             "line": None,
             "summary": f"{check.get('name')}: {check.get('conclusion')}",
             "body": f"{check.get('name')}: {check.get('conclusion')}",
+            "finding": None,
         }
         for index, check in enumerate(failed, start=1)
     ]
 
 
 def option_label(item: dict[str, object]) -> str:
-    """Return `<id> [<source>, <author>] <summary>`, with the source's NO_AUTHOR_LABELS entry for a null author."""
+    """Return `<id> [<source>, <author>] <summary>`, with the source's NO_AUTHOR_LABELS entry for a null author.
+
+    A dovo finding adds `, <finding id> <severity>` inside the brackets.
+    """
     author = item["author"] if item["author"] is not None else NO_AUTHOR_LABELS[str(item["source"])]
-    return f"{item['id']} [{item['source']}, {author}] {item['summary']}"
+    finding = item.get("finding")
+    tag = f", {finding['id']} {finding['severity']}" if isinstance(finding, dict) else ""
+    return f"{item['id']} [{item['source']}, {author}{tag}] {item['summary']}"
 
 
 def feedback_document(pr: int, head: str, session: str, items: list[dict[str, object]]) -> dict[str, object]:
@@ -336,30 +391,6 @@ def feedback_document(pr: int, head: str, session: str, items: list[dict[str, ob
         "session": session,
         "items": [{**item, "label": option_label(item)} for item in items],
     }
-
-
-def list_pr_nodes(host: str, repository: str, number: int, query: str, connection: str) -> list[dict[str, object]]:
-    """Return every node of the pull request's GraphQL connection, one dict per node, through paginated query."""
-    owner, name = repository.split("/", 1)
-    output = run(
-        "gh",
-        "api",
-        "graphql",
-        "--hostname",
-        host,
-        "--paginate",
-        "-f",
-        f"query={query}",
-        "-f",
-        f"owner={owner}",
-        "-f",
-        f"name={name}",
-        "-F",
-        f"number={number}",
-        "--jq",
-        f".data.repository.pullRequest.{connection}.nodes[]",
-    )
-    return [json.loads(line) for line in output.splitlines() if line.strip()]
 
 
 def list_checks(host: str, repository: str, head: str) -> list[dict[str, object]]:
@@ -442,11 +473,13 @@ def collect(pr: int) -> str:
     session = comment_session(own, number)
     download_artifacts(session)
     check_out_head(number, str(view["headRefName"]), head, url)
-    review = json.loads(REVIEW_JSON.read_text(encoding="utf-8"))
     reviews = list_pr_nodes(host, repository, number, REVIEWS_QUERY, "reviews")
+    # The header names the reviewed commit, which differs from head once the pull request is pushed to.
+    header = header_review(str(own.get("body") or ""))
+    dovo_review = None if header is None else own_review(reviews, viewer, review_marker(*header))
     items = (
-        thread_items(list_pr_nodes(host, repository, number, THREADS_QUERY, "reviewThreads"))
-        + finding_items(review)
+        thread_items(list_pr_nodes(host, repository, number, THREADS_QUERY, "reviewThreads"), viewer)
+        + finding_items(dovo_review)
         + comment_items(comments, reviews, viewer, str(own["updated_at"]))
         + check_items(list_checks(host, repository, head))
     )
