@@ -569,6 +569,7 @@ steps:
       # exit code 0, so only its status shows the failure. Revert to
       # `steps.remaining.exit_code == 0` when #1141 lands.
       - steps.remaining.status == "completed"
+      - steps.fix-verify.status == "completed"
     on_max_iterations: continue
     do:
       - id: review
@@ -603,11 +604,26 @@ steps:
 
           Follow .agents/skills/issue-code/SKILL.md if the slash command is not recognized.
           If .agentic/review.json lists no BLOCKER or WARNING findings, or its action is
-          needs_human or replan, change nothing and report that you did nothing. Do not commit,
-          stage or push.
+          needs_human or replan, fix no findings. If .agentic/fix-gate.log exists, the last
+          round's fixes failed the quality gate: fix what it reports, and add a line
+          `- quality gate: <what changed, with path>` to .agentic/fix-commit-msg. When you
+          changed nothing, report that you did nothing. Do not commit, stage or push.
         tools: { allow_all: true }
         timeout_seconds: 3600
         artifacts: [{ name: implementation-report, path: .agentic/implementation-report.md }]
+
+      # The fixer runs only scoped checks, so the full gate runs here. A round
+      # that changed nothing skips it unless the last round's gate failed.
+      - id: fix-verify
+        name: Run the quality gate on the fixes
+        run: |
+          if [ ! -e .agentic/fix-gate.log ] && [ -z "$(git status --porcelain -- . ':!.dovo/run')" ]; then
+            echo "The fixer changed nothing; the gate the code loop passed still holds."
+            exit 0
+          fi
+          if uv run dovo run quality > .agentic/fix-gate.log 2>&1; then rm .agentic/fix-gate.log; else exit 1; fi
+        timeout_seconds: 1800
+        on_failure: continue
 
       - id: commit-fixes
         uses: commit-fixes

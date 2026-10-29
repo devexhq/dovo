@@ -7,8 +7,9 @@ description: >-
   in time by /issue-plan --slice, working through
   that slice's phases one by one in order, following the epic contract, the
   slice's child issue and the rules and exemplars in AGENTS.md, running scoped
-  tests while building and the full quality gate once the slice is complete,
-  and never committing or pushing. Invoked as /issue-code --slice <id> to
+  tests while building and scoped completion checks once the slice is complete,
+  leaving the full quality gate to the issue-code blueprint's verify steps, and
+  never committing or pushing. Invoked as /issue-code --slice <id> to
   implement a slice, or /issue-code review [--tiers blockers,warnings,suggestions,nits|all |
   --fix B1,W2,...] to address the findings in .agentic/review.md, or
   /issue-code feedback --fix <ids> to address the items in .agentic/feedback.json.
@@ -77,21 +78,26 @@ A check you add under `tests/lint/` must be able to fail: assert its input set i
 
 If a contract cannot be implemented as written, or a cited symbol has moved or does not exist, stop that FR, report what the plan says against what the tree shows, flag it 🚨 and implement the rest. Never redesign a contract on your own or widen scope to make one fit.
 
-## Completion gate
+## Completion checks
 
 Run once every phase of the slice is complete, never between phases or mid-implementation, and never concurrently with another gate or test command:
 
 ```bash
 uv run ruff format .
 uv run ruff check --fix .
-uv run dovo run quality
+uv run ty check src tests e2e
+uv run dovo run tests --path tests/<mirrored-path> --fast-fail   # once for each test path the change touched
 ```
 
-Fix failures in the code, never with a suppression, a baseline entry or a lowered threshold, and re-run from the start. Report each gate with the number it produced, and the coverage against `fail_under` in `pyproject.toml`.
+Run tests through `dovo run tests`, never bare `pytest`: an agent step inherits Dovo's `DOVO_STEP_*` variables, which break tests that assert they are unset, and `dovo run tests` clears them.
+
+Do not run `uv run dovo run quality` or the whole test suite when `$DOVO_BLUEPRINT_NAME` is `issue-code`. That blueprint runs the full gate in a step after this one, and a failure comes back to you in `.agentic/gate.log` (slice mode) or `.agentic/fix-gate.log` (review mode). Run any other way, finish with `uv run dovo run quality` after the checks above, and report the coverage against `fail_under` in `pyproject.toml`.
+
+Fix failures in the code, never with a suppression, a baseline entry or a lowered threshold, and re-run from the start. Report each check with the number it produced.
 
 ## Implementation report (`.agentic/implementation-report.md`)
 
-Write it after the gate is green (or as green as it will get, with failures stated). Sections, in order:
+Write it after the checks are green (or as green as they will get, with failures stated). Sections, in order:
 
 1. **Header**: plan title, the slice id with its child issue, the phases implemented (and any skipped as already present), the sibling open issues that could collide with the surface each shares, the diff size against the budget, and one line stating nothing was committed or pushed.
 2. **Plan deviations**: every place the code differs from the plan, one numbered item each naming its phase, with the reason, including files touched outside the plan, unplanned helpers, and every 🚨. Write `none` only if you checked. A deviation not listed here is silent to the reviewer.
@@ -109,7 +115,7 @@ Write it after the gate is green (or as green as it will get, with failures stat
 3. Re-read each cited file from disk before editing it.
 4. Fix a "delete this" finding by deleting, never by adding a comment that explains why the duplicate is fine.
 5. Dispute rather than comply when a finding is wrong: state why it does not hold and flag it 🚨 for the human.
-6. Run the completion gate above.
+6. Run the completion checks above.
 7. Update `.agentic/implementation-report.md` in place: add a `### Review round <n>` subsection listing each finding by id as fixed, disputed or deferred with the `path:line` changed, add new deviations, and refresh Quality gates and Changed files. Do not edit `review.md` or `review.json`.
 8. When this round changed any file, write `.agentic/fix-commit-msg`, overwriting any earlier one: a Conventional Commits title (`type(scope): imperative summary`, a type `scripts/check_commit_msg.py` accepts) naming what the fixes change in the code, never "address review findings"; a blank line; then one line per finding fixed, `- <id> (review round <n>): <what changed, with path>`. Findings disputed or deferred are not listed. When nothing changed, do not write the file.
 
@@ -130,7 +136,7 @@ Report each addressed finding by id as fixed, disputed or deferred, with the `pa
 4. Re-read each cited file from disk before editing it.
 5. For a `K#` item, find the job its check name runs in `.github/workflows/` and reproduce the failure locally with the repository's own command for it (such as `uv run dovo run quality`) before changing code. Fix what the reproduction shows. When you cannot reproduce it, change nothing for that item and record it as deferred with the reason.
 6. Dispute rather than comply when an item is wrong: state why it does not hold and flag it 🚨 for the human.
-7. Run the completion gate above.
+7. Run the completion checks above.
 8. Update `.agentic/implementation-report.md` in place: add a `### Feedback round <n>` subsection, `<n>` being one more than the number of `### Feedback round` subsections already there, listing each selected id as fixed, disputed or deferred with the `path:line` changed, and naming each dovo finding by its `finding.id` and `finding.round` (`T1 (W1, round 2)`). Add new deviations, and refresh Quality gates and Changed files. Do not edit `feedback.json`, `review.md` or `review.json`.
 9. Write `.agentic/feedback-outcomes.json`, overwriting any earlier one, with `round` set to this run's `### Feedback round <n>` number and one entry per selected id, in selection order, carrying the outcome the report states for it. `outcome` is `fixed`, `disputed` or `deferred`; `note` is one sentence on what changed or why not, in your own words: never quote an item's `summary` or `body`, since `pr-fix` posts the note on the item's review thread. Skip this file only when the selection is empty.
 
