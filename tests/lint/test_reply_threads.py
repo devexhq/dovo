@@ -31,7 +31,7 @@ def _load_script(name: str, module_name: str) -> ModuleType:
     return module
 
 
-_load_script("publish_review", "publish_review")
+PUBLISH = _load_script("publish_review", "publish_review")
 _load_script("pr_feedback", "pr_feedback")
 REPLY = _load_script("reply_threads", "reply_threads_under_test")
 
@@ -110,32 +110,6 @@ class ReplyThreadsTests:
     )
     def test_outcomes_problem(self, outcomes: object, expected: str | None) -> None:
         assert REPLY.outcomes_problem(outcomes, ["T1", "K1"]) == expected
-
-    @pytest.mark.parametrize(
-        ("comments", "expected"),
-        [
-            pytest.param(
-                [{"author": {"login": "me"}, "body": f"{MARKER}\nFixed in x: y\n"}], True, id="own-same-reply"
-            ),
-            pytest.param([{"author": {"login": "bob"}, "body": f"{MARKER}\nFixed in x: y"}], False, id="other-author"),
-            pytest.param(
-                [{"author": {"login": "me"}, "body": "<!-- dovo-pr-fix round 1 -->\nFixed in x: y"}],
-                False,
-                id="own-other-round",
-            ),
-            pytest.param(
-                [{"author": {"login": "me"}, "body": f"{MARKER}\nNot changed: y"}], False, id="own-other-outcome"
-            ),
-            pytest.param(
-                [{"author": {"login": "me"}, "body": f"Quoting:\n{MARKER}\nFixed in x: y"}],
-                False,
-                id="marker-not-first-line",
-            ),
-        ],
-    )
-    def test_already_replied(self, comments: list[dict[str, object]], expected: bool) -> None:
-        body = f"{MARKER}\nFixed in x: y"
-        assert REPLY.already_replied([{"author": None, "body": "x"}, *comments], "me", body) is expected
 
     def test_main_replies_and_resolves(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -250,6 +224,7 @@ def _setup(
     _write_agentic(root, outcomes)
     monkeypatch.setattr(sys, "argv", ["reply_threads.py", "--selected", selected])
     monkeypatch.setattr(REPLY, "run", fake_run)
+    monkeypatch.setattr(PUBLISH, "run", fake_run)
 
 
 def _fake_run(
@@ -290,8 +265,8 @@ def _graphql_call(args: tuple[str, ...]) -> tuple[str, str, list[str]]:
     assert args[:5] == ("gh", "api", "graphql", "--hostname", "github.com"), f"ran {args}"
     calls = {
         f"query={REPLY.REPLIES_QUERY}": "replies_query",
-        f"query={REPLY.REPLY_MUTATION}": "reply",
-        f"query={REPLY.RESOLVE_MUTATION}": "resolve",
+        f"query={PUBLISH.REPLY_MUTATION}": "reply",
+        f"query={PUBLISH.RESOLVE_MUTATION}": "resolve",
     }
     fields = [args[index + 1] for index, arg in enumerate(args) if arg == "-f"]
     thread = fields[1].removeprefix("thread=")

@@ -53,19 +53,35 @@ def _thread(
     }
 
 
-def _finding(finding_id: str, severity: str) -> dict[str, object]:
-    """Return a review.json finding with finding_id and severity."""
+def _dovo_thread(thread_id: str, comments: list[tuple[str, str]], *, resolved: bool = False) -> dict[str, object]:
+    """Return a review thread node on src/a.py:3 whose comments are (login, body) pairs, in order."""
+    nodes = [
+        {"author": {"__typename": "User", "login": login}, "body": body, "url": f"https://x/{thread_id}/{index}"}
+        for index, (login, body) in enumerate(comments)
+    ]
+    return {"id": thread_id, "isResolved": resolved, "path": "src/a.py", "line": 3, "comments": {"nodes": nodes}}
+
+
+def _dovo_review(head: str, round_number: int, body: str, login: str = "me") -> dict[str, object]:
+    """Return a REVIEWS_QUERY node by login whose body is the review marker for head and round_number, then body."""
     return {
-        "id": finding_id,
-        "severity": severity,
-        "path": "src/a.py",
-        "line": 3,
-        "rule": "R4",
-        "summary": f"{finding_id} summary",
+        "author": {"__typename": "User", "login": login},
+        "body": f"<!-- dovo-review-findings head={head} round={round_number} -->\n{body}",
+        "url": DOVO_REVIEW_URL,
+        "submittedAt": "2026-10-19T09:00:00Z",
+        "lastEditedAt": None,
     }
 
 
-FINDINGS = [_finding("B1", "BLOCKER"), _finding("W1", "WARNING"), _finding("S1", "SUGGESTION"), _finding("N1", "NIT")]
+DOVO_REVIEW_URL = f"{PR_URL}#pullrequestreview-11"
+B1_BLOCK = (
+    "<!-- dovo-finding id=B1 severity=BLOCKER rule=R4 round=2 -->\n#### B1 · `src/a.py:3` · R4\n\n"
+    "**Issue:** `Session.details` lets it escape.\nSecond line.\n\n**Fix:** Catch it **once**."
+)
+B1_SUMMARY = "Session.details lets it escape. Second line."
+N1_BLOCK = "<!-- dovo-finding id=N1 severity=NIT rule=- round=2 -->\n#### N1 · `docs/x.md`\n\n**Issue:** Typo.\n\n**Fix:** Fix."
+B1_FINDING = {"id": "B1", "severity": "BLOCKER", "rule": "R4", "round": 2}
+REVIEW_BODY = f"**Findings posted: 3** (1 inline, 2 below)\n\n{B1_BLOCK}\n\n{N1_BLOCK}\n"
 CUTOFF = "2026-10-20T12:00:00Z"
 OWN_COMMENT: dict[str, object] = {
     "id": 1,
@@ -122,6 +138,7 @@ def _comment_item(item_id: str, author: str, url: str, body: str, summary: str) 
         "line": None,
         "summary": summary,
         "body": body,
+        "finding": None,
     }
 
 
@@ -137,6 +154,7 @@ def _check_item(item_id: str, name: str, conclusion: str, url: str) -> dict[str,
         "line": None,
         "summary": f"{name}: {conclusion}",
         "body": f"{name}: {conclusion}",
+        "finding": None,
     }
 
 
@@ -246,9 +264,21 @@ class PrFeedbackTests:
             _thread("Done already", resolved=True, author={"__typename": "User", "login": "alice"}),
             _thread("Fix two", author=None, line=None),
             _thread("Fix three", author={"__typename": "User", "login": "alice"}),
+            _dovo_thread(
+                "PRRT_9",
+                [
+                    ("me", B1_BLOCK.replace("round=2", "round=1")),
+                    ("alice", "<!-- dovo-finding id=X1 severity=NIT rule=- round=3 -->\nQuoted."),
+                    (
+                        "me",
+                        "<!-- dovo-finding id=B1 severity=BLOCKER rule=R4 round=2 -->\nStill open in round 2 as B1.",
+                    ),
+                ],
+            ),
+            _dovo_thread("PRRT_8", [("bob", N1_BLOCK)]),
         ]
 
-        items = FEEDBACK.thread_items(threads)
+        items = FEEDBACK.thread_items(threads, "me")
 
         assert items == [
             {
@@ -261,6 +291,7 @@ class PrFeedbackTests:
                 "line": 9,
                 "summary": "Fix one",
                 "body": "Fix one",
+                "finding": None,
             },
             {
                 "id": "T2",
@@ -272,6 +303,7 @@ class PrFeedbackTests:
                 "line": None,
                 "summary": "Fix two",
                 "body": "Fix two",
+                "finding": None,
             },
             {
                 "id": "T3",
@@ -283,39 +315,108 @@ class PrFeedbackTests:
                 "line": 9,
                 "summary": "Fix three",
                 "body": "Fix three",
+                "finding": None,
+            },
+            {
+                "id": "T4",
+                "source": "review_thread",
+                "thread": "PRRT_9",
+                "author": "me",
+                "url": "https://x/PRRT_9/0",
+                "path": "src/a.py",
+                "line": 3,
+                "summary": B1_SUMMARY,
+                "body": B1_BLOCK.replace("round=2", "round=1"),
+                "finding": B1_FINDING,
+            },
+            {
+                "id": "T5",
+                "source": "review_thread",
+                "thread": "PRRT_8",
+                "author": "bob",
+                "url": "https://x/PRRT_8/0",
+                "path": "src/a.py",
+                "line": 3,
+                "summary": "Typo.",
+                "body": N1_BLOCK,
+                "finding": None,
             },
         ]
 
     @pytest.mark.parametrize(
-        ("review", "expected"),
+        ("body", "expected"),
         [
+            pytest.param(f"{HEADER}Dovo session: `{SESSION}`\n\nx", (HEAD, 2), id="header"),
+            pytest.param(f"{HEADER}".replace("\n", "\r\n"), (HEAD, 2), id="crlf"),
             pytest.param(
-                {"verdict": "CHANGES_REQUIRED", "findings": FINDINGS},
-                [("R1", "B1"), ("R2", "W1"), ("R3", "S1"), ("R4", "N1")],
-                id="changes-required",
+                f"<!-- dovo-review -->\n\nReviewed commit: `{HEAD}`\nVerdict: APPROVE · Action: none · Round: 2\n",
+                None,
+                id="after-blank-line",
             ),
-            pytest.param({"verdict": "APPROVE", "findings": FINDINGS[2:]}, [("R1", "S1"), ("R2", "N1")], id="approve"),
-            pytest.param({"verdict": "CHANGES_REQUIRED"}, [], id="no-findings"),
+            pytest.param("<!-- dovo-review -->\nVerdict: APPROVE · Action: none · Round: 2\n", None, id="no-commit"),
+            pytest.param(f"<!-- dovo-review -->\nReviewed commit: `{HEAD}`\n", None, id="no-round"),
         ],
     )
-    def test_finding_items(self, review: dict[str, object], expected: list[tuple[str, str]]) -> None:
-        items = FEEDBACK.finding_items(review)
+    def test_header_review(self, body: str, expected: tuple[str, int] | None) -> None:
+        assert FEEDBACK.header_review(body) == expected
 
-        assert [(item["id"], item["body"]) for item in items] == [
-            (item_id, f"{finding_id}: {finding_id} summary") for item_id, finding_id in expected
-        ]
-        if expected:
-            assert items[0] == {
+    def test_finding_items(self) -> None:
+        items = FEEDBACK.finding_items(_dovo_review(HEAD, 2, REVIEW_BODY))
+
+        assert items == [
+            {
                 "id": "R1",
                 "source": "review_finding",
                 "thread": None,
                 "author": None,
-                "url": None,
+                "url": DOVO_REVIEW_URL,
                 "path": "src/a.py",
                 "line": 3,
-                "summary": f"{expected[0][1]} summary",
-                "body": f"{expected[0][1]}: {expected[0][1]} summary",
-            }
+                "summary": B1_SUMMARY,
+                "body": B1_BLOCK,
+                "finding": B1_FINDING,
+            },
+            {
+                "id": "R2",
+                "source": "review_finding",
+                "thread": None,
+                "author": None,
+                "url": DOVO_REVIEW_URL,
+                "path": "docs/x.md",
+                "line": None,
+                "summary": "Typo.",
+                "body": N1_BLOCK,
+                "finding": {"id": "N1", "severity": "NIT", "rule": None, "round": 2},
+            },
+        ]
+
+    def test_finding_items_without_review(self) -> None:
+        assert FEEDBACK.finding_items(None) == []
+
+    def test_collects_what_publish_posts(self) -> None:
+        findings = [
+            {"id": "B1", "severity": "BLOCKER", "path": "src/a.py", "line": 3, "rule": "R4"},
+            {"id": "W1", "severity": "WARNING", "path": "src/a.py", "line": 40, "rule": "R12"},
+            {"id": "N1", "severity": "NIT", "path": None, "line": None, "rule": None},
+        ]
+        review = {
+            "head": HEAD,
+            "round": 1,
+            "findings": [{**finding, "issue": f"{finding['id']} issue.", "fix": "Fix."} for finding in findings],
+        }
+        payload = PUBLISH.review_payload(review, {"src/a.py": frozenset({3})})
+        inline = payload["comments"][0]
+        thread = _dovo_thread("PRRT_9", [("me", inline["body"])])
+
+        items = FEEDBACK.thread_items([thread], "me") + FEEDBACK.finding_items(
+            {"author": {"login": "me"}, "body": payload["body"], "url": DOVO_REVIEW_URL}
+        )
+
+        assert [(item["id"], item["finding"]["id"], item["path"], item["line"], item["summary"]) for item in items] == [
+            ("T1", "B1", "src/a.py", 3, "B1 issue."),
+            ("R1", "W1", "src/a.py", 40, "W1 issue."),
+            ("R2", "N1", None, None, "N1 issue."),
+        ]
 
     def test_comment_items(self) -> None:
         comments = [
@@ -392,6 +493,22 @@ class PrFeedbackTests:
                 id="review-finding-null",
             ),
             pytest.param(
+                {"id": "R1", "source": "review_finding", "author": None, "summary": "Lock", "finding": B1_FINDING},
+                "R1 [review_finding, dovo-review, B1 BLOCKER] Lock",
+                id="review-finding-dovo",
+            ),
+            pytest.param(
+                {
+                    "id": "T1",
+                    "source": "review_thread",
+                    "author": "me",
+                    "summary": "Lock",
+                    "finding": {"id": "W3", "severity": "WARNING", "rule": "R4", "round": 2},
+                },
+                "T1 [review_thread, me, W3 WARNING] Lock",
+                id="review-thread-dovo",
+            ),
+            pytest.param(
                 {"id": "C1", "source": "comment", "author": "coderabbitai[bot]", "summary": "Walkthrough"},
                 "C1 [comment, coderabbitai[bot]] Walkthrough",
                 id="comment-author",
@@ -408,8 +525,8 @@ class PrFeedbackTests:
 
     def test_feedback_document(self) -> None:
         items = FEEDBACK.thread_items(
-            [_thread("Fix one", author={"__typename": "Bot", "login": "coderabbitai"})]
-        ) + FEEDBACK.finding_items({"verdict": "CHANGES_REQUIRED", "findings": FINDINGS[:1]})
+            [_thread("Fix one", author={"__typename": "Bot", "login": "coderabbitai"})], "me"
+        ) + FEEDBACK.finding_items(_dovo_review(HEAD, 2, f"x\n\n{B1_BLOCK}"))
 
         document = FEEDBACK.feedback_document(1121, HEAD, SESSION, items)
 
@@ -428,6 +545,7 @@ class PrFeedbackTests:
                     "line": 9,
                     "summary": "Fix one",
                     "body": "Fix one",
+                    "finding": None,
                     "label": "T1 [review_thread, coderabbitai[bot]] Fix one",
                 },
                 {
@@ -435,12 +553,13 @@ class PrFeedbackTests:
                     "source": "review_finding",
                     "thread": None,
                     "author": None,
-                    "url": None,
+                    "url": DOVO_REVIEW_URL,
                     "path": "src/a.py",
                     "line": 3,
-                    "summary": "B1 summary",
-                    "body": "B1: B1 summary",
-                    "label": "R1 [review_finding, dovo-review] B1 summary",
+                    "summary": B1_SUMMARY,
+                    "body": B1_BLOCK,
+                    "finding": B1_FINDING,
+                    "label": f"R1 [review_finding, dovo-review, B1 BLOCKER] {B1_SUMMARY}",
                 },
             ],
         }
@@ -501,7 +620,9 @@ class PrFeedbackTests:
         ran: list[tuple[str, ...]] = []
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
-        fake_run = _fake_run(ran)
+        fake_run = _fake_run(
+            ran, reviews=(_dovo_review(HEAD, 1, f"x\n\n{N1_BLOCK}"), _dovo_review(HEAD, 2, f"x\n\n{B1_BLOCK}"))
+        )
         monkeypatch.setattr(FEEDBACK, "run", fake_run)
         monkeypatch.setattr(PUBLISH, "run", fake_run)
 
@@ -515,7 +636,7 @@ class PrFeedbackTests:
         assert (document["pr"], document["head"], document["session"]) == (7, HEAD, SESSION)
         assert [item["label"] for item in document["items"]] == [
             "T1 [review_thread, alice] Fix one",
-            "R1 [review_finding, dovo-review] B1 summary",
+            f"R1 [review_finding, dovo-review, B1 BLOCKER] {B1_SUMMARY}",
             "C1 [comment, coderabbitai[bot]] Walkthrough",
             "K1 [check, ci] Tests: failure",
         ]
@@ -523,6 +644,35 @@ class PrFeedbackTests:
         assert (agentic / "pr-branch").read_text(encoding="utf-8") == "alice/fix\n"
         assert (agentic / "pr-url").read_text(encoding="utf-8") == f"{PR_URL}\n"
         assert ("git", "switch", "-q", "--detach", HEAD) in ran
+        assert not (agentic / "review.json").exists()
+
+    def test_main_lists_no_findings_from_earlier_round(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
+        fake_run = _fake_run([], reviews=(_dovo_review(HEAD, 1, f"x\n\n{B1_BLOCK}"),))
+        monkeypatch.setattr(FEEDBACK, "run", fake_run)
+        monkeypatch.setattr(PUBLISH, "run", fake_run)
+
+        assert FEEDBACK.main() == 0
+
+        document = json.loads((tmp_path / ".agentic" / "feedback.json").read_text(encoding="utf-8"))
+        assert [item["id"] for item in document["items"]] == ["T1", "C1", "K1"]
+
+    def test_main_lists_findings_after_push(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        pushed = "b" * 40
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
+        reviews = (_dovo_review(pushed, 2, f"x\n\n{N1_BLOCK}"), _dovo_review(HEAD, 2, f"x\n\n{B1_BLOCK}"))
+        fake_run = _fake_run([], reviews=reviews, pr_head=pushed)
+        monkeypatch.setattr(FEEDBACK, "run", fake_run)
+        monkeypatch.setattr(PUBLISH, "run", fake_run)
+
+        assert FEEDBACK.main() == 0
+
+        document = json.loads((tmp_path / ".agentic" / "feedback.json").read_text(encoding="utf-8"))
+        assert document["head"] == pushed
+        assert [item["id"] for item in document["items"] if item["source"] == "review_finding"] == ["R1"]
+        assert document["items"][1]["finding"] == B1_FINDING
 
     def test_main_reports_unreadable_checks(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -543,53 +693,54 @@ class PrFeedbackTests:
 
 
 def _fake_run(
-    ran: list[tuple[str, ...]], *, failing_artifact: str | None = None, failing_checks: bool = False
+    ran: list[tuple[str, ...]],
+    *,
+    reviews: tuple[dict[str, object], ...] = (),
+    pr_head: str = HEAD,
+    failing_artifact: str | None = None,
+    failing_checks: bool = False,
 ) -> Callable[..., str]:
     """Return a `run` double answering the gh, dovo and git calls of one restore of PR #7, recording each in ran.
 
-    Downloading the `review` artifact writes a CHANGES_REQUIRED .agentic/review.json, and downloading
-    failing_artifact raises CalledProcessError. The GraphQL call answers one thread for `reviewThreads` and no
-    nodes for `reviews`; the check-runs call answers a failed `Tests` and a passed `Prek` run, or raises
-    CalledProcessError when failing_checks is set.
+    The pull request's head is pr_head. Downloading failing_artifact raises CalledProcessError. The GraphQL
+    call answers one thread for `reviewThreads` and the reviews nodes for `reviews`; the check-runs call on
+    pr_head answers a failed `Tests` and a passed `Prek` run, or raises CalledProcessError when failing_checks is set.
     """
 
     def fake_run(*args: str) -> str:
         ran.append(args)
         if args[:3] == ("gh", "pr", "view"):
-            view = {"number": 7, "state": "OPEN", "headRefName": "alice/fix", "headRefOid": HEAD}
+            view = {"number": 7, "state": "OPEN", "headRefName": "alice/fix", "headRefOid": pr_head}
             return json.dumps({**view, "url": PR_URL, "isCrossRepository": False})
         if args[:5] == ("uv", "run", "dovo", "artifacts", "download"):
             return _download(args, failing_artifact)
         if args[:2] == ("gh", "api"):
-            return _gh_api(args, failing_checks)
+            return _gh_api(args, reviews, pr_head, failing_checks)
         assert args[0] == "git", f"ran {args}"
         return ""
 
     return fake_run
 
 
-def _gh_api(args: tuple[str, ...], failing_checks: bool) -> str:
+def _gh_api(args: tuple[str, ...], reviews: tuple[dict[str, object], ...], pr_head: str, failing_checks: bool) -> str:
     """Answer a `gh api` call of one restore of PR #7: the viewer, its comments, GraphQL nodes or check runs."""
     if args[-3:] == ("user", "--jq", ".login"):
         return "me"
     if "repos/o/r/issues/7/comments" in args:
         return f"{json.dumps(OWN_COMMENT)}\n{json.dumps(OTHER_COMMENT)}"
     if args[2] == "graphql":
-        reviews = args[-1] == ".data.repository.pullRequest.reviews.nodes[]"
-        return "" if reviews else json.dumps(_thread("Fix one", author={"__typename": "User", "login": "alice"}))
-    assert f"repos/o/r/commits/{HEAD}/check-runs" in args, f"ran {args}"
+        if args[-1] == ".data.repository.pullRequest.reviews.nodes[]":
+            return "\n".join(json.dumps(review) for review in reviews)
+        return json.dumps(_thread("Fix one", author={"__typename": "User", "login": "alice"}))
+    assert f"repos/o/r/commits/{pr_head}/check-runs" in args, f"ran {args}"
     return _checks(args, failing_checks)
 
 
 def _download(args: tuple[str, ...], failing_artifact: str | None) -> str:
-    """Answer a `dovo artifacts download` call, writing review.json for `review` and failing for failing_artifact."""
-    name = args[6]
-    if name == failing_artifact:
+    """Answer a `dovo artifacts download` call, creating .agentic/ as a download does and failing for failing_artifact."""
+    if args[6] == failing_artifact:
         raise subprocess.CalledProcessError(1, list(args), stderr="no such artifact")
-    if name == "review":
-        review = {"verdict": "CHANGES_REQUIRED", "findings": FINDINGS[:1]}
-        Path(".agentic").mkdir(exist_ok=True)
-        Path(".agentic/review.json").write_text(json.dumps(review), encoding="utf-8")
+    Path(".agentic").mkdir(exist_ok=True)
     return ""
 
 
