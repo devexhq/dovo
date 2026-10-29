@@ -42,6 +42,8 @@ OWNERS: Final[dict[str, frozenset[str]]] = {
     "AGENT": frozenset({"core/agents"}),
     "WORKTREE": frozenset({"core/worktree"}),
     "CATALOG": frozenset({"core/catalog"}),
+    "CONFIG": frozenset({"core/config"}),
+    "BOOTSTRAP": frozenset({"core/bootstrap"}),
     "PROJECT": frozenset({"core/project"}),
     "SESSION": frozenset({"engine"}),
     "BLUEPRINT": frozenset({"engine"}),
@@ -80,6 +82,7 @@ STATES: Final[tuple[str, ...]] = (
     "DIRTY",
     "DISALLOWED",
     "UNSAFE",
+    "UNWRITABLE",
 )
 
 _FOREIGN_RAISE_FIXTURE: Final[str] = """

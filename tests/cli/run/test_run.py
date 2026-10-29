@@ -12,13 +12,14 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.cli.ui.dispatcher import UiDispatcher, ui_dispatcher
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.models import OutputFormatOptions
-from dovo.core.bootstrap import InitFailureMode, WorkspaceInitResult
+from dovo.core.bootstrap import WorkspaceInitResult
 from dovo.core.catalog.blueprint import Blueprint
-from dovo.core.catalog.models import SeedResult
+from dovo.core.catalog.exceptions import CatalogError
 from dovo.core.config.models import ConfigTier
 from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.git.runner import GitRunner
@@ -458,26 +459,18 @@ class RunCliAutoInitTests:
     """Typer runner tests for dovo run's automatic workspace initialization."""
 
     @pytest.mark.parametrize(
-        ("case", "failure_mode", "heading", "error_fragment"),
+        ("case", "error_code", "error_fragment"),
         [
-            pytest.param(
-                "non-git",
-                InitFailureMode.PREFLIGHT,
-                "Initialization Failed!",
-                "not a valid Git repository",
-                id="non-git",
-            ),
+            pytest.param("non-git", ErrorCode.BOOTSTRAP_REPO_NOT_FOUND, "not a valid Git repository", id="non-git"),
             pytest.param(
                 "global-home",
-                InitFailureMode.PREFLIGHT,
-                "Initialization Failed!",
+                ErrorCode.BOOTSTRAP_TARGET_FORBIDDEN,
                 "its .dovo directory is the global Dovo home",
                 id="global-home",
             ),
             pytest.param(
                 "bootstrap",
-                InitFailureMode.BOOTSTRAP,
-                "Failed to initialize Dovo:",
+                ErrorCode.BOOTSTRAP_PATH_INVALID,
                 "exists but is a file, not a directory.",
                 id="bootstrap",
             ),
@@ -490,8 +483,7 @@ class RunCliAutoInitTests:
         monkeypatch: pytest.MonkeyPatch,
         dispatch_spy: list[object],
         case: str,
-        failure_mode: InitFailureMode,
-        heading: str,
+        error_code: ErrorCode,
         error_fragment: str,
     ) -> None:
         """Exit 1 dispatching only the failed WorkspaceInitResult, with the target and DOVO_HOME trees unchanged."""
@@ -506,9 +498,9 @@ class RunCliAutoInitTests:
         init_result = dispatch_spy[0]
         assert isinstance(init_result, WorkspaceInitResult)
         assert init_result.ok is False
-        assert init_result.failure_mode == failure_mode
+        assert init_result.error_code == error_code
         assert any(error_fragment in error for error in init_result.errors)
-        assert heading in result.stdout
+        assert "Initialization Failed!" in result.stdout
         assert GUARD_MESSAGE_HEAD not in result.stdout
         assert _tree_bytes(target) == target_before
         assert _tree_bytes(dovo_home) == home_before
@@ -516,21 +508,22 @@ class RunCliAutoInitTests:
     def test_run_cli_seed_failure_during_auto_init_exits_one_and_rolls_back(
         self, cli_runner: CliRunner, git_repo: Path, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
     ) -> None:
-        """Exit 1 with the seed-failure panel and no run output, and remove the new .dovo/, when seeding fails."""
-        monkeypatch.setattr(
-            "dovo.core.bootstrap.services.initialize.seed_all_catalog_templates",
-            lambda _paths: SeedResult(errors=["boom"]),
-        )
+        """Exit 1 with the init failure panel and no run output, and remove the new .dovo/, when seeding fails."""
+
+        def _seed_failed(*_args: object, **_kwargs: object) -> None:
+            raise CatalogError(ErrorCode.CATALOG_SEED_FAILED, "boom")
+
+        monkeypatch.setattr("dovo.core.bootstrap.services.initialize.seed_all_catalog_templates", _seed_failed)
 
         result = cli_runner.invoke(app, ["-p", str(git_repo), "run", "tests"])
 
         assert result.exit_code == 1
-        assert "Starter blueprint seeding failed:" in result.stdout
+        assert "Initialization Failed!" in result.stdout
         assert len(dispatch_spy) == 1
         init_result = dispatch_spy[0]
         assert isinstance(init_result, WorkspaceInitResult)
+        assert init_result.error_code == ErrorCode.CATALOG_SEED_FAILED
         assert init_result.errors == ["boom"]
-        assert init_result.failure_mode is None
         assert not (git_repo / ".dovo").exists()
 
     def test_run_cli_identity_lock_timeout_during_auto_init_raises_and_rolls_back(

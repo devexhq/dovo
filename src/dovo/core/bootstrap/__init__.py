@@ -5,11 +5,11 @@ from dovo.common.constants import (
     BOOTSTRAP_SCHEMA_VERSION,
     REQUIRED_SUBDIRS,
 )
+from dovo.core.bootstrap.exceptions import BootstrapError
 from dovo.core.bootstrap.models import (
     BootstrapOutcome,
-    BootstrapResult,
+    BootstrapSummary,
     DirEnsureOutcome,
-    InitFailureMode,
     WorkspaceInitResult,
 )
 from dovo.core.bootstrap.services.bootstrap import (
@@ -25,10 +25,10 @@ __all__ = [
     "BOOTSTRAP_META_REL",
     "BOOTSTRAP_SCHEMA_VERSION",
     "REQUIRED_SUBDIRS",
+    "BootstrapError",
     "BootstrapOutcome",
-    "BootstrapResult",
+    "BootstrapSummary",
     "DirEnsureOutcome",
-    "InitFailureMode",
     "WorkspaceInitResult",
     "assert_writable",
     "auto_initialize_workspace",

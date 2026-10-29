@@ -199,7 +199,7 @@ class RunCliCrashProtectionTests:
         assert "Workspace Lock Timeout" in stdout
         assert "lock held" in stdout
         assert "WorkspaceInitResult" not in stdout
-        assert "Failed to initialize Dovo" not in stdout
+        assert "Initialization Failed!" not in stdout
 
     def test_run_cli_unexpected_exception_renders_fatal_panel_and_exits_one(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

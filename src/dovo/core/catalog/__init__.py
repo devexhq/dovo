@@ -8,6 +8,7 @@ from dovo.core.catalog.models import (
     CatalogListResult,
     CatalogShowResult,
     CatalogValidateResult,
+    SeedSummary,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "CatalogListResult",
     "CatalogShowResult",
     "CatalogValidateResult",
+    "SeedSummary",
 ]

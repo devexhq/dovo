@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Final, Literal
@@ -167,6 +168,19 @@ class DovoConfig(BaseModel):
     def project_name(self) -> str:
         """Compatibility alias for project display name."""
         return self.project.name
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigGenerationSummary:
+    """What generating `.dovo/config.json` did: created, skipped, repaired or overwritten it."""
+
+    config_path: Path
+    created: bool
+    skipped_existing: bool
+    repaired: bool
+    overwritten: bool
+    inserted_keys: tuple[str, ...]
+    warnings: tuple[str, ...]
 
 
 class ConfigTier(StrEnum):

@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dovo.common.exceptions import DomainError
 from dovo.core.config.loader import ConfigLoadResult
 from dovo.core.config.models import ConfigTier
+
+
+class ConfigError(DomainError):
+    """Business failure generating or repairing `.dovo/config.json`."""
 
 
 class ConfigLoadError(RuntimeError):
