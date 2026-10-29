@@ -208,7 +208,7 @@ class BuildMutationPromptTests:
             "- Stay inside this working directory; do not push, open a PR, or "
             "touch remotes.\n"
             "- Prefer leaving tests green.\n"
-            "- Do not modify files under .dovo/.\n"
+            "- Under .dovo/, modify only .dovo/catalog/ and .dovo/run/; leave every other file under .dovo/ unchanged.\n"
             "- When finished, leave the working tree containing only the fix.\n\n"
         ) + json.dumps(expected_body, indent=2, ensure_ascii=False)
 
@@ -228,7 +228,7 @@ class BuildMutationPromptTests:
             "- Carry out the instruction below.\n"
             "- If it asks for planning or review, report your findings in your final message and leave the working tree unchanged.\n"
             "- Stay inside this working directory; do not push, open a PR, or touch remotes.\n"
-            "- Do not modify files under .dovo/.\n\n"
+            "- Under .dovo/, modify only .dovo/catalog/ and .dovo/run/; leave every other file under .dovo/ unchanged.\n\n"
         ) + json.dumps(expected_body, indent=2, ensure_ascii=False)
 
         prompt = build_mutation_prompt(request)
@@ -251,7 +251,7 @@ class ScratchPromptTests:
             "- Carry out the instruction below.\n"
             "- If it asks for planning or review, report your findings in your final message and leave the working tree unchanged.\n"
             "- Stay inside this working directory; do not push, open a PR, or touch remotes.\n"
-            "- Do not modify files under .dovo/.\n\n"
+            "- Under .dovo/, modify only .dovo/catalog/ and .dovo/run/; leave every other file under .dovo/ unchanged.\n\n"
             "- Put temporary files only in the directory named by agent_scratch_path; make source edits in this checkout.\n"
             "- Do not read or write logs, artifacts, or session directories.\n"
             "- If you cannot complete the instruction, write the reason, in 100 words or less, "
