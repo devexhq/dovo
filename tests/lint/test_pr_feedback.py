@@ -492,6 +492,17 @@ class PrFeedbackTests:
             },
         ]
 
+    def test_finding_items_keeps_heading_line_in_issue(self) -> None:
+        finding = _finding("W1", "WARNING", "docs/x.md", 10, "R17", issue="The page says\n#### Usage\nwhich is stale.")
+
+        [item] = FEEDBACK.finding_items(_dovo_review(HEAD, [finding]))
+
+        assert (item["path"], item["line"], item["summary"]) == (
+            "docs/x.md",
+            10,
+            "The page says #### Usage which is stale.",
+        )
+
     def test_finding_items_without_review(self) -> None:
         assert FEEDBACK.finding_items(None) == []
 

@@ -162,11 +162,14 @@ def _last_line(text: str) -> str:
 
 
 def finding_blocks(body: str) -> list[str]:
-    """Return each finding block of body: from a `#### ` heading line through the next finding marker line."""
+    """Return each finding block of body: from a `#### ` heading line through the next finding marker line.
+
+    A `#### ` line inside a block is the finding's own text, not a new heading.
+    """
     blocks: list[str] = []
     current: list[str] | None = None
     for line in body.splitlines():
-        if line.startswith("#### "):
+        if current is None and line.startswith("#### "):
             current = []
         if current is None:
             continue
