@@ -105,42 +105,72 @@ class CodeProgressNextTests:
         )
 
     @pytest.mark.parametrize(
-        ("text", "message"),
+        ("name", "text", "message"),
         [
-            ('{"slice": "S2", "done": [1]}', ".agentic/code-progress.json is for slice S2, not S3."),
             (
+                "code-progress.json",
+                '{"slice": "S2", "done": [1]}',
+                ".agentic/code-progress.json is for slice S2, not S3.",
+            ),
+            (
+                "code-progress.json",
                 "not json",
                 ".agentic/code-progress.json is not a progress record: Expecting value: line 1 column 1 (char 0).",
             ),
             (
+                "code-progress.json",
                 '{"slice": "S3"}',
                 ".agentic/code-progress.json is not a progress record: it has no done list of phase numbers.",
             ),
+            (
+                "code-progress.json",
+                "[1, 2]",
+                ".agentic/code-progress.json is not a progress record: it is not a JSON object.",
+            ),
+            (
+                "code-progress.json",
+                '{"done": [1]}',
+                ".agentic/code-progress.json is not a progress record: it names no slice.",
+            ),
+            (
+                "plan.json",
+                '{"slices": [{"id": "S2", "phases": []}]}',
+                "Slice S3 is not in .agentic/plan.json.",
+            ),
+            (
+                "plan.json",
+                "not json",
+                ".agentic/plan.json cannot be read: Expecting value: line 1 column 1 (char 0).",
+            ),
         ],
     )
-    def test_next_refuses_an_unreadable_progress_record(
+    def test_next_refuses_an_unreadable_plan_or_progress_record(
         self,
+        name: str,
         text: str,
         message: str,
         workspace: Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        _write_progress(workspace, text)
+        (workspace / ".agentic" / name).write_text(text, encoding="utf-8")
 
         assert _main(monkeypatch, "next", "--slice", "S3") == 1
 
-        assert capsys.readouterr().err == f"code_progress.py: {message}\n"
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err == f"code_progress.py: {message}\n"
 
 
 class CodeProgressCheckTests:
+    @pytest.mark.parametrize("phase", ["5", "²"])
     def test_check_refuses_a_phase_outside_the_slice(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+        self, phase: str, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        assert _main(monkeypatch, "check", "--slice", "S3", "--phase", "5") == 1
+        assert _main(monkeypatch, "check", "--slice", "S3", "--phase", phase) == 1
 
-        assert (
-            capsys.readouterr().err == "code_progress.py: Phase 5 is not a phase of slice S3; its phases are 1, 2, 3.\n"
+        assert capsys.readouterr().err == (
+            f"code_progress.py: Phase {phase} is not a phase of slice S3; its phases are 1, 2, 3.\n"
         )
 
     def test_check_accepts_a_phase_of_the_slice(
@@ -171,3 +201,15 @@ class CodeProgressRecordTests:
 
         assert capsys.readouterr().err == "code_progress.py: .agentic/code-progress.json is for slice S2, not S3.\n"
         assert _progress(workspace) == {"slice": "S2", "done": [1]}
+
+    def test_record_refuses_a_phase_outside_the_slice(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write_progress(workspace, '{"slice": "S3", "done": [1]}')
+
+        assert _main(monkeypatch, "record", "--slice", "S3", "--phase", "7") == 1
+
+        assert capsys.readouterr().err == (
+            "code_progress.py: Phase 7 is not a phase of slice S3; its phases are 1, 2, 3.\n"
+        )
+        assert _progress(workspace) == {"slice": "S3", "done": [1]}

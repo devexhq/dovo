@@ -107,7 +107,7 @@ def check_phase(slice_id: str, phase: str) -> int:
         ProgressError: phase is not one of the slice's phases.
     """
     phases = slice_phases(slice_id)
-    if not phase.isdigit() or int(phase) not in phases:
+    if not (phase.isascii() and phase.isdigit()) or int(phase) not in phases:
         listed = ", ".join(str(p) for p in phases)
         raise ProgressError(f"Phase {phase} is not a phase of slice {slice_id}; its phases are {listed}.")
     return int(phase)

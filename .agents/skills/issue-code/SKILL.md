@@ -81,16 +81,16 @@ A check you add under `tests/lint/` must be able to fail: assert its input set i
 
 If a contract cannot be implemented as written, or a cited symbol has moved or does not exist, stop that FR, report what the plan says against what the tree shows, flag it 🚨 and implement the rest. Never redesign a contract on your own or widen scope to make one fit.
 
-## One-phase mode (`--phase <n>`)
+## One-phase mode
 
 The `issue-code` blueprint's `code-loop` runs this mode once per phase, each in a fresh session, on the phase its `phase` step picks. After the gate passes, its `checkpoint` step commits the phase and records it in `.agentic/code-progress.json`; earlier phases are already committed when a run starts.
 
 1. Given `--phase done`, change nothing and report that every phase of the slice is done.
 2. Otherwise, before any edit, run `uv run python scripts/code_progress.py check --slice <id> --phase <n>`. When it refuses (`Phase 5 is not a phase of slice S3; its phases are 1, 2, 3.`), stop and report its message.
 3. Build the brief as [Before writing code](#before-writing-code) says, then read, before editing: phase `<n>`'s section, the Phases table, Traps and Artifact inventory of `.agentic/plan.md`; the plan's `## Feature contract`; the entries earlier phases added to `.agentic/implementation-report.md`; and the earlier phases' commits (`git log -p origin/main..HEAD`).
-4. When `.agentic/gate.log` exists, the previous attempt at this phase failed the quality gate: read the log and the uncommitted diff (`git status`, `git diff`), keep that work, and fix what the log reports.
+4. Decide from the working tree, not from `.agentic/gate.log`, whether this phase was started. Uncommitted changes outside `.agentic/` and `.dovo/run` (`git status`, `git diff`) are an earlier attempt at this phase, cut short by an interrupted run or by a `checkpoint` commit that failed after the gate passed: keep them and finish the phase from them, rather than redoing or overwriting them. When `.agentic/gate.log` exists, that attempt failed the quality gate (`checkpoint` deletes a passing log before it commits): read the log and fix what it reports.
 5. Implement only phase `<n>` as the [Implementation loop](#implementation-loop) says: its FRs, tests and deletion-ledger entries, with its scoped tests and `uv run ty check` on its changed files passing. Never start another phase.
-6. Run the [completion checks](#completion-checks) scoped to this phase's changed files and tests; the whole-slice gate is the blueprint's `verify` step.
+6. Run the [completion checks](#completion-checks) as that section says for one-phase mode; the whole-slice gate is the blueprint's `verify` step.
 7. Update the report as [Implementation report](#implementation-report-agenticimplementation-reportmd) says for one-phase mode.
 8. When this run changed any file, write `.agentic/phase-commit-msg`, overwriting any earlier one: a Conventional Commits title (`type(scope): imperative summary`, a type `scripts/check_commit_msg.py` accepts) naming what the phase changes, a blank line, then `Phase <n> of slice <id> (#<child>).`. When nothing changed, do not write it.
 
@@ -102,7 +102,7 @@ The `issue-code` blueprint's `code-loop` runs this mode once per phase, each in 
 
 ## Completion checks
 
-Run once every phase of the slice is complete, never between phases or mid-implementation, and never concurrently with another gate or test command. In one-phase mode, run them once the phase is complete, scoped to its files; this whole-slice gate section, including the `dovo run quality` below, does not run in one-phase mode:
+Run once every phase of the slice is complete, never between phases or mid-implementation, and never concurrently with another gate or test command:
 
 ```bash
 uv run ruff format .
@@ -110,6 +110,8 @@ uv run ruff check --fix .
 uv run ty check src tests e2e
 uv run dovo run tests --path "tests/<mirrored-path> tests/<other-mirrored-path>" --fast-fail
 ```
+
+In one-phase mode, run the same four commands once the phase is complete, each on this phase's paths only: `ruff format`, `ruff check --fix` and `ty check` on the files the phase changed (`git status --short`, outside `.agentic/` and `.dovo/run`), in place of `.` and `src tests e2e`, and `dovo run tests` on the test paths the phase touched. The whole-slice gate, `uv run dovo run quality`, is the only check skipped in one-phase mode: the blueprint's `verify` step runs it after this run.
 
 Pass every test path the change touched to one `dovo run tests`, separated by spaces, rather than one run per path: each run pays for pytest's startup, collection and worker spin-up again.
 
@@ -129,7 +131,7 @@ Write it after the checks are green (or as green as they will get, with failures
 4. **Quality gates**: each command with the number it observed.
 5. **Changed files**: from `git status --short`.
 
-In one-phase mode, add to the report rather than rewrite it, and leave every entry earlier phases wrote in place (create the report when it is absent): add phase `<n>` to the header's list of phases implemented, add its deviations as further numbered Plan deviations items naming phase `<n>`, add its subsection under Implementation details, and refresh Quality gates and Changed files for this phase. The header's commit line says earlier phases are committed by the blueprint and this phase is not yet.
+In one-phase mode, add to the report rather than rewrite it, and leave every entry earlier phases wrote in place (create the report when it is absent): add phase `<n>` to the header's list of phases implemented, add its deviations as further numbered Plan deviations items naming phase `<n>`, add its subsection under Implementation details, and refresh Quality gates and Changed files for this phase. A run that retries phase `<n>` (after a failed gate or an interrupted run) finds phase `<n>` already in the report: update its existing subsection and its existing deviation items in place, add only deviations not yet listed, and never list phase `<n>` twice in the header. The header's commit line says earlier phases are committed by the blueprint and this phase is not yet.
 
 ## Review mode (`/issue-code review`)
 

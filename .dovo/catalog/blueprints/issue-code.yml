@@ -3,8 +3,9 @@
 # feature-dev and the dovo-* skills once it works. Compare fixes to either
 # source against this copy and carry them over. Step ids, timeouts, failure
 # policies and artifact names match feature-dev's wherever the slice flow does
-# not change them, so commit-fixes, post-review, pr_feedback.py and
-# grade_inputs.py work on slice PRs unchanged.
+# not change them, so commit-fixes, post-review and pr_feedback.py work on
+# slice PRs unchanged, and grade_inputs.py only adds the slice's phase count,
+# since the code loop runs one iteration per phase.
 version: 1
 name: issue-code
 id: issue-code
@@ -535,8 +536,9 @@ steps:
           child issue is {{ steps.next.outputs.child }}. Earlier phases are already committed. Do
           not commit, stage or push.
           Instructions from the approver: {{ steps.approve-plan.outputs.comment }}
-          If .agentic/gate.log exists, a previous attempt at this phase failed the quality gate:
-          read it and the uncommitted diff, keep that work and fix what the log reports.
+          Uncommitted changes outside .agentic/ and .dovo/run are an earlier attempt at this
+          phase: keep and finish them. If .agentic/gate.log exists, that attempt failed the
+          quality gate: read the log and fix what it reports.
         tools: { allow_all: true }
         timeout_seconds: 3600
         artifacts: [{ name: implementation-report, path: .agentic/implementation-report.md }]
@@ -551,13 +553,16 @@ steps:
       # first, so a phase is in done only once its changes are committed. A
       # phase that changed nothing is recorded with no commit. A failed commit
       # (no or a rejected .agentic/phase-commit-msg included) pauses for the
-      # person and leaves the phase out of done.
+      # person and leaves the phase out of done. The passing gate.log is
+      # deleted before the commit, so gate.log exists only after a failed gate,
+      # even when a failed commit sends the same phase round again.
       - id: checkpoint
         name: Commit the phase and record it as done
         run: |
           set -eu
           phase="{{ steps.phase.outputs.phase }}"
           if [ "{{ steps.verify.status }}" != completed ] || [ "$phase" = done ]; then exit 0; fi
+          rm -f .agentic/gate.log
           git rm -r -q --cached --ignore-unmatch .dovo/run
           git add -A
           if ! git diff --cached --quiet; then
@@ -566,7 +571,7 @@ steps:
             git commit -q -F .agentic/phase-commit-msg
           fi
           uv run --quiet python scripts/code_progress.py record --slice {{ steps.next.outputs.slice }} --phase "$phase"
-          rm -f .agentic/phase-commit-msg .agentic/gate.log
+          rm -f .agentic/phase-commit-msg
         timeout_seconds: 300
         on_failure: prompt_user
 
