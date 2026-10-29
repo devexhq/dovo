@@ -58,6 +58,7 @@ SEVERITY_LABELS = {  # (count of one, any other count)
 FINDING_SECTIONS = ("### Blocking", "### Warnings", "### Suggestions", "### Nits", "### Earlier rounds")
 HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,\d+)? @@")
 FINDINGS_FIX = "; run /dovo-review again"
+FINDING_KEYS = ("severity", "path", "start_line", "line", "rule", "summary", "issue", "fix", "also_affects")
 FINDING_MARKER_LINE = re.compile(
     r"^<!-- dovo-finding id=(?P<id>\S+) severity=(?P<severity>BLOCKER|WARNING|SUGGESTION|NIT) rule=(?P<rule>\S+) -->$"
 )
@@ -502,10 +503,8 @@ def _is_text(value: object) -> bool:
 
 
 def _range_problem(finding: dict[str, object]) -> str | None:
-    """Return Error 4's message when start_line is missing, or is set but not an integer from 1 to below an integer line; None otherwise."""
+    """Return Error 4's message when start_line is set but not an integer from 1 to below an integer line; None otherwise."""
     finding_id = finding["id"]
-    if "start_line" not in finding:
-        return f"review.json finding {finding_id} has no start_line{FINDINGS_FIX}"
     start, line = finding["start_line"], finding.get("line")
     if start is None or (_is_count(start) and _is_count(line) and 0 < int(str(start)) < int(str(line))):
         return None
@@ -532,7 +531,10 @@ def _also_affects_problem(finding: dict[str, object]) -> str | None:
 def _finding_problem(finding: dict[str, object]) -> str | None:
     """Return why the finding, whose id is already a usable token, cannot be posted, or None when it can."""
     finding_id = finding["id"]
-    for key in ("issue", "fix"):
+    for key in FINDING_KEYS:
+        if key not in finding:
+            return f"review.json finding {finding_id} has no {key}{FINDINGS_FIX}"
+    for key in ("summary", "issue", "fix"):
         if not _is_text(finding.get(key)):
             return f"review.json finding {finding_id} has no {key}{FINDINGS_FIX}"
     problem = _range_problem(finding) or _also_affects_problem(finding)
@@ -547,9 +549,9 @@ def _finding_problem(finding: dict[str, object]) -> str | None:
 def findings_problem(review: dict[str, object]) -> str | None:
     """Return why review.json's findings cannot be posted, or None when every one can (Error case 4).
 
-    Each finding needs an `id` with no whitespace, non-empty `issue` and `fix`, a `start_line` that is null
-    or a line before `line`, an `also_affects` list of `path:line` or `path:start-end` entries, and an `id`,
-    `severity` and `rule` that its finding marker parses back to.
+    Each finding needs an `id` with no whitespace, every key in FINDING_KEYS, non-empty `summary`, `issue`
+    and `fix`, a `start_line` that is null or a line before `line`, an `also_affects` list of `path:line` or
+    `path:start-end` entries, and an `id`, `severity` and `rule` that its finding marker parses back to.
     """
     findings = review.get("findings")
     if not isinstance(findings, list):

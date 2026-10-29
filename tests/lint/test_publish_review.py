@@ -671,6 +671,21 @@ class PublishReviewTests:
                 id="missing-issue",
             ),
             pytest.param(
+                _review(findings=[{k: v for k, v in FINDINGS[1].items() if k != "summary"}]),
+                "review.json finding W1 has no summary",
+                id="no-summary",
+            ),
+            pytest.param(
+                _review(findings=[_finding("W1", "WARNING", None, None, summary="")]),
+                "review.json finding W1 has no summary",
+                id="blank-summary",
+            ),
+            pytest.param(
+                _review(findings=[{k: v for k, v in FINDINGS[1].items() if k != "rule"}]),
+                "review.json finding W1 has no rule",
+                id="no-rule",
+            ),
+            pytest.param(
                 _review(findings=[_finding("W1", "WARNING", None, None, fix=" ")]),
                 "review.json finding W1 has no fix",
                 id="blank-fix",
