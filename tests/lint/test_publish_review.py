@@ -386,6 +386,7 @@ class PublishReviewTests:
                 frozenset({1, 2, 3, 4, 30, 31}),
                 id="two-hunks",
             ),
+            pytest.param("@@ -1,1 +1,2 @@\n+a\u2028+b\n c", frozenset({1, 2}), id="line-separator-in-line"),
             pytest.param(None, frozenset(), id="no-patch"),
         ],
     )

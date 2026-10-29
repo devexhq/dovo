@@ -239,7 +239,7 @@ def commentable_lines(patch: str | None) -> frozenset[int]:
     """Return the right-side line numbers of patch's hunks (context and added lines), empty when patch is None."""
     lines: set[int] = set()
     current: int | None = None
-    for text in (patch or "").splitlines():
+    for text in (patch or "").split("\n"):
         header = HUNK_HEADER.match(text)
         if header is not None:
             current = int(header["start"])
@@ -343,7 +343,7 @@ def continuation_body(finding: dict[str, object], round_number: int) -> str:
     return f"{finding_marker(finding, round_number)}\nStill open in round {round_number} as {finding['id']}."
 
 
-def _thread_comments(thread: dict[str, object]) -> list[dict[str, object]]:
+def thread_comments(thread: dict[str, object]) -> list[dict[str, object]]:
     """Return a THREADS_QUERY node's comment nodes, in order."""
     comments = thread.get("comments")
     nodes = comments.get("nodes") if isinstance(comments, dict) else None
@@ -352,7 +352,7 @@ def _thread_comments(thread: dict[str, object]) -> list[dict[str, object]]:
 
 def _opening_marker(thread: dict[str, object]) -> tuple[object, dict[str, object] | None]:
     """Return the login of the thread's first comment and parse_finding_marker of its first line."""
-    comments = _thread_comments(thread)
+    comments = thread_comments(thread)
     if not comments:
         return None, None
     author = comments[0].get("author")
@@ -804,7 +804,7 @@ def prepare(pr: str, *, session: str | None) -> Posting:
     _raise_on(thread_problem(review, threads, dovo_threads, number))
     review, detached = detach_unlisted(review, threads)
     continued = _continuations(review, dovo_threads)
-    replies = {thread: _thread_comments(dovo_threads[thread]) for thread, _, _ in continued}
+    replies = {thread: thread_comments(dovo_threads[thread]) for thread, _, _ in continued}
     reviews = list_pr_nodes(host, repository, number, REVIEWS_QUERY, "reviews")
     reused = own_review(reviews, viewer, review_marker(pr_head, round_number))
     reused_url = None if reused is None else str(reused.get("url"))
@@ -888,8 +888,13 @@ def publish(pr: str, *, session: str | None) -> str:
 
 
 def main() -> int:
-    """Publish .agentic/review.md to the pull request as its one dovo-review comment."""
-    parser = argparse.ArgumentParser(description="Post or update the pull request's one dovo-review comment.")
+    """Post this round's findings as a pull request review, continue and resolve dovo finding threads, then post or update the dovo-review comment."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Post this round's findings as a pull request review, continue and resolve dovo finding threads, "
+            "then post or update the pull request's one dovo-review comment."
+        )
+    )
     parser.add_argument("--pr", required=True, help="Pull request number, URL or branch.")
     parser.add_argument("--session", metavar="SESSION", help="Dovo session ID to stamp on the comment header.")
     args = parser.parse_args()

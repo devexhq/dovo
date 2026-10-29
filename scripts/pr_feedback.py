@@ -38,6 +38,7 @@ from publish_review import (
     pr_repository,
     review_marker,
     run,
+    thread_comments,
 )
 
 AGENTIC_DIR = Path(".agentic")
@@ -202,13 +203,6 @@ def _author_login(author: object) -> str:
     return f"{login}[bot]" if author.get("__typename") == "Bot" else login
 
 
-def _comments(thread: dict[str, object]) -> list[dict[str, object]]:
-    """Return the thread's comment nodes, in order."""
-    comments = thread.get("comments")
-    nodes = comments.get("nodes") if isinstance(comments, dict) else None
-    return [node for node in nodes if isinstance(node, dict)] if isinstance(nodes, list) else []
-
-
 def last_finding(comments: list[dict[str, object]], viewer: str) -> dict[str, object] | None:
     """Return parse_finding_marker of the last comment by viewer whose first line is a finding marker, or None."""
     found = None
@@ -255,7 +249,7 @@ def thread_items(threads: list[dict[str, object]], viewer: str) -> list[dict[str
     """
     items: list[dict[str, object]] = []
     for thread in threads:
-        comments = _comments(thread)
+        comments = thread_comments(thread)
         if thread.get("isResolved") or not comments:
             continue
         comment = comments[0]
