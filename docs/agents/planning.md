@@ -3,7 +3,7 @@
 Read this **before writing any code** for a GitHub issue. The plan document (`.agentic/plan.md`) is the deliverable.
 While planning, remain **read-only**: do not edit `src/` or `tests/`, do not run tests or quality gates, and do not commit or push.
 
-A plan has two readers. The human approving it needs to see, at the top, what changes for existing users and what is still undecided. The agent implementing a phase needs exact instructions and literal contracts for that phase alone. Write for both, and repeat nothing the issue already says.
+A plan has two readers. The human approving it needs to see, at the top, what changes for existing users and what is still undecided. The agent implementing a phase needs the files and symbols that phase touches, the new public surface the issue does not already pin, and the tests that pin each requirement. Write for both, and repeat nothing the issue already says.
 
 ## Step 1: Extract the contract from the issue
 
@@ -11,15 +11,15 @@ A plan has two readers. The human approving it needs to see, at the top, what ch
 gh issue view <number> --json number,title,body
 ```
 
-- Link the issue; do not copy its prose. Every `FR-*`, `NFR-*`, numbered error case and Definition of Done item appears by ID in the `## Traceability` table instead, as does every GWT scenario (`GWT-<n>`).
-- Copy **literal** contracts verbatim into the `### Code` block of the phase that implements them: pre-determined data, models, enums, flags, JSON, and exact error and output strings. The implementing agent does not read the issue.
+- Link the issue; do not copy its prose. Every `FR-*`, `NFR-*` and numbered error case appears by ID in the FRs column of the `## Phases` table instead, and is cited by at least one test line. A requirement whose parts land in different phases is listed in each of those phases' FRs cells with the part it covers in parentheses (`FR-7 (reply)`, `FR-7 (fixer)`), and each part is cited by at least one test line.
+- Do not copy the issue's **literal** contracts (pre-determined data, models, enums, flags, JSON, and exact error and output strings) into the plan: cite the issue section that holds them (`#<n>, Pre-determined data`). The implementing agent reads the issue alongside the plan. A phase's `### Code` holds only new public surface the issue does not pin literally (Step 4).
 - Copy each **Owned elsewhere** bullet (`#n owns <X>`) into `## Owned elsewhere` as a collision check: the plan does not do that work. It is not a ban, so a line the change would otherwise leave false is still fixed (R17). The issue's **Notes for the planner** are context, never requirements or bans. Never derive a `## Traps` bullet from the issue's scope.
 - The issue's observable contracts bind the plan: CLI behaviour and output, exit codes, persisted formats, entrypoint signatures, result models and the literal values tests assert. Its internal shapes (helper names, module placement, type aliases, how far a change reaches) are the author's best guess before grounding. When Step 2 shows one is wrong, such as a new symbol that duplicates or shadows an existing one, or an injected dependency the change holds but bypasses with a direct call, plan the better design. Add an Open Question whose assumed answer is that design, cite the `path:line` that shows the issue's shape is wrong, and name the departure under **What you're approving**. Never write a Trap that tells the implementer to work around the issue's shape.
 - The issue's **changes** (what it exists to deliver) bind the plan as written. Its **guards** ("reports today's outcome", "same message as today") bind what a user or caller relies on: outcome, status, exit code, `error_code`, persisted data, and text a doc or a test outside the change depends on. When following a guard literally would exclude behaviour of the foundation the issue adopts (an `OSError` on Dovo's own state that `catch_failure` records, and the `diagnostics` entry that follows; see [architecture/exceptions.md](architecture/exceptions.md) and [architecture/diagnostics.md](architecture/diagnostics.md)), or would freeze wording nothing relies on, plan the better behaviour as a departure in the same way: an Open Question with the `path:line` that shows why, named under **What you're approving**.
 - Absent an issue, quote the request in the opening paragraph and number the requirements you derive from it (`FR-1`, …) in a `## Requirements` list after `## What you're approving`.
 - Do not open or consult sibling or parent issues. A parent labelled `type:epic` is planned as an epic with `dovo run issue-plan`, which writes its feature contract and slices; never with `/dovo-plan`. Any other parent issue (one with sub-issues) is never planned itself; plan its sub-issues one at a time.
 - Plan zero backwards-compatibility shims, aliases, or dual code paths unless the issue explicitly demands them (R10).
-- If a detail is unspecified, choose the option matching the nearest existing pattern from Step 2, record the choice and rejected alternative in `### Decisions`, and add a numbered Open Question stating the assumed answer.
+- If a detail is unspecified, choose the option matching the nearest existing pattern from Step 2, and add a numbered Open Question stating the assumed answer and the rejected alternative.
 
 ## Step 2: Ground yourself in the current code
 
@@ -35,21 +35,21 @@ gh issue view <number> --json number,title,body
 
 ## Step 3: Enumerate every artifact and split into phases
 
-Write the file-by-file manifest into `## Artifact inventory` in the plan itself; a reviewer reads it to see what the change touches.
+Write the file-by-file manifest into `## Artifact inventory` in the plan itself: every file and symbol each phase touches, with its phase. A reviewer reads it to see what the change touches, and the implementer reads it as the phase's work list.
 Group FRs into phases of one concern each (~400 changed lines or less, tests included):
 - Each phase passes `uv run dovo run quality` on its own, ships something and leaves no dead code.
 - Replacing an internal is phased as add, switch callers, delete, with the deletion phase planned up front in `### Deletion ledger` (R10).
 - Order phases by dependency, lower layers first (R1). A fix to existing behaviour that the change depends on is its own phase, first.
 - A phase over budget states, under the Phases table, why it cannot be split.
 - `/dovo-code` lands every phase in one PR, so the phases together serve the issue's one responsibility. A plan whose phases mix kinds of change (a foundation and its adoption, or a behaviour change and a refactor) says so first under **What you're approving** and recommends splitting the issue with `/dovo-issue`.
-- Resolve every check now: no instruction or ledger entry may be conditional on a `grep` the implementer runs later.
+- Resolve every check now: no plan line or ledger entry may be conditional on a `grep` the implementer runs later.
 
 ## Step 4: Write `.agentic/plan.md`
 
-- **Literal contracts:** Write exact code for model/enum definitions, full signatures with type hints and docstrings, Typer flags, formatter views, literal JSON dicts, and error strings.
-- **Production stubs:** Exact signature + one-line intent docstring + `raise NotImplementedError`.
-- **Test stubs:** Signature + single-line imperative docstring stating the exact outcome contract + `raise NotImplementedError` (use `/dovo-test-planner --plan`). Plan sibling cases as one parametrized test.
-- **Commands:** every command a phase adds or changes gets an R13 matrix (success, failure, `--format json`, each option) in that phase's `### Tests`.
+- **Code:** a phase's `### Code` holds only new public surface the issue does not already pin literally: a new public signature with type hints, a result model, an enum, a command's flag set. No stubs for private helpers, and no copy of a literal the issue's Pre-determined data already holds; cite that issue section instead. A phase with no such surface says "None: the issue pins it (`#<n>, <section>`)".
+- **Tests:** one line per test, `TestClass.test_name (path) — FR-n: <outcome>`, citing every requirement it pins. No bodies and no `raise NotImplementedError` stubs. Sibling cases are one parametrized test and stay one line.
+- **Commands:** every command a phase adds or changes gets the R13 matrix (success, a failure path, `--format json`, each option it binds) as test lines in that phase's `### Tests`.
+- **Decisions:** a phase's `### Decisions` lists only where the plan departs from the issue or from the nearest existing pattern; omit the heading when there is none.
 - **Numbers:** a line estimate or total appears once, or agrees everywhere it appears.
 - Keep every planned function under cognitive complexity $\le 10$.
 
@@ -60,7 +60,7 @@ Group FRs into phases of one concern each (~400 changed lines or less, tests inc
 
 Planning only. Grounded against `<default branch>` at `<short sha>` (<YYYY-MM-DD>).
 
-The issue's contract is not repeated here; read it on #<n>. This plan covers how each requirement lands, in which phase, and how it is tested. [Traceability](#traceability) maps every requirement to its phase and test. [<Citations: `.agentic/evidence.md`>]
+The issue's contract is not repeated here; read it on #<n>. This plan covers how each requirement lands, in which phase, and how it is tested. The [Phases](#phases) table maps every requirement to its phase, and each test line cites the requirements it pins. [<Citations: `.agentic/evidence.md`>]
 
 ## What you're approving
 
@@ -86,13 +86,12 @@ Write one fact per bullet. **Challenged**, **Turns on** and **Recommended** appe
 
 <Or "None: new surface only.">
 
-**Unchanged:** <each guard from the issue, as a constraint naming what a user or caller relies on; migrations, `config.json` keys, the JSON event envelope, CLI flags, as applicable>.
-
 ---
 
 ## Traps
 
 - **<trap>** (`path:line`). <What goes wrong, and what to do instead.>
+- **<edge case>** (phase <p>, `path:line`). <A genuine implementation gotcha, and how to handle it.>
 
 ## Owned elsewhere
 
@@ -100,19 +99,13 @@ Write one fact per bullet. **Challenged**, **Turns on** and **Recommended** appe
 
 <Or "None.">
 
-## GWT Scenarios
-
-1. **GIVEN** <condition>,\
-   **WHEN** <action>,\
-   **THEN** <result>.
-
 ---
 
 ## Phases
 
 | Phase | Ships | FRs | Depends on | Est. changed lines | Risk, and where to look |
 |---|---|---|---|---|---|
-| 1 | <what a reviewer can check after this phase> | FR-1, FR-2 | none | <n> | **Low/Med/High.** <what to check> |
+| 1 | <what a reviewer can check after this phase> | FR-1, FR-2, NFR-1, Error 1 | none | <n> | **Low/Med/High.** <what to check> |
 
 <Why an over-budget phase cannot be split; which phases are independent.>
 
@@ -122,21 +115,11 @@ Write one fact per bullet. **Challenged**, **Turns on** and **Recommended** appe
 
 ---
 
-## Traceability
-
-| Requirement | Phase | Test (class → method) |
-|---|---|---|
-| FR-1 <short name> | 1 | `<TestClass>.<test_method>` |
-| Error 1 <short name> | 2 | `<test_file>::<test_method>` |
-| GWT-1 <short name> | 1 | `<TestClass>.<test_method>` |
-
----
-
 ## Artifact inventory
 
 | Artifact | Path | New or changed | Phase |
 |---|---|---|---|
-| `<symbol>` | `<path:line>` | new / changed | <p> |
+| `<symbol>` | `<path:line>` | new / changed: <the change, in one clause> | <p> |
 
 Not needed: <surfaces checked and left alone, e.g. migration, result model, config key>.
 
@@ -144,35 +127,20 @@ Not needed: <surfaces checked and left alone, e.g. migration, result model, conf
 
 ## Phase <p>: <name>
 
-### Instructions
-
-1. <imperative action: exact file, exact symbol, exact change>
-
 ### Code
 
-<literal contracts; production stubs ending with raise NotImplementedError>
+<new public surface the issue does not pin literally: signature, result model, enum, flag set. Or "None: the issue pins it (`#<n>, Pre-determined data`)".>
 
 ### Decisions
 
-- **<decision point>:** <choice>, because <one clause>. Rejected: <alternative>. [See OQ-<n>.]
-
-### Edge cases
-
-- <genuine implementation gotcha not in Traps or Decisions>
+- **<departure from the issue or the nearest pattern>:** <choice>, because <one clause>. Rejected: <alternative>. [See OQ-<n>.]
 
 ### Tests
 
-```python
-class <TestClass>:  # <test file path>
-    def <test_method>(self, ...):
-        """<Imperative verb> <exact outcome contract>."""
-        raise NotImplementedError
-```
+- `<TestClass>.<test_name>` (`<test file path>`) — FR-<n>[, Error <m>]: <exact outcome>.
+- `<TestClass>.<test_name>[<case>, <case>]` (`<test file path>`) — NFR-<n>: <exact outcome, per case>.
 
-<For commands: the R13 matrix.>
-
-| Command | Success | Failure | `--format json` | Options |
-|---|---|---|---|---|
+<For commands, the R13 matrix as test lines: success, a failure path, `--format json`, each option it binds.>
 
 ---
 
@@ -184,7 +152,7 @@ class <TestClass>:  # <test file path>
 
 ## Step 5: Save and hand off
 
-1. Verify all planned paths, imports, stubs, and phases against R1–R18 in [AGENTS.md](../../AGENTS.md), and that every requirement ID and GWT scenario appears in `## Traceability`.
+1. Verify all planned paths, imports, public surface and phases against R1–R18 in [AGENTS.md](../../AGENTS.md). Then split every `FR-*`, `NFR-*` and numbered error case into its separate obligations, each sentence a test could observe, and check that each obligation lands in a phase's FRs cell and is cited by at least one test line.
 2. Write `.agentic/plan.md` (and `.agentic/evidence.md` when used) and its open questions to `.agentic/plan.json` (schema in the `dovo-plan` skill), deleting any stale `.agentic/review*`, `.agentic/plan-review*`, `.agentic/plan-challenge*` and `.agentic/plan-walkthrough*`.
 3. Report the plan path, the Phases table, and every numbered Open Question.
 
