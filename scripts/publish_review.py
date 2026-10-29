@@ -790,8 +790,7 @@ def list_pr_nodes(host: str, repository: str, number: int, query: str, connectio
 def already_replied(comments: list[dict[str, object]], viewer: str, body: str) -> bool:
     """Return whether a comment by viewer (GraphQL `author.login`) has body as its text, ignoring surrounding whitespace.
 
-    Matching the whole reply, not only its round marker, keeps a round number
-    reused by a later pr-fix run from hiding a changed outcome.
+    Matching the whole reply, not only its marker, keeps a reply with a changed outcome from being skipped.
     """
     for comment in comments:
         author = comment.get("author")
