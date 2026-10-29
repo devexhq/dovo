@@ -10,7 +10,8 @@ description: >-
   tests while building and scoped completion checks once the slice is complete,
   leaving the full quality gate to the issue-code blueprint's verify steps, and
   never committing or pushing. Invoked as /issue-code --slice <id> to
-  implement a slice, or /issue-code review [--tiers blockers,warnings,suggestions,nits|all |
+  implement a slice, /issue-code --slice <id> --phase <n> to implement one
+  phase of it, or /issue-code review [--tiers blockers,warnings,suggestions,nits|all |
   --fix B1,W2,...] to address the findings in .agentic/review.md, or
   /issue-code feedback --triage to draft a triage of the items in .agentic/feedback.json and /issue-code feedback to fix its approved fix items.
 disable-model-invocation: true
@@ -27,6 +28,7 @@ Turn every phase of one slice of `.agentic/plan.md` into working code, one phase
 | Invocation | Input | Job |
 |---|---|---|
 | `/issue-code --slice <id>` | `.agentic/plan.md`, `.agentic/plan.json` | Implement every phase the slice lists in `plan.json` `slices[].phases`, in the plan's `## Phases` table order, and no other phase. Start at the first of those phases whose artifacts are not yet in the tree, so an interrupted run resumes where it stopped; say which phases you skipped as already present. Without `--slice`, implement the plan's only slice; when it has several, stop and name them. An id not in `slices` stops the run before any edit and names the valid ids, and a slice whose `phases` is `[]` has not been phased yet: stop before any edit and say `/issue-plan --slice <id>` runs first. |
+| `/issue-code --slice <id> --phase <n>` | `.agentic/plan.md`, `.agentic/plan.json` | **One-phase mode**, which the `issue-code` blueprint's code loop runs once per phase: implement only phase `<n>` of the slice, as [One-phase mode](#one-phase-mode) says. |
 | `/issue-code review [--tiers <tiers> \| --fix <ids>]` | `.agentic/review.md`, `.agentic/review.json` | Fix review findings by tier or by id |
 | `/issue-code feedback --triage` | `.agentic/feedback.json` | Draft fix, dismiss or defer for every pull request feedback item |
 | `/issue-code feedback` | `.agentic/feedback.json`, `.agentic/triage.json` | Fix the approved triage's `fix` items |
@@ -36,11 +38,11 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 ## Hard boundaries
 
 - **Never commit, stage, push, or touch PR state.** `/dovo-push` owns that.
-- **The slice's phases, one at a time.** Finish a phase (its FRs, tests and deletion ledger, with its scoped tests green) before starting the next, and never interleave FRs across phases. The phases still order the work and bound each step; the slice's phases all land in this one run and one PR. Another slice's phases are never started, even when the work looks adjacent.
+- **The slice's phases, one at a time.** Finish a phase (its FRs, tests and deletion ledger, with its scoped tests green) before starting the next, and never interleave FRs across phases. The phases still order the work and bound each step; the slice's phases all land in one PR, in this one run or, in one-phase mode, one run per phase. Another slice's phases are never started, even when the work looks adjacent.
 - **Stay within the size budget.** A slice's `src/` plus docs stay under about 400 changed lines and the whole diff, tests included, under about 900 (`git diff --stat origin/main`). When the diff passes either with work left, stop, flag it 🚨 and report what remains, rather than finishing over budget.
 - **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes and message strings in the child issue's Pre-determined data, or written as code in a phase's `### Code`, are normative. Do not rename or extend them.
 - **Implement only what the plan's phases ask for.** Never do work the plan's `## Owned elsewhere` says another issue owns unless a phase plans it as a named departure. A sentence your change makes false is fixed regardless (R17), and listed under Plan deviations if unplanned. Do not add test files the plan's `### Tests` lines do not name.
-- **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, `.agentic/verdict.txt`, `.agentic/feedback.json` or `.agentic/triage.json` (except with `--triage`).** This skill writes only `.agentic/implementation-report.md` and, in review and feedback mode, `.agentic/fix-commit-msg`, and in feedback mode `.agentic/feedback-outcomes.json`; with `--triage` it writes only `.agentic/triage.json`.
+- **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, `.agentic/verdict.txt`, `.agentic/feedback.json` or `.agentic/triage.json` (except with `--triage`).** This skill writes only `.agentic/implementation-report.md` and, in one-phase mode, `.agentic/phase-commit-msg`, in review and feedback mode, `.agentic/fix-commit-msg`, and in feedback mode `.agentic/feedback-outcomes.json`; with `--triage` it writes only `.agentic/triage.json`.
 
 ## Before writing code
 
@@ -79,9 +81,28 @@ A check you add under `tests/lint/` must be able to fail: assert its input set i
 
 If a contract cannot be implemented as written, or a cited symbol has moved or does not exist, stop that FR, report what the plan says against what the tree shows, flag it 🚨 and implement the rest. Never redesign a contract on your own or widen scope to make one fit.
 
+## One-phase mode (`--phase <n>`)
+
+The `issue-code` blueprint's `code-loop` runs this mode once per phase, each in a fresh session, on the phase its `phase` step picks. After the gate passes, its `checkpoint` step commits the phase and records it in `.agentic/code-progress.json`; earlier phases are already committed when a run starts.
+
+1. Given `--phase done`, change nothing and report that every phase of the slice is done.
+2. Otherwise, before any edit, run `uv run python scripts/code_progress.py check --slice <id> --phase <n>`. When it refuses (`Phase 5 is not a phase of slice S3; its phases are 1, 2, 3.`), stop and report its message.
+3. Build the brief as [Before writing code](#before-writing-code) says, then read, before editing: phase `<n>`'s section, the Phases table, Traps and Artifact inventory of `.agentic/plan.md`; the plan's `## Feature contract`; the entries earlier phases added to `.agentic/implementation-report.md`; and the earlier phases' commits (`git log -p origin/main..HEAD`).
+4. When `.agentic/gate.log` exists, the previous attempt at this phase failed the quality gate: read the log and the uncommitted diff (`git status`, `git diff`), keep that work, and fix what the log reports.
+5. Implement only phase `<n>` as the [Implementation loop](#implementation-loop) says: its FRs, tests and deletion-ledger entries, with its scoped tests and `uv run ty check` on its changed files passing. Never start another phase.
+6. Run the [completion checks](#completion-checks) scoped to this phase's changed files and tests; the whole-slice gate is the blueprint's `verify` step.
+7. Update the report as [Implementation report](#implementation-report-agenticimplementation-reportmd) says for one-phase mode.
+8. When this run changed any file, write `.agentic/phase-commit-msg`, overwriting any earlier one: a Conventional Commits title (`type(scope): imperative summary`, a type `scripts/check_commit_msg.py` accepts) naming what the phase changes, a blank line, then `Phase <n> of slice <id> (#<child>).`. When nothing changed, do not write it.
+
+   ```text
+   feat(pr-fix): reply on every triaged review thread
+
+   Phase 1 of slice S3 (#1259).
+   ```
+
 ## Completion checks
 
-Run once every phase of the slice is complete, never between phases or mid-implementation, and never concurrently with another gate or test command:
+Run once every phase of the slice is complete, never between phases or mid-implementation, and never concurrently with another gate or test command. In one-phase mode, run them once the phase is complete, scoped to its files; this whole-slice gate section, including the `dovo run quality` below, does not run in one-phase mode:
 
 ```bash
 uv run ruff format .
@@ -94,7 +115,7 @@ Pass every test path the change touched to one `dovo run tests`, separated by sp
 
 Run tests through `dovo run tests`, never bare `pytest`: an agent step inherits Dovo's `DOVO_STEP_*` variables, which break tests that assert they are unset, and `dovo run tests` clears them.
 
-Do not run `uv run dovo run quality` or the whole test suite when `$DOVO_BLUEPRINT_NAME` is `issue-code`. That blueprint runs the full gate in a step after this one, and a failure comes back to you in `.agentic/gate.log` (slice mode) or `.agentic/fix-gate.log` (review mode). Run any other way, finish with `uv run dovo run quality` after the checks above, and report the coverage against `fail_under` in `pyproject.toml`.
+Do not run `uv run dovo run quality` or the whole test suite when `$DOVO_BLUEPRINT_NAME` is `issue-code`. That blueprint runs the full gate in a step after this one, and a failure comes back to you in `.agentic/gate.log` (slice and one-phase mode) or `.agentic/fix-gate.log` (review mode). Run any other way, finish with `uv run dovo run quality` after the checks above, and report the coverage against `fail_under` in `pyproject.toml`.
 
 Fix failures in the code, never with a suppression, a baseline entry or a lowered threshold, and re-run from the start. Report each check with the number it produced.
 
@@ -107,6 +128,8 @@ Write it after the checks are green (or as green as they will get, with failures
 3. **Implementation details**: one subsection per phase: what was built per package, and the deletions executed.
 4. **Quality gates**: each command with the number it observed.
 5. **Changed files**: from `git status --short`.
+
+In one-phase mode, add to the report rather than rewrite it, and leave every entry earlier phases wrote in place (create the report when it is absent): add phase `<n>` to the header's list of phases implemented, add its deviations as further numbered Plan deviations items naming phase `<n>`, add its subsection under Implementation details, and refresh Quality gates and Changed files for this phase. The header's commit line says earlier phases are committed by the blueprint and this phase is not yet.
 
 ## Review mode (`/issue-code review`)
 
