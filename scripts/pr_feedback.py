@@ -7,12 +7,12 @@ session's plan, plan-questions, review and implementation-report artifacts into
 .agentic/, checks out the pull request's head commit, records its head branch
 in .agentic/pr-branch and its URL in .agentic/pr-url, and writes
 .agentic/feedback.json: every unresolved review thread, with its thread id;
-every finding in the body of the viewer's pull request review for the round
-the dovo-review comment names; every comment and review summary by someone
+every finding in the body of the pull request review the dovo-review
+comment's findings line links; every comment and review summary by someone
 else touched since the dovo-review comment's last update; and every failed
 check on the head commit. Items for dovo findings, the review's body findings
-and the viewer's finding threads, carry `finding`: the id, severity, rule and
-round of the finding marker that starts them.
+and the viewer's finding threads, carry `finding`: the id, severity and rule
+of the finding marker on their last line.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime
+from itertools import takewhile
 from pathlib import Path
 from typing import NamedTuple
 
@@ -33,10 +34,8 @@ from publish_review import (
     find_own_comment,
     list_comments,
     list_pr_nodes,
-    own_review,
     parse_finding_marker,
     pr_repository,
-    review_marker,
     run,
     thread_comments,
 )
@@ -49,10 +48,11 @@ RESTORED_ARTIFACTS = ("plan", "plan-questions", "review", "implementation-report
 SUMMARY_CHARS = 200
 NO_AUTHOR_LABELS = {"review_finding": "dovo-review", "check": "ci"}
 FAILED_CONCLUSIONS = ("failure", "cancelled", "timed_out")
-HEADER_COMMIT = re.compile(r"^Reviewed commit: `(?P<head>[0-9a-f]{40})`$")
-HEADER_ROUND = re.compile(r" · Round: (?P<round>[1-9]\d*)$")
+FINDINGS_LINK = re.compile(r"^\*\*Findings:\*\* .* · \[review\]\((?P<url>[^)\s]+)\)$")
 BACKTICKED = re.compile(r"`([^`]+)`")
+LINE_RANGE = re.compile(r"^(?P<path>.+):(?:\d+-)?(?P<end>\d+)$")
 ISSUE_LABEL = "**Issue:**"
+BUG_LABEL = "**Bug:**"
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 HTML_TAG = re.compile(r"</?[A-Za-z][^>]*>")
 LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
@@ -120,20 +120,13 @@ def comment_session(comment: dict[str, object], number: int) -> str:
     return session
 
 
-def header_review(body: str) -> tuple[str, int] | None:
-    """Return the Reviewed commit and Round on the dovo-review comment's header, or None when it names either not.
-
-    The header is the lines before the first blank line, as session_from_comment reads it.
-    """
-    head = round_number = None
+def linked_review(body: str) -> str | None:
+    """Return the review URL the dovo-review comment's `**Findings:** … · [review](<URL>)` line links, or None for `**Findings:** none` or no link."""
     for line in body.splitlines():
-        if not line.strip():
-            break
-        commit = HEADER_COMMIT.match(line)
-        found = HEADER_ROUND.search(line)
-        head = commit["head"] if commit is not None else head
-        round_number = int(found["round"]) if found is not None else round_number
-    return None if head is None or round_number is None else (head, round_number)
+        found = FINDINGS_LINK.match(line)
+        if found is not None:
+            return found["url"]
+    return None
 
 
 def artifact_problem(session: str, name: str) -> str:
@@ -163,36 +156,51 @@ def markdown_summary(body: str) -> str:
     return ""
 
 
+def _last_line(text: str) -> str:
+    """Return the last non-blank line of text, or an empty string when it has none."""
+    return next((line for line in reversed(text.splitlines()) if line.strip()), "")
+
+
 def finding_blocks(body: str) -> list[str]:
-    """Return each finding block of body: from a finding marker line to before the next one, trailing space stripped."""
-    blocks: list[list[str]] = []
+    """Return each finding block of body: from a `#### ` heading line through the next finding marker line."""
+    blocks: list[str] = []
+    current: list[str] | None = None
     for line in body.splitlines():
+        if line.startswith("#### "):
+            current = []
+        if current is None:
+            continue
+        current.append(line)
         if parse_finding_marker(line) is not None:
-            blocks.append([])
-        if blocks:
-            blocks[-1].append(line)
-    return ["\n".join(block).rstrip() for block in blocks]
+            blocks.append("\n".join(current))
+            current = None
+    return blocks
 
 
-def block_summary(block: str) -> str:
-    """Return the block's `**Issue:**` paragraph with markup removed, cut to SUMMARY_CHARS."""
-    paragraph: list[str] = []
-    for line in block.splitlines():
-        if paragraph and not line.strip():
-            break
-        if paragraph or line.startswith(ISSUE_LABEL):
-            paragraph.append(line.removeprefix(ISSUE_LABEL))
-    return _plain_line(" ".join(paragraph))[:SUMMARY_CHARS]
+def labelled_text(block: str, labels: tuple[str, ...], *, paragraph: bool) -> str:
+    """Return the text after the first line starting with one of labels, through its paragraph when paragraph is set, markup removed and cut to SUMMARY_CHARS."""
+    lines = block.splitlines()
+    start = next((index for index, line in enumerate(lines) if line.startswith(labels)), None)
+    if start is None:
+        return ""
+    label = next(label for label in labels if lines[start].startswith(label))
+    text = [lines[start].removeprefix(label)]
+    if paragraph:
+        text += takewhile(str.strip, lines[start + 1 :])
+    return _plain_line(" ".join(text))[:SUMMARY_CHARS]
 
 
 def block_location(block: str) -> tuple[str | None, int | None]:
-    """Return the path and line in the block heading's backticked location, (path, None) without a line, (None, None) without one."""
+    """Return the path and line in the block heading's backticked location, (path, None) without a line, (None, None) without one.
+
+    A `path:<start>-<end>` range gives (path, end).
+    """
     heading = next((line for line in block.splitlines() if line.startswith("#### ")), "")
     location = BACKTICKED.search(heading)
     if location is None:
         return None, None
-    path, _, line = location[1].rpartition(":")
-    return (path, int(line)) if path and line.isdigit() else (location[1], None)
+    ranged = LINE_RANGE.match(location[1])
+    return (ranged["path"], int(ranged["end"])) if ranged is not None else (location[1], None)
 
 
 def _author_login(author: object) -> str:
@@ -203,22 +211,18 @@ def _author_login(author: object) -> str:
     return f"{login}[bot]" if author.get("__typename") == "Bot" else login
 
 
-def last_finding(comments: list[dict[str, object]], viewer: str) -> dict[str, object] | None:
-    """Return parse_finding_marker of the last comment by viewer whose first line is a finding marker, or None."""
-    found = None
-    for comment in comments:
-        lines = str(comment.get("body") or "").splitlines()
-        marker = parse_finding_marker(lines[0]) if lines else None
-        if marker is not None and _author_login(comment.get("author")) == viewer:
-            found = marker
-    return found
+def thread_finding(comments: list[dict[str, object]], viewer: str) -> dict[str, object] | None:
+    """Return parse_finding_marker of the last non-blank line of the thread's first comment when viewer wrote it, else None."""
+    if not comments or _author_login(comments[0].get("author")) != viewer:
+        return None
+    return parse_finding_marker(_last_line(str(comments[0].get("body") or "")))
 
 
 def finding_items(review: dict[str, object] | None) -> list[dict[str, object]]:
     """Return one `review_finding` item per finding block in the dovo review node's body, ids R1, R2, ...
 
     Each has `thread` and `author` None, `url` the review's URL, path and line from block_location,
-    `summary` from block_summary, `body` the whole block and `finding` from its marker. None gives [].
+    `summary` from its `**Issue:**` paragraph, `body` the whole block and `finding` from its marker. None gives [].
     """
     if review is None:
         return []
@@ -234,18 +238,19 @@ def finding_items(review: dict[str, object] | None) -> list[dict[str, object]]:
                 "url": review.get("url"),
                 "path": path,
                 "line": line,
-                "summary": block_summary(block),
+                "summary": labelled_text(block, (ISSUE_LABEL,), paragraph=True),
                 "body": block,
-                "finding": parse_finding_marker(block.splitlines()[0]),
+                "finding": parse_finding_marker(_last_line(block)),
             }
         )
     return items
 
 
 def thread_items(threads: list[dict[str, object]], viewer: str) -> list[dict[str, object]]:
-    """Return one `review_thread` item per unresolved thread, ids T1, T2, ..., with `finding` from last_finding.
+    """Return one `review_thread` item per unresolved thread, ids T1, T2, ..., with `finding` from thread_finding.
 
-    Each comes from the thread's first comment; one that is a finding block takes `summary` from its Issue.
+    Each comes from the thread's first comment; one whose last line is a finding marker, whoever wrote it,
+    takes `summary` from its `**Bug:**` or `**Issue:**` line when it has one.
     """
     items: list[dict[str, object]] = []
     for thread in threads:
@@ -254,7 +259,8 @@ def thread_items(threads: list[dict[str, object]], viewer: str) -> list[dict[str
             continue
         comment = comments[0]
         body = str(comment.get("body") or "")
-        is_block = parse_finding_marker(body.splitlines()[0] if body else "") is not None
+        is_block = parse_finding_marker(_last_line(body)) is not None
+        label_line = labelled_text(body, (BUG_LABEL, ISSUE_LABEL), paragraph=False) if is_block else ""
         items.append(
             {
                 "id": f"T{len(items) + 1}",
@@ -264,9 +270,9 @@ def thread_items(threads: list[dict[str, object]], viewer: str) -> list[dict[str
                 "url": comment.get("url"),
                 "path": thread.get("path"),
                 "line": thread.get("line"),
-                "summary": block_summary(body) if is_block else markdown_summary(body),
+                "summary": label_line or markdown_summary(body),
                 "body": body,
-                "finding": last_finding(comments, viewer),
+                "finding": thread_finding(comments, viewer),
             }
         )
     return items
@@ -474,9 +480,9 @@ def collect(pr: int) -> str:
     download_artifacts(session)
     check_out_head(number, str(view["headRefName"]), head, url)
     reviews = list_pr_nodes(host, repository, number, REVIEWS_QUERY, "reviews")
-    # The header names the reviewed commit, which differs from head once the pull request is pushed to.
-    header = header_review(str(own.get("body") or ""))
-    dovo_review = None if header is None else own_review(reviews, viewer, review_marker(*header))
+    # The findings line links the review this comment's findings were posted in; `**Findings:** none` links none.
+    link = linked_review(str(own.get("body") or ""))
+    dovo_review = None if link is None else next((node for node in reviews if node.get("url") == link), None)
     items = (
         thread_items(list_pr_nodes(host, repository, number, THREADS_QUERY, "reviewThreads"), viewer)
         + finding_items(dovo_review)
