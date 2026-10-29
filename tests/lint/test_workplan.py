@@ -396,6 +396,46 @@ class RenderTests:
             "\n"
         )
 
+    def test_multi_line_override_is_fenced_under_its_bullet(self) -> None:
+        replacement = "Slice S3 of #925.\n\n## Goal\n\n````text\nliteral\n````\n"
+        overrides = [{"issue": 1259, "quote": "## Goal …", "replacement": replacement, "per": "D2"}]
+
+        section = WORKPLAN.render_contract({"overrides": overrides}, "")
+
+        assert section == (
+            "## Feature contract\n"
+            "\n"
+            "### Overrides\n"
+            '- #1259, "## Goal …", per D2, becomes:\n'
+            "  `````text\n"
+            "  Slice S3 of #925.\n"
+            "\n"
+            "  ## Goal\n"
+            "\n"
+            "  ````text\n"
+            "  literal\n"
+            "  ````\n"
+            "  `````\n"
+        )
+
+    def test_refuses_a_contract_that_renders_a_heading_outside_a_fence(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        contract = {"problem": "Output shapes disagree.\n## Notes"}
+        plan = {"contract": contract, "slices": [_slice("S1", child=1131)], "open_questions": []}
+        fake = FakeGh({EPIC: INTRO})
+        path = _write_json(tmp_path / "plan.json", plan)
+
+        code = _main(
+            monkeypatch, fake, "render", "--issue", str(EPIC), "--plan", path, "--session", "s", "--revision", "1"
+        )
+
+        assert code == 1
+        assert capsys.readouterr().err == (
+            "workplan.py: the contract renders a `## ` heading outside a code fence, which would end its section\n"
+        )
+        assert fake.edits == []
+
     def test_rerender_keeps_slice_state_and_landed_reports(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1147,6 +1187,32 @@ class LandTests:
             "run started from nor the amended one; reconcile it by hand and run land again\n"
         )
         assert fake.edits == []
+
+    def test_amends_a_contract_whose_override_replaces_a_whole_body(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        override = {
+            "issue": 1259,
+            "quote": "## Goal …",
+            "replacement": "Slice S3.\n\n## Goal\n\nNew body.\n",
+            "per": "D1",
+        }
+        base = {**CONTRACT, "overrides": [override]}
+        amended = {**base, "conventions": [{"rule": "Use ok() everywhere", "entry": None, "new_in": "S1"}]}
+        questions = WORKPLAN.body_questions(self._contract_body())
+        rows = [_row("S1", child=1131, status="in_progress", session=CODE_SESSION), _row("S2", child=1132)]
+        section = WORKPLAN.render_contract(base, questions)
+        fake = FakeGh(
+            {EPIC: WORKPLAN.with_workplan(f"{INTRO}\n{section}", WORKPLAN.WorkPlan(PLAN_SESSION, 3, rows), "")}
+        )
+        plan = {"contract": amended, "slices": [_slice("S1", child=1131), _slice("S2", child=1132)]}
+        argv = self._argv(tmp_path, plan)
+        _write_json(tmp_path / "epic-plan.json", {"contract": base, "slices": []})
+
+        assert _main(monkeypatch, fake, *argv) == 0
+
+        expected = WORKPLAN.render_contract(amended, questions)
+        assert fake.bodies[EPIC].startswith(f"{INTRO}\n{expected}\n## Work plan\n")
 
     def test_a_decision_with_an_open_questions_id_settles_it(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
