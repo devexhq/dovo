@@ -189,7 +189,7 @@ Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, 
   "plan": ".agentic/plan.md",
   "counts": { "blocking": 1, "warnings": 1, "suggestions": 0, "nits": 0 },
   "findings": [
-    { "id": "B1", "severity": "BLOCKER", "path": "src/dovo/core/sessions/sessions.py", "line": 146, "rule": "R4", "summary": "Session.details lets SessionNotFound escape instead of returning a NOT_FOUND result." }
+    { "id": "B1", "severity": "BLOCKER", "path": "src/dovo/core/sessions/sessions.py", "line": 146, "rule": "R4", "summary": "Session.details lets SessionNotFound escape instead of returning a NOT_FOUND result.", "issue": "`Session.details` lets `SessionNotFound` propagate, so `dovo session show <unknown id>` exits with a traceback instead of exit 2.", "fix": "Catch the failure once with `catch_failure` in `Session.details` and return a result whose `error_code` is `NOT_FOUND`.", "thread": null }
   ],
   "coverage": [
     { "requirement": "FR-1", "verdict": "met", "evidence": "tests/cli/session/test_session_show.py::test_missing asserts exit 2" }
@@ -210,7 +210,7 @@ Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, 
 - `verdict` is exactly `APPROVE` or `CHANGES_REQUIRED`, and is `APPROVE` iff `counts.blocking` is `0`. `action` is `none` or `needs_human` when `verdict` is `APPROVE`, and `fix`, `replan` or `needs_human` otherwise.
 - `head` is the full SHA of the reviewed commit (`git rev-parse HEAD` for a clean branch, the PR's head commit for a PR scope), or `null` when the scope is uncommitted.
 - `provenance` is `fresh_session` or `same_session`. `scope.kind` is `pr`, `uncommitted` or `branch`, and `scope.ref` is `#<n>` for a `pr` scope and `origin/<default>...HEAD` for a `branch` scope. `plan` is the plan path or `null`.
-- `findings` lists every finding, Blocking first, each with the `id` from its `review.md` row. `severity` is `BLOCKER`, `WARNING`, `SUGGESTION` or `NIT`; `rule` is an R-id, `conventions`, `architecture`, or `null`.
+- `findings` lists every finding, Blocking first, each with the `id` from its `review.md` row. `severity` is `BLOCKER`, `WARNING`, `SUGGESTION` or `NIT`; `rule` is an R-id, `conventions`, `architecture`, or `null`. `issue` and `fix` are the text of the row's Issue and Fix cells, with any `\|` a table cell needs written as `|`, each a non-empty string, and `thread` is `null`.
 - `coverage` has one entry per Contract coverage row; `verdict` is `met`, `unmet` or `deferred`. It is `[]` without a plan.
 - `history` has one entry per previous-round finding; `outcome` is `fixed`, `disputed` or `still_open`, and `now` is its new id when `still_open`, otherwise `null`. It is `[]` in round 1.
 - `rejected` and `checks` mirror Rejected findings and Review coverage's checks; each is `[]` when empty.
