@@ -4,27 +4,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dovo.common.exceptions import catch_failure
+from dovo.common.error_codes import ErrorCode
+from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.models import Remediation
 from dovo.common.utils import display_path
-from dovo.core.bootstrap.models import (
-    BootstrapResult,
-    DovoTreeSnapshot,
-    InitFailureMode,
-    WorkspaceInitResult,
-)
+from dovo.core.bootstrap.models import BootstrapSummary, DovoTreeSnapshot, WorkspaceInitResult
 from dovo.core.bootstrap.services.bootstrap import bootstrap_dovo
 from dovo.core.bootstrap.services.rollback import restore_dovo_tree, snapshot_dovo_tree
+from dovo.core.catalog.models import SeedSummary
 from dovo.core.catalog.services.seeder import seed_all_catalog_templates
 from dovo.core.config.generator import generate_default_config
+from dovo.core.config.models import ConfigGenerationSummary
 from dovo.core.db import init_database
 from dovo.core.project.models import ProvisionedProjectIdentity
 from dovo.core.project.services.identity import provision_project_identity, validate_project_id
 from dovo.core.project.services.storage import build_workspace_paths
-
-_BOOTSTRAP_REMEDIATION = Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")
 
 
 def initialize_workspace(
@@ -40,12 +36,12 @@ def initialize_workspace(
     """Initialize a local project workspace for Dovo CLI and desktop sync.
 
     Refuses a target whose .dovo is the global Dovo home, performs git
-    preflight, bootstraps the .dovo/ directory tree, provisions
+    preflight, validates --id, bootstraps the .dovo/ directory tree, provisions
     the project identity, generates canonical default configuration, initializes
-    the SQLite state database, and seeds starter catalog templates.
+    the SQLite state database, and seeds starter catalog templates. A failed step
+    is reported by its error_code, with the summaries of the steps before it.
     """
     fs = Filesystem(root)
-    resolved_root = fs.root_dir
 
     refusal = _refuse_global_home(fs)
     if refusal is not None:
@@ -56,94 +52,58 @@ def initialize_workspace(
             "The current directory is not a valid Git repository.\n"
             "Run [bold cyan]git init[/bold cyan] before running [bold cyan]dovo init[/bold cyan]."
         )
-        return WorkspaceInitResult(errors=[err], failure_mode=InitFailureMode.PREFLIGHT)
+        return WorkspaceInitResult(error_code=ErrorCode.BOOTSTRAP_REPO_NOT_FOUND, errors=[err])
 
-    result = bootstrap_dovo(fs.dovo_dir, tool_version=tool_version)
-    if not result.ok:
-        return WorkspaceInitResult(
-            bootstrap_result=result,
-            errors=list(result.errors),
-            remediations=[_BOOTSTRAP_REMEDIATION],
-            failure_mode=InitFailureMode.BOOTSTRAP,
-        )
-
-    provisioned = _provision_identity(
-        fs.dovo_dir, result, project_id=project_id, display_name=display_name, force=force
-    )
-    if isinstance(provisioned, WorkspaceInitResult):
-        return provisioned
-    identity_warnings = [provisioned.warning] if provisioned.warning is not None else []
-
-    config_result = generate_default_config(
-        fs.config_file,
-        project_name=resolved_root.name,
-        overwrite=overwrite,
-        repair=repair,
-    )
-    if not config_result.ok:
-        return WorkspaceInitResult(
-            bootstrap_result=result,
-            project_identity=provisioned.identity,
-            identity_path=provisioned.path,
-            identity_outcome=provisioned.outcome,
-            config_result=config_result,
-            errors=list(config_result.errors),
-            warnings=[*identity_warnings, *config_result.warnings],
-            failure_mode=InitFailureMode.CONFIG_GENERATION,
-        )
-
-    paths = build_workspace_paths(fs.repository_paths, resolve_global_paths(), provisioned.identity.id)
-    init_database(paths.database_file)
-
-    seed_result = seed_all_catalog_templates(paths)
-    return WorkspaceInitResult(
-        bootstrap_result=result,
-        project_identity=provisioned.identity,
-        identity_path=provisioned.path,
-        identity_outcome=provisioned.outcome,
-        config_result=config_result,
-        seed_result=seed_result,
-        errors=list(seed_result.errors),
-        warnings=[*identity_warnings, *config_result.warnings, *seed_result.warnings],
-        failure_mode=None,
-    )
-
-
-def _provision_identity(
-    dovo_dir: Path,
-    bootstrap_result: BootstrapResult,
-    *,
-    project_id: str | None,
-    display_name: str | None,
-    force: bool,
-) -> ProvisionedProjectIdentity | WorkspaceInitResult:
-    """Validate --id, then provision the identity, each in its own catch_failure block; return the identity or the init failure."""
-    identity_path = dovo_dir / "project.json"
-    if project_id is not None:
-        with catch_failure("bootstrap.initialize_project_id", path=str(identity_path)) as caught:
+    bootstrap: BootstrapSummary | None = None
+    provisioned: ProvisionedProjectIdentity | None = None
+    config_generation: ConfigGenerationSummary | None = None
+    seed: SeedSummary | None = None
+    with catch_failure("bootstrap.initialize", path=str(fs.dovo_dir)) as caught:
+        if project_id is not None:
             validate_project_id(project_id)
-        if caught.failure is not None:
-            return WorkspaceInitResult(
-                bootstrap_result=bootstrap_result,
-                identity_path=identity_path,
-                failure_mode=InitFailureMode.INVALID_PROJECT_ID,
-                **caught.failure.result_fields(),
-            )
-
-    with catch_failure("bootstrap.initialize", path=str(identity_path)) as caught:
+        bootstrap = bootstrap_dovo(fs.dovo_dir, tool_version=tool_version)
         provisioned = provision_project_identity(
-            dovo_dir, project_id=project_id, display_name=display_name, force=force
+            fs.dovo_dir, project_id=project_id, display_name=display_name, force=force
         )
-    if caught.failure is not None:
-        fields = caught.failure.result_fields()
-        fields["remediations"] = [_BOOTSTRAP_REMEDIATION]
-        return WorkspaceInitResult(
-            bootstrap_result=bootstrap_result,
-            identity_path=identity_path,
-            failure_mode=InitFailureMode.BOOTSTRAP,
-            **fields,
+        config_generation = generate_default_config(
+            fs.config_file, project_name=fs.root_dir.name, overwrite=overwrite, repair=repair
         )
-    return provisioned
+        paths = build_workspace_paths(fs.repository_paths, resolve_global_paths(), provisioned.identity.id)
+        init_database(paths.database_file)
+        seed = seed_all_catalog_templates(paths)
+
+    return _build_init_result(
+        fs.dovo_dir / "project.json", bootstrap, provisioned, config_generation, seed, caught.failure
+    )
+
+
+def _build_init_result(
+    identity_path: Path,
+    bootstrap: BootstrapSummary | None,
+    provisioned: ProvisionedProjectIdentity | None,
+    config_generation: ConfigGenerationSummary | None,
+    seed: SeedSummary | None,
+    failure: Failure | None,
+) -> WorkspaceInitResult:
+    """Build the init result from the steps that completed, copying failure into it when a step failed."""
+    warnings: list[str] = []
+    if provisioned is not None:
+        identity_path = provisioned.path
+        if provisioned.warning is not None:
+            warnings.append(provisioned.warning)
+    if config_generation is not None:
+        warnings.extend(config_generation.warnings)
+
+    return WorkspaceInitResult(
+        bootstrap=bootstrap,
+        project_identity=provisioned.identity if provisioned is not None else None,
+        identity_path=identity_path if bootstrap is not None else None,
+        identity_outcome=provisioned.outcome if provisioned is not None else None,
+        config_generation=config_generation,
+        seed=seed,
+        warnings=warnings,
+        **(failure.result_fields() if failure is not None else {}),
+    )
 
 
 def auto_initialize_workspace(root: Path | None = None) -> WorkspaceInitResult:
@@ -200,5 +160,5 @@ def _refuse_global_home(fs: Filesystem) -> WorkspaceInitResult | None:
             Remediation(message="Run 'dovo init' inside a project directory"),
             Remediation(message="Set 'DOVO_HOME' to a different directory."),
         ],
-        failure_mode=InitFailureMode.PREFLIGHT,
+        error_code=ErrorCode.BOOTSTRAP_TARGET_FORBIDDEN,
     )

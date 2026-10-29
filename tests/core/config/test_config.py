@@ -11,14 +11,14 @@ from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.mcp_servers import McpServerDefinition
 from dovo.core.config.config import Config
 from dovo.core.config.exceptions import ConfigLoadError
-from dovo.core.config.generator import ConfigGenerationResult, build_default_config
+from dovo.core.config.generator import build_default_config
 from dovo.core.config.loader import ConfigLoadStatus, load_config
 from dovo.core.config.models import AgentSettings, ConfigTier, DovoConfig
 from dovo.core.config.mutate import ConfigSetResult, ConfigUnsetResult
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 WriteTierConfig = Callable[[ConfigTier, dict[str, Any] | str], Path]
-ConfigMutation = Callable[[Config], ConfigSetResult | ConfigUnsetResult | ConfigGenerationResult]
+ConfigMutation = Callable[[Config], ConfigSetResult | ConfigUnsetResult]
 
 
 @pytest.fixture
@@ -206,47 +206,6 @@ class ConfigAccessorPropertyTests:
             _ = Config(paths).history
 
 
-class ConfigGenerateTests:
-    def test_generate_creates_config_file_with_project_name_from_root_dir(
-        self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
-    ) -> None:
-        paths = workspace_paths_factory(isolated_workspace, None)
-
-        result = Config(paths).generate()
-
-        assert result.created is True
-        assert paths.config_file.is_file()
-        loaded = Config(paths).load().config
-        assert loaded is not None
-        assert loaded.project.name == paths.root_dir.name
-
-    def test_generate_without_overwrite_or_repair_skips_an_existing_config(
-        self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
-    ) -> None:
-        paths = workspace_paths_factory(isolated_workspace, None)
-        Filesystem.atomic_write_json(paths.config_file, build_default_config("original-name"))
-
-        result = Config(paths).generate(project_name="new-name")
-
-        assert result.skipped_existing is True
-        loaded = Config(paths).load().config
-        assert loaded is not None
-        assert loaded.project.name == "original-name"
-
-    def test_generate_with_overwrite_replaces_existing_config(
-        self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
-    ) -> None:
-        paths = workspace_paths_factory(isolated_workspace, None)
-        Filesystem.atomic_write_json(paths.config_file, build_default_config("original-name"))
-
-        result = Config(paths).generate(overwrite=True, project_name="replaced-name")
-
-        assert result.overwritten is True
-        loaded = Config(paths).load().config
-        assert loaded is not None
-        assert loaded.project.name == "replaced-name"
-
-
 def _write_config_with_base_ref(paths: WorkspacePaths, base_ref: str) -> None:
     payload = build_default_config("cached-project")
     payload["worktree"]["base_ref"] = base_ref
@@ -259,7 +218,6 @@ class ConfigCacheTests:
         [
             pytest.param(lambda config: config.set("worktree.base_ref", "main"), "main", id="set"),
             pytest.param(lambda config: config.unset("worktree.base_ref"), "HEAD", id="unset"),
-            pytest.param(lambda config: config.generate(overwrite=True, project_name="demo"), "HEAD", id="generate"),
         ],
     )
     def test_successful_mutation_clears_cached_config(
@@ -284,7 +242,6 @@ class ConfigCacheTests:
         [
             pytest.param(lambda config: config.set("worktree.base_ref", "main"), id="set"),
             pytest.param(lambda config: config.unset("worktree.base_ref"), id="unset"),
-            pytest.param(lambda config: config.generate(repair=True), id="generate"),
         ],
     )
     def test_failed_mutation_keeps_cached_config(

@@ -16,14 +16,9 @@ from dovo.common.constants import DOVO_GITIGNORE_TRACKED_ENTRIES
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
-from dovo.core.bootstrap.models import (
-    BootstrapOutcome,
-    BootstrapResult,
-    InitFailureMode,
-    WorkspaceInitResult,
-)
-from dovo.core.catalog.models import SeedResult
-from dovo.core.config.generator import ConfigGenerationResult
+from dovo.core.bootstrap.models import BootstrapOutcome, BootstrapSummary, WorkspaceInitResult
+from dovo.core.catalog.models import SeedSummary
+from dovo.core.config.models import ConfigGenerationSummary
 from dovo.core.project.models import ProjectIdentity, ProjectIdentityOutcome
 from tests.harness.formatter import (
     FormatterCase,
@@ -41,6 +36,51 @@ PRESERVE_WARNING = (
     "Project identity already exists (id=test-project); preserving existing identity. "
     "Rerun with --id <new-id> --force to replace it."
 )
+RERUN_REMEDIATION = Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")
+
+
+def make_bootstrap(
+    outcome: BootstrapOutcome = BootstrapOutcome.ALREADY_INITIALIZED,
+    *,
+    dirs_created: tuple[Path, ...] = (),
+) -> BootstrapSummary:
+    """Construct a BootstrapSummary under DOVO with the given outcome and created directories."""
+    return BootstrapSummary(
+        root_path=DOVO,
+        outcome=outcome,
+        root_created=outcome == BootstrapOutcome.INITIALIZED,
+        dirs_created=dirs_created,
+        dirs_existing=(),
+        repaired=outcome == BootstrapOutcome.REPAIRED,
+        gitignore_created=outcome == BootstrapOutcome.INITIALIZED,
+    )
+
+
+def make_config(
+    *,
+    created: bool = False,
+    skipped_existing: bool = False,
+    repaired: bool = False,
+    overwritten: bool = False,
+    inserted_keys: tuple[str, ...] = (),
+) -> ConfigGenerationSummary:
+    """Construct a ConfigGenerationSummary for CONFIG_PATH with the given flags."""
+    return ConfigGenerationSummary(
+        config_path=CONFIG_PATH,
+        created=created,
+        skipped_existing=skipped_existing,
+        repaired=repaired,
+        overwritten=overwritten,
+        inserted_keys=inserted_keys,
+        warnings=(),
+    )
+
+
+def make_seed(
+    *, created: tuple[Path, ...] = (), skipped: tuple[Path, ...] = (), overwritten: tuple[Path, ...] = ()
+) -> SeedSummary:
+    """Construct a SeedSummary with the given created, skipped and overwritten files."""
+    return SeedSummary(created_files=created, skipped_existing_files=skipped, overwritten_files=overwritten)
 
 
 def make_init_view(**overrides: object) -> WorkspaceInitView:
@@ -50,9 +90,9 @@ def make_init_view(**overrides: object) -> WorkspaceInitView:
         "root_path": DOVO,
         "root_path_relative": ".dovo",
         "bootstrap_outcome": BootstrapOutcome.INITIALIZED,
-        "dirs_created": [".dovo/sessions"],
-        "project_id": None,
-        "identity_path_relative": None,
+        "dirs_created": [".dovo/.meta"],
+        "project_id": "test-project",
+        "identity_path_relative": ".dovo/project.json",
         "identity_preserved": False,
         "gitignore_path_relative": ".dovo/.gitignore",
         "gitignore_tracked_entries": list(DOVO_GITIGNORE_TRACKED_ENTRIES),
@@ -65,7 +105,7 @@ def make_init_view(**overrides: object) -> WorkspaceInitView:
         "seeded_files": [".dovo/catalog/blueprints/test.yml"],
         "skipped_seed_files": [],
         "overwritten_seed_files": [],
-        "failure_mode": None,
+        "error_code": None,
         "errors": [],
         "warnings": [],
         "remediations": [],
@@ -74,62 +114,52 @@ def make_init_view(**overrides: object) -> WorkspaceInitView:
     return WorkspaceInitView.model_validate({**defaults, **overrides})
 
 
+def make_failure_view(**overrides: object) -> WorkspaceInitView:
+    """Construct a failed WorkspaceInitView whose steps after bootstrap and identity did not run."""
+    defaults: dict[str, object] = {
+        "ok": False,
+        "bootstrap_outcome": BootstrapOutcome.ALREADY_INITIALIZED,
+        "dirs_created": [],
+        "config_created": False,
+        "config_path_relative": None,
+        "seeded_files": [],
+    }
+    return make_init_view(**{**defaults, **overrides})
+
+
 INITIALIZED = FormatterCase(
     data=WorkspaceInitResult(
-        bootstrap_result=BootstrapResult(
-            root_path=DOVO,
-            root_created=True,
-            dirs_created=[DOVO / "sessions"],
-        ),
+        bootstrap=make_bootstrap(BootstrapOutcome.INITIALIZED, dirs_created=(DOVO / ".meta",)),
         project_identity=BASELINE_IDENTITY,
         identity_path=DOVO / "project.json",
         identity_outcome=ProjectIdentityOutcome.CREATED,
-        config_result=ConfigGenerationResult(
-            config_path=CONFIG_PATH,
-            created=True,
-        ),
-        seed_result=SeedResult(
-            created_files=[DOVO / "catalog" / "blueprints" / "test.yml"],
-        ),
+        config_generation=make_config(created=True),
+        seed=make_seed(created=(DOVO / "catalog" / "blueprints" / "test.yml",)),
     ),
-    view=make_init_view(
-        project_id="test-project",
-        identity_path_relative=".dovo/project.json",
-    ),
+    view=make_init_view(),
     render_expectations=[
-        ".dovo",
+        "Initialized Dovo at .dovo",
         ".dovo/config.json",
-        ".dovo/sessions",
+        ".dovo/.meta",
         ".dovo/catalog/blueprints/test.yml",
         "test-project",
         ".dovo/project.json",
         "catalog/",
+        "Next:",
     ],
 )
 
 REPAIRED = FormatterCase(
     data=WorkspaceInitResult(
-        bootstrap_result=BootstrapResult(
-            root_path=DOVO,
-            repaired=True,
-            dirs_created=[DOVO / "sessions"],
-        ),
+        bootstrap=make_bootstrap(BootstrapOutcome.REPAIRED, dirs_created=(DOVO / ".meta",)),
         project_identity=BASELINE_IDENTITY,
         identity_path=DOVO / "project.json",
         identity_outcome=ProjectIdentityOutcome.CREATED,
-        config_result=ConfigGenerationResult(
-            config_path=CONFIG_PATH,
-            repaired=True,
-            inserted_keys=["telemetry.enabled"],
-        ),
-        seed_result=SeedResult(
-            skipped_existing_files=[DOVO / "catalog" / "blueprints" / "fix-tests.yml"],
-        ),
+        config_generation=make_config(repaired=True, inserted_keys=("telemetry.enabled",)),
+        seed=make_seed(skipped=(DOVO / "catalog" / "blueprints" / "fix-tests.yml",)),
     ),
     view=make_init_view(
         bootstrap_outcome=BootstrapOutcome.REPAIRED,
-        project_id="test-project",
-        identity_path_relative=".dovo/project.json",
         config_created=False,
         config_repaired=True,
         inserted_keys=["telemetry.enabled"],
@@ -137,118 +167,66 @@ REPAIRED = FormatterCase(
         skipped_seed_files=[".dovo/catalog/blueprints/fix-tests.yml"],
     ),
     render_expectations=[
-        ".dovo",
+        "Dovo structure repaired at .dovo",
         ".dovo/config.json",
-        ".dovo/sessions",
+        ".dovo/.meta",
         "telemetry.enabled",
         ".dovo/catalog/blueprints/fix-tests.yml",
     ],
 )
 
-ALREADY_INITIALIZED_OVERWRITTEN = FormatterCase(
+ALREADY_INITIALIZED = FormatterCase(
     data=WorkspaceInitResult(
-        bootstrap_result=BootstrapResult(
-            root_path=DOVO,
-            outcome=BootstrapOutcome.ALREADY_INITIALIZED,
-            dirs_created=[],
-        ),
+        bootstrap=make_bootstrap(),
         project_identity=BASELINE_IDENTITY,
         identity_path=DOVO / "project.json",
         identity_outcome=ProjectIdentityOutcome.CREATED,
-        config_result=ConfigGenerationResult(
-            config_path=CONFIG_PATH,
-            overwritten=True,
-        ),
-        seed_result=SeedResult(
-            overwritten_files=[DOVO / "catalog" / "blueprints" / "x.yml"],
-        ),
+        config_generation=make_config(overwritten=True),
+        seed=make_seed(overwritten=(DOVO / "catalog" / "blueprints" / "x.yml",)),
     ),
     view=make_init_view(
         bootstrap_outcome=BootstrapOutcome.ALREADY_INITIALIZED,
         dirs_created=[],
-        project_id="test-project",
-        identity_path_relative=".dovo/project.json",
         config_created=False,
         config_overwritten=True,
         seeded_files=[],
         overwritten_seed_files=[".dovo/catalog/blueprints/x.yml"],
     ),
-    render_expectations=[".dovo", ".dovo/config.json"],
+    render_expectations=["Dovo already initialized at .dovo", ".dovo/config.json", "Refreshed starter blueprints"],
 )
 
 CONFIG_SKIPPED_EXISTING = FormatterCase(
     data=WorkspaceInitResult(
-        bootstrap_result=BootstrapResult(
-            root_path=DOVO,
-            outcome=BootstrapOutcome.INITIALIZED,
-            dirs_created=[],
-        ),
+        bootstrap=make_bootstrap(),
         project_identity=BASELINE_IDENTITY,
         identity_path=DOVO / "project.json",
         identity_outcome=ProjectIdentityOutcome.CREATED,
-        config_result=ConfigGenerationResult(
-            config_path=CONFIG_PATH,
-            skipped_existing=True,
-        ),
-        seed_result=SeedResult(),
+        config_generation=make_config(skipped_existing=True),
+        seed=make_seed(),
     ),
     view=make_init_view(
+        bootstrap_outcome=BootstrapOutcome.ALREADY_INITIALIZED,
         dirs_created=[],
-        project_id="test-project",
-        identity_path_relative=".dovo/project.json",
         config_created=False,
         config_skipped_existing=True,
         seeded_files=[],
     ),
-    render_expectations=[".dovo", ".dovo/config.json"],
+    render_expectations=[".dovo", "Config exists: ./.dovo/config.json", "Starter blueprints already present"],
 )
 
-NO_CONFIG_PATH = FormatterCase(
+WARNINGS = FormatterCase(
     data=WorkspaceInitResult(
-        bootstrap_result=BootstrapResult(
-            root_path=DOVO,
-            outcome=BootstrapOutcome.INITIALIZED,
-            dirs_created=[],
-        ),
-        project_identity=BASELINE_IDENTITY,
-        identity_path=DOVO / "project.json",
-        identity_outcome=ProjectIdentityOutcome.CREATED,
-        config_result=ConfigGenerationResult(config_path=None),
-        seed_result=SeedResult(),
-    ),
-    view=make_init_view(
-        dirs_created=[],
-        project_id="test-project",
-        identity_path_relative=".dovo/project.json",
-        config_created=False,
-        config_path_relative=None,
-        seeded_files=[],
-    ),
-    render_expectations=[".dovo"],
-)
-
-IDENTITY_PRESERVED = FormatterCase(
-    data=WorkspaceInitResult(
-        bootstrap_result=BootstrapResult(
-            root_path=DOVO,
-            outcome=BootstrapOutcome.ALREADY_INITIALIZED,
-            dirs_created=[],
-        ),
+        bootstrap=make_bootstrap(),
         project_identity=BASELINE_IDENTITY,
         identity_path=DOVO / "project.json",
         identity_outcome=ProjectIdentityOutcome.PRESERVED,
-        config_result=ConfigGenerationResult(
-            config_path=CONFIG_PATH,
-            overwritten=True,
-        ),
-        seed_result=SeedResult(),
+        config_generation=make_config(overwritten=True),
+        seed=make_seed(),
         warnings=[PRESERVE_WARNING, "repair ignored when overwrite=True"],
     ),
     view=make_init_view(
         bootstrap_outcome=BootstrapOutcome.ALREADY_INITIALIZED,
         dirs_created=[],
-        project_id="test-project",
-        identity_path_relative=".dovo/project.json",
         identity_preserved=True,
         config_created=False,
         config_overwritten=True,
@@ -258,76 +236,47 @@ IDENTITY_PRESERVED = FormatterCase(
     render_expectations=[".dovo", "test-project", ".dovo/project.json", PRESERVE_WARNING],
 )
 
-SEEDING_ERROR = FormatterCase(
-    data=WorkspaceInitResult(
-        bootstrap_result=BootstrapResult(root_path=DOVO),
-        config_result=ConfigGenerationResult(
-            config_path=CONFIG_PATH,
-            created=True,
-        ),
-        seed_result=SeedResult(errors=["could not seed"]),
-    ),
-    view=make_init_view(
-        ok=False,
-        bootstrap_outcome=BootstrapOutcome.ALREADY_INITIALIZED,
-        dirs_created=[],
-        seeded_files=[],
-        errors=["could not seed"],
-    ),
-    render_expectations=[".dovo", ".dovo/config.json", "could not seed"],
-)
+PREFLIGHT_ERROR = "The current directory is not a valid Git repository."
 
 PREFLIGHT_FAILURE = FormatterCase(
-    data=WorkspaceInitResult(
-        errors=["The current directory is not a valid Git repository."],
-        remediations=[Remediation(message="Run 'git init' before running 'dovo init'.", command="git init")],
-        failure_mode=InitFailureMode.PREFLIGHT,
-    ),
-    view=make_init_view(
-        ok=False,
+    data=WorkspaceInitResult(error_code=ErrorCode.BOOTSTRAP_REPO_NOT_FOUND, errors=[PREFLIGHT_ERROR]),
+    view=make_failure_view(
         root_path=None,
         root_path_relative=None,
         bootstrap_outcome=None,
-        dirs_created=[],
+        project_id=None,
+        identity_path_relative=None,
         gitignore_path_relative=None,
         gitignore_tracked_entries=[],
-        config_created=False,
-        config_path_relative=None,
-        seeded_files=[],
-        failure_mode=InitFailureMode.PREFLIGHT,
-        errors=["The current directory is not a valid Git repository."],
-        remediations=[Remediation(message="Run 'git init' before running 'dovo init'.", command="git init")],
+        error_code=ErrorCode.BOOTSTRAP_REPO_NOT_FOUND,
+        errors=[PREFLIGHT_ERROR],
     ),
-    render_expectations=[
-        "The current directory is not a valid Git repository.",
-        "Fix:",
-        "- Run 'git init' before running 'dovo init'.",
-    ],
+    render_expectations=["Initialization Failed!", PREFLIGHT_ERROR],
 )
+
+BOOTSTRAP_ERROR = "/workspace/my-repo/.dovo exists but is a file, not a directory."
 
 BOOTSTRAP_FAILURE = FormatterCase(
     data=WorkspaceInitResult(
-        bootstrap_result=BootstrapResult(
-            root_path=DOVO,
-            errors=["path conflict: .dovo is a file"],
-        ),
-        errors=["path conflict: .dovo is a file"],
-        remediations=[Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")],
-        failure_mode=InitFailureMode.BOOTSTRAP,
+        error_code=ErrorCode.BOOTSTRAP_PATH_INVALID,
+        errors=[BOOTSTRAP_ERROR],
+        remediations=[RERUN_REMEDIATION],
     ),
-    view=make_init_view(
-        ok=False,
-        bootstrap_outcome=BootstrapOutcome.FAILED,
-        dirs_created=[],
-        config_created=False,
-        config_path_relative=None,
-        seeded_files=[],
-        failure_mode=InitFailureMode.BOOTSTRAP,
-        errors=["path conflict: .dovo is a file"],
-        remediations=[Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")],
+    view=make_failure_view(
+        root_path=None,
+        root_path_relative=None,
+        bootstrap_outcome=None,
+        project_id=None,
+        identity_path_relative=None,
+        gitignore_path_relative=None,
+        gitignore_tracked_entries=[],
+        error_code=ErrorCode.BOOTSTRAP_PATH_INVALID,
+        errors=[BOOTSTRAP_ERROR],
+        remediations=[RERUN_REMEDIATION],
     ),
     render_expectations=[
-        "path conflict: .dovo is a file",
+        "Initialization Failed!",
+        BOOTSTRAP_ERROR,
         "Fix:",
         "- Resolve the path conflict above, then rerun 'dovo init'",
     ],
@@ -342,77 +291,87 @@ IDENTITY_FAILURE_RECORD = DiagnosticRecord(
 
 IDENTITY_FAILURE = FormatterCase(
     data=WorkspaceInitResult(
-        bootstrap_result=BootstrapResult(root_path=DOVO),
+        bootstrap=make_bootstrap(),
         identity_path=DOVO / "project.json",
         error_code=ErrorCode.PROJECT_IDENTITY_UNREADABLE,
         errors=[IDENTITY_FAILURE_ERROR],
-        remediations=[Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")],
-        failure_mode=InitFailureMode.BOOTSTRAP,
         diagnostics=[IDENTITY_FAILURE_RECORD],
     ),
-    view=make_init_view(
-        ok=False,
-        bootstrap_outcome=BootstrapOutcome.ALREADY_INITIALIZED,
-        dirs_created=[],
-        identity_path_relative=".dovo/project.json",
-        config_created=False,
-        config_path_relative=None,
-        seeded_files=[],
-        failure_mode=InitFailureMode.BOOTSTRAP,
+    view=make_failure_view(
+        project_id=None,
+        error_code=ErrorCode.PROJECT_IDENTITY_UNREADABLE,
         errors=[IDENTITY_FAILURE_ERROR],
-        remediations=[Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")],
         diagnostics=[IDENTITY_FAILURE_RECORD],
     ),
     render_expectations=[
+        "Dovo already initialized at .dovo",
+        "Initialization Failed!",
         "Unable to read project identity at",
         "exc_3f9a1c07b2de",
-        "Fix:",
-        "- Resolve the path conflict above, then rerun 'dovo init'",
     ],
 )
 
-CONFIG_GENERATION_FAILURE = FormatterCase(
+CONFIG_ERROR = "Config path '/workspace/my-repo/.dovo/config.json' is a directory."
+
+CONFIG_FAILURE = FormatterCase(
     data=WorkspaceInitResult(
-        bootstrap_result=BootstrapResult(root_path=DOVO),
-        config_result=ConfigGenerationResult(
-            config_path=CONFIG_PATH,
-            errors=["Unable to write config at '.dovo/config.json': permission denied"],
-            remediations=[Remediation(message="Check file permissions for '.dovo/config.json'.")],
-        ),
-        errors=["Unable to write config at '.dovo/config.json': permission denied"],
-        remediations=[Remediation(message="Check file permissions for '.dovo/config.json'.")],
-        failure_mode=InitFailureMode.CONFIG_GENERATION,
+        bootstrap=make_bootstrap(),
+        project_identity=BASELINE_IDENTITY,
+        identity_path=DOVO / "project.json",
+        identity_outcome=ProjectIdentityOutcome.CREATED,
+        error_code=ErrorCode.CONFIG_PATH_INVALID,
+        errors=[CONFIG_ERROR],
     ),
-    view=make_init_view(
-        ok=False,
-        bootstrap_outcome=BootstrapOutcome.ALREADY_INITIALIZED,
-        dirs_created=[],
-        config_created=False,
+    view=make_failure_view(error_code=ErrorCode.CONFIG_PATH_INVALID, errors=[CONFIG_ERROR]),
+    render_expectations=[
+        "Dovo already initialized at .dovo",
+        "test-project",
+        ".dovo/project.json",
+        "Initialization Failed!",
+        CONFIG_ERROR,
+    ],
+)
+
+SEED_ERROR = (
+    "Could not seed the starter catalog templates:\n"
+    "/workspace/my-repo/.dovo/catalog/blueprints/dovo/fix-tests.yml exists as a directory, not a file."
+)
+
+SEED_FAILURE = FormatterCase(
+    data=WorkspaceInitResult(
+        bootstrap=make_bootstrap(),
+        project_identity=BASELINE_IDENTITY,
+        identity_path=DOVO / "project.json",
+        identity_outcome=ProjectIdentityOutcome.CREATED,
+        config_generation=make_config(created=True),
+        error_code=ErrorCode.CATALOG_SEED_FAILED,
+        errors=[SEED_ERROR],
+    ),
+    view=make_failure_view(
+        config_created=True,
         config_path_relative=".dovo/config.json",
-        seeded_files=[],
-        failure_mode=InitFailureMode.CONFIG_GENERATION,
-        errors=["Unable to write config at '.dovo/config.json': permission denied"],
-        remediations=[Remediation(message="Check file permissions for '.dovo/config.json'.")],
+        error_code=ErrorCode.CATALOG_SEED_FAILED,
+        errors=[SEED_ERROR],
     ),
     render_expectations=[
-        "Unable to write config at '.dovo/config.json': permission denied",
-        "Fix:",
-        "- Check file permissions for '.dovo/config.json'.",
+        "Generated config: ./.dovo/config.json",
+        "Initialization Failed!",
+        "Could not seed the starter catalog templates:",
+        "fix-tests.yml exists as a directory, not a file.",
     ],
 )
 
 INIT_CASES = [
     pytest.param(INITIALIZED, id="initialized"),
     pytest.param(REPAIRED, id="repaired"),
-    pytest.param(ALREADY_INITIALIZED_OVERWRITTEN, id="already_initialized_overwritten"),
-    pytest.param(CONFIG_SKIPPED_EXISTING, id="config_skipped_existing"),
-    pytest.param(NO_CONFIG_PATH, id="no_config_path"),
-    pytest.param(IDENTITY_PRESERVED, id="identity_preserved"),
-    pytest.param(SEEDING_ERROR, id="seeding_error"),
-    pytest.param(PREFLIGHT_FAILURE, id="preflight_failure"),
-    pytest.param(BOOTSTRAP_FAILURE, id="bootstrap_failure"),
-    pytest.param(CONFIG_GENERATION_FAILURE, id="config_generation_failure"),
-    pytest.param(IDENTITY_FAILURE, id="identity_failure"),
+    pytest.param(ALREADY_INITIALIZED, id="already-initialized"),
+    pytest.param(CONFIG_SKIPPED_EXISTING, id="config-skipped-existing"),
+    pytest.param(PREFLIGHT_FAILURE, id="preflight"),
+    pytest.param(BOOTSTRAP_FAILURE, id="bootstrap-failure"),
+    pytest.param(IDENTITY_FAILURE, id="identity-failure-with-diagnostics"),
+    pytest.param(CONFIG_FAILURE, id="config-failure"),
+    pytest.param(SEED_FAILURE, id="seed-failure"),
+    pytest.param(WARNINGS, id="warnings"),
 ]
 
 INIT_PAYLOAD_CASES = [
@@ -423,7 +382,7 @@ INIT_PAYLOAD_CASES = [
             "root_path": "/workspace/my-repo/.dovo",
             "root_path_relative": ".dovo",
             "bootstrap_outcome": "initialized",
-            "dirs_created": [".dovo/sessions"],
+            "dirs_created": [".dovo/.meta"],
             "project_id": "test-project",
             "identity_path_relative": ".dovo/project.json",
             "identity_preserved": False,
@@ -438,16 +397,16 @@ INIT_PAYLOAD_CASES = [
             "seeded_files": [".dovo/catalog/blueprints/test.yml"],
             "skipped_seed_files": [],
             "overwritten_seed_files": [],
-            "failure_mode": None,
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],
             "diagnostics": [],
         },
-        id="initialized_payload",
+        id="initialized",
     ),
     pytest.param(
-        PREFLIGHT_FAILURE,
+        BOOTSTRAP_FAILURE,
         {
             "ok": False,
             "root_path": None,
@@ -468,13 +427,13 @@ INIT_PAYLOAD_CASES = [
             "seeded_files": [],
             "skipped_seed_files": [],
             "overwritten_seed_files": [],
-            "failure_mode": "preflight",
-            "errors": ["The current directory is not a valid Git repository."],
+            "error_code": "BOOTSTRAP_PATH_INVALID",
+            "errors": [BOOTSTRAP_ERROR],
             "warnings": [],
-            "remediations": [{"message": "Run 'git init' before running 'dovo init'.", "command": "git init"}],
+            "remediations": [{"message": "Resolve the path conflict above, then rerun 'dovo init'", "command": None}],
             "diagnostics": [],
         },
-        id="preflight_failure_payload",
+        id="bootstrap-failure",
     ),
     pytest.param(
         IDENTITY_FAILURE,
@@ -498,10 +457,10 @@ INIT_PAYLOAD_CASES = [
             "seeded_files": [],
             "skipped_seed_files": [],
             "overwritten_seed_files": [],
-            "failure_mode": "bootstrap",
+            "error_code": "PROJECT_IDENTITY_UNREADABLE",
             "errors": [IDENTITY_FAILURE_ERROR],
             "warnings": [],
-            "remediations": [{"message": "Resolve the path conflict above, then rerun 'dovo init'", "command": None}],
+            "remediations": [],
             "diagnostics": [
                 {
                     "event_id": "exc_3f9a1c07b2de",
@@ -509,7 +468,7 @@ INIT_PAYLOAD_CASES = [
                 }
             ],
         },
-        id="identity_failure_payload",
+        id="identity-failure-with-diagnostics",
     ),
 ]
 

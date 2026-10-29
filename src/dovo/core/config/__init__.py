@@ -2,10 +2,10 @@
 
 from dovo.core.config.agent_settings import agent_settings
 from dovo.core.config.config import Config
-from dovo.core.config.exceptions import ConfigLoadError, ConfigTierValidationError
-from dovo.core.config.generator import ConfigGenerationResult
+from dovo.core.config.exceptions import ConfigError, ConfigLoadError, ConfigTierValidationError
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from dovo.core.config.models import (
+    ConfigGenerationSummary,
     ConfigTier,
     ConfigTierEntry,
     DovoConfig,
@@ -25,7 +25,8 @@ from dovo.core.config.validate import (
 
 __all__ = [
     "Config",
-    "ConfigGenerationResult",
+    "ConfigError",
+    "ConfigGenerationSummary",
     "ConfigLoadError",
     "ConfigLoadResult",
     "ConfigLoadStatus",

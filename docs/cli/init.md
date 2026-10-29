@@ -12,7 +12,7 @@ dovo init [OPTIONS]
 
 | Flag | Description |
 | --- | --- |
-| `--id <ID>` | Explicit unique project ID slug. Must match `^[a-z0-9][a-z0-9-_]{2,62}$`; an invalid value exits with code `2`. When omitted, a slug is generated. |
+| `--id <ID>` | Explicit unique project ID slug. Must match `^[a-z0-9][a-z0-9-_]{2,62}$`; an invalid value exits with code `2` and writes nothing. When omitted, a slug is generated. |
 | `--display-name <NAME>` | Human-readable project display name. |
 | `--force` | Overwrite an existing `project.json`'s id when `--id` is also provided. Has no effect on its own, and never touches `config.json`. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |
@@ -58,16 +58,18 @@ dovo init --format json
 
 ## Errors
 
-Both errors exit with code `1` and report `failure_mode: "preflight"` in JSON output. Nothing is written.
+Every failure reports its cause as `error_code` in `--format json` output; on success `error_code` is `null`. An invalid `--id` exits with code `2` (`error_code` `PROJECT_ID_INVALID`); every other failure exits with code `1`.
 
-| Error | Fix |
-| --- | --- |
-| `The current directory is not a valid Git repository.` | Run `git init` before running `dovo init`. |
-| `Cannot initialize a workspace at '<root>': its .dovo directory is the global Dovo home '<DOVO_HOME>'.` | Run `dovo init` inside a project directory, or set `DOVO_HOME` to a different directory. |
+The two errors below are checked before anything is written. Both exit with code `1`, and nothing is written.
+
+| Error | `error_code` | Fix |
+| --- | --- | --- |
+| `The current directory is not a valid Git repository.` | `BOOTSTRAP_REPO_NOT_FOUND` | Run `git init` before running `dovo init`. |
+| `Cannot initialize a workspace at '<root>': its .dovo directory is the global Dovo home '<DOVO_HOME>'.` | `BOOTSTRAP_TARGET_FORBIDDEN` | Run `dovo init` inside a project directory, or set `DOVO_HOME` to a different directory. |
 
 The global-home refusal applies to a directory whose `.dovo` is `DOVO_HOME` (by default your home directory, whose `.dovo` is `~/.dovo`), even when it is a Git repository, and is checked before the Git check.
 
-When `dovo init` fails with an unexpected error while setting up the project identity, or the operating system refuses to read or write `.dovo/project.json` (for example, a permission error), Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record. The error message is unchanged, a `Details logged: <path> (event <event_id>)` line naming that file follows it, and `--format json` lists the record in `diagnostics`; if the record cannot be written, there is no line and `diagnostics` is empty. These failures exit with code `1` and report `failure_mode: "bootstrap"`.
+When `dovo init` fails with an unexpected error in any of its steps (setting up the `.dovo/` directory, the project identity, the database, the configuration or the starter blueprints), or the operating system refuses (for example, with a permission error) to create a `.dovo/` directory, write its bootstrap metadata, read or write `.dovo/project.json`, write `.dovo/config.json` or write a seeded catalog file, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record. The error message is unchanged, a `Details logged: <path> (event <event_id>)` line naming that file follows it, and `--format json` lists the record in `diagnostics`; if the record cannot be written, there is no line and `diagnostics` is empty. These failures exit with code `1`. An unexpected error reports `error_code` `INTERNAL_ERROR`; an operating-system error reports the `error_code` of the step that failed.
 
 If another `dovo` process holds the workspace lock and the wait times out, `dovo init` prints a Workspace Lock Timeout panel and exits with code `1`, with or without `--format json`; no JSON event is printed. Wait for the other process to finish, then rerun `dovo init`.
 
@@ -101,5 +103,5 @@ dovo init --id my-project --format json
 Emits a JSON payload:
 
 ```json
-{"event_type": "WorkspaceInitResult", "payload": {"ok": true, "root_path": "/path/to/my-repo/.dovo", "root_path_relative": ".dovo", "bootstrap_outcome": "initialized", "dirs_created": [".dovo/.meta"], "project_id": "my-project", "identity_path_relative": ".dovo/project.json", "identity_preserved": false, "gitignore_path_relative": ".dovo/.gitignore", "gitignore_tracked_entries": ["config.json", "project.json", "catalog/"], "config_created": true, "config_overwritten": false, "config_repaired": false, "config_skipped_existing": false, "config_path_relative": ".dovo/config.json", "inserted_keys": [], "seeded_files": [".dovo/catalog/blueprints/dovo/fix-tests.yml", ".dovo/catalog/blueprints/dovo/review-fix.yml", ".dovo/catalog/steps/dovo/ai-code-patcher.yml", ".dovo/catalog/steps/dovo/ai-planner.yml", ".dovo/catalog/steps/dovo/ai-reviewer.yml", ".dovo/catalog/steps/dovo/git-sync-base.yml", ".dovo/catalog/steps/dovo/run-tests.yml"], "skipped_seed_files": [], "overwritten_seed_files": [], "failure_mode": null, "errors": [], "warnings": [], "remediations": [], "diagnostics": []}}
+{"event_type": "WorkspaceInitResult", "payload": {"ok": true, "root_path": "/path/to/my-repo/.dovo", "root_path_relative": ".dovo", "bootstrap_outcome": "initialized", "dirs_created": [".dovo/.meta"], "project_id": "my-project", "identity_path_relative": ".dovo/project.json", "identity_preserved": false, "gitignore_path_relative": ".dovo/.gitignore", "gitignore_tracked_entries": ["config.json", "project.json", "catalog/"], "config_created": true, "config_overwritten": false, "config_repaired": false, "config_skipped_existing": false, "config_path_relative": ".dovo/config.json", "inserted_keys": [], "seeded_files": [".dovo/catalog/blueprints/dovo/fix-tests.yml", ".dovo/catalog/blueprints/dovo/review-fix.yml", ".dovo/catalog/steps/dovo/ai-code-patcher.yml", ".dovo/catalog/steps/dovo/ai-planner.yml", ".dovo/catalog/steps/dovo/ai-reviewer.yml", ".dovo/catalog/steps/dovo/git-sync-base.yml", ".dovo/catalog/steps/dovo/run-tests.yml"], "skipped_seed_files": [], "overwritten_seed_files": [], "error_code": null, "errors": [], "warnings": [], "remediations": [], "diagnostics": []}}
 ```

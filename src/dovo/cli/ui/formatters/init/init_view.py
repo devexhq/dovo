@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.models import Remediation
-from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
+from dovo.core.bootstrap.models import BootstrapOutcome
 
 
 class WorkspaceInitView(BaseModel):
@@ -35,7 +35,7 @@ class WorkspaceInitView(BaseModel):
     seeded_files: list[str] = Field(default_factory=list)
     skipped_seed_files: list[str] = Field(default_factory=list)
     overwritten_seed_files: list[str] = Field(default_factory=list)
-    failure_mode: InitFailureMode | None = None
+    error_code: str | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)

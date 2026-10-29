@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -12,10 +13,13 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.common.constants import DOVO_GITIGNORE_TRACKED_ENTRIES
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.common.utils import display_path
 from dovo.core.bootstrap.models import BootstrapOutcome
+from dovo.core.config.exceptions import ConfigError
 from dovo.core.project.models import PROJECT_ID_REGEX, ProjectIdentity
 from tests.harness.builders import init_git_repository
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
@@ -42,9 +46,9 @@ class InitCliIntegrationTests:
         assert (resolve_global_paths(None).data_dir / "dovo.db").is_file()
         assert len(dispatch_spy) == 1
         res = dispatch_spy[0]
-        assert res.bootstrap_result.root_path == dovo_dir
-        assert res.bootstrap_result.outcome == BootstrapOutcome.INITIALIZED
-        assert res.config_result.created is True
+        assert res.bootstrap.root_path == dovo_dir
+        assert res.bootstrap.outcome == BootstrapOutcome.INITIALIZED
+        assert res.config_generation.created is True
 
     def test_init_cli_rerun_without_flags_skips_existing_exits_zero(
         self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[Any]
@@ -58,9 +62,9 @@ class InitCliIntegrationTests:
         assert result.exit_code == 0
         assert len(dispatch_spy) == 1
         res = dispatch_spy[0]
-        assert res.bootstrap_result.root_path == _dovo_dir(tmp_path)
-        assert res.bootstrap_result.outcome == BootstrapOutcome.ALREADY_INITIALIZED
-        assert res.config_result.skipped_existing is True
+        assert res.bootstrap.root_path == _dovo_dir(tmp_path)
+        assert res.bootstrap.outcome == BootstrapOutcome.ALREADY_INITIALIZED
+        assert res.config_generation.skipped_existing is True
 
     def test_init_cli_overwrite_flag_regenerates_default_config_exits_zero(
         self, cli_runner: CliRunner, tmp_path: Path
@@ -94,26 +98,9 @@ class InitCliIntegrationTests:
         event = json.loads(result.stdout)
         assert event["event_type"] == "WorkspaceInitResult"
         assert event["payload"]["ok"] is True
+        assert event["payload"]["error_code"] is None
+        assert "failure_mode" not in event["payload"]
         assert event["payload"]["project_id"] == "test-project"
-
-    def test_init_cli_in_global_home_parent_exits_one_with_json_refusal(
-        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Exit 1 for `-p <home> init --format json` with payload ok False, failure_mode preflight and the global-home refusal."""
-        home = tmp_path / "home"
-        global_home = home / ".dovo"
-        global_home.mkdir(parents=True)
-        init_git_repository(home)
-        monkeypatch.setenv("DOVO_HOME", str(global_home))
-
-        result = cli_runner.invoke(app, ["-p", str(home), "init", "--format", "json"])
-
-        assert result.exit_code == 1
-        payload = json.loads(result.stdout)["payload"]
-        assert payload["ok"] is False
-        assert payload["failure_mode"] == "preflight"
-        assert len(payload["errors"]) == 1
-        assert "its .dovo directory is the global Dovo home" in payload["errors"][0]
 
     def test_init_cli_with_id_flag_creates_project_json_with_explicit_id(
         self, cli_runner: CliRunner, tmp_path: Path
@@ -135,18 +122,18 @@ class InitCliIntegrationTests:
         assert "Invalid project ID: must match" in result.stdout
         assert "Pass a valid '--id' matching" in result.stdout
         assert "Run 'dovo init' without '--id' to keep the existing project ID or generate a new one." in result.stdout
-        assert not (_dovo_dir(tmp_path) / "project.json").exists()
+        assert not _dovo_dir(tmp_path).exists()
 
     def test_init_cli_with_invalid_id_json_payload_exits_two(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """Exit 2 with failure_mode invalid_project_id, the identity path, the invalid-id error and remediation."""
+        """Exit 2 with PROJECT_ID_INVALID, no bootstrap outcome or identity path, the invalid-id error and remediation."""
         init_git_repository(tmp_path)
 
         result = cli_runner.invoke(app, ["-p", str(tmp_path), "init", "--id", "Bad Id!", "--format", "json"])
 
         assert result.exit_code == 2
         payload = json.loads(result.stdout)["payload"]
-        assert payload["failure_mode"] == "invalid_project_id"
-        assert payload["identity_path_relative"] == ".dovo/project.json"
+        assert payload["error_code"] == "PROJECT_ID_INVALID"
+        assert (payload["bootstrap_outcome"], payload["identity_path_relative"]) == (None, None)
         assert payload["errors"] == [f"Invalid project ID: must match {PROJECT_ID_REGEX}"]
         assert payload["remediations"] == [
             {"message": f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}'.", "command": None},
@@ -155,12 +142,12 @@ class InitCliIntegrationTests:
                 "command": "dovo init",
             },
         ]
-        assert not (_dovo_dir(tmp_path) / "project.json").exists()
+        assert not _dovo_dir(tmp_path).exists()
 
     def test_init_cli_invalid_identity_schema_exits_one_with_json_failure(
         self, cli_runner: CliRunner, tmp_path: Path
     ) -> None:
-        """Exit 1 with failure_mode bootstrap, the invalid-schema error without a Details logged line, and no config.json."""
+        """Exit 1 with the invalid-schema code and error, the identity error's own (empty) remediations, and no config.json."""
         init_git_repository(tmp_path)
         identity_path = Filesystem(tmp_path).dovo_dir / "project.json"
         identity_path.parent.mkdir()
@@ -172,17 +159,15 @@ class InitCliIntegrationTests:
 
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
-        assert payload["failure_mode"] == "bootstrap"
+        assert payload["error_code"] == "PROJECT_IDENTITY_SCHEMA_INVALID"
         assert payload["errors"] == [f"Project identity at '{identity_path}' is invalid: {validation.value}."]
-        assert payload["remediations"] == [
-            {"message": "Resolve the path conflict above, then rerun 'dovo init'", "command": None}
-        ]
+        assert payload["remediations"] == []
         assert not (_dovo_dir(tmp_path) / "config.json").exists()
 
     def test_init_cli_unexpected_provisioning_error_exits_one_with_json_failure(
         self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Exit 1 with failure_mode bootstrap, the unexpected error alone, its record in diagnostics, and no traceback."""
+        """Exit 1 with INTERNAL_ERROR, the unexpected error alone, no remediation, its record in diagnostics, and no traceback."""
         init_git_repository(tmp_path)
 
         def _boom(*_args: object, **_kwargs: object) -> None:
@@ -194,8 +179,9 @@ class InitCliIntegrationTests:
 
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
-        assert payload["failure_mode"] == "bootstrap"
+        assert payload["error_code"] == "INTERNAL_ERROR"
         assert payload["errors"] == ["Unexpected error during bootstrap.initialize: boom"]
+        assert payload["remediations"] == []
         assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]
         assert "Traceback" not in result.stdout
 
@@ -274,3 +260,115 @@ class InitCliIntegrationTests:
         assert "tracking only" in result.stdout
         for entry in DOVO_GITIGNORE_TRACKED_ENTRIES:
             assert entry in result.stdout
+
+
+_RERUN = {"message": "Resolve the path conflict above, then rerun 'dovo init'", "command": None}
+
+
+def _not_a_repo(root: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, list[str], list[dict[str, str | None]]]:
+    errors = [
+        "The current directory is not a valid Git repository.\n"
+        "Run [bold cyan]git init[/bold cyan] before running [bold cyan]dovo init[/bold cyan]."
+    ]
+    return "BOOTSTRAP_REPO_NOT_FOUND", errors, []
+
+
+def _global_home(root: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, list[str], list[dict[str, str | None]]]:
+    init_git_repository(root)
+    global_home = root / ".dovo"
+    global_home.mkdir()
+    monkeypatch.setenv("DOVO_HOME", str(global_home))
+    errors = [
+        f"Cannot initialize a workspace at '{root.resolve()}': its .dovo directory is the global Dovo home "
+        f"'{global_home.resolve()}'."
+    ]
+    remediations: list[dict[str, str | None]] = [
+        {"message": "Run 'dovo init' inside a project directory", "command": None},
+        {"message": "Set 'DOVO_HOME' to a different directory.", "command": None},
+    ]
+    return "BOOTSTRAP_TARGET_FORBIDDEN", errors, remediations
+
+
+def _dovo_is_file(root: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, list[str], list[dict[str, str | None]]]:
+    init_git_repository(root)
+    _dovo_dir(root).write_text("not a directory", encoding="utf-8")
+    errors = [f"{display_path(_dovo_dir(root).resolve())} exists but is a file, not a directory."]
+    return "BOOTSTRAP_PATH_INVALID", errors, [_RERUN]
+
+
+def _config_is_directory(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[str, list[str], list[dict[str, str | None]]]:
+    init_git_repository(root)
+    config_file = _dovo_dir(root) / "config.json"
+    config_file.mkdir(parents=True)
+    return "CONFIG_PATH_INVALID", [f"Config path '{config_file.resolve().as_posix()}' is a directory."], []
+
+
+def _seed_target_is_directory(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[str, list[str], list[dict[str, str | None]]]:
+    init_git_repository(root)
+    blocked = _dovo_dir(root) / "catalog" / "blueprints" / "dovo" / "fix-tests.yml"
+    blocked.mkdir(parents=True)
+    errors = [
+        "Could not seed the starter catalog templates:\n"
+        f"{display_path(blocked.resolve())} exists as a directory, not a file."
+    ]
+    return "CATALOG_SEED_FAILED", errors, []
+
+
+class InitCliFailureTests:
+    """Typer runner tests pinning each dovo init failure's code, errors and remediations."""
+
+    @pytest.mark.parametrize(
+        "arrange",
+        [
+            pytest.param(_not_a_repo, id="non-git"),
+            pytest.param(_global_home, id="global-home"),
+            pytest.param(_dovo_is_file, id="bootstrap"),
+            pytest.param(_config_is_directory, id="config"),
+            pytest.param(_seed_target_is_directory, id="seed"),
+        ],
+    )
+    def test_init_cli_failure_json_payload(
+        self,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        arrange: Callable[[Path, pytest.MonkeyPatch], tuple[str, list[str], list[dict[str, str | None]]]],
+    ) -> None:
+        """Exit 1 with ok false and the case's error_code, errors and remediations, and no failure_mode key."""
+        root = tmp_path / "repo"
+        root.mkdir()
+        error_code, errors, remediations = arrange(root, monkeypatch)
+
+        result = cli_runner.invoke(app, ["-p", str(root), "init", "--format", "json"])
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["ok"] is False
+        assert (payload["error_code"], payload["errors"], payload["remediations"]) == (error_code, errors, remediations)
+        assert "failure_mode" not in payload
+        if error_code == "BOOTSTRAP_PATH_INVALID":
+            assert payload["bootstrap_outcome"] is None
+
+    def test_init_cli_config_failure_prints_completed_steps_then_panel(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Print the bootstrap line, the config error and the failure heading, and no next-step hint."""
+        init_git_repository(tmp_path)
+        message = "Config path is a directory."
+
+        def _path_invalid(*_args: object, **_kwargs: object) -> None:
+            raise ConfigError(ErrorCode.CONFIG_PATH_INVALID, message)
+
+        monkeypatch.setattr("dovo.core.bootstrap.services.initialize.generate_default_config", _path_invalid)
+
+        result = cli_runner.invoke(app, ["-p", str(tmp_path), "init"])
+
+        assert result.exit_code == 1
+        assert "Initialized Dovo at" in result.stdout
+        assert message in result.stdout
+        assert "Initialization Failed!" in result.stdout
+        assert "Next:" not in result.stdout

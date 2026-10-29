@@ -128,17 +128,13 @@ class CatalogResolution:
     matches: tuple[CatalogRecord, ...]
 
 
-class SeedResult(BaseResult):
-    """Outcome of seeding packaged catalog blueprint templates."""
+@dataclass(frozen=True, slots=True)
+class SeedSummary:
+    """The packaged catalog template files seeding created, skipped as already present, or overwritten."""
 
-    created_files: list[Path] = Field(default_factory=list)
-    skipped_existing_files: list[Path] = Field(default_factory=list)
-    overwritten_files: list[Path] = Field(default_factory=list)
-
-    @property
-    def ok(self) -> bool:
-        """True when seeding completed without blocking errors."""
-        return not self.errors
+    created_files: tuple[Path, ...]
+    skipped_existing_files: tuple[Path, ...]
+    overwritten_files: tuple[Path, ...]
 
 
 class YamlParseOutcome(BaseModel):

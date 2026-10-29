@@ -12,7 +12,7 @@ from dovo.cli.ui.formatters.common import (
 )
 from dovo.cli.ui.formatters.init.init_view import WorkspaceInitView
 from dovo.common.formatters import format_remediations
-from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
+from dovo.core.bootstrap.models import BootstrapOutcome
 
 
 def render_string_bullets(items: list[str], label: str) -> list[RenderableType]:
@@ -94,48 +94,12 @@ def render_seed_lines(view: WorkspaceInitView) -> list[RenderableType]:
 
     if view.skipped_seed_files:
         renderables.extend(render_string_bullets(view.skipped_seed_files, "Skipped existing"))
-
-    if view.errors and view.failure_mode is None:
-        lines = "\n".join(f"- {error}" for error in view.errors)
-        renderables.append(
-            Panel.fit(
-                f"[bold red]Starter blueprint seeding failed:[/bold red]\n{lines}",
-                border_style="red",
-            )
-        )
     return renderables
 
 
-def render_preflight_failure(view: WorkspaceInitView) -> Panel:
-    """Render panel when initialization preflight checks fail."""
+def render_failure_panel(view: WorkspaceInitView) -> Panel:
+    """Render the one initialization failure panel: the view's errors, then its remediations."""
     lines = render_list_errors(view.errors, separator="\n")
     if remediations_message := format_remediations(view.remediations):
         lines = f"{lines}\n{remediations_message}"
     return Panel.fit(f"[bold red]Initialization Failed![/bold red]\n{lines}", border_style=ERROR_PANEL_STYLE)
-
-
-def render_bootstrap_failure(view: WorkspaceInitView) -> Panel:
-    """Render panel when bootstrap step fails."""
-    lines = "\n".join(f"  {error}" for error in view.errors)
-    if remediations_message := format_remediations(view.remediations):
-        lines = f"{lines}\n{remediations_message}"
-    return Panel.fit(f"[bold red]Failed to initialize Dovo:[/bold red]\n{lines}", border_style=ERROR_PANEL_STYLE)
-
-
-def render_config_failure(view: WorkspaceInitView) -> Panel:
-    """Render panel when configuration generation fails."""
-    lines = "\n".join(f"- {error}" for error in view.errors)
-    if remediations_message := format_remediations(view.remediations):
-        lines = f"{lines}\n{remediations_message}"
-    return Panel.fit(f"[bold red]Failed to generate config:[/bold red]\n{lines}", border_style=ERROR_PANEL_STYLE)
-
-
-def render_failure_panel(view: WorkspaceInitView) -> Panel | None:
-    """Render failure panels for preflight, bootstrap, or configuration generation errors."""
-    if view.failure_mode == InitFailureMode.PREFLIGHT:
-        return render_preflight_failure(view)
-    if view.failure_mode in (InitFailureMode.BOOTSTRAP, InitFailureMode.INVALID_PROJECT_ID):
-        return render_bootstrap_failure(view)
-    if view.failure_mode == InitFailureMode.CONFIG_GENERATION:
-        return render_config_failure(view)
-    return None

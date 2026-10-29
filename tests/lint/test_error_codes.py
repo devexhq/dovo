@@ -12,8 +12,10 @@ Not detected, and left to review: a code passed through a variable (`WorktreeErr
 pass-through of a wrapped failure), a code built from a string, a code that is neither a call's first argument nor its
 `error_code=` value (`error_code=ErrorCode.X if errors else None`), a code raised through a callee named otherwise,
 an `ErrorCode` imported under an alias (`from dovo.common.error_codes import ErrorCode as EC`), whether a `_FAILED`
-name uses the verb's base form (`WORKTREE_CREATION_FAILED` would pass the name check), and whether a listed sharer
-raises a shared code for that package's own failure.
+name uses the verb's base form (`WORKTREE_CREATION_FAILED` would pass the name check).
+
+`SHARED` may hold only the entries in `SHARED_ALLOWED`, the two on main, which #1244 removes; the table check reports
+any other.
 """
 
 from __future__ import annotations
@@ -40,6 +42,8 @@ OWNERS: Final[dict[str, frozenset[str]]] = {
     "AGENT": frozenset({"core/agents"}),
     "WORKTREE": frozenset({"core/worktree"}),
     "CATALOG": frozenset({"core/catalog"}),
+    "CONFIG": frozenset({"core/config"}),
+    "BOOTSTRAP": frozenset({"core/bootstrap"}),
     "PROJECT": frozenset({"core/project"}),
     "SESSION": frozenset({"engine"}),
     "BLUEPRINT": frozenset({"engine"}),
@@ -47,6 +51,11 @@ OWNERS: Final[dict[str, frozenset[str]]] = {
 }
 
 SHARED: Final[dict[str, frozenset[str]]] = {
+    "GIT_FAILED": frozenset({"core/agents", "core/worktree"}),
+    "GIT_TIMEOUT": frozenset({"core/agents"}),
+}
+
+SHARED_ALLOWED: Final[dict[str, frozenset[str]]] = {
     "GIT_FAILED": frozenset({"core/agents", "core/worktree"}),
     "GIT_TIMEOUT": frozenset({"core/agents"}),
 }
@@ -73,6 +82,7 @@ STATES: Final[tuple[str, ...]] = (
     "DIRTY",
     "DISALLOWED",
     "UNSAFE",
+    "UNWRITABLE",
 )
 
 _FOREIGN_RAISE_FIXTURE: Final[str] = """
@@ -174,6 +184,16 @@ def _raise_violations(modules: dict[str, str]) -> list[str]:
     return sorted(violations)
 
 
+def _new_shared_entries(shared: dict[str, frozenset[str]]) -> list[str]:
+    """Return '<NAME>: <package>' for each (name, package) pair in shared that SHARED_ALLOWED does not hold."""
+    return [
+        f"{name}: {package}"
+        for name, packages in shared.items()
+        for package in sorted(packages)
+        if package not in SHARED_ALLOWED.get(name, frozenset())
+    ]
+
+
 def _referenced(modules: dict[str, str]) -> set[str]:
     """Return every X written as `ErrorCode.X` in modules."""
     return {
@@ -240,7 +260,7 @@ class ErrorCodeRaiserTests:
         violations = _raise_violations(_src_modules())
 
         assert violations == [], (
-            f"raise a code under the package's own prefix, pass the wrapped code through, or list the sharer. See {ENTRY}"
+            f"raise a code under the package's own prefix, or pass the wrapped code through. See {ENTRY}"
         )
 
     @pytest.mark.parametrize(
@@ -293,3 +313,31 @@ class ErrorCodeTableTests:
         ]
 
         assert dead == [], f"delete the SHARED entry no package raises. See {ENTRY}"
+
+    def test_shared_lists_no_entry_beyond_the_two_on_main(self) -> None:
+        """Report no SHARED entry that SHARED_ALLOWED does not hold."""
+        assert _new_shared_entries(SHARED) == [], (
+            f"raise a code under the package's own prefix instead of sharing another package's code. See {ENTRY}"
+        )
+
+    @pytest.mark.parametrize(
+        ("shared", "expected"),
+        [
+            pytest.param(
+                {**SHARED_ALLOWED, "PATCH_APPLY_FAILED": frozenset({"core/agents"})},
+                ["PATCH_APPLY_FAILED: core/agents"],
+                id="new-code",
+            ),
+            pytest.param(
+                {**SHARED_ALLOWED, "GIT_FAILED": frozenset({"core/agents", "core/catalog", "core/worktree"})},
+                ["GIT_FAILED: core/catalog"],
+                id="new-sharer",
+            ),
+            pytest.param(SHARED_ALLOWED, [], id="on-main"),
+        ],
+    )
+    def test_rule_flags_shared_entries_beyond_the_two_on_main(
+        self, shared: dict[str, frozenset[str]], expected: list[str]
+    ) -> None:
+        """Return expected from _new_shared_entries for shared."""
+        assert _new_shared_entries(shared) == expected

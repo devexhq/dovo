@@ -133,7 +133,9 @@ SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
     HistoryListResult: lambda: HistoryListResult(diagnostics=[RECORD]),
     HistoryShowResult: lambda: HistoryShowResult(status=HistoryShowStatus.NOT_FOUND, diagnostics=[RECORD]),
     LogsShowResult: lambda: LogsShowResult(status=LogsShowStatus.SESSION_NOT_FOUND, diagnostics=[RECORD]),
-    WorkspaceInitResult: lambda: WorkspaceInitResult(diagnostics=[RECORD]),
+    WorkspaceInitResult: lambda: WorkspaceInitResult(
+        error_code="INTERNAL_ERROR", errors=["boom"], diagnostics=[RECORD]
+    ),
     WorktreePruneResult: lambda: WorktreePruneResult(diagnostics=[RECORD]),
     WorktreeShowResult: lambda: WorktreeShowResult(error_code="WORKTREE_NOT_FOUND", diagnostics=[RECORD]),
     WorktreeListResult: lambda: WorktreeListResult(diagnostics=[RECORD]),
