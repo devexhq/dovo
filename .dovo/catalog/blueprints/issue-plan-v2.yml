@@ -132,7 +132,8 @@ steps:
       artifact: issue-ready
 
   # A command step: the writes to GitHub run exactly as approved, with the
-  # host's gh credentials.
+  # host's gh credentials. The comment records the description's body_sha
+  # after the edits, so issue-code-v2 skips its ready check while it is unchanged.
   - id: apply
     name: Apply the edits, label the issue and comment
     run: |
@@ -149,7 +150,7 @@ steps:
       fi
       gh label create dovo:ready --color 0e8a16 --description "Re-grounded against main and ready to plan" --force
       gh issue edit ${{ inputs.issue }} --add-label dovo:ready
-      gh issue comment ${{ inputs.issue }} --body-file .agentic/issue-ready-comment.md
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py ready-comment --issue ${{ inputs.issue }} --comment .agentic/issue-ready-comment.md
     timeout_seconds: 300
 
   # --- feature-dev's planning half, on the sdlc v2 issue-plan prompts. feature-dev's
