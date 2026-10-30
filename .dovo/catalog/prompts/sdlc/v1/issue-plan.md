@@ -1,25 +1,10 @@
----
-name: issue-plan
-description: >-
-  Experimental slice-flow copy of dovo-plan, used only by the issue-plan and
-  issue-code blueprints or when asked for by name; use dovo-plan otherwise.
-  Plan a Dovo CLI issue or epic before any code is written, just in time: on
-  an issue, ground it, size it and split it into slices of one PR each, with
-  the feature contract on an epic and no phases; on one slice, when its turn
-  comes, ground it again and split it into ordered phases. Writes the plan to
-  .agentic/plan.md and its contract, slices and open questions to
-  .agentic/plan.json. Invoked as /issue-plan [<issue-number>] to slice an
-  issue, or /issue-plan --slice <id> to phase one slice of the downloaded plan.
-disable-model-invocation: true
----
-
 Forked from `dovo-plan` at `de256118`. This copy is temporary: once the slice flow works, it replaces `dovo-plan`.
 
 # issue-plan
 
 Produce a plan precise enough that a different agent holding only the issue and the plan, with no memory of this session, could implement each phase correctly, and a reviewer could check each phase's diff against it. Do not write or modify implementation code; the plan is the entire deliverable.
 
-[docs/agents/planning.md](../../../docs/agents/planning.md) is the authority for plan content: its steps, artifact checklist, phasing rules, code sample rules and template are not repeated here.
+[docs/agents/planning.md](../../../../../docs/agents/planning.md) is the authority for plan content: its steps, artifact checklist, phasing rules, code sample rules and template are not repeated here.
 
 Plan when the issue adds or changes a command, DTO/`*Result` model, status enum, domain exception, service, entrypoint method, formatter, config key, schema field, or `core/db/` table. Skip only for a single-file change with no new surface.
 
@@ -81,7 +66,7 @@ A stale plan or review must never be read as current.
 
 ## 1b. Load the slice (slice mode)
 
-Never reset `.agentic/` in slice mode: the epic plan, `.agentic/epic-plan.md` and `.agentic/epic-plan.json` (the `issue-code` blueprint copies them from the downloaded plan, recording on the slice the child issue its `next` step picked or created), is this mode's input. If either is missing, stop and say so; run by hand, copy the downloaded `.agentic/plan.md` and `.agentic/plan.json` to them first, setting the slice's `child` to its child issue and its `stub` to `null` when the work plan records a child the downloaded plan does not. Never edit the epic plan. Start every run from it, so a retry never builds on its own partial output, and delete the files an earlier planning round in this workspace could leave behind, so none is read as current:
+Never reset `.agentic/` in slice mode: the epic plan, `.agentic/epic-plan.md` and `.agentic/epic-plan.json`, is this mode's input. The `issue-code` blueprint copies both from the downloaded plan and records on the slice the child issue its `next` step picked or created. If either is missing, stop and say so. When run by hand, copy the downloaded `.agentic/plan.md` and `.agentic/plan.json` to them first, setting the slice's `child` to its child issue and its `stub` to `null` when the work plan records a child the downloaded plan does not. Never edit the epic plan. Start every run from it, so a retry never builds on its own partial output, and delete the files an earlier planning round in this workspace could leave behind, so none is read as current:
 
 ```bash
 cp .agentic/epic-plan.md .agentic/plan.md && cp .agentic/epic-plan.json .agentic/plan.json
@@ -99,11 +84,11 @@ The downloaded plan may come from an earlier slice's code session, since `land` 
 
 ## 2. Ground
 
-Follow planning.md Steps 1-2: read the issue's contract (or the user's request, absent an issue number; in slice mode, the child issue and the epic's binding contract from Step 1b), read [AGENTS.md](../../../AGENTS.md) for the rules and exemplars, and ground every touched surface in the current default branch with `file:line` citations. Read the callers of everything the change touches: changed behaviour for existing users, existing bugs on the path, and the compatibility of persisted formats are the findings a reviewer most needs and the issue never states.
+Follow planning.md Steps 1-2: read the issue's contract (or the user's request, absent an issue number; in slice mode, the child issue and the epic's binding contract from Step 1b), read [AGENTS.md](../../../../../AGENTS.md) for the rules and exemplars, and ground every touched surface in the current default branch with `file:line` citations. Read the callers of everything the change touches: changed behaviour for existing users, existing bugs on the path, and the compatibility of persisted formats are the findings a reviewer most needs and the issue never states.
 
 ## 2a. Write the feature contract (epic, issue mode only)
 
-Skip this on a plain issue and in slice mode, which never changes the contract. On an epic, write the contract before any phase or slice, following [contract-template.md](contract-template.md): its sections in order, the rules every section follows, its section guidance, and "Mapping existing issues", which gives every sub-issue and related open issue a role (epic, child, split, superseded container, prerequisite or sibling epic) before any slice is written.
+Skip this on a plain issue and in slice mode, which never changes the contract. On an epic, write the contract before any phase or slice, following [contract-template.md](templates/contract-template.md): its sections in order, the rules every section follows, its section guidance, and "Mapping existing issues", which gives every sub-issue and related open issue a role (epic, child, split, superseded container, prerequisite or sibling epic) before any slice is written.
 
 Keep the contract as short as the surface spread allows. Problem, Target contract and Shared-surface ownership are required, alongside the slices. Every other section is written only when it has something to say, and left out otherwise, never filled with "none". Cite rules already in `docs/agents/architecture/` instead of re-deciding them. When written, the code inventory comes from commands run at the grounding sha, never estimates. Each open question carries a recommended answer and the slices it blocks.
 
@@ -124,7 +109,7 @@ On a plain issue, the whole issue is one slice, `S1`, whose `child` is the issue
 - **Slice 1 is the pilot**, unless another slice's conventions are reused by more slices; then that slice is the pilot. Its "as landed" report updates the conventions and decision log before later slices are written in full.
 - **The last slice is the closing docs slice.** It reviews every doc the feature touched against `main` and carries `Fixes #<epic>`.
 - **Place the checkpoints** when the epic has three or more slices: after the pilot, after slices that share an owned surface, and a baseline before the closing docs slice.
-- **Map each slice to a child issue.** An existing work issue the contract maps to the slice is its `child`. Otherwise `child` is `null` and the slice carries a `stub`: the markdown body of its child issue. `workplan.py next` creates the child from it as written, and ready mode then checks it as a full issue that the planner reads alone, so write it in the issue template of `.agents/skills/dovo-issue/SKILL.md` (**Issue Structure**, **Split** and **Core Principles**), its sections in that order:
+- **Map each slice to a child issue.** An existing work issue the contract maps to the slice is its `child`. Otherwise `child` is `null` and the slice carries a `stub`: the markdown body of its child issue. `workplan.py next` creates the child from it as written, and ready mode then checks it as a full issue that the planner reads alone, so write it in the issue template of `.dovo/catalog/prompts/sdlc/v1/issue-ready.md` (**Issue Structure**, **Split** and **Core Principles**), its sections in that order:
   - One opening line naming the slice and the epic, `Slice <id> of #<epic>.`, then `## Goal / User Story`.
   - `## Scope`, with `### In scope`; `### Owned elsewhere`, from the ownership table, one bullet per item, each in the form `#n owns <X>` and no other (a slice whose child issue does not exist yet is owned through the epic: `#<epic> owns <X> (slice S3)`); and `### Shared surfaces changed`, naming each type, field or file the slice reshapes and, for a persisted format such as a JSON file another script reads, what happens to data written before the change.
   - `## Functional requirements` and `## Non-functional requirements`, numbered `FR-<n>` and `NFR-<n>`, with "unchanged" stated only as an NFR or guard naming the contract, never "keep X as today" for incidental wording.
@@ -190,7 +175,7 @@ Write `.agentic/plan.json` alongside the markdown. `.dovo/catalog/blueprints/fea
 - `issue` is the issue number, or `null` when planning from a plain-language request. `grounded_at` is the short sha from the plan's "Grounded against" line. `phases` is the number of rows in the Phases table.
 - `open_questions` lists every numbered Open Question in order, each with the `OQ-<n>` id from `plan.md`. `summary` is the one-line question followed by ` (assumed: <short answer>)`, since it is the only text the blueprint's pick-list shows for the question; `assumed` is the full answer the plan is written against, `why` the reason with its `path:line`, `alternatives` the rejected answers (`[]` when none), and `phases` the phase numbers whose plan changes if the answer changes.
 - `open_questions` is `[]` when the plan says "None." On an epic, each item may add `"blocks": ["S3"]`, the slices it blocks.
-- `contract` is `null` on a plain issue. On an epic it is exactly the `contract` object in [contract-template.md](contract-template.md) under "`plan.json` shape", agreeing with the plan's `## Feature contract`. A section left out of the markdown keeps its key, as `[]` (or `null` for `inventory`).
+- `contract` is `null` on a plain issue. On an epic it is exactly the `contract` object in [contract-template.md](templates/contract-template.md) under "`plan.json` shape", agreeing with the plan's `## Feature contract`. A section left out of the markdown keeps its key, as `[]` (or `null` for `inventory`).
 - `slices` lists every slice in dependency order, one per row of the plan's `## Slices` table. `id` is `S<n>`, unless the issue's body already holds a hand-maintained `## Work plan` table (one without a `dovo:workplan` comment): then every row of that table keeps its id (such as `A1`) on the slice it becomes, since the work plan script adopts the table by id, carrying each row's child and status, and refuses a row no slice matches; `phases` the phase numbers it lands; `depends_on` slice ids; `blocked_by` prerequisite issue numbers outside the epic; `child` the child issue number, or `null` until it is created; `owns` the surfaces and aspects the slice owns in the ownership table; `lint_gates` the `tests/lint/` checks it lands; `estimate` the `src_docs` and `tests` changed-line estimates with their `basis`; `size` the slice's review size, `s`, `m` or `l` (Step 3a), which the work plan stores so `workplan.py next` can label the child; `stub` the child issue's markdown body when `child` is `null`, otherwise `null`.
 - On an epic, exactly one slice has `pilot: true` and only the last has `closing_docs: true`. A plain issue's one slice has both `false`, `child` equal to `issue`, `size` matching the issue's `dovo-size-*` label and `stub` `null`.
 - These fields only add to the shape above: `issue`, `plan`, `grounded_at`, `phases` and `open_questions` keep their meaning.
@@ -201,4 +186,4 @@ Write `.agentic/plan.json` alongside the markdown. `.dovo/catalog/blueprints/fea
 
 Run planning.md Step 5. Report the paths written, the Slices table (issue mode) or the Phases table (slice mode), a one-paragraph summary, every numbered Open Question restated in chat, and plainly that this was planning only: nothing was implemented, tested, committed or pushed.
 
-**A human reviews the plan before implementation.** Stop and wait. `/issue-plan-review` reviews it and `/dovo-plan-challenge` challenges its design, each in a fresh session, first, and `/dovo-plan-walkthrough` explains the result to the approver. An approved issue-mode plan becomes the issue's work plan; each `issue-code` run then phases its slice with `/issue-plan --slice <id>`, has that plan reviewed and approved the same way, and implements it with `/issue-code --slice <id> --phase <n>`, one phase per agent session, committing each phase, one slice per run, in order.
+**A human reviews the plan before implementation.** Stop and wait. First `/issue-plan-review` reviews it and `/dovo-plan-challenge` challenges its design, each in a fresh session; then `/dovo-plan-walkthrough` explains the result to the approver. An approved issue-mode plan becomes the issue's work plan; each `issue-code` run then phases its slice with `/issue-plan --slice <id>`, has that plan reviewed and approved the same way, and implements it with `/issue-code --slice <id> --phase <n>`, one phase per agent session, committing each phase, one slice per run, in order.
