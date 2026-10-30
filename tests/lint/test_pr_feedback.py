@@ -696,7 +696,7 @@ class PrFeedbackTests:
         ],
     )
     def test_main_reports_pr_not_open(
-        self, pr_view: object, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+        self, pr_view: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         def fake_run(*args: str) -> str:
             assert args[:3] == ("gh", "pr", "view"), f"ran {args}"
@@ -704,6 +704,7 @@ class PrFeedbackTests:
                 raise pr_view
             return str(pr_view)
 
+        monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
         monkeypatch.setattr(FEEDBACK, "run", fake_run)
 
