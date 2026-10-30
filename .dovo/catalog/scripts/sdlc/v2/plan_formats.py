@@ -13,7 +13,10 @@ that this one takes the place of: `{"id": "D-2", "session": "<session id>"}`.
 A prior decision is one entry of `decisions` in .agentic/prior-decisions.json,
 which `plan.py prior-decisions` writes from the issue's `dovo:decisions`
 comments. Its `status` is `given` when the issue's description is unchanged
-since the comment was posted, and `to_confirm` otherwise.
+since the comment was posted, and `to_confirm` otherwise. The document's
+`body_sha` is the description's as it was read, which `plan.py
+decisions-comment` later posts as the description the plan was written
+against.
 
 A requirement is one entry of `requirements` in .agentic/requirements.json,
 which `plan.py requirements` writes from an issue's description: a numbered
@@ -260,11 +263,12 @@ class PriorDecision:
         return {"id": self.id, "text": self.text, "slice": self.slice, "session": self.session, "status": self.status}
 
 
-def prior_decisions_json(issue: int, decisions: list[PriorDecision]) -> dict[str, object]:
-    """Return the prior-decisions.json document listing issue's prior decisions."""
+def prior_decisions_json(issue: int, body_sha: str, decisions: list[PriorDecision]) -> dict[str, object]:
+    """Return the prior-decisions.json document listing issue's prior decisions, read against body_sha."""
     return {
         "schema_version": PRIOR_SCHEMA_VERSION,
         "issue": issue,
+        "body_sha": body_sha,
         "decisions": [decision.to_json() for decision in decisions],
     }
 

@@ -452,12 +452,15 @@ steps:
       - { name: plan, path: .agentic/plan.md }
       - { name: plan-questions, path: .agentic/plan.json }
 
-  # Stops the run before the walkthrough when fold-answers left a question
-  # open or wrote a malformed decision; the message names which.
+  # Holds the run before the walkthrough when fold-answers left a question
+  # open, such as one ticked with no answer, or wrote a malformed decision;
+  # the message names which. A failed session cannot resume, so the person
+  # settles it in .agentic/plan.json and retries rather than losing the run.
   - id: check-questions
     name: Check that every open question is settled
     run: uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py check-questions --plan .agentic/plan.json --slice {{ steps.next.outputs.slice }}
     timeout_seconds: 120
+    on_failure: prompt_user
 
   # The plan cut into one file per phase, which is all each code-loop agent
   # reads. Written once every question is settled, so the files carry the final
@@ -538,13 +541,15 @@ steps:
       comment: { policy: optional, message: Instructions for the implementer }
 
   # Posted once the plan is approved, so the child issue records what was
-  # decided; a plan with no decisions posts nothing. Runs before claim, so a
-  # failed post leaves the slice pending.
+  # decided; a plan with no decisions posts nothing. The comment carries the
+  # description's body_sha that prior-decisions read before planning, so an
+  # edit made since then marks these decisions to confirm. Runs before claim,
+  # so a failed post leaves the slice pending.
   - id: decisions-comment
     name: Post the slice plan's decisions to the child issue
     run: >-
       uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py decisions-comment --plan .agentic/plan.json
-      --issue {{ steps.next.outputs.child }} --slice {{ steps.next.outputs.slice }} --session "$DOVO_SESSION_ID"
+      --prior .agentic/prior-decisions.json --issue {{ steps.next.outputs.child }} --slice {{ steps.next.outputs.slice }} --session "$DOVO_SESSION_ID"
     timeout_seconds: 120
 
   # Installed after refresh-base's checkout and before the first agent writes

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -28,8 +29,19 @@ def _load_script(name: str, module_name: str) -> ModuleType:
     return module
 
 
-_load_script("plan_formats", "plan_formats")
-PLAN = _load_script("plan", "sdlc_v2_plan")
+def _load_plan() -> ModuleType:
+    """Load plan.py as sdlc_v2_plan, with plan_formats under the bare name it imports only while it loads.
+
+    plan_formats stays registered as sdlc_v2_plan_formats, so another version's copy never collides with it.
+    """
+    sys.modules["plan_formats"] = _load_script("plan_formats", "sdlc_v2_plan_formats")
+    try:
+        return _load_script("plan", "sdlc_v2_plan")
+    finally:
+        del sys.modules["plan_formats"]
+
+
+PLAN = _load_plan()
 
 HUMAN = {
     "id": "D-3",
@@ -320,13 +332,17 @@ class FakeGh:
 
     It has `run`'s signature, so it replaces it at the subprocess boundary. `calls` records every call,
     with a posted comment's temporary file replaced by its text; `failing` names the calls that fail by
-    their third word (`view`, `comment` or `graphql`).
+    their third word (`view`, `comment` or `graphql`); `view`, when given, is what `gh issue view` prints
+    in place of the issue's JSON.
     """
 
-    def __init__(self, body: str, comments: list[object], failing: frozenset[str] = frozenset()) -> None:
+    def __init__(
+        self, body: str, comments: list[object], failing: frozenset[str] = frozenset(), view: str | None = None
+    ) -> None:
         self.body = body
         self.comments = comments
         self.failing = failing
+        self.view = view
         self.calls: list[tuple[str, ...]] = []
 
     def __call__(self, *args: str) -> str:
@@ -336,7 +352,7 @@ class FakeGh:
         if kind in self.failing:
             raise subprocess.CalledProcessError(1, list(args), stderr="HTTP 502\n")
         if kind == "view":
-            return json.dumps({"body": self.body, "comments": self.comments})
+            return self.view if self.view is not None else json.dumps({"body": self.body, "comments": self.comments})
         return ""
 
 
@@ -346,10 +362,16 @@ def _run(monkeypatch: pytest.MonkeyPatch, fake: FakeGh, *argv: str) -> int:
     return _main(monkeypatch, *argv)
 
 
-def _post(monkeypatch: pytest.MonkeyPatch, fake: FakeGh, session: str = SESSION) -> int:
-    """Run plan.py decisions-comment for slice S2 of issue 1300 against fake."""
-    argv = ["decisions-comment", "--plan", ".agentic/plan.json", "--issue", "1300", "--slice", SLICE]
+def _post(monkeypatch: pytest.MonkeyPatch, fake: FakeGh, session: str = SESSION, slice_id: str = SLICE) -> int:
+    """Run plan.py decisions-comment for slice_id of issue 1300 against fake."""
+    argv = ["decisions-comment", "--plan", ".agentic/plan.json", "--issue", "1300", "--slice", slice_id]
     return _run(monkeypatch, fake, *argv, "--session", session)
+
+
+def _write_prior(root: Path, sha: str = DESCRIPTION_SHA) -> None:
+    """Write the .agentic/prior-decisions.json prior-decisions leaves, recording the description's sha."""
+    prior = {"schema_version": 1, "issue": 1300, "body_sha": sha, "decisions": []}
+    (root / ".agentic" / "prior-decisions.json").write_text(json.dumps(prior), encoding="utf-8")
 
 
 class PlanBodyShaTests:
@@ -366,10 +388,21 @@ class PlanBodyShaTests:
             ),
             pytest.param(DESCRIPTION.replace("\n", "\r\n") + "\r\n\r\n", id="crlf-and-trailing-newlines"),
             pytest.param(DESCRIPTION.replace("#925.", "#925.   "), id="trailing-spaces"),
+            pytest.param(
+                DESCRIPTION + "\n## Work plan\n\n```markdown\n## Scope\n```\n", id="fenced-heading-in-work-plan"
+            ),
         ],
     )
     def test_body_sha_ignores_generated_sections_and_whitespace(self, body: str) -> None:
         assert PLAN.body_sha(body) == DESCRIPTION_SHA
+
+    def test_body_sha_keeps_a_fenced_generated_heading(self) -> None:
+        fenced = "```markdown\n## Work plan\n```"
+        written = DESCRIPTION.replace("sessions.  \n", "sessions.\n")
+
+        assert (
+            PLAN.body_sha(f"{DESCRIPTION}\n{fenced}\n") == hashlib.sha256(f"{written}\n{fenced}".encode()).hexdigest()
+        )
 
     def test_body_sha_changes_with_the_written_description(self) -> None:
         assert PLAN.body_sha(DESCRIPTION.replace("Only", "Just")) != DESCRIPTION_SHA
@@ -380,12 +413,56 @@ class PlanDecisionsCommentTests:
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         _write_plan(workspace, [], [HUMAN, ASSUMED, PLANNER, REPLACING])
+        _write_prior(workspace)
         fake = FakeGh(DESCRIPTION, [])
 
         assert _post(monkeypatch, fake) == 0
 
         assert fake.calls == [VIEW, ("gh", "issue", "comment", "1300", "--body-file", POSTED)]
         assert capsys.readouterr() == ("", "")
+
+    def test_decisions_comment_names_the_description_prior_decisions_read(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write_plan(workspace, [], [HUMAN, ASSUMED, PLANNER, REPLACING])
+        fake = FakeGh(DESCRIPTION, [])
+        assert _run(monkeypatch, fake, "prior-decisions", "--issue", "1300") == 0
+        fake.body = DESCRIPTION.replace("Only", "Just")
+
+        assert _post(monkeypatch, fake) == 0
+
+        assert fake.calls[-1] == ("gh", "issue", "comment", "1300", "--body-file", POSTED)
+        assert capsys.readouterr() == ("", "")
+
+    def test_decisions_comment_refuses_without_a_recorded_body_sha(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write_plan(workspace, [], [HUMAN])
+        _write_json(workspace / ".agentic/prior-decisions.json", {"schema_version": 1, "issue": 1300, "decisions": []})
+        fake = FakeGh(DESCRIPTION, [])
+
+        assert _post(monkeypatch, fake) == 1
+
+        assert fake.calls == []
+        assert capsys.readouterr() == (
+            "",
+            "plan.py: .agentic/prior-decisions.json has no body_sha; run prior-decisions before planning.\n",
+        )
+
+    def test_decisions_comment_refuses_a_slice_that_is_not_one_token(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write_plan(workspace, [], [HUMAN])
+        _write_prior(workspace)
+        fake = FakeGh(DESCRIPTION, [])
+
+        assert _post(monkeypatch, fake, slice_id="S 2") == 1
+
+        assert fake.calls == []
+        assert capsys.readouterr() == (
+            "",
+            "plan.py: Slice 'S 2' must be non-empty, without whitespace or parentheses.\n",
+        )
 
     def test_decisions_comment_posts_nothing_for_a_plan_without_decisions(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -402,6 +479,7 @@ class PlanDecisionsCommentTests:
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         _write_plan(workspace, [], [PLANNER, REPLACING])
+        _write_prior(workspace)
         kept = "- **D-2** Keep the table. *Planner, approved with the plan.*"
         fake = FakeGh(
             DESCRIPTION,
@@ -423,6 +501,7 @@ class PlanDecisionsCommentTests:
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         _write_plan(workspace, [], [REPLACING])
+        _write_prior(workspace)
         comments: list[object] = [_comment("IC_replaced", "blueprint_plan01", STALE_SHA, REPLACED_BULLET)]
         fake = FakeGh(DESCRIPTION, comments, frozenset({"graphql"}))
 
@@ -438,6 +517,7 @@ class PlanDecisionsCommentTests:
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         _write_plan(workspace, [], [REPLACING])
+        _write_prior(workspace)
         comments: list[object] = [_comment("IC_replaced", "blueprint_plan01", STALE_SHA, REPLACED_BULLET)]
         fake = FakeGh(DESCRIPTION, comments, frozenset({"comment"}))
 
@@ -519,6 +599,7 @@ class PlanPriorDecisionsTests:
         assert json.loads((workspace / ".agentic" / "prior.json").read_text(encoding="utf-8")) == {
             "schema_version": 1,
             "issue": 1300,
+            "body_sha": DESCRIPTION_SHA,
             "decisions": [
                 {
                     "id": "D-1",
@@ -553,7 +634,57 @@ class PlanPriorDecisionsTests:
         assert _run(monkeypatch, fake, "prior-decisions", "--issue", "1300") == 0
 
         written = json.loads((workspace / ".agentic" / "prior-decisions.json").read_text(encoding="utf-8"))
-        assert written == {"schema_version": 1, "issue": 1300, "decisions": []}
+        assert written == {"schema_version": 1, "issue": 1300, "body_sha": DESCRIPTION_SHA, "decisions": []}
+
+    def test_prior_decisions_keeps_out_what_a_hidden_comment_replaced(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        kept = "- **D-2** Keep the table. *Planner, approved with the plan.*"
+        middle = "- **D-1** Show them. *Answered: show them.* Replaces D-1 (session blueprint_plan00)."
+        latest = "- **D-1** Hide them. *Answered: hide them.* Replaces D-1 (session blueprint_plan01)."
+        fake = FakeGh(
+            DESCRIPTION,
+            [
+                _comment("IC_first", "blueprint_plan00", DESCRIPTION_SHA, REPLACED_BULLET, kept),
+                _comment("IC_middle", "blueprint_plan01", DESCRIPTION_SHA, middle, minimized=True),
+                _comment("IC_latest", "blueprint_code02", DESCRIPTION_SHA, latest),
+            ],
+        )
+
+        assert _run(monkeypatch, fake, "prior-decisions", "--issue", "1300") == 0
+
+        written = _written(workspace, "prior-decisions.json")["decisions"]
+        assert isinstance(written, list)
+        assert [(entry["id"], entry["session"]) for entry in written] == [
+            ("D-2", "blueprint_plan00"),
+            ("D-1", "blueprint_code02"),
+        ]
+
+    @pytest.mark.parametrize(
+        ("printed", "message"),
+        [
+            pytest.param("not json", "printed no JSON: Expecting value: line 1 column 1 (char 0).", id="not-json"),
+            pytest.param("[]", "printed no JSON object.", id="not-an-object"),
+        ],
+    )
+    @pytest.mark.parametrize(("command", "fields"), [("prior-decisions", "body,comments"), ("requirements", "body")])
+    def test_prior_decisions_and_requirements_refuse_when_gh_prints_no_json_object(
+        self,
+        command: str,
+        fields: str,
+        printed: str,
+        message: str,
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        fake = FakeGh(DESCRIPTION, [], view=printed)
+
+        assert _run(monkeypatch, fake, command, "--issue", "1300", "--out", ".agentic/out.json") == 1
+
+        assert fake.calls == [("gh", "issue", "view", "1300", "--json", fields)]
+        assert capsys.readouterr() == ("", f"plan.py: gh issue view 1300 {message}\n")
+        assert not (workspace / ".agentic" / "out.json").exists()
 
     def test_prior_decisions_refuses_when_gh_fails(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -725,7 +856,6 @@ class PlanRequirementsTests:
         [
             pytest.param(SHORT_BODY.replace("- **O-1**", "- **O-2**"), "O-2", id="outcome"),
             pytest.param(LEGACY_BODY.replace("### NFR-1", "### FR-2"), "FR-2", id="functional"),
-            pytest.param(LEGACY_BODY.replace("2. A locked", "1. A locked"), "EC-1", id="error-case"),
         ],
     )
     def test_requirements_refuses_an_id_numbered_twice(
@@ -742,6 +872,18 @@ class PlanRequirementsTests:
 
         assert capsys.readouterr() == ("", f"plan.py: Issue 1300 numbers {ident} twice; give each item its own id.\n")
         assert not (workspace / ".agentic" / "requirements.json").exists()
+
+    def test_requirements_numbers_error_cases_by_position(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = FakeGh(LEGACY_BODY.replace("2. A locked", "1. A locked"), [])
+
+        assert _requirements(monkeypatch, fake) == 0
+
+        written = _written(workspace)["requirements"]
+        assert isinstance(written, list)
+        assert [entry["id"] for entry in written if entry["kind"] == "error_case"] == ["EC-1", "EC-2"]
+        assert written[-1]["text"] == "A locked database → `LockTimeoutError` propagates."
 
     @pytest.mark.parametrize(
         ("body", "issue_format"),
