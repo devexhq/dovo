@@ -22,7 +22,7 @@ Detail is written just in time: a slice's phases are planned when its `issue-cod
 - **A slice is one PR.** A phase stays what planning.md says: a reviewable chunk inside a slice. Where planning.md says the phases land in one PR, read "the phases of one slice land in one PR".
 - **An epic** is an issue whose body holds, or will hold, `## Feature contract` and `## Work plan`. Epics never nest: an epic is never a slice of another epic.
 - **A plain issue** is any other issue. It gets a one-slice plan with `contract: null`, and its one slice's child is the issue itself. Once slice mode phases it, that plan behaves like a `dovo-plan` plan.
-- **Each slice is tracked by a child issue**, a native sub-issue of the epic. A child that does not exist yet is created just in time from the slice's `stub`, labelled with the slice's `size`, when the slice comes up, not by this skill.
+- **Each slice is tracked by a child issue**, a native sub-issue of the epic. A child that does not exist yet is created just in time from the slice's `stub`, labelled with the slice's `size`, when the slice comes up, not by this prompt.
 - **Closing keywords:** every slice PR ends with `Fixes #<child>` then `Refs #<epic>`; the closing docs slice ends with `Fixes #<child>` then `Fixes #<epic>`; a one-slice plan on a plain issue uses only `Fixes #<issue>`.
 
 ## Hard boundaries
@@ -186,4 +186,4 @@ Write `.agentic/plan.json` alongside the markdown. `.dovo/catalog/blueprints/fea
 
 Run planning.md Step 5. Report the paths written, the Slices table (issue mode) or the Phases table (slice mode), a one-paragraph summary, every numbered Open Question restated in chat, and plainly that this was planning only: nothing was implemented, tested, committed or pushed.
 
-**A human reviews the plan before implementation.** Stop and wait. First `/issue-plan-review` reviews it and `/dovo-plan-challenge` challenges its design, each in a fresh session; then `/dovo-plan-walkthrough` explains the result to the approver. An approved issue-mode plan becomes the issue's work plan; each `issue-code` run then phases its slice with `/issue-plan --slice <id>`, has that plan reviewed and approved the same way, and implements it with `/issue-code --slice <id> --phase <n>`, one phase per agent session, committing each phase, one slice per run, in order.
+**A human reviews the plan before implementation.** Stop and wait. First `issue-plan-review` reviews it and `plan-challenge` challenges its design, each in a fresh session; then `plan-walkthrough` explains the result to the approver. An approved issue-mode plan becomes the issue's work plan; each `issue-code` run then phases its slice with `/issue-plan --slice <id>`, has that plan reviewed and approved the same way, and implements it with `/issue-code --slice <id> --phase <n>`, one phase per agent session, committing each phase, one slice per run, in order.

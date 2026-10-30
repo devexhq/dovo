@@ -87,7 +87,7 @@ Skip this for a slice plan, and when `plan.json` `contract` is `null`, and say s
 - **No ownerless deferral:** every `non_goals` item of kind `deferred` or `owned` has `owners`, and no `stub` defers work without naming the slice or issue that does it (#1227).
 - **Full-shape stubs:** `workplan.py next` creates each child from its `stub` as written, and ready mode checks the child as a full issue the planner reads alone, so check every non-null `stub` against the stub shape in `.dovo/catalog/prompts/sdlc/v1/issue-plan.md` Step 3a. That shape follows **Issue Structure**, **Split** and **Core Principles** in `.dovo/catalog/prompts/sdlc/v1/issue-ready.md`. Report each miss as a Blocking finding citing the slice (`slices[0].stub`): a section the slice needs missing, or out of order (Goal / User Story; Scope with In scope, Owned elsewhere and, when the slice reshapes a type, field or file, Shared surfaces changed with what happens to data written before the change; numbered FRs and NFRs; Pre-determined data for every literal contract; Error cases for every failure path; Definition of done; Notes for the planner last); an Owned elsewhere bullet not in the `#n owns <X>` form; a literal contract cited from another issue ("#1258's Pre-determined data") instead of copied into the stub's own Pre-determined data; an issue link outside Owned elsewhere other than the opening `Slice <id> of #<epic>.` line and citations of the epic's contract by section heading or decision ID; or a Definition of done item that restates an FR or NFR.
 - **Decisions confirmed:** no `decisions` item with `settled_by.kind` `inherited` lacks `confirmed`, and every open question that blocks a slice carries a recommended answer.
-- **Plan-challenge:** each `/dovo-plan-challenge` finding is resolved in the plan, recorded in `contract.decisions`, or, when routed `ask`, carried as an Open Question with a recommended answer until the human settles it and it moves into `contract.decisions`. Before the challenge has run, list this under **For the human** instead of as a finding.
+- **Plan-challenge:** each `plan-challenge` finding is resolved in the plan, recorded in `contract.decisions`, or, when routed `ask`, carried as an Open Question with a recommended answer until the human settles it and it moves into `contract.decisions`. Before the challenge has run, list this under **For the human** instead of as a finding.
 
 ## 6b. Check the slice against the epic (slice plan)
 
@@ -166,11 +166,11 @@ Write `.agentic/plan-review.json` alongside the markdown, overwriting any earlie
 }
 ```
 
-- `verdict` is exactly `APPROVE` or `CHANGES_REQUIRED`, and is `APPROVE` iff `counts.blocking` is `0`. `round` counts this skill's runs on the plan, from 1.
+- `verdict` is exactly `APPROVE` or `CHANGES_REQUIRED`, and is `APPROVE` iff `counts.blocking` is `0`. `round` counts this prompt's runs on the plan, from 1.
 - `provenance` is `fresh_session` or `same_session`. `grounded_at` and `grounded_is_ancestor` come from the **Plan** line.
 - `findings` lists every finding, Blocking first, then Warnings, then Suggestions, each with the `id` from its `plan-review.md` row. `severity` is `BLOCKER`, `WARNING` or `SUGGESTION`. `section`, `evidence` and `fix` copy the row's columns; `summary` is the row's Issue in one line. `rule` is an R-id when the finding is a rule violation, otherwise `null`.
 - `coverage` lists the IDs from the **Coverage** section (`"<command>: <case>"` strings for R13 gaps), `[]` for "none". `for_human` copies the **For the human** bullets, `[]` for "none".
 
 ## 9. Hand off
 
-Report the report path and the verdict. On `CHANGES REQUIRED`, the plan's author applies the findings and this skill runs once more in a fresh session. **Cap at 2 rounds**; after that, the human decides on whatever is still open. Do not start `/issue-code`: a human approves the plan first.
+Report the report path and the verdict. On `CHANGES REQUIRED`, the plan's author applies the findings and this prompt runs once more in a fresh session. **Cap at 2 rounds**; after that, the human decides on whatever is still open. Do not start `/issue-code`: a human approves the plan first.

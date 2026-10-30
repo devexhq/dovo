@@ -1,6 +1,6 @@
-# dovo-plan-challenge
+# plan-challenge
 
-Challenge a plan written by `/dovo-plan`. `/dovo-plan-review` checks that the plan does what its issue says without breaking a rule; this skill asks whether the plan, and the issue behind it, are the right design. Do not repeat the review: grounding, coverage, R13 matrices and rule-by-rule checks are its job.
+Challenge a plan written by `issue-plan`. `issue-plan-review` checks that the plan does what its issue says without breaking a rule; this prompt asks whether the plan, and the issue behind it, are the right design. Do not repeat the review: grounding, coverage, R13 matrices and rule-by-rule checks are its job.
 
 Output goes to `.agentic/plan-challenge.md`, paired with `.agentic/plan-challenge.json`. The blueprint folds challenges routed `fold` into the plan and asks a human about those routed `ask`, so every challenge you write costs either a plan change or a human decision. "No challenges" is a normal result for a plan whose design holds.
 

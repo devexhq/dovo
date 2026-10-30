@@ -155,7 +155,7 @@ The contract scales with how far the shared surfaces spread. An epic whose slice
 "open_questions": [ … existing field; each item gains an optional "blocks": ["S3"] … ]
 ```
 
-`slices[]` (its full shape is in `SKILL.md` Step 5) carries:
+`slices[]` (its full shape is in `issue-plan.md` Step 5) carries:
 - `child`: the issue number, or null until it's created
 - `blocked_by`: prerequisite issue numbers, alongside `depends_on` for slice ids
 - `owns`: the surfaces and aspects the slice owns
