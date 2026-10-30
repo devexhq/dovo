@@ -456,7 +456,7 @@ steps:
   # open or wrote a malformed decision; the message names which.
   - id: check-questions
     name: Check that every open question is settled
-    run: uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py check-questions --plan .agentic/plan.json
+    run: uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py check-questions --plan .agentic/plan.json --slice {{ steps.next.outputs.slice }}
     timeout_seconds: 120
 
   # The plan cut into one file per phase, which is all each code-loop agent

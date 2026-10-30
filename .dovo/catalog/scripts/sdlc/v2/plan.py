@@ -4,19 +4,24 @@
 `check-questions` runs after `fold-answers`, which settles every open question
 as a decision. It refuses a plan whose `open_questions` is not `[]`, or whose
 `decisions` holds an entry that is not a well-formed decision (the shape is
-`Decision` in plan_formats.py) or reuses another's id. A plan that passes
-prints nothing and exits 0.
+`Decision` in plan_formats.py) or reuses another's id. Given `--slice`, it
+also refuses a decision whose `phases` name a phase the slice does not have.
+A plan that passes prints nothing and exits 0.
 
 `check-breakdown` runs after `breakdown`, which writes one phase file per
 phase of the slice to .agentic/phases/ (the shape is `Phase` in
 plan_formats.py). It refuses, naming every problem it finds: a file that is
 not a well-formed phase, or not `phase-<n>.json` for phase n of the slice; a
 phase of the slice (plan.json `slices[].phases`) with no file, or a file for
-no phase of it; a quoted requirement requirements.json does not list, or whose
-text differs from it; a requirement of requirements.json no action cites; and
-a phase missing a plan.json decision whose `phases` include it, or listing one
-whose `phases` do not. A breakdown that passes prints nothing, exits 0 and
-has .agentic/phases/index.json written from it.
+no phase of it; a phase that depends on a phase that is not an earlier one of
+the slice; a quoted requirement requirements.json does not list, or whose text
+differs from it; a requirement of requirements.json no action cites; a phase
+missing a plan.json decision whose `phases` include it, or that names no phase
+and so applies to every phase, or listing one that applies to neither; and a
+phase whose `binding` is not an exact copy of the code blocks under `### Code`
+in plan.md's `## Phase <n>` section, or whose `owned_elsewhere` is not a copy
+of plan.md's `## Owned elsewhere` list. A breakdown that passes prints
+nothing, exits 0 and has .agentic/phases/index.json written from it.
 
 `decisions-comment` runs once the plan is approved. It posts one comment
 listing the plan's decisions to the issue, headed by a
@@ -74,8 +79,14 @@ from plan_formats import (
 )
 
 PLAN_JSON = Path(".agentic/plan.json")
+PLAN_MD = Path(".agentic/plan.md")
 PHASES_DIR = Path(".agentic/phases")
-PHASE_NAME = re.compile(r"phase-(?P<phase>\d+)\.json")
+PHASE_NAME = re.compile(r"phase-(?P<phase>[1-9]\d*)\.json")
+PHASE_HEADING = re.compile(r"## Phase (?P<phase>\d+)\b")
+CODE_HEADING = "### Code"
+OWNED_ELSEWHERE = "## Owned elsewhere"
+# `id` captures the list marker, so _list_items can read a plain bulleted list; only the text is kept.
+BULLET_ITEM = re.compile(r"(?P<id>[-*]) (?P<text>.+)")
 PRIOR_JSON = Path(".agentic/prior-decisions.json")
 REQUIREMENTS_JSON = Path(".agentic/requirements.json")
 OUTCOMES = "## Outcomes"
@@ -189,18 +200,30 @@ def load_decisions(plan: dict[str, object], path: Path) -> list[Decision]:
     return decisions
 
 
-def check_questions(path: Path) -> None:
-    """Refuse the plan at path unless every open question is settled as a well-formed decision.
+def check_questions(path: Path, slice_id: str | None) -> None:
+    """Refuse the plan at path unless every open question is settled as a well-formed decision of the slice.
 
     Raises:
-        PlanError: open_questions is not [], or decisions is missing, malformed or reuses an id.
+        PlanError: open_questions is not [], decisions is missing, malformed or reuses an id, or, given
+            slice_id, a decision names a phase the slice does not have.
     """
     plan = load_plan(path)
     questions = _list(plan, "open_questions", path)
     if questions:
         named = ", ".join(_question_id(item, position) for position, item in enumerate(questions, start=1))
         raise PlanError(f"{path} still lists open questions {named}; fold-answers must settle each one as a decision.")
-    load_decisions(plan, path)
+    decisions = load_decisions(plan, path)
+    if slice_id is None:
+        return
+    numbers = slice_phases(plan, slice_id, path)
+    stray = [
+        f"Decision {decision.id} names phase {', '.join(str(p) for p in outside)}"
+        for decision in decisions
+        if (outside := [p for p in decision.phases if p not in numbers])
+    ]
+    if stray:
+        listed = ", ".join(str(n) for n in numbers)
+        raise PlanError(f"{path}: {'; '.join(stray)}, which slice {slice_id} does not have; its phases are {listed}.")
 
 
 # --- the phase breakdown ---------------------------------------------------------
@@ -241,7 +264,9 @@ def _read_phase(path: Path, slice_id: str) -> Phase:
     """
     named = PHASE_NAME.fullmatch(path.name)
     if named is None:
-        raise FormatError(f"{path.name} has no phase number in its name; name it phase-<n>.json.")
+        raise FormatError(
+            f"{path.name} is not named phase-<n>.json for a phase number n, written without leading zeros."
+        )
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except ValueError as error:
@@ -306,18 +331,129 @@ def _coverage_problems(phases: dict[int, Phase], required: list[Requirement]) ->
 
 
 def _decision_problems(phases: dict[int, Phase], decisions: list[Decision]) -> list[str]:
-    """Return a line for each phase missing a decision whose phases include it, or listing one whose phases do not."""
+    """Return a line for each phase missing a decision that applies to it, or listing one that does not.
+
+    A decision applies to the phases its `phases` name, and to every phase when it names none.
+    """
+    every = [decision.id for decision in decisions if not decision.phases]
     problems: list[str] = []
     for n, phase in phases.items():
-        expected = [decision.id for decision in decisions if n in decision.phases]
-        if missing := [ident for ident in expected if ident not in phase.decisions]:
-            problems.append(f"phase-{n}.json lacks {', '.join(missing)}, whose phases in plan.json include {n}.")
-        if extra := [ident for ident in phase.decisions if ident not in expected]:
-            problems.append(f"phase-{n}.json lists {', '.join(extra)}, whose phases in plan.json do not include {n}.")
+        named = [decision.id for decision in decisions if n in decision.phases]
+        problems.extend(_phase_decision_problems(n, phase, named, every))
     return problems
 
 
-def check_breakdown(plan_path: Path, requirements_path: Path, folder: Path, slice_id: str) -> None:
+def _phase_decision_problems(n: int, phase: Phase, named: list[str], every: list[str]) -> list[str]:
+    """Return phase n's lines for missing decisions that name it or name no phase, and for listed ones that do neither."""
+    problems: list[str] = []
+    if missing := [ident for ident in named if ident not in phase.decisions]:
+        problems.append(f"phase-{n}.json lacks {', '.join(missing)}, whose phases in plan.json include {n}.")
+    if missing := [ident for ident in every if ident not in phase.decisions]:
+        problems.append(f"phase-{n}.json lacks {', '.join(missing)}; a decision with no phases applies to every phase.")
+    if extra := [ident for ident in phase.decisions if ident not in named and ident not in every]:
+        problems.append(f"phase-{n}.json lists {', '.join(extra)}, whose phases in plan.json do not include {n}.")
+    return problems
+
+
+def _dependency_problems(numbers: list[int], phases: dict[int, Phase], slice_id: str) -> list[str]:
+    """Return a line for each phase of the slice that depends on a phase that is not an earlier one of it.
+
+    A file for no phase of the slice is already reported by _file_problems, so it is skipped here.
+    """
+    problems: list[str] = []
+    for n, phase in phases.items():
+        if n not in numbers:
+            continue
+        earlier = numbers[: numbers.index(n)]
+        if wrong := [str(d) for d in phase.depends_on if d not in earlier]:
+            problems.append(
+                f"phase-{n}.json depends on phase {', '.join(wrong)}, which must each be an earlier phase of slice {slice_id}."
+            )
+    return problems
+
+
+def _code_blocks(lines: list[str]) -> list[str]:
+    """Return the text inside each fenced code block in lines, without its fences."""
+    blocks: list[str] = []
+    current: list[str] | None = None
+    for line in lines:
+        if line.lstrip().startswith(FENCES):
+            if current is None:
+                current = []
+            else:
+                blocks.append("\n".join(current))
+                current = None
+        elif current is not None:
+            current.append(line)
+    return blocks
+
+
+def _phase_code(lines: list[tuple[str, bool]]) -> list[str]:
+    """Return the code blocks under a `## Phase <n>` section's `### Code` subsection."""
+    code: list[str] = []
+    inside = False
+    for line, markup in lines:
+        if markup and line.startswith("### "):
+            inside = line == CODE_HEADING
+        elif inside:
+            code.append(line)
+    return _code_blocks(code)
+
+
+def plan_bindings(path: Path) -> tuple[dict[int, list[str]], list[str]]:
+    """Return plan.md's code blocks under each phase's `### Code`, by phase number, and its Owned elsewhere items.
+
+    Raises:
+        PlanError: plan.md cannot be read.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise PlanError(f"{path} cannot be read: {error}.") from error
+    code: dict[int, list[str]] = {}
+    owned: list[str] = []
+    for heading, lines in _sections(_lines(text)):
+        if match := PHASE_HEADING.match(heading):
+            code[int(match["phase"])] = _phase_code(lines)
+        elif heading == OWNED_ELSEWHERE:
+            owned = [item for _, item in _list_items(lines, BULLET_ITEM)]
+    return code, owned
+
+
+def _block(text: str) -> str:
+    """Return a code block as compared: line endings as LF, no trailing spaces, no blank lines around it."""
+    return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").split("\n")).strip("\n")
+
+
+def _words(text: str) -> str:
+    """Return text with every run of whitespace as one space, as an Owned elsewhere item is compared."""
+    return " ".join(text.split())
+
+
+def _binding_problems(phases: dict[int, Phase], code: dict[int, list[str]]) -> list[str]:
+    """Return a line for each phase whose binding is not an exact copy of its plan.md section's code blocks."""
+    problems: list[str] = []
+    for n, phase in phases.items():
+        expected = [_block(block) for block in code.get(n, [])]
+        if [_block(block) for block in phase.binding] != expected:
+            problems.append(
+                f"phase-{n}.json's binding does not copy, exactly and in order, the {len(expected)} code block(s) "
+                f"under {CODE_HEADING} in plan.md's ## Phase {n}."
+            )
+    return problems
+
+
+def _owned_problems(phases: dict[int, Phase], owned: list[str]) -> list[str]:
+    """Return a line for each phase whose owned_elsewhere is not a copy of plan.md's Owned elsewhere list."""
+    expected = [_words(item) for item in owned]
+    return [
+        f"phase-{n}.json's owned_elsewhere does not copy the {len(owned)} item(s) of plan.md's {OWNED_ELSEWHERE}."
+        for n, phase in phases.items()
+        if [_words(item) for item in phase.owned_elsewhere] != expected
+    ]
+
+
+def check_breakdown(plan_path: Path, plan_md: Path, requirements_path: Path, folder: Path, slice_id: str) -> None:
     """Refuse a phase breakdown that drops or misquotes anything, else write folder's index.json.
 
     Raises:
@@ -326,13 +462,17 @@ def check_breakdown(plan_path: Path, requirements_path: Path, folder: Path, slic
     plan = load_plan(plan_path)
     numbers = slice_phases(plan, slice_id, plan_path)
     decisions = load_decisions(plan, plan_path)
+    code, owned = plan_bindings(plan_md)
     required = load_requirements(requirements_path)
     phases = load_phases(folder, slice_id)
     problems = [
         *_file_problems(numbers, phases, slice_id),
+        *_dependency_problems(numbers, phases, slice_id),
         *_quote_problems(phases, required),
         *_coverage_problems(phases, required),
         *_decision_problems(phases, decisions),
+        *_binding_problems(phases, code),
+        *_owned_problems(phases, owned),
     ]
     if problems:
         raise PlanError(f"{folder} does not break down slice {slice_id}: {' '.join(problems)}")
@@ -628,9 +768,11 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check-questions", help="Refuse a plan with an open question or a malformed decision.")
     check.add_argument("--plan", type=Path, default=PLAN_JSON, help="The plan.json to check.")
+    check.add_argument("--slice", help="The slice whose phases every decision's phases must belong to.")
     breakdown = commands.add_parser("check-breakdown", help="Refuse phase files that drop or misquote anything.")
     breakdown.add_argument("--slice", required=True, help="The slice the phase files break down.")
     breakdown.add_argument("--plan", type=Path, default=PLAN_JSON, help="The plan.json listing the slice's phases.")
+    breakdown.add_argument("--plan-md", type=Path, default=PLAN_MD, help="The plan.md the phase files copy from.")
     breakdown.add_argument("--requirements", type=Path, default=REQUIREMENTS_JSON, help="The requirements.json.")
     breakdown.add_argument("--phases", type=Path, default=PHASES_DIR, help="The folder holding the phase files.")
     comment = commands.add_parser("decisions-comment", help="Post the approved plan's decisions to the issue.")
@@ -650,9 +792,9 @@ def build_parser() -> argparse.ArgumentParser:
 def dispatch(args: argparse.Namespace) -> None:
     """Run the subcommand args names."""
     if args.command == "check-questions":
-        check_questions(args.plan)
+        check_questions(args.plan, args.slice)
     elif args.command == "check-breakdown":
-        check_breakdown(args.plan, args.requirements, args.phases, args.slice)
+        check_breakdown(args.plan, args.plan_md, args.requirements, args.phases, args.slice)
     elif args.command == "decisions-comment":
         decisions_comment(args.plan, args.issue, args.slice, args.session)
     elif args.command == "prior-decisions":

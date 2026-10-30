@@ -8,7 +8,7 @@ Inputs: `.agentic/plan.md`, `.agentic/plan.json` and `.agentic/requirements.json
 
 - **Never edit `.agentic/plan.md`, `.agentic/plan.json` or `.agentic/requirements.json`**, the issue, `src/`, `tests/` or `docs/`, and never commit or push. Write only `.agentic/phases/phase-<n>.json`.
 - **Add nothing the plan does not say.** Every action, trap and decision comes from the plan as approved. When the plan is silent on something a phase needs, leave it out and say so in your report; never fill the gap with a design of your own.
-- **No code.** A phase file has no `sketch` or `data` field and no code blocks. It says how to do the work in prose, in `intent` and each action's `do`.
+- **No sketches.** A phase file has no `sketch` or `data` field. It says how to do the work in prose, in `intent` and each action's `do`. The only code it holds is `binding`: the code blocks under the phase's `### Code` in `plan.md`, which the plan makes binding, copied exactly.
 
 ## 1. Start clean
 
@@ -38,6 +38,8 @@ For each phase number `n` of the slice, write `.agentic/phases/phase-<n>.json` f
   "decisions": ["D-4"],
   "traps": ["The JSON output must filter too, since both read the same result."],
   "builds_on": [{ "symbol": "SessionStatus", "path": "src/dovo/core/sessions/models.py" }],
+  "binding": ["class SessionListResult(BaseResult):\n    sessions: list[SessionView]\n    hidden: int"],
+  "owned_elsewhere": ["#1197 owns deleting `SessionStatus`."],
   "actions": [
     { "id": "1.1", "kind": "code", "target": "src/dovo/core/sessions/sessions.py::Sessions.list",
       "do": "Leave out discarded sessions unless asked for them.", "requirements": ["O-1"] },
@@ -48,12 +50,14 @@ For each phase number `n` of the slice, write `.agentic/phases/phase-<n>.json` f
 }
 ```
 
-- `slice` is the slice id, `phase` is `n`, `title` the phase's heading without `Phase <n>:`, and `depends_on` the earlier phases whose work this one uses.
+- `slice` is the slice id, `phase` is `n`, `title` the phase's heading without `Phase <n>:`, and `depends_on` the earlier phases of the slice whose work this one uses.
 - `intent` explains why the phase exists and how its parts fit together, from the phase section and the plan's approach, so the agent understands the actions rather than only following them.
 - `requirements` quotes every item of `requirements.json` this phase answers, `id` and `text` copied exactly, never paraphrased or cut. An item that several phases answer in part is quoted whole in each of them.
-- `decisions` lists the id of every `plan.json` decision whose `phases` include `n`, and no other. The agent reads their text from `plan.json`.
+- `decisions` lists the id of every `plan.json` decision whose `phases` include `n`, and of every decision whose `phases` is `[]` (it applies to every phase), and no other. The agent reads their text from `plan.json`.
 - `traps` holds the plan's traps and edge cases that touch this phase's files, one sentence each.
 - `builds_on` names each symbol from main or an earlier phase that this phase uses, with the path where it lives (for an earlier phase's symbol, the path the plan's Artifact inventory gives it).
+- `binding` holds each fenced code block under `### Code` in the plan's `## Phase <n>` section, in order: the text between the fences, copied exactly and without the fence lines. It is `[]` when that section has no `### Code` block. Never edit, shorten or add to a block; a block the plan gets wrong is the plan's to fix, so report it.
+- `owned_elsewhere` holds each item of the plan's `## Owned elsewhere` list, the text after its `- `, copied exactly; every phase file carries the whole list. It is `[]` when the plan has no such section.
 - `actions` lists the phase's obligations in the order to do them, each one requirement part, one test, one deletion or one doc change, never a single edit. `id` is `<n>.<k>`, numbered from 1. `kind` is `code`, `test`, `delete` (a deletion-ledger entry) or `doc`. `target` is a path, with `::symbol` when the obligation is one symbol. `do` says what must hold once it is done, and, for a test, what it asserts. `requirements` cites the ids it answers, each one the phase quotes; a doc or deletion action may cite none.
 - `not_this_phase` is one line per later phase naming work this phase must leave to it.
 

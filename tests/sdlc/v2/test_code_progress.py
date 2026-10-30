@@ -31,11 +31,13 @@ PROGRESS = _load_script()
 
 @pytest.fixture
 def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Return a working directory whose .agentic/plan.json gives slice S3 the phases 1, 2 and 3."""
+    """Return a working directory whose .agentic/plan.json gives slice S3 the phases 1, 2 and 3, each with a phase file."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("DOVO_OUTPUT", raising=False)
-    (tmp_path / ".agentic").mkdir()
+    (tmp_path / ".agentic" / "phases").mkdir(parents=True)
     _write_plan(tmp_path, [1, 2, 3])
+    for phase in (1, 2, 3):
+        (tmp_path / ".agentic" / "phases" / f"phase-{phase}.json").write_text("{}", encoding="utf-8")
     return tmp_path
 
 
@@ -100,6 +102,23 @@ class CodeProgressNextTests:
             "phase_file": ".agentic/phases/phase-1.json",
             "remaining": 2,
         }
+
+    def test_next_refuses_a_phase_with_no_phase_file(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        output = workspace / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        _write_progress(workspace, json.dumps({"slice": "S3", "done": [1]}))
+        (workspace / ".agentic" / "phases" / "phase-2.json").unlink()
+
+        assert _main(monkeypatch, "next", "--slice", "S3") == 1
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err == (
+            "code_progress.py: .agentic/phases/phase-2.json is missing; check-breakdown must pass before phase 2 is coded.\n"
+        )
+        assert not output.exists()
 
     def test_next_refuses_a_slice_with_no_phases(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -200,7 +219,11 @@ class CodeProgressRecordTests:
         assert _main(monkeypatch, "record", "--slice", "S3", "--phase", "2") == 0
 
         assert _progress(workspace) == {"slice": "S3", "done": [1, 2]}
-        assert sorted(path.name for path in (workspace / ".agentic").iterdir()) == ["code-progress.json", "plan.json"]
+        assert sorted(path.name for path in (workspace / ".agentic").iterdir()) == [
+            "code-progress.json",
+            "phases",
+            "plan.json",
+        ]
 
     def test_record_refuses_another_slice(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

@@ -9,9 +9,11 @@ breakdown wrote for it, and how many of the slice's other phases remain, as
 `phase`, `phase_file` (`.agentic/phases/phase-<n>.json`, empty once every
 phase is done) and `remaining`: written as
 `key=value` lines to `$DOVO_OUTPUT` for later steps' templates, and printed as
-one JSON object on stdout for a loop's `until`. `check` refuses a phase the
-slice does not have, and `record` adds a committed phase to `done`. Every
-refusal is one line on stderr and exit code 1.
+one JSON object on stdout for a loop's `until`. `next` refuses when the phase
+it names has no phase file, so the code loop stops rather than record a phase
+no agent could implement. `check` refuses a phase the slice does not have, and
+`record` adds a committed phase to `done`. Every refusal is one line on stderr
+and exit code 1.
 """
 
 from __future__ import annotations
@@ -95,12 +97,19 @@ def done_phases(slice_id: str) -> list[int]:
 
 
 def next_phase(slice_id: str) -> dict[str, object]:
-    """Return the first phase of the slice not yet done, or `done`, its phase file and how many others remain."""
+    """Return the first phase of the slice not yet done, or `done`, its phase file and how many others remain.
+
+    Raises:
+        ProgressError: The phase not yet done has no phase file.
+    """
     done = set(done_phases(slice_id))
     pending = [p for p in slice_phases(slice_id) if p not in done]
     if not pending:
         return {"phase": ALL_DONE, "phase_file": "", "remaining": 0}
-    return {"phase": str(pending[0]), "phase_file": PHASE_FILE.format(phase=pending[0]), "remaining": len(pending) - 1}
+    phase_file = PHASE_FILE.format(phase=pending[0])
+    if not Path(phase_file).is_file():
+        raise ProgressError(f"{phase_file} is missing; check-breakdown must pass before phase {pending[0]} is coded.")
+    return {"phase": str(pending[0]), "phase_file": phase_file, "remaining": len(pending) - 1}
 
 
 def check_phase(slice_id: str, phase: str) -> int:
