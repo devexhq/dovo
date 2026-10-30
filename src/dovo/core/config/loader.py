@@ -1,4 +1,4 @@
-"""Load and validate `.dovo/config.json` without side effects."""
+"""Load and validate `.dovo/config.json`, writing nothing but a diagnostic record when it cannot be read."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from dovo.common.diagnostic_log import DiagnosticLevel, error_diagnostics, record_exception
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult, Remediation
 from dovo.common.schema_validation import CONFIG_VALIDATOR, format_validation_error
@@ -80,11 +82,16 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
     try:
         text = target_path.read_text(encoding="utf-8")
     except OSError as exc:
+        record = record_exception(
+            exc, level=DiagnosticLevel.ERROR, operation="config.read", context={"path": str(target_path)}
+        )
         return ConfigLoadResult(
             status=ConfigLoadStatus.UNREADABLE,
+            error_code=ErrorCode.CONFIG_UNREADABLE,
             config_path=target_path,
             errors=[f"Unable to read config.json at '{target_path}': {exc}."],
             remediations=[Remediation(message="Check file permissions and that the path is readable")],
+            diagnostics=error_diagnostics(record),
         )
 
     try:
@@ -95,6 +102,7 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
             detail = f"{exc.msg} at {detail}"
         return ConfigLoadResult(
             status=ConfigLoadStatus.MALFORMED_JSON,
+            error_code=ErrorCode.CONFIG_JSON_INVALID,
             config_path=target_path,
             errors=[f"Malformed config.json at '{target_path}': {detail}."],
             remediations=[Remediation(message="Repair JSON syntax, or restore from backup")],
@@ -103,6 +111,7 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
     if not isinstance(data, dict):
         return ConfigLoadResult(
             status=ConfigLoadStatus.ROOT_NOT_OBJECT,
+            error_code=ErrorCode.CONFIG_ROOT_INVALID,
             config_path=target_path,
             errors=[f"Malformed config.json at '{target_path}': root must be an object."],
             remediations=[Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")],
@@ -112,6 +121,7 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
     if schema_errors:
         return ConfigLoadResult(
             status=ConfigLoadStatus.SCHEMA_INVALID,
+            error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
             config_path=target_path,
             raw=data,
             errors=[
@@ -136,6 +146,7 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
     except Exception as exc:  # pydantic ValidationError and similar
         return ConfigLoadResult(
             status=ConfigLoadStatus.SCHEMA_INVALID,
+            error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
             config_path=target_path,
             raw=data,
             errors=[
@@ -170,6 +181,7 @@ def _check_path_existence(target_path: Path) -> ConfigLoadResult | None:
         _CONFIG_CACHE.pop(target_path, None)
         return ConfigLoadResult(
             status=ConfigLoadStatus.PATH_IS_DIRECTORY,
+            error_code=ErrorCode.CONFIG_PATH_INVALID,
             config_path=target_path,
             errors=[f"Config path is a directory, not a file: '{target_path}'."],
             remediations=[Remediation(message="Remove the directory or point config_path at a file")],
@@ -179,6 +191,7 @@ def _check_path_existence(target_path: Path) -> ConfigLoadResult | None:
         _CONFIG_CACHE.pop(target_path, None)
         return ConfigLoadResult(
             status=ConfigLoadStatus.NOT_FOUND,
+            error_code=ErrorCode.CONFIG_NOT_FOUND,
             config_path=target_path,
             errors=[f"Configuration file not found at '{target_path}'."],
             remediations=[Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")],

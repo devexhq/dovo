@@ -62,6 +62,9 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
 
     Returns:
         Classified ``ConfigValidationResult`` with absolute ``config_path``.
+
+    Raises:
+        RuntimeError: When a successful load carries no parsed config, a broken invariant.
     """
     from dovo.core.config.loader import load_config_at
 
@@ -74,20 +77,15 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
             config_path=loaded.config_path,
             raw=loaded.raw,
             config=None,
+            error_code=loaded.error_code,
             errors=list(loaded.errors),
             warnings=[],
             remediations=list(loaded.remediations),
+            diagnostics=list(loaded.diagnostics),
         )
 
     if loaded.config is None:
-        return ConfigValidationResult(
-            status=ConfigValidationStatus.INVALID,
-            config_path=loaded.config_path,
-            raw=loaded.raw,
-            config=None,
-            errors=[f"Configuration loaded from '{loaded.config_path}' but the parsed config is missing."],
-            warnings=[],
-        )
+        raise RuntimeError(f"Configuration loaded from '{loaded.config_path}' but the parsed config is missing.")
 
     provider_error = _unregistered_provider_error(loaded.config)
     if provider_error is not None:

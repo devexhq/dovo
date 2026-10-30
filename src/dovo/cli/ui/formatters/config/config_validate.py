@@ -6,7 +6,7 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
-from dovo.cli.ui.formatters.common import build_error_panel
+from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.cli.ui.formatters.config.config_views import ConfigValidationView
 from dovo.common.formatters import format_remediations, format_warning_bullets
 from dovo.core.config.validate import ConfigValidationResult, ConfigValidationStatus
@@ -38,7 +38,7 @@ def _format_valid_config(view: ConfigValidationView) -> Text:
 
 
 def _format_invalid_config(view: ConfigValidationView) -> RenderableType:
-    """Format failed configuration validation error panel and warnings."""
+    """Format failed configuration validation error panel and warnings, followed by diagnostic_lines(view.diagnostics)."""
     panel = build_error_panel(
         "Config Validation Failed",
         view.errors,
@@ -47,8 +47,8 @@ def _format_invalid_config(view: ConfigValidationView) -> RenderableType:
     )
     if view.warnings:
         warning_block = "Warnings:\n" + "\n".join(format_warning_bullets(view.warnings))
-        return Group(panel, Text(warning_block))
-    return panel
+        return with_diagnostics(Group(panel, Text(warning_block)), view.diagnostics)
+    return with_diagnostics(panel, view.diagnostics)
 
 
 class ConfigValidateFormatter(ComponentFormatter[ConfigValidationResult, ConfigValidationView]):
@@ -69,6 +69,7 @@ class ConfigValidateFormatter(ComponentFormatter[ConfigValidationResult, ConfigV
             status_label=_derive_status_label(data),
             raw=data.raw,
             config=data.config,
+            error_code=data.error_code,
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.remediations),

@@ -18,7 +18,9 @@ dovo config show
 
 Tiers, lowest to highest precedence: Packaged defaults, Global (`$DOVO_HOME/global/config.json`), User (`$DOVO_HOME/user/config.json`), and Repo (`.dovo/config.json`). `DOVO_HOME` defaults to `~/.dovo` when unset. A field set by a higher tier overrides the same field from a lower one; fields no tier sets use the packaged default.
 
-- If the Repo tier is missing, `dovo config show` exits with code 1, prints a "Config Error" panel reading `Configuration file not found at '<path>'.` and points you to `dovo init`. With `--format json`, `status` is `not_found`.
+- If the Repo tier is missing, `dovo config show` exits with code 1, prints a "Config Error" panel reading `Configuration file not found at '<path>'.` and points you to `dovo init`. With `--format json`, `status` is `not_found` and `error_code` is `CONFIG_NOT_FOUND`.
+- A broken Repo tier exits with code 1 and reports its `error_code` with `--format json`: `CONFIG_PATH_INVALID` when `.dovo/config.json` is a directory, `CONFIG_UNREADABLE` when it cannot be read, `CONFIG_JSON_INVALID` when it is not valid JSON, `CONFIG_ROOT_INVALID` when its root is not an object, and `CONFIG_SCHEMA_INVALID` when it fails schema validation. A successful run reports `error_code` `null`.
+- When `.dovo/config.json` cannot be read, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record, prints a `Details logged: <path> (event <event_id>)` line after the panel, and lists the record in `diagnostics` with `--format json`. If the record cannot be written, the line is absent.
 - `environment.sensitive_variables` is the exception: names from the Global, User and Repo tiers are combined, with duplicates dropped.
 - A malformed or invalid Global or User file produces a "Config Error" panel naming the tier and file path.
 - With `--format json`, `raw` contains the full merged configuration, defaults included.
@@ -108,3 +110,5 @@ dovo config validate
 ```
 
 On failure it lists the missing fields or invalid values. A `default_agent` value or `agents` key other than `copilot` or `claude`, and the legacy top-level `agent` key, are reported as schema validation errors, and the command exits with code 1; with `--format json`, `status` is `invalid` and `errors` lists them. The file is never modified.
+
+When `.dovo/config.json` cannot be loaded, `dovo config validate` exits with code 1 and reports the same `error_code`, `errors` and remediations as [`dovo config show`](#dovo-config-show), including the `Details logged:` line and `diagnostics` entry when the file cannot be read; a missing file reports `status` `not_found` and `error_code` `CONFIG_NOT_FOUND`. A file that fails schema validation reports `status` `invalid` and `error_code` `CONFIG_SCHEMA_INVALID`. A valid file reports `error_code` `null`.

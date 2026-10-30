@@ -143,6 +143,7 @@ class ConfigSetCliIntegrationTests:
                 "value": "qwen2.5-coder",
                 "value_str": "qwen2.5-coder",
                 "value_type": "str",
+                "error_code": None,
                 "errors": [],
                 "warnings": [],
                 "remediations": [],

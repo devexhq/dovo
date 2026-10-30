@@ -143,12 +143,37 @@ ERROR_SCHEMA_INVALID_CASE = FormatterCase(
     ],
 )
 
+TYPE_COLLISION_ERROR = "Cannot set 'project.name.first'. 'project.name' is already defined as a scalar value."
+
+ERROR_TYPE_COLLISION_CASE = FormatterCase(
+    data=ConfigSetResult(
+        status=ConfigSetStatus.TYPE_COLLISION,
+        config_path=CONFIG_PATH,
+        key="project.name.first",
+        value="demo",
+        error_code="CONFIG_TYPE_CONFLICT",
+        errors=[TYPE_COLLISION_ERROR],
+    ),
+    view=ConfigSetView(
+        status=ConfigSetStatus.TYPE_COLLISION,
+        config_path=CONFIG_PATH,
+        key="project.name.first",
+        value="demo",
+        value_str="demo",
+        value_type="str",
+        error_code="CONFIG_TYPE_CONFLICT",
+        errors=[TYPE_COLLISION_ERROR],
+    ),
+    render_expectations=[TYPE_COLLISION_ERROR],
+)
+
 SET_CASES = [
     pytest.param(SUCCESS_STR_CASE, id="success_str"),
     pytest.param(SUCCESS_BOOL_CASE, id="success_bool"),
     pytest.param(SUCCESS_INT_CASE, id="success_int"),
     pytest.param(SUCCESS_DICT_CASE, id="success_dict"),
     pytest.param(ERROR_SCHEMA_INVALID_CASE, id="error_schema_invalid"),
+    pytest.param(ERROR_TYPE_COLLISION_CASE, id="error_type_collision"),
 ]
 
 SET_PAYLOAD_CASES = [
@@ -161,6 +186,7 @@ SET_PAYLOAD_CASES = [
             "value": "qwen2.5-coder",
             "value_str": "qwen2.5-coder",
             "value_type": "str",
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],
@@ -177,12 +203,30 @@ SET_PAYLOAD_CASES = [
             "value": None,
             "value_str": "None",
             "value_type": "NoneType",
+            "error_code": None,
             "errors": ["Config schema validation failed: extra property not allowed"],
             "warnings": [],
             "remediations": [{"message": "Run 'dovo config validate' for details", "command": "dovo config validate"}],
             "diagnostics": [],
         },
         id="error_schema_invalid_payload",
+    ),
+    pytest.param(
+        ERROR_TYPE_COLLISION_CASE,
+        {
+            "status": "type_collision",
+            "config_path": "/workspace/.dovo/config.json",
+            "key": "project.name.first",
+            "value": "demo",
+            "value_str": "demo",
+            "value_type": "str",
+            "error_code": "CONFIG_TYPE_CONFLICT",
+            "errors": [TYPE_COLLISION_ERROR],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
+        },
+        id="error_type_collision_payload",
     ),
 ]
 

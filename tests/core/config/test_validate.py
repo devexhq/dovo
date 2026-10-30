@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -12,11 +13,50 @@ from dovo.common.models import Remediation
 from dovo.common.schema_validation import CONFIG_VALIDATOR
 from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.generator import build_default_config
+from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus, load_config_at
 from dovo.core.config.models import DovoConfig
 from dovo.core.config.validate import (
     ConfigValidationStatus,
     validate_config_result,
 )
+from tests.harness.diagnostic_log import diagnostic_record
+
+
+def _deny_read(config_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Write a valid config, then make reading it raise PermissionError."""
+    Filesystem.atomic_write_json(config_path, build_default_config("demo"))
+    real_read_text = Path.read_text
+
+    def _denied_read(
+        self: Path, encoding: str | None = None, errors: str | None = None, newline: str | None = None
+    ) -> str:
+        if self == config_path:
+            raise PermissionError("denied")
+        return real_read_text(self, encoding=encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr(Path, "read_text", _denied_read)
+
+
+VALIDATE_LOAD_FAILURE_CASES = [
+    pytest.param(lambda path, _: None, ConfigValidationStatus.NOT_FOUND, id="not_found"),
+    pytest.param(lambda path, _: path.mkdir(), ConfigValidationStatus.PATH_IS_DIRECTORY, id="path_is_directory"),
+    pytest.param(
+        lambda path, _: path.write_text("{not valid json", encoding="utf-8"),
+        ConfigValidationStatus.MALFORMED_JSON,
+        id="malformed_json",
+    ),
+    pytest.param(
+        lambda path, _: path.write_text("[]", encoding="utf-8"),
+        ConfigValidationStatus.ROOT_NOT_OBJECT,
+        id="root_not_object",
+    ),
+    pytest.param(
+        lambda path, _: Filesystem.atomic_write_json(path, {"version": 1}),
+        ConfigValidationStatus.INVALID,
+        id="schema_invalid",
+    ),
+    pytest.param(_deny_read, ConfigValidationStatus.UNREADABLE, id="unreadable"),
+]
 
 
 class ConfigSemanticValidationTests:
@@ -61,6 +101,7 @@ class ConfigSemanticValidationTests:
         result = validate_config_result(config_path=config_path)
 
         assert result.status == ConfigValidationStatus.VALID
+        assert result.error_code is None
         assert result.warnings == []
         assert result.remediations == []
 
@@ -126,6 +167,43 @@ class ConfigSemanticValidationTests:
                 command="dovo init --repair",
             ),
         ]
+
+    @pytest.mark.parametrize(("write", "status"), VALIDATE_LOAD_FAILURE_CASES)
+    def test_validate_copies_load_failure(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+        write: Callable[[Path, pytest.MonkeyPatch], object],
+        status: ConfigValidationStatus,
+    ) -> None:
+        """Copy the load's error_code, errors, remediations and diagnostics, with the row's status."""
+        config_path = tmp_path / "config.json"
+        write(config_path, monkeypatch)
+
+        result = validate_config_result(config_path)
+
+        loaded = load_config_at(config_path, bypass_cache=True)
+        assert result.status == status
+        assert loaded.error_code is not None
+        assert result.error_code == loaded.error_code
+        assert result.errors == loaded.errors
+        assert result.remediations == loaded.remediations
+        unreadable = loaded.status == ConfigLoadStatus.UNREADABLE
+        assert result.diagnostics == ([diagnostic_record(frozen_diagnostic_clock)] if unreadable else [])
+
+    def test_validate_raises_when_ok_load_has_no_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Raise RuntimeError naming the path when an OK load carries no parsed config."""
+        config_path = tmp_path / "config.json"
+        monkeypatch.setattr(
+            "dovo.core.config.loader.load_config_at",
+            lambda path: ConfigLoadResult(status=ConfigLoadStatus.OK, config_path=path),
+        )
+
+        with pytest.raises(RuntimeError) as exc_info:
+            validate_config_result(config_path)
+
+        assert str(exc_info.value) == f"Configuration loaded from '{config_path}' but the parsed config is missing."
 
 
 class ConfigProviderRegistryValidationTests:

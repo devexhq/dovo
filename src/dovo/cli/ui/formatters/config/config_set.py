@@ -6,7 +6,7 @@ from rich.console import RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
-from dovo.cli.ui.formatters.common import build_error_panel
+from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.cli.ui.formatters.config.common import format_config_value
 from dovo.cli.ui.formatters.config.config_views import ConfigSetView
 from dovo.core.config.mutate import ConfigSetResult, ConfigSetStatus
@@ -31,6 +31,7 @@ class ConfigSetFormatter(ComponentFormatter[ConfigSetResult, ConfigSetView]):
             value=data.value,
             value_str=format_config_value(data.value),
             value_type=type(data.value).__name__,
+            error_code=data.error_code,
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.remediations),
@@ -45,9 +46,10 @@ class ConfigSetFormatter(ComponentFormatter[ConfigSetResult, ConfigSetView]):
                 f"[bold green]✔  Config updated: {view.key} = {view.value_str} ({view.value_type})[/bold green]"
             )
 
-        return build_error_panel(
+        panel = build_error_panel(
             "Config Error",
             view.errors,
             "Failed to update configuration.",
             remediations=view.remediations,
         )
+        return with_diagnostics(panel, view.diagnostics)

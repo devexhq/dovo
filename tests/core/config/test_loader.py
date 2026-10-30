@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.core.config.generator import build_default_config
@@ -15,6 +16,7 @@ from dovo.core.config.loader import (
     load_config,
 )
 from dovo.core.config.models import DovoConfig
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
 SCHEMA_VIOLATION_PAYLOADS = [
     pytest.param(
@@ -42,8 +44,129 @@ SCHEMA_VIOLATION_PAYLOADS = [
 ]
 
 
+SCHEMA_REMEDIATIONS = [
+    Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
+    Remediation(
+        message="Run 'dovo init --repair' to insert missing keys without overwriting values",
+        command="dovo init --repair",
+    ),
+]
+
+
+def _write_trailing_newline_entry(config_path: Path) -> None:
+    """Write a schema-valid config whose sensitive_variables entry only DovoConfig rejects."""
+    payload = build_default_config("demo-workspace")
+    payload["environment"] = {"sensitive_variables": ["GOOD", "SOMEVALUE\n"]}
+    Filesystem.atomic_write_json(config_path, payload)
+
+
+LOAD_FAILURE_CASES = [
+    pytest.param(
+        lambda path: None,
+        ConfigLoadStatus.NOT_FOUND,
+        ErrorCode.CONFIG_NOT_FOUND,
+        "Configuration file not found at '{path}'.",
+        [Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")],
+        id="not_found",
+    ),
+    pytest.param(
+        lambda path: path.mkdir(),
+        ConfigLoadStatus.PATH_IS_DIRECTORY,
+        ErrorCode.CONFIG_PATH_INVALID,
+        "Config path is a directory, not a file: '{path}'.",
+        [Remediation(message="Remove the directory or point config_path at a file")],
+        id="path_is_directory",
+    ),
+    pytest.param(
+        lambda path: path.write_text("{not valid json", encoding="utf-8"),
+        ConfigLoadStatus.MALFORMED_JSON,
+        ErrorCode.CONFIG_JSON_INVALID,
+        "Malformed config.json at '{path}': Expecting property name enclosed in double quotes at line 1 column 2 (char 1).",
+        [Remediation(message="Repair JSON syntax, or restore from backup")],
+        id="malformed_json",
+    ),
+    pytest.param(
+        lambda path: path.write_text("[]", encoding="utf-8"),
+        ConfigLoadStatus.ROOT_NOT_OBJECT,
+        ErrorCode.CONFIG_ROOT_INVALID,
+        "Malformed config.json at '{path}': root must be an object.",
+        [Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")],
+        id="root_not_object",
+    ),
+    pytest.param(
+        lambda path: Filesystem.atomic_write_json(path, {"version": 1}),
+        ConfigLoadStatus.SCHEMA_INVALID,
+        ErrorCode.CONFIG_SCHEMA_INVALID,
+        "Config schema validation failed:\n- (root): 'project' is a required property",
+        SCHEMA_REMEDIATIONS,
+        id="schema_invalid",
+    ),
+    pytest.param(
+        _write_trailing_newline_entry,
+        ConfigLoadStatus.SCHEMA_INVALID,
+        ErrorCode.CONFIG_SCHEMA_INVALID,
+        "Config schema validation failed:\n"
+        "- environment.sensitive_variables[1]: String should match pattern '^[A-Za-z_][A-Za-z0-9_]*$'",
+        SCHEMA_REMEDIATIONS,
+        id="model_invalid",
+    ),
+]
+
+
 class ConfigLoaderTests:
     """Integration tests verifying config.json loading and schema parsing contracts."""
+
+    @pytest.mark.parametrize(("write", "status", "error_code", "error", "remediations"), LOAD_FAILURE_CASES)
+    def test_load_failure_reports_status_and_error_code(
+        self,
+        workspace_paths: WorkspacePaths,
+        write: Callable[[Path], object],
+        status: ConfigLoadStatus,
+        error_code: ErrorCode,
+        error: str,
+        remediations: list[Remediation],
+    ) -> None:
+        """Report the row's status, error_code, errors and remediations, with no diagnostics recorded."""
+        config_path = workspace_paths.config_file
+        write(config_path)
+
+        result = load_config(workspace_paths)
+
+        assert result.status == status
+        assert result.error_code == error_code
+        assert result.errors == [error.format(path=config_path)]
+        assert result.remediations == remediations
+        assert result.diagnostics == []
+
+    def test_unreadable_config_reports_config_unreadable_with_one_record(
+        self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Report CONFIG_UNREADABLE with the PermissionError's one record, and no 'Details logged:' in errors."""
+        config_path = workspace_paths.config_file
+        Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
+        real_read_text = Path.read_text
+
+        def _denied_read(
+            self: Path, encoding: str | None = None, errors: str | None = None, newline: str | None = None
+        ) -> str:
+            if self == config_path:
+                raise PermissionError("denied")
+            return real_read_text(self, encoding=encoding, errors=errors, newline=newline)
+
+        monkeypatch.setattr(Path, "read_text", _denied_read)
+
+        result = load_config(workspace_paths, bypass_cache=True)
+
+        assert result.status == ConfigLoadStatus.UNREADABLE
+        assert result.error_code == ErrorCode.CONFIG_UNREADABLE
+        assert result.errors == [f"Unable to read config.json at '{config_path}': denied."]
+        assert result.remediations == [Remediation(message="Check file permissions and that the path is readable")]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "config.read"
+        assert event["context"] == {"path": str(config_path)}
+        assert event["exception_type"] == "PermissionError"
 
     def test_load_returns_strongly_typed_dovo_config(self, workspace_paths: WorkspacePaths) -> None:
         config_path = workspace_paths.config_file
@@ -56,6 +179,7 @@ class ConfigLoaderTests:
         assert result.config_path == config_path
         assert result.raw == payload
         assert result.config == DovoConfig.model_validate(payload)
+        assert result.error_code is None
         assert result.errors == []
         assert result.warnings == []
         assert result.remediations == []
