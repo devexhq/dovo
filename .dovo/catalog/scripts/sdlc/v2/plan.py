@@ -5,8 +5,11 @@
 every problem it finds, a plan whose slices leave an outcome of the issue
 (an `outcome` of requirements.json) to no slice, or list it in two slices
 when not every entry for it carries a split marker naming its part, as in
-`O-7 (reply)`. A slice's `outcomes` entry that is neither `O-<n>` nor
-`O-<n> (<part>)` is refused. A plan that passes prints nothing and exits 0.
+`O-7 (reply)`. It also refuses an outcome only one slice lists with a split
+marker, since parts in one slice are no split, and an outcome a slice lists
+that the issue does not have. A slice's `outcomes` entry that is neither
+`O-<n>` nor `O-<n> (<part>)` is refused. A plan that passes prints nothing and
+exits 0.
 
 `check-questions` runs after `fold-answers`, which settles every open question
 as a decision. It refuses a plan whose `open_questions` is not `[]`, or whose
@@ -272,27 +275,31 @@ def _slice_entries(raw: object, position: int, path: Path) -> list[tuple[str, st
 
 
 def _outcome_problem(outcome: str, entries: list[tuple[str, str, bool]]) -> str | None:
-    """Return why outcome is not delivered once: no slice lists it, or two do without a split marker on each."""
+    """Return why outcome is not delivered once: no slice lists it, two lack split markers, or one lists its parts."""
     owners = [(slice_id, split) for ident, slice_id, split in entries if ident == outcome]
     if not owners:
         return f"{outcome} belongs to no slice."
     listed = list(dict.fromkeys(slice_id for slice_id, _ in owners))
     if len(listed) > 1 and not all(split for _, split in owners):
         return f"{outcome} belongs to {', '.join(listed)} without a split marker on each, as in {outcome} (reply)."
+    if len(listed) == 1 and any(split for _, split in owners):
+        return f"{outcome} is split into parts, but only {listed[0]} lists it; list it whole."
     return None
 
 
 def _outcome_problems(outcomes: list[str], entries: list[tuple[str, str, bool]]) -> list[str]:
-    """Return one sentence per outcome the slices do not deliver once."""
-    return [problem for outcome in outcomes if (problem := _outcome_problem(outcome, entries)) is not None]
+    """Return one sentence per outcome the slices do not deliver once, then one per outcome the issue does not have."""
+    problems = [problem for outcome in outcomes if (problem := _outcome_problem(outcome, entries)) is not None]
+    unknown = dict.fromkeys((ident, slice_id) for ident, slice_id, _ in entries if ident not in outcomes)
+    return problems + [f"{slice_id} lists {ident}, which the issue does not have." for ident, slice_id in unknown]
 
 
 def check_slices(path: Path, requirements_path: Path) -> None:
     """Refuse the plan at path unless every outcome requirements.json lists belongs to one slice, or to parts of several.
 
     Raises:
-        PlanError: An outcome belongs to no slice or to two without a split marker, or a slice or an outcomes
-            entry is malformed.
+        PlanError: An outcome belongs to no slice, to two without a split marker, or to one slice as parts; a slice
+            lists an outcome the issue does not have; or a slice or an outcomes entry is malformed.
     """
     outcomes = [item.id for item in load_requirements(requirements_path) if item.kind == "outcome"]
     raw_slices = enumerate(_list(load_plan(path), "slices", path), start=1)

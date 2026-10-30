@@ -22,6 +22,11 @@ CODE_SESSION = "blueprint_code02"
 INTRO = "Intro paragraph a person wrote.\n"
 MARKER = "<!-- dovo:workplan schema_version=1 -->"
 BY_HAND = "<!-- dovo:workplan schema_version=1 maintained=by-hand -->\n**Work plan** (edited by hand)\n"
+V1_BODY = 'Intro.\n\n## Work plan\n<!-- dovo:workplan {"plan_session":"bp_v1","slices":[]} -->\n'
+V1_REFUSAL = (
+    f"workplan.py: #{EPIC} was planned with v1's description-based work plan: its description holds a "
+    "`<!-- dovo:workplan {` line, which v2 never reads; work it with the v1 blueprints\n"
+)
 
 
 def _load_script() -> ModuleType:
@@ -521,6 +526,46 @@ class RenderTests:
         assert "| S1 (#1131) | Title S1 | O-1 | — | merged | #1215 | bp_c |" in text
         assert text.endswith(f"-->\n\n{landed}\n")
 
+    def test_records_an_existing_sub_issue_the_plan_maps_to_a_slice(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = FakeGh({})
+        slices = [_slice("S1", child=1131), _slice("S2", outcomes=["O-2"])]
+        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices})
+
+        assert _render(monkeypatch, fake, plan) == 0
+
+        text = fake.workplan()
+        assert [(row["child"], row["status"]) for row in _rows(text)] == [(1131, "pending"), (None, "pending")]
+        assert "| S1 (#1131) | Title S1 | O-1 | — | pending | — | — |" in text
+        assert (fake.created, fake.sub_issues) == ([], [])
+
+    def test_refuses_an_issue_planned_with_v1(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({}, {EPIC: V1_BODY})
+        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
+
+        assert _render(monkeypatch, fake, plan) == 1
+
+        assert capsys.readouterr().err == V1_REFUSAL
+        assert (fake.texts(EPIC), fake.bodies[EPIC]) == ([], V1_BODY)
+
+    def test_a_comment_changed_twice_refuses(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1"))})
+        fake.race[(EPIC, 2)] = _workplan(_row("S1"), head="Once.\n")
+        fake.race[(EPIC, 4)] = _workplan(_row("S1"), head="Twice.\n")
+        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
+
+        assert _render(monkeypatch, fake, plan, "4") == 1
+
+        assert capsys.readouterr().err == (
+            f"workplan.py: #{EPIC}'s work plan comment kept changing while rendering it; run render again\n"
+        )
+        assert (fake.patched, fake.workplan()) == ([], _workplan(_row("S1"), head="Twice.\n"))
+
     @pytest.mark.parametrize(
         ("stored", "planned", "resolved"),
         [
@@ -636,6 +681,12 @@ class NextTests:
                 f"slice=S3\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=0\nclosing_lines=Closes #{EPIC}\n",
                 id="last-slice",
             ),
+            pytest.param(
+                [_row("S1", child=1131), _row("S2")],
+                f"slice=S1\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=1\n"
+                f"closing_lines<<WORKPLAN_EOF\nCloses #1131\nPart of #{EPIC} (slice S1 of 2)\nWORKPLAN_EOF\n",
+                id="own-issue",
+            ),
         ],
     )
     def test_writes_outputs_for_the_picked_slice_and_creates_no_issue(
@@ -668,6 +719,40 @@ class NextTests:
         assert (fake.created, fake.sub_issues, fake.edits) == ([], [], [])
 
     @pytest.mark.parametrize(
+        ("closed", "closing"),
+        [
+            pytest.param(False, f"remaining=1\nclosing_lines=Part of #{EPIC} (slice S2 of 2)\n", id="issue-open"),
+            pytest.param(True, f"remaining=0\nclosing_lines=Closes #{EPIC}\n", id="issue-closed"),
+        ],
+    )
+    def test_never_picks_a_handed_off_slice_and_counts_it_done_once_its_issue_closes(
+        self, closed: bool, closing: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1", status="handed_off", child=1300), _row("S2"))})
+        if closed:
+            fake.closed.add(1300)
+
+        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
+
+        assert output.read_text(encoding="utf-8") == (
+            f"slice=S2\nplan_session={PLAN_SESSION}\nplan_revision=3\n{closing}"
+        )
+
+    def test_refuses_an_issue_planned_with_v1(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1"))}, {EPIC: V1_BODY})
+
+        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 1
+
+        assert capsys.readouterr().err == V1_REFUSAL
+        assert (fake.patched, output.exists()) == ([], False)
+
+    @pytest.mark.parametrize(
         ("rows", "reason"),
         [
             pytest.param(
@@ -680,7 +765,16 @@ class NextTests:
                 "no slice is ready: S1 is blocked by open #1192; S2 waits on S1",
                 id="none-ready",
             ),
-            pytest.param([_row("S1", status="merged", pr=1215)], "every slice is merged", id="all-merged"),
+            pytest.param(
+                [_row("S1", status="handed_off", child=1300), _row("S2", depends_on=["S1"])],
+                "no slice is ready: S2 waits on S1",
+                id="waits-on-an-open-handed-off-slice",
+            ),
+            pytest.param(
+                [_row("S1", status="merged", pr=1215), _row("S2", status="handed_off", child=1300)],
+                "every slice is merged or handed off",
+                id="all-merged-or-handed-off",
+            ),
         ],
     )
     def test_refuses_with_reason(
@@ -779,7 +873,9 @@ class NextHoldTests:
                 "S1 is in_progress; finish it before starting another slice",
                 id="in-progress",
             ),
-            pytest.param([_row("S1", status="merged", pr=1215)], "every slice is merged", id="all-merged"),
+            pytest.param(
+                [_row("S1", status="merged", pr=1215)], "every slice is merged or handed off", id="all-merged"
+            ),
         ],
     )
     def test_still_refuses_what_no_person_can_settle_by_merging(
@@ -869,21 +965,82 @@ class LandTests:
         assert (_rows(text)[0]["status"], _rows(text)[0]["pr"]) == ("in_review", 1215)
         assert text.startswith(f"{MARKER}\n\n{CONTRACT_SECTION}\n## Work plan\n")
         assert text.endswith("-->\n\n### S1 as landed (#1215)\n#### Departures\n- Renamed a helper.\n")
-        assert output.read_text(encoding="utf-8") == "remaining=1\n"
+        assert output.read_text(encoding="utf-8") == f"remaining=1\nclosing_lines=Part of #{EPIC} (slice S1 of 2)\n"
         assert (fake.bodies[EPIC], fake.edits) == (INTRO, [])
 
-    def test_reports_no_slice_remaining_when_the_others_merged(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(
+        ("s1", "s2", "added", "outputs"),
+        [
+            pytest.param(
+                {}, {"status": "merged", "pr": 1214}, [], f"remaining=0\nclosing_lines=Closes #{EPIC}\n", id="last"
+            ),
+            pytest.param(
+                {"child": 1131},
+                {"status": "merged", "pr": 1214},
+                [],
+                f"remaining=0\nclosing_lines<<WORKPLAN_EOF\nCloses #1131\nCloses #{EPIC}\nWORKPLAN_EOF\n",
+                id="own-issue",
+            ),
+            pytest.param(
+                {},
+                {"status": "merged", "pr": 1214},
+                [_slice("S3", depends_on=["S1"])],
+                f"remaining=1\nclosing_lines=Part of #{EPIC} (slice S1 of 3)\n",
+                id="amended-plan-adds-a-slice",
+            ),
+            pytest.param(
+                {},
+                {"status": "handed_off", "child": 1301},
+                [],
+                f"remaining=0\nclosing_lines=Closes #{EPIC}\n",
+                id="handed-off-issue-closed",
+            ),
+            pytest.param(
+                {},
+                {"status": "handed_off", "child": 1302},
+                [],
+                f"remaining=1\nclosing_lines=Part of #{EPIC} (slice S1 of 2)\n",
+                id="handed-off-issue-open",
+            ),
+        ],
+    )
+    def test_writes_the_closing_lines_from_the_plan_as_landed(
+        self,
+        s1: dict[str, object],
+        s2: dict[str, object],
+        added: list[dict[str, object]],
+        outputs: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         output = tmp_path / "output"
         monkeypatch.setenv("DOVO_OUTPUT", str(output))
-        rows = [_row("S1", status="in_progress", session=CODE_SESSION), _row("S2", status="merged", pr=1214)]
+        rows = [_row("S1", status="in_progress", session=CODE_SESSION, **s1), _row("S2", **s2)]
         fake = FakeGh({EPIC: _workplan(*rows, head=CONTRACT_SECTION)})
-        plan = {"contract": CONTRACT, "slices": [_slice("S1"), _slice("S2")]}
+        fake.closed.add(1301)
+        plan = {"contract": CONTRACT, "slices": [_slice("S1"), _slice("S2"), *added]}
 
         assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0
 
-        assert output.read_text(encoding="utf-8") == "remaining=0\n"
+        assert output.read_text(encoding="utf-8") == outputs
+
+    def test_a_comment_changed_twice_refuses_naming_the_slice(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        row = _row("S1", status="in_progress", session=CODE_SESSION)
+        fake = FakeGh({EPIC: _workplan(row)})
+        fake.race[(EPIC, 2)] = _workplan(row, head="Once.\n")
+        fake.race[(EPIC, 4)] = _workplan(row, head="Twice.\n")
+
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": None, "slices": [_slice("S1")]})) == 1
+
+        assert capsys.readouterr().err == (
+            f"workplan.py: #{EPIC}'s work plan comment kept changing while landing S1; run land again\n"
+        )
+        assert (fake.patched, fake.workplan()) == ([], _workplan(row, head="Twice.\n"))
+        assert not output.exists()
 
     def test_refuses_a_comment_longer_than_github_allows(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -1120,6 +1277,73 @@ class SplitOutTests:
 
         assert len(fake.created) == 1
         assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
+
+    def test_handed_off_creates_the_issue_and_marks_the_slice(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2"))})
+
+        assert _main(monkeypatch, fake, "split-out", "--issue", str(EPIC), "--slice", "S2", "--handed-off") == 0
+
+        assert [(row["child"], row["status"]) for row in _rows(fake.workplan())] == [
+            (None, "pending"),
+            (1300, "handed_off"),
+        ]
+        assert "| S2 (#1300) | Title S2 | O-1 | — | handed_off | — | — |" in fake.workplan()
+        assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
+        assert output.read_text(encoding="utf-8") == "child=1300\n"
+
+    def test_handed_off_keeps_the_slices_existing_issue(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2", child=1131))})
+
+        assert _main(monkeypatch, fake, "split-out", "--issue", str(EPIC), "--slice", "S2", "--handed-off") == 0
+
+        assert [(row["child"], row["status"]) for row in _rows(fake.workplan())][1] == (1131, "handed_off")
+        assert (fake.created, fake.sub_issues) == ([], [(EPIC, "sub_issue_id=91131")])
+        assert output.read_text(encoding="utf-8") == "child=1131\n"
+
+    def test_handed_off_refuses_a_slice_that_started(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2", status="in_progress", session=CODE_SESSION))})
+
+        assert _main(monkeypatch, fake, "split-out", "--issue", str(EPIC), "--slice", "S2", "--handed-off") == 1
+
+        assert capsys.readouterr().err == "workplan.py: S2 is in_progress; only a pending slice can be handed off\n"
+        assert (fake.created, fake.patched, fake.sub_issues) == ([], [], [])
+
+    @pytest.mark.parametrize(
+        ("extra", "hint"),
+        [
+            pytest.param((), "record #1300 as S2's child", id="split-out"),
+            pytest.param(
+                ("--handed-off",), "record #1300 as S2's child and mark the slice handed_off", id="handed-off"
+            ),
+        ],
+    )
+    def test_a_comment_changed_twice_refuses_naming_the_created_issue(
+        self,
+        extra: tuple[str, ...],
+        hint: str,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        rows = (_row("S1"), _row("S2"))
+        fake = FakeGh({EPIC: _workplan(*rows)})
+        fake.race[(EPIC, 3)] = _workplan(*rows, head="Once.\n")
+        fake.race[(EPIC, 5)] = _workplan(*rows, head="Twice.\n")
+
+        assert _main(monkeypatch, fake, "split-out", "--issue", str(EPIC), "--slice", "S2", *extra) == 1
+
+        assert capsys.readouterr().err == (
+            f"workplan.py: created #1300 but #{EPIC}'s work plan comment kept changing; {hint}\n"
+        )
+        assert (len(fake.created), fake.patched, fake.sub_issues) == (1, [], [])
+        assert _rows(fake.workplan())[1]["child"] is None
 
     def test_unreadable_create_output_refuses_with_the_raw_output(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

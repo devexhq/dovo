@@ -11,19 +11,24 @@ takes it with `claim` once its own plan is approved, and records its pull
 request with `land`, which repoints the work plan at the code session when its
 report amended later slices or the contract. No child issue is created for a
 slice, except by `split-out`, which a person runs to give one slice its own
-issue. The work plan is a table for people plus a
+issue. A slice's own issue, whether an existing sub-issue the plan maps to it
+(plan.json `slices[].child`) or one `split-out` created, is its row's `child`.
+`split-out --handed-off` also marks the slice `handed_off`, for work handed to
+someone outside the flow: `next` never picks it, and it counts as done once its
+own issue is closed. The work plan is a table for people plus a
 `<!-- dovo:workplan {json} -->` line that this script alone parses and
 rewrites. Every write re-reads the comment first; when it changed since this
 run read it, the change is applied once more to the new text, and a second
 change refuses. A write that would make the comment longer than GitHub's
-65,536 characters refuses rather than truncating. `next` and `land` write their
+65,536 characters refuses rather than truncating. `render` and `next` refuse an
+issue whose description holds v1's work plan. `next` and `land` write their
 outputs as `key=value` lines to `$DOVO_OUTPUT`: `remaining`, the number of
-other slices not yet merged, and from `next` the `closing_lines` its pull
-request ends with. With `--hold`, `next` also writes the holds file a
-blueprint's `ask` step lists: `{"holds": []}` once a slice is picked, or one
-hold per slice that waits on a person (an open blocker, an unmerged slice, a
-pull request in review), in which case it exits 0 without outputs instead of
-refusing.
+other slices not yet done, and `closing_lines`, the lines the slice's pull
+request ends with; `land` computes both from the plan as landed. With `--hold`,
+`next` also writes the holds file a blueprint's `ask` step lists:
+`{"holds": []}` once a slice is picked, or one hold per slice that waits on a
+person (an open blocker, an unmerged slice, a pull request in review), in which
+case it exits 0 without outputs instead of refusing.
 """
 
 from __future__ import annotations
@@ -49,6 +54,8 @@ COMMENT_ID_RE = re.compile(r"#issuecomment-(\d+)$")
 COMMENT_LIMIT = 65_536
 READY_LABEL = "dovo:ready"
 ACTIVE_STATUSES = ("in_progress", "in_review")
+HANDED_OFF = "handed_off"
+V1_WORKPLAN = "<!-- dovo:workplan {"
 HEREDOC_DELIMITER = "WORKPLAN_EOF"
 NONE_CELL = "—"
 SIZES = ("s", "m", "l")
@@ -71,8 +78,10 @@ class WorkplanWait(WorkplanError):
 class Slice:
     """One slice row: its definition from plan.json and the state the code runs record.
 
-    outcomes are the issue's O-n ids the slice delivers. child is None unless
-    `split-out` gave the slice its own issue.
+    outcomes are the issue's O-n ids the slice delivers. child is the slice's
+    own issue, an existing sub-issue the plan maps to it or the one `split-out`
+    created, or None. status is pending, in_progress, in_review, merged, or
+    handed_off for a slice handed to someone outside the flow.
     """
 
     id: str
@@ -164,6 +173,7 @@ def _plan_slice(raw: object) -> Slice:
         closing_docs=data.get("closing_docs") is True,
         outcomes=[str(item) for item in _list(data.get("outcomes"))],
         size=_size(data.get("size"), slice_id),
+        child=_optional_int(data.get("child"), f"slice {slice_id} child"),
     )
 
 
@@ -183,7 +193,8 @@ def parse_plan(plan: object) -> tuple[dict[str, object] | None, list[Slice]]:
     """Return plan.json's contract (None for a plain issue) and its slices as pending rows.
 
     A plan whose `contract` is null is a plain issue's plan: it must have exactly
-    one slice.
+    one slice, since an issue sliced into two or more is an epic, whose contract
+    names the one owner of each surface its slices share.
 
     Args:
         plan: The parsed plan.json.
@@ -244,11 +255,12 @@ def check_started_unchanged(plan_slices: list[Slice], current: list[Slice]) -> N
 
 
 def _carry_over(row: Slice, old: Slice | None) -> Slice:
-    """Return row with old's size (unless row names one), status, PR, session and child."""
+    """Return row with old's size and child (unless row names them), status, PR and session."""
     if old is None:
         return row
     size = row.size if row.size is not None else old.size
-    return replace(row, size=size, status=old.status, pr=old.pr, session=old.session, child=old.child)
+    child = row.child if row.child is not None else old.child
+    return replace(row, size=size, status=old.status, pr=old.pr, session=old.session, child=child)
 
 
 # --- comment sections ---------------------------------------------------------
@@ -374,7 +386,7 @@ def _comment_json(plan: WorkPlan) -> str:
 def render_workplan(plan: WorkPlan, landed: str) -> str:
     """Return the `## Work plan` section: the plan session line, the slice table, the JSON line and landed reports.
 
-    A slice split out to its own issue names that issue after its id.
+    A slice with its own issue names that issue after its id.
 
     Args:
         plan: The work plan to render.
@@ -691,19 +703,37 @@ def render_contract(contract: dict[str, object], questions: str) -> str:
 # --- slice selection ----------------------------------------------------------
 
 
-def remaining(plan: WorkPlan, slice_id: str) -> int:
-    """Return how many slices other than slice_id are not merged yet."""
-    return sum(1 for row in plan.slices if row.id != slice_id and row.status != "merged")
+def _done(row: Slice, is_closed: Callable[[int], bool]) -> bool:
+    """Return whether row needs no more work: merged, or handed off to its own issue, now closed."""
+    if row.status == "merged":
+        return True
+    return row.status == HANDED_OFF and row.child is not None and is_closed(row.child)
 
 
-def closing_lines(issue: int, plan: WorkPlan, row: Slice) -> str:
-    """Return the line a slice's pull request ends with: `Closes #N` when no other slice remains, else `Part of #N`.
+def remaining(plan: WorkPlan, slice_id: str, is_closed: Callable[[int], bool]) -> int:
+    """Return how many slices other than slice_id are not done yet (see `_done`)."""
+    return sum(1 for row in plan.slices if row.id != slice_id and not _done(row, is_closed))
 
-    `Part of` names the slice and how many slices the work plan has, as in `Part of #925 (slice S2 of 4)`.
+
+def closing_lines(issue: int, plan: WorkPlan, row: Slice, is_closed: Callable[[int], bool]) -> str:
+    """Return the lines a slice's pull request ends with.
+
+    A slice with its own issue first closes it, `Closes #<child>`. Then `Closes #N`
+    when every other slice is done, else `Part of #N` naming the slice and how many
+    slices the work plan has, as in `Part of #925 (slice S2 of 4)`.
     """
-    if remaining(plan, row.id) == 0:
-        return f"Closes #{issue}"
-    return f"Part of #{issue} (slice {row.id} of {len(plan.slices)})"
+    own = [] if row.child is None else [f"Closes #{row.child}"]
+    if remaining(plan, row.id, is_closed) == 0:
+        return "\n".join([*own, f"Closes #{issue}"])
+    return "\n".join([*own, f"Part of #{issue} (slice {row.id} of {len(plan.slices)})"])
+
+
+def closing_outputs(issue: int, plan: WorkPlan, row: Slice, is_closed: Callable[[int], bool]) -> dict[str, str]:
+    """Return the `remaining` and `closing_lines` outputs for row's pull request."""
+    return {
+        "remaining": str(remaining(plan, row.id, is_closed)),
+        "closing_lines": closing_lines(issue, plan, row, is_closed),
+    }
 
 
 def refresh_merged(plan: WorkPlan, pr_state: Callable[[int], str]) -> WorkPlan:
@@ -747,9 +777,9 @@ def _active_refusal(plan: WorkPlan) -> WorkplanError | None:
     return WorkplanWait(problem, {active.id: problem}) if active.status == "in_review" else WorkplanError(problem)
 
 
-def _wait_reason(row: Slice, merged: set[str], is_closed: Callable[[int], bool]) -> str | None:
+def _wait_reason(row: Slice, done: set[str], is_closed: Callable[[int], bool]) -> str | None:
     """Return why a pending slice cannot start yet, or None when it is ready."""
-    waiting = [dep for dep in row.depends_on if dep not in merged]
+    waiting = [dep for dep in row.depends_on if dep not in done]
     if waiting:
         return f"{row.id} waits on {', '.join(waiting)}"
     still_open = [number for number in row.blocked_by if not is_closed(number)]
@@ -759,27 +789,29 @@ def _wait_reason(row: Slice, merged: set[str], is_closed: Callable[[int], bool])
 
 
 def pick(plan: WorkPlan, is_closed: Callable[[int], bool]) -> Slice:
-    """Return the first pending slice whose depends_on slices are merged and whose blocked_by issues are closed.
+    """Return the first pending slice whose depends_on slices are done and whose blocked_by issues are closed.
+
+    A handed-off slice is never picked; a slice that depends on it waits until its own issue is closed.
 
     Raises:
         WorkplanWait: When a slice's pull request is in review, or no pending slice is ready, saying why;
             a person settles either by merging or closing what the slice waits on.
-        WorkplanError: When a slice is in progress, or every slice is merged.
+        WorkplanError: When a slice is in progress, or no slice is pending.
     """
     refusal = _active_refusal(plan)
     if refusal is not None:
         raise refusal
-    merged = {row.id for row in plan.slices if row.status == "merged"}
+    done = {row.id for row in plan.slices if _done(row, is_closed)}
     reasons: dict[str, str] = {}
     for row in plan.slices:
         if row.status != "pending":
             continue
-        reason = _wait_reason(row, merged, is_closed)
+        reason = _wait_reason(row, done, is_closed)
         if reason is None:
             return row
         reasons[row.id] = reason
     if not reasons:
-        raise WorkplanError("every slice is merged")
+        raise WorkplanError("every slice is merged or handed off")
     raise WorkplanWait(f"no slice is ready: {'; '.join(reasons.values())}", reasons)
 
 
@@ -821,6 +853,19 @@ def view_issue(issue: int, fields: str) -> dict[str, object]:
 def read_body(issue: int) -> str:
     """Return issue's body exactly as GitHub stores it."""
     return str(view_issue(issue, "body")["body"])
+
+
+def refuse_v1_workplan(issue: int) -> None:
+    """Refuse an issue whose description holds a `<!-- dovo:workplan {` line, the work plan v1 keeps there.
+
+    Raises:
+        WorkplanError: When the description holds that line.
+    """
+    if any(line.lstrip().startswith(V1_WORKPLAN) for line in lf(read_body(issue)).split("\n")):
+        raise WorkplanError(
+            f"#{issue} was planned with v1's description-based work plan: its description holds a "
+            f"`{V1_WORKPLAN}` line, which v2 never reads; work it with the v1 blueprints"
+        )
 
 
 def issue_closed(issue: int) -> bool:
@@ -957,21 +1002,52 @@ def create_child(row: Slice, body: str) -> int:
         ) from error
 
 
-def _with_child(text: str, slice_id: str, child: int) -> str:
-    """Return the comment text with child recorded as slice_id's own issue."""
+def check_hand_off(row: Slice) -> None:
+    """Refuse to hand off row unless it is pending or already handed off.
+
+    Raises:
+        WorkplanError: When row has started or merged.
+    """
+    if row.status not in ("pending", HANDED_OFF):
+        raise WorkplanError(f"{row.id} is {row.status}; only a pending slice can be handed off")
+
+
+def _with_child(text: str, slice_id: str, child: int, *, handed_off: bool) -> str:
+    """Return the comment text with child recorded as slice_id's own issue, and the slice handed off when asked."""
     plan, landed = split_workplan(text)
-    find_slice(plan, slice_id).child = child
+    row = find_slice(plan, slice_id)
+    row.child = child
+    if handed_off:
+        check_hand_off(row)
+        row.status = HANDED_OFF
     return with_workplan(text, plan, landed)
 
 
-def record_child(issue: int, slice_id: str, child: int) -> None:
-    """Record child as slice_id's own issue in issue's work plan comment.
+def record_hint(slice_id: str, child: int, handed_off: bool) -> str:
+    """Return how a person records child as slice_id's own issue by hand, handed off when asked."""
+    return f"record #{child} as {slice_id}'s child" + (" and mark the slice handed_off" if handed_off else "")
+
+
+def record_child(issue: int, slice_id: str, child: int, *, handed_off: bool) -> None:
+    """Record child, just created, as slice_id's own issue in issue's work plan comment, handed off when asked.
 
     Raises:
         WorkplanError: When the comment changed twice, naming the created child.
     """
-    refusal = f"created #{child} but #{issue}'s work plan comment kept changing; record #{child} as {slice_id}'s child"
-    update_workplan(issue, lambda text: _with_child(text, slice_id, child), refusal)
+    refusal = (
+        f"created #{child} but #{issue}'s work plan comment kept changing; {record_hint(slice_id, child, handed_off)}"
+    )
+    update_workplan(issue, lambda text: _with_child(text, slice_id, child, handed_off=handed_off), refusal)
+
+
+def hand_off(issue: int, slice_id: str, child: int) -> None:
+    """Mark slice_id, whose own issue is child, handed off in issue's work plan comment.
+
+    Raises:
+        WorkplanError: When the slice has started, or the comment changed twice.
+    """
+    refusal = f"#{issue}'s work plan comment kept changing while handing off {slice_id}; run split-out again"
+    update_workplan(issue, lambda text: _with_child(text, slice_id, child, handed_off=True), refusal)
 
 
 def link_child(epic: int, child: int) -> None:
@@ -1060,6 +1136,7 @@ def cmd_render(issue: int, plan_path: str, session: str, revision: int) -> None:
     raw_questions = _list(_object(data, "plan.json").get("open_questions"))
     questions = render_questions([_object(item, "each open question") for item in raw_questions])
     plan = WorkPlan(session, revision, slices)
+    refuse_v1_workplan(issue)
     refusal = f"#{issue}'s work plan comment kept changing while rendering it; run render again"
     update_workplan(issue, lambda text: _rendered(text, plan, contract, questions), refusal)
 
@@ -1072,6 +1149,7 @@ def _refreshed(text: str) -> str:
 
 def cmd_next(issue: int) -> dict[str, str]:
     """Pick the next slice, after marking the merged ones, and return the step outputs; no issue is created."""
+    refuse_v1_workplan(issue)
     refusal = f"#{issue}'s work plan comment kept changing while marking merged slices; run next again"
     plan, _ = split_workplan(update_workplan(issue, _refreshed, refusal))
     row = pick(plan, issue_closed)
@@ -1079,8 +1157,7 @@ def cmd_next(issue: int) -> dict[str, str]:
         "slice": row.id,
         "plan_session": plan.plan_session,
         "plan_revision": "" if plan.plan_revision is None else str(plan.plan_revision),
-        "remaining": str(remaining(plan, row.id)),
-        "closing_lines": closing_lines(issue, plan, row),
+        **closing_outputs(issue, plan, row, issue_closed),
     }
 
 
@@ -1208,7 +1285,7 @@ def _landed(issue: int, text: str, args: argparse.Namespace, report: str) -> str
 def cmd_land(issue: int, args: argparse.Namespace) -> int:
     """Mark the slice in_review with its PR, record its report, follow an amended plan or contract and apply the sweep.
 
-    Writes `remaining`, the number of other slices not yet merged, to `$DOVO_OUTPUT`.
+    Writes `remaining` and `closing_lines` to `$DOVO_OUTPUT`, computed from the plan as landed.
     """
     try:
         report = Path(args.report).read_text(encoding="utf-8")
@@ -1216,7 +1293,8 @@ def cmd_land(issue: int, args: argparse.Namespace) -> int:
         raise WorkplanError(f"cannot read {args.report}: {error}") from error
     refusal = f"#{issue}'s work plan comment kept changing while landing {args.slice}; run land again"
     text = update_workplan(issue, lambda current: _landed(issue, current, args, report), refusal)
-    write_outputs({"remaining": str(remaining(split_workplan(text)[0], args.slice))})
+    plan, _ = split_workplan(text)
+    write_outputs(closing_outputs(issue, plan, find_slice(plan, args.slice), issue_closed))
     if args.sweep is None:
         return 0
     failures = apply_sweep(Path(args.sweep))
@@ -1225,23 +1303,29 @@ def cmd_land(issue: int, args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_split_out(issue: int, slice_id: str) -> dict[str, str]:
+def cmd_split_out(issue: int, slice_id: str, *, handed_off: bool) -> dict[str, str]:
     """Give one slice its own issue, linked as a sub-issue of issue, and return it as the `child` output.
 
-    The created issue is recorded on the slice's row before it is linked, so a
-    run that fails after creating it resumes by linking that issue, never by
-    creating another. It carries the slice's `dovo-size-*` label.
+    A slice that already has its own issue keeps it. The created issue is
+    recorded on the slice's row before it is linked, so a run that fails after
+    creating it resumes by linking that issue, never by creating another. It
+    carries the slice's `dovo-size-*` label. With handed_off, the slice is also
+    marked `handed_off`, which only a pending slice can be.
     """
     plan, _ = split_workplan(read_workplan(issue).text)
     row = find_slice(plan, slice_id)
+    if handed_off:
+        check_hand_off(row)
     child = row.child
     if child is None:
         created = create_child(row, child_body(issue, plan, row))
         if row.size is None:
             _no_size_note(row, created)
-        hint = f"record #{created} as {row.id}'s child"
-        _after_creating(created, "recording", hint, lambda: record_child(issue, row.id, created))
+        hint = record_hint(row.id, created, handed_off)
+        _after_creating(created, "recording", hint, lambda: record_child(issue, row.id, created, handed_off=handed_off))
         child = created
+    elif handed_off and row.status != HANDED_OFF:
+        hand_off(issue, row.id, child)
     linked = child
     _after_creating(linked, "linking", "run split-out again to link it", lambda: link_child(issue, linked))
     return {"child": str(linked)}
@@ -1278,6 +1362,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     for sub in (claim, land, split):
         sub.add_argument("--slice", required=True, help="The slice id, such as S2.")
+    split.add_argument(
+        "--handed-off",
+        action="store_true",
+        help="Also mark the slice handed off to someone outside the flow, so next never picks it.",
+    )
     for sub in (render, claim, land):
         sub.add_argument("--session", required=True, help="This dovo session's id.")
     land.add_argument("--pr", type=int, required=True, help="The slice's pull request number.")
@@ -1302,7 +1391,7 @@ def dispatch(args: argparse.Namespace) -> int:
     elif args.command == "claim":
         cmd_claim(issue, args.slice, args.session)
     elif args.command == "split-out":
-        write_outputs(cmd_split_out(issue, args.slice))
+        write_outputs(cmd_split_out(issue, args.slice, handed_off=args.handed_off))
     else:
         return cmd_land(issue, args)
     return 0

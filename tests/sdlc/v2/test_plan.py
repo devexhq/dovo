@@ -1604,6 +1604,16 @@ class PlanCheckSlicesTests:
                 "O-2 belongs to no slice. O-3 belongs to no slice.",
                 id="every-problem-named",
             ),
+            pytest.param(
+                [{"id": "S1", "outcomes": ["O-1", "O-2", "O-9"]}, {"id": "S2", "outcomes": ["O-3", "O-9"]}],
+                "S1 lists O-9, which the issue does not have. S2 lists O-9, which the issue does not have.",
+                id="outcome-the-issue-does-not-have",
+            ),
+            pytest.param(
+                [{"id": "S1", "outcomes": ["O-1", "O-2 (reply)", "O-2 (fixer)"]}, {"id": "S2", "outcomes": ["O-3"]}],
+                "O-2 is split into parts, but only S1 lists it; list it whole.",
+                id="parts-in-one-slice",
+            ),
         ],
     )
     def test_check_slices_refuses_naming_each_outcome_not_delivered_once(

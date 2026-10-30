@@ -9,7 +9,7 @@
 version: 1
 name: issue-plan-v2
 id: issue-plan-v2
-description: Ready a GitHub issue (check it against main, holding for a person and re-checking it while it is not ready, and, once a person approves, apply a legacy issue's trim and label it dovo:ready), slice it into PRs with the sdlc v2 issue-plan prompt (the feature contract and the slice table, each slice with the outcomes it delivers, on an epic, one slice on a plain issue, and no phases, which each slice's issue-code-v2 run plans just in time), review and challenge the plan once and fold in every finding and fold-routed challenge, answer its open questions, check that each outcome belongs to one slice, walk the approver through it, then write the feature contract and the work plan into the issue's work plan comment, creating no sub-issues, and label the issue type:epic when it has two or more slices
+description: Ready a GitHub issue (check it against main, holding for a person and re-checking it while it is not ready, and, once a person approves, apply a legacy issue's trim and label it dovo:ready), slice it into PRs with the sdlc v2 issue-plan prompt (the feature contract and the slice table, each slice with the outcomes it delivers, on an epic, one slice on a plain issue, and no phases, which each slice's issue-code-v2 run plans just in time), review and challenge the plan once and fold in every finding and fold-routed challenge, settle every open question as a decision, check that each outcome belongs to one slice, walk the approver through it, then post the plan's decisions to the issue and write the feature contract and the work plan into the issue's work plan comment, creating no sub-issues, and label the issue type:epic when it has two or more slices
 summary: Issue to an approved work plan comment on the ticket, with human gates
 
 inputs:
@@ -51,7 +51,7 @@ steps:
         name: Check the issue
         type: agent
         prompt: |
-          Follow .dovo/catalog/prompts/sdlc/v2/issue-ready.md for issue ${{ inputs.issue }}. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
+          Follow .dovo/catalog/prompts/sdlc/v2/issue-ready.md for issue ${{ inputs.issue }}, the issue issue-plan-v2 is about to slice. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
           .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md only when the
           verdict is needs_edits, which only a legacy issue's trim gets. Do not edit the issue, its labels or its comments.
           Findings of the previous check a person says they settled, if any: {{ steps.hold.outputs.selected }}
@@ -157,11 +157,23 @@ steps:
   # The plan slices the issue and writes no phases: issue-code-v2 phases each
   # slice just in time, after the slices before it have landed. ---
 
+  # The decisions earlier planning sessions posted to the issue, read live so
+  # the planner neither re-asks a settled question nor misses one the
+  # description has since changed under. The plan step's reset of .agentic/
+  # keeps this file.
+  - id: prior-decisions
+    name: Read the decisions earlier planning posted
+    run: >-
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py prior-decisions
+      --issue ${{ inputs.issue }} --out .agentic/prior-decisions.json
+    timeout_seconds: 120
+
   - id: plan
     name: Slice the issue
     type: agent
     prompt: |
       Follow .dovo/catalog/prompts/sdlc/v2/issue-plan.md in the mode `/issue-plan ${{ inputs.issue }}`.
+      Read the decisions earlier planning posted to the issue from .agentic/prior-decisions.json.
       List under each slice the outcomes (`O-n`) of the issue it delivers.
       Write the plan to .agentic/plan.md and its open questions, contract and slices to
       .agentic/plan.json, with no phases, then stop; do not implement anything.
@@ -265,27 +277,31 @@ steps:
         label_field: summary
       comment: { policy: optional, message: "Your answers, one per selected question (e.g. OQ-1: show them)" }
 
+  # Always runs its fold, ticked or not: every open question leaves as a
+  # decision, settled by the human's answer or by the plan's assumed one.
   - id: fold-answers
-    name: Fold the answers into the plan
+    name: Settle the plan's open questions as decisions
     type: agent
     prompt: |
-      Open questions answered: {{ steps.answer-questions.outputs.selected }}
-      Answers: {{ steps.answer-questions.outputs.comment }}
-
-      If the list is empty, change nothing and report that you did nothing.
-      Otherwise update .agentic/plan.md and .agentic/plan.json:
-        - For each answered question, rewrite the plan against the human's answer, move the
-          question from Open questions into Decisions as answered by the human, and remove it
-          from open_questions in .agentic/plan.json.
-        - Keep .agentic/plan.json in the shape the issue-plan prompt defines
-          (`.dovo/catalog/prompts/sdlc/v2/issue-plan.md`), including its contract and slices, and in
-          agreement with .agentic/plan.md.
-      Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
+      Follow .dovo/catalog/prompts/sdlc/v2/fold-answers.md.
+      Open questions the human ticked: {{ steps.answer-questions.outputs.selected }}
+      The human's answers: {{ steps.answer-questions.outputs.comment }}
+      The plan slices issue ${{ inputs.issue }} in issue mode.
     tools: { allow_all: true }
     timeout_seconds: 1800
     artifacts:
       - { name: plan, path: .agentic/plan.md }
       - { name: plan-questions, path: .agentic/plan.json }
+
+  # Holds the run before the walkthrough when fold-answers left a question
+  # open, such as one ticked with no answer, or wrote a malformed decision;
+  # the message names which. A failed session cannot resume, so the person
+  # settles it in .agentic/plan.json and retries rather than losing the run.
+  - id: check-questions
+    name: Check that every open question is settled
+    run: uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py check-questions --plan .agentic/plan.json
+    timeout_seconds: 120
+    on_failure: prompt_user
 
   # The issue's numbered items with their exact text, read live once the plan
   # is settled: the plan step resets .agentic/, and a legacy issue's trim
@@ -298,9 +314,12 @@ steps:
     timeout_seconds: 120
 
   # Holds the run before the walkthrough when an outcome of the issue belongs
-  # to no slice, or to two without a split marker; the message names which. A
+  # to no slice, to two without a split marker or to one slice as parts, or a
+  # slice lists an outcome the issue does not have; the message names which. A
   # failed session cannot resume, so the person fixes the slices' outcomes in
-  # .agentic/plan.json and .agentic/plan.md and retries rather than losing the run.
+  # .agentic/plan.json and .agentic/plan.md and retries rather than losing the
+  # run. A retry that passes publishes both files again, so the walkthrough,
+  # the approval and the work plan read the fixed plan.
   - id: check-slices
     name: Check that each outcome belongs to one slice
     run: >-
@@ -308,6 +327,9 @@ steps:
       --plan .agentic/plan.json --requirements .agentic/requirements.json
     timeout_seconds: 120
     on_failure: prompt_user
+    artifacts:
+      - { name: plan, path: .agentic/plan.md }
+      - { name: plan-questions, path: .agentic/plan.json }
 
   # Written after every answer is folded in, so it explains the plan being
   # approved. The approval prompt shows it rather than the plan, which is cut
@@ -352,6 +374,21 @@ steps:
     timeout_seconds: 120
     artifacts:
       - { name: plan, path: .agentic/plan.md }
+
+  # Posted once the plan is approved, so the issue records what was decided; a
+  # plan with no decisions posts nothing. The comment carries the description's
+  # body_sha that prior-decisions read before planning, so an edit made since
+  # then marks these decisions to confirm. Its slice is the plan's one slice,
+  # or `all` when the plan has two or more, since issue-mode decisions shape
+  # the slicing rather than one slice's phases.
+  - id: decisions-comment
+    name: Post the plan's decisions to the issue
+    run: |
+      set -eu
+      slice=$(uv run --quiet python -c 'import json; s = json.load(open(".agentic/plan.json"))["slices"]; print(s[0]["id"] if len(s) == 1 else "all")')
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py decisions-comment --plan .agentic/plan.json \
+        --prior .agentic/prior-decisions.json --issue ${{ inputs.issue }} --slice "$slice" --session "$DOVO_SESSION_ID"
+    timeout_seconds: 120
 
   # A command step: the work plan comment is written by the script alone, with
   # the host's gh credentials; the issue's description is never written. The
