@@ -133,7 +133,7 @@ When the issue leaves a detail unspecified, choose the option consistent with th
 
 ## 5. Emit the machine-readable open questions
 
-Write `.agentic/plan.json` alongside the markdown. `.dovo/catalog/blueprints/feature-dev.yml` reads it to ask the human which open questions to answer, so it must agree with the plan's **Open questions** block entry for entry. The slice flow also reads its `contract` and `slices` to write the epic's contract and work plan, so they must agree with the plan's `## Feature contract` and `## Slices` sections. The example below is a slice-mode plan for a plain issue.
+Write `.agentic/plan.json` alongside the markdown. The `issue-plan` and `issue-code` blueprints (`.dovo/catalog/blueprints/issue-plan.yml`, `.dovo/catalog/blueprints/issue-code.yml`) read it to ask the human which open questions to answer, so it must agree with the plan's **Open questions** block entry for entry. The slice flow also reads its `contract` and `slices` to write the epic's contract and work plan, so they must agree with the plan's `## Feature contract` and `## Slices` sections. The example below is a slice-mode plan for a plain issue.
 
 ```json
 {

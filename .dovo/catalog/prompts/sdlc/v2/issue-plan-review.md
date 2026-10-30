@@ -52,10 +52,10 @@ A miss is Blocking when implementing the plan as written produces a bug, data lo
 
 In an issue plan, read "phase" below as "slice": every requirement maps to the slice that lands it, and the test and R13 checks wait for the slice plans. In a slice plan, the requirements are the child issue's.
 
-- In an issue plan, every FR, NFR, numbered error case and Definition of Done item maps to a slice in `## Traceability`. In a slice plan, which has no Traceability or GWT section, every obligation of every outcome (`O-n`) of the issue, or on a legacy issue every FR, NFR and numbered error case (each sentence a test could observe), is covered by a phase's FRs cell and by at least one test line under that phase's `### Tests`. An id that appears somewhere is not enough. A requirement with an uncovered part is a Warning that quotes the issue sentence and names the phase that should carry it. List the gaps.
+- In an issue plan, every FR, NFR, numbered error case and Definition of Done item maps to a slice in `## Traceability`. In a slice plan, which has no Traceability or GWT section, every obligation of every outcome (`O-n`) and decision (`D-n`) of the issue, or on a legacy issue every FR, NFR and numbered error case (each sentence a test could observe), is covered by a phase's FRs cell and by at least one test line under that phase's `### Tests`. An id that appears somewhere is not enough. A requirement with an uncovered part is a Warning that quotes the issue sentence and names the phase that should carry it. List the gaps.
 - Every command the plan adds or changes has the R13 runner matrix: success, a failure path, `--format json` and each option it binds.
-- Nothing an issue under `## Owned elsewhere` owns is planned, unless the plan names it as a departure under What you're approving with an Open Question, or it is a sentence the change makes false (R17).
-- Unrequested surface is surface that serves no FR, NFR, guard or Definition of done item. It gets no finding when a rule requires it (R10 callers, R17 sentences) or the plan names it as a departure with an Open Question; otherwise it is a Warning when public and a Suggestion when internal.
+- Nothing an issue under `## Owned elsewhere` owns is planned, unless the plan names it as a departure (a `planner` decision or an Open Question), or it is a sentence the change makes false (R17).
+- Unrequested surface is surface that serves no FR, NFR, guard or Definition of done item. It gets no finding when a rule requires it (R10 callers, R17 sentences) or the plan names it as a departure (a `planner` decision or an Open Question); otherwise it is a Warning when public and a Suggestion when internal.
 - Each planned test pins a contract no other test pins (R12), and sibling cases are planned as one parametrized test, on one line.
 - Each Open Question states the answer the plan assumes, and `.agentic/plan.json` lists the same Open Questions with the same ids and assumed answers. A missing or disagreeing `plan.json` is a Warning: the blueprint asks the human from it. A Decision that changes public surface or a persisted format without an Open Question is a finding.
 
@@ -95,8 +95,8 @@ Skip this for an issue plan. Otherwise report each failure as a Blocking finding
 
 - **The epic's plan is unchanged:** diff `plan.json` against `.agentic/epic-plan.json`, the epic plan this run started from, field by field. `contract` is equal, and `slices` is equal with every slice's `phases` left out, so a change to any field (`title`, `depends_on`, `blocked_by`, `child`, `stub`, `owns`, `lint_gates`, `estimate`, `size`, `pilot`, `closing_docs`) is caught. The plan's `## Feature contract` and `## Slices` sections are `.agentic/epic-plan.md`'s, verbatim. A slice plan that changes the contract or another slice is a Blocking finding: the contract changes only when a slice lands. When `.agentic/epic-plan.json` is missing, say so and fall back to the epic's body: `contract` says what its `## Feature contract` says, apart from the open questions listed under Decisions, which are the epic plan's.
 - **Only this slice is phased:** this slice's `phases` lists exactly the Phases table's phase numbers, and every other slice's `phases` is `[]`.
-- **The child issue is covered:** every outcome (`O-n`) of the child issue, or on a legacy issue every FR, NFR and numbered error case, is in the Phases table's FRs column and cited by at least one test line. A requirement only part of which is covered is the Warning Step 5 describes, not a Blocking finding.
-- **No other slice's work:** no phase does work the contract's Shared-surface ownership gives to another slice, or that the child issue names under **Owned elsewhere**, unless the plan names it as a departure with an Open Question.
+- **The child issue is covered:** every outcome (`O-n`) and decision (`D-n`) of the child issue, or on a legacy issue every FR, NFR and numbered error case, is in the Phases table's FRs column and cited by at least one test line. A requirement only part of which is covered is the Warning Step 5 describes, not a Blocking finding.
+- **No other slice's work:** no phase does work the contract's Shared-surface ownership gives to another slice, or that the child issue names under **Owned elsewhere**, unless the plan names it as a departure (a `planner` decision or an Open Question).
 - **The "as landed" reports are heeded:** every report under the epic's `## Work plan` that names this slice under Later slices affected, or records a convention this slice follows, is reflected in the phases or raised as an Open Question.
 - **Size:** the slice's phases together stay within its budget: `src/` plus docs under about 400 changed lines, and the whole PR under about 900, or the plan says why the slice cannot be split.
 
@@ -139,7 +139,7 @@ An empty section keeps its heading with the line `none`. IDs are the tier letter
 
 ## 8. Emit the machine-readable findings
 
-Write `.agentic/plan-review.json` alongside the markdown, overwriting any earlier one. `.dovo/catalog/blueprints/feature-dev.yml` folds every finding it lists into the plan, so it must agree with `plan-review.md` row for row.
+Write `.agentic/plan-review.json` alongside the markdown, overwriting any earlier one. `.dovo/catalog/blueprints/issue-code-v2.yml` folds every finding it lists into the plan, so it must agree with `plan-review.md` row for row.
 
 ```json
 {
