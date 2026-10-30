@@ -1,4 +1,4 @@
-"""The shapes of the records sdlc v2's planning steps write, each read with `from_json`.
+"""The shapes of the records sdlc v2's planning steps write and read.
 
 A decision is one entry of `decisions` in .agentic/plan.json: a choice the plan
 is written against, and who settled it. `settled_by` is `human` for an open
@@ -6,7 +6,14 @@ question the human answered, with `answer` holding the human's words;
 `assumed_accepted` for an open question the human left to its assumed answer;
 and `planner` for a departure from the issue the planner made, which the human
 approves with the plan. `was` is the id of the open question the decision
-settles, or null for a planner's departure that was never one.
+settles, or null for a planner's departure that was never one. `replaces`, when
+present, names the decision an earlier planning session posted to the issue
+that this one takes the place of: `{"id": "D-2", "session": "<session id>"}`.
+
+A prior decision is one entry of `decisions` in .agentic/prior-decisions.json,
+which `plan.py prior-decisions` writes from the issue's `dovo:decisions`
+comments. Its `status` is `given` when the issue's description is unchanged
+since the comment was posted, and `to_confirm` otherwise.
 """
 
 from __future__ import annotations
@@ -20,6 +27,8 @@ FROM_QUESTION = frozenset({"human", "assumed_accepted"})
 DECISION_ID = re.compile(r"D-\d+")
 QUESTION_ID = re.compile(r"OQ-\d+")
 ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+SESSION_ID = re.compile(r"[^\s()]+")
+PRIOR_SCHEMA_VERSION = 1
 
 
 class FormatError(ValueError):
@@ -121,6 +130,32 @@ def _date(raw: dict[str, object], owner: str) -> str:
 
 
 @dataclass(frozen=True)
+class Replaced:
+    """A decision an earlier planning session posted, named by its id and that session."""
+
+    id: str
+    session: str
+
+
+def _replaces(raw: dict[str, object], owner: str) -> Replaced | None:
+    """Return the earlier decision raw replaces, or None when it replaces none.
+
+    Raises:
+        FormatError: replaces is present but has no D-<n> id or no session id.
+    """
+    value = raw.get("replaces")
+    if value is None:
+        return None
+    ident = value.get("id") if isinstance(value, dict) else None
+    session = value.get("session") if isinstance(value, dict) else None
+    if not isinstance(ident, str) or not DECISION_ID.fullmatch(ident):
+        raise FormatError(f"{owner} has replaces {value!r}; its id must be D-<n>.")
+    if not isinstance(session, str) or not SESSION_ID.fullmatch(session):
+        raise FormatError(f"{owner} has replaces {value!r}; its session must be a session id.")
+    return Replaced(id=ident, session=session)
+
+
+@dataclass(frozen=True)
 class Decision:
     """One settled choice in plan.json's decisions, and who settled it."""
 
@@ -132,6 +167,7 @@ class Decision:
     rejected: tuple[str, ...]
     phases: tuple[int, ...]
     date: str
+    replaces: Replaced | None
 
     @classmethod
     def from_json(cls, raw: object, position: int) -> Decision:
@@ -156,4 +192,29 @@ class Decision:
             rejected=_texts(raw, "rejected", owner),
             phases=_numbers(raw, "phases", owner),
             date=_date(raw, owner),
+            replaces=_replaces(raw, owner),
         )
+
+
+@dataclass(frozen=True)
+class PriorDecision:
+    """A decision read back from one of the issue's dovo:decisions comments, with the bullet's text after its id."""
+
+    id: str
+    text: str
+    slice: str
+    session: str
+    status: str
+
+    def to_json(self) -> dict[str, object]:
+        """Return the entry as prior-decisions.json's decisions holds it."""
+        return {"id": self.id, "text": self.text, "slice": self.slice, "session": self.session, "status": self.status}
+
+
+def prior_decisions_json(issue: int, decisions: list[PriorDecision]) -> dict[str, object]:
+    """Return the prior-decisions.json document listing issue's prior decisions."""
+    return {
+        "schema_version": PRIOR_SCHEMA_VERSION,
+        "issue": issue,
+        "decisions": [decision.to_json() for decision in decisions],
+    }
