@@ -105,7 +105,7 @@ target-version = "py313"
 line-length = 120
 exclude = [
     ".git",
-    ".dovo",
+    ".dovo/worktrees",
     "__pycache__",
     "build",
     "dist",
@@ -244,8 +244,8 @@ redundant-cast = "error"
 unused-ignore-comment = "error"
 
 [tool.ty.src]
-# Source, test and e2e suites are type-checked.
-include = ["src", "tests", "e2e"]
+# Source, test and e2e suites, and the sdlc catalog scripts, are type-checked.
+include = ["src", "tests", "e2e", ".dovo/catalog/scripts"]
 exclude = [
     "**/__pycache__",
     "build",

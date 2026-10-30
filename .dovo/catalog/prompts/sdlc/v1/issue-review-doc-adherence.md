@@ -2,7 +2,7 @@ Forked from `dovo-review/doc-adherence.md` at `de256118`.
 
 # Doc adherence gates
 
-Walk the changed-file list against this table (and [docs/agents/documentation.md](../../../docs/agents/documentation.md)). A gate fires only when the change matches its trigger or makes an existing doc/docstring sentence false (`R17`): `AGENTS.md` states that no doc update is better than busywork, so an update outside these triggers and `R17` is itself a finding.
+Walk the changed-file list against this table (and [docs/agents/documentation.md](../../../../../docs/agents/documentation.md)). A gate fires only when the change matches its trigger or makes an existing doc/docstring sentence false (`R17`): `AGENTS.md` states that no doc update is better than busywork, so an update outside these triggers and `R17` is itself a finding.
 
 ## Required updates in the same change
 
@@ -21,7 +21,7 @@ Walk the changed-file list against this table (and [docs/agents/documentation.md
 
 - **No duplicated source.** A field table, model signature, or enum list hand-copied from source is a smell. In contributor docs, link to the model file and class and document only what the type hints do not show; user docs never link to source (R18). Flag new instances.
 - **Unavoidable field tables need a test.** When a table is the specification for something external (a JSON Schema, a stable CLI output format), a test must fail when table and source disagree. The test names the doc it pins by a path constant; a user doc never names the test.
-- **User docs (R18).** Check every line the diff adds or changes under `docs/` outside `docs/agents/`, in `README.md` and in `mkdocs.yml` against `UDOC-001` to `UDOC-008` in [docs/agents/documentation.md](../../../docs/agents/documentation.md#user-documentation). Report each violation with rule `R18`, the UDOC ID and the `path:line`. Do not report lines the diff does not touch.
+- **User docs (R18).** Check every line the diff adds or changes under `docs/` outside `docs/agents/`, in `README.md` and in `mkdocs.yml` against `UDOC-001` to `UDOC-008` in [docs/agents/documentation.md](../../../../../docs/agents/documentation.md#user-documentation). Report each violation with rule `R18`, the UDOC ID and the `path:line`. Do not report lines the diff does not touch.
 - **Prefer deletion over accretion.** A stale bullet replaced is better than a parallel truth appended. Flag a doc that now states two contradictory things.
 
 ## Process directives

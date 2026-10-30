@@ -23,7 +23,7 @@ steps:
 
   - id: typecheck
     name: Typecheck
-    run: uv run ty check src tests e2e
+    run: uv run ty check src tests e2e .dovo/catalog/scripts
     timeout_seconds: 300
 
   - id: docs

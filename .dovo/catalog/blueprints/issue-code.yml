@@ -50,7 +50,7 @@ steps:
       - id: next
         name: Pick the next slice
         run: >-
-          uv run python scripts/workplan.py next --issue ${{ inputs.issue }}
+          uv run python .dovo/catalog/scripts/sdlc/v1/workplan.py next --issue ${{ inputs.issue }}
           --hold .agentic/next-hold.json
         timeout_seconds: 300
         artifacts:
@@ -172,10 +172,7 @@ steps:
           "Issue #{{ steps.next.outputs.child }} is already labelled dovo:ready; not re-checked.",
           and stop. Otherwise run:
 
-          /dovo-issue ready {{ steps.next.outputs.child }}
-
-          Follow the Ready mode section of .agents/skills/dovo-issue/SKILL.md if the slash command is
-          not recognized. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
+          Follow the Ready mode section of .dovo/catalog/prompts/sdlc/v1/issue-ready.md for issue {{ steps.next.outputs.child }}. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
           .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md when the
           verdict is needs_edits. Do not edit the issue, its labels or its comments.
           Findings of the previous check a person says they settled, if any: {{ steps.hold.outputs.selected }}
@@ -303,9 +300,7 @@ steps:
     name: Plan the slice
     type: agent
     prompt: |
-      /issue-plan --slice {{ steps.next.outputs.slice }}
-
-      Follow .agents/skills/issue-plan/SKILL.md if the slash command is not recognized.
+      Follow .dovo/catalog/prompts/sdlc/v1/issue-plan.md in the mode `/issue-plan --slice {{ steps.next.outputs.slice }}`.
       Plan slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked by issue
       {{ steps.next.outputs.child }}, from the epic plan in .agentic/epic-plan.md and
       .agentic/epic-plan.json.
@@ -323,9 +318,7 @@ steps:
     name: Review the slice's plan
     type: agent
     prompt: |
-      /issue-plan-review --slice {{ steps.next.outputs.slice }}
-
-      Follow .agents/skills/issue-plan-review/SKILL.md if the slash command is not recognized.
+      Follow .dovo/catalog/prompts/sdlc/v1/issue-plan-review.md in the mode `/issue-plan-review --slice {{ steps.next.outputs.slice }}`.
       Review .agentic/plan.md and write findings to .agentic/plan-review.md and
       .agentic/plan-review.json.
     tools: { allow_all: true }
@@ -341,9 +334,7 @@ steps:
     name: Challenge the slice plan's design
     type: agent
     prompt: |
-      /dovo-plan-challenge
-
-      Follow .agents/skills/dovo-plan-challenge/SKILL.md if the slash command is not recognized.
+      Follow .dovo/catalog/prompts/sdlc/v1/plan-challenge.md.
       Challenge .agentic/plan.md and write challenges to .agentic/plan-challenge.md and
       .agentic/plan-challenge.json. Do not read .agentic/plan-review.md or .agentic/plan-review.json.
       The plan phases slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, one PR,
@@ -389,8 +380,8 @@ steps:
               the test that would pin it.
         - Addressing a finding or challenge may make an open question moot, change its assumed
           answer or raise a new one: remove, rewrite or add entries under Open questions to match.
-        - Keep .agentic/plan.json in the shape the issue-plan skill defines for slice mode
-          (`.agents/skills/issue-plan/SKILL.md`), and in agreement with .agentic/plan.md. Never
+        - Keep .agentic/plan.json in the shape the issue-plan prompt defines for slice mode
+          (`.dovo/catalog/prompts/sdlc/v1/issue-plan.md`), and in agreement with .agentic/plan.md. Never
           change its contract or slices, or the plan's Feature contract and Slices sections,
           other than slice {{ steps.next.outputs.slice }}'s phases: a finding or challenge that
           needs either changed becomes an open question whose assumed answer keeps them.
@@ -429,8 +420,8 @@ steps:
         - For each answered question, rewrite the plan against the human's answer, move the
           question from Open questions into Decisions as answered by the human, and remove it
           from open_questions in .agentic/plan.json.
-        - Keep .agentic/plan.json in the shape the issue-plan skill defines for slice mode
-          (`.agents/skills/issue-plan/SKILL.md`), and in agreement with .agentic/plan.md. Never
+        - Keep .agentic/plan.json in the shape the issue-plan prompt defines for slice mode
+          (`.dovo/catalog/prompts/sdlc/v1/issue-plan.md`), and in agreement with .agentic/plan.md. Never
           change its contract or slices other than slice {{ steps.next.outputs.slice }}'s phases:
           an answer that departs from the contract is planned as a named departure in this
           slice's phases, and the slice's report amends the contract when the slice lands.
@@ -448,9 +439,7 @@ steps:
     name: Walk through the slice's plan for the approver
     type: agent
     prompt: |
-      /dovo-plan-walkthrough
-
-      Follow .agents/skills/dovo-plan-walkthrough/SKILL.md if the slash command is not recognized.
+      Follow .dovo/catalog/prompts/sdlc/v1/plan-walkthrough.md.
       Explain .agentic/plan.md to the person approving it and write .agentic/plan-walkthrough.md.
       The plan phases slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked
       by issue {{ steps.next.outputs.child }}, within the feature contract and slices approved
@@ -488,7 +477,7 @@ steps:
   - id: claim
     name: Claim the slice for this session
     run: >-
-      uv run python scripts/workplan.py claim --issue ${{ inputs.issue }}
+      uv run python .dovo/catalog/scripts/sdlc/v1/workplan.py claim --issue ${{ inputs.issue }}
       --slice {{ steps.next.outputs.slice }} --session "$DOVO_SESSION_ID"
     timeout_seconds: 120
 
@@ -521,16 +510,14 @@ steps:
       # the progress record is unreadable or for another slice.
       - id: phase
         name: Pick the next unfinished phase
-        run: uv run --quiet python scripts/code_progress.py next --slice {{ steps.next.outputs.slice }}
+        run: uv run --quiet python .dovo/catalog/scripts/sdlc/v1/code_progress.py next --slice {{ steps.next.outputs.slice }}
         timeout_seconds: 120
 
       - id: code
         name: Implement the phase
         type: agent
         prompt: |
-          /issue-code --slice {{ steps.next.outputs.slice }} --phase {{ steps.phase.outputs.phase }}
-
-          Follow .agents/skills/issue-code/SKILL.md if the slash command is not recognized.
+          Follow .dovo/catalog/prompts/sdlc/v1/issue-code.md in the mode `/issue-code --slice {{ steps.next.outputs.slice }} --phase {{ steps.phase.outputs.phase }}`.
           Implement only phase {{ steps.phase.outputs.phase }} of slice
           {{ steps.next.outputs.slice }} of .agentic/plan.md for issue ${{ inputs.issue }}; its
           child issue is {{ steps.next.outputs.child }}. Earlier phases are already committed. Do
@@ -570,7 +557,7 @@ steps:
             uv run --quiet python scripts/check_commit_msg.py .agentic/phase-commit-msg
             git commit -q -F .agentic/phase-commit-msg
           fi
-          uv run --quiet python scripts/code_progress.py record --slice {{ steps.next.outputs.slice }} --phase "$phase"
+          uv run --quiet python .dovo/catalog/scripts/sdlc/v1/code_progress.py record --slice {{ steps.next.outputs.slice }} --phase "$phase"
           rm -f .agentic/phase-commit-msg
         timeout_seconds: 300
         on_failure: prompt_user
@@ -579,12 +566,11 @@ steps:
     name: Draft the commit message and branch name
     type: agent
     prompt: |
-      Run /pr-prep (follow .agents/skills/pr-prep/SKILL.md if the slash
-      command is not recognized). The change implements slice {{ steps.next.outputs.slice }} of
+      Follow .dovo/catalog/prompts/sdlc/v1/pr-prep.md. The change implements slice {{ steps.next.outputs.slice }} of
       issue ${{ inputs.issue }}, tracked by issue {{ steps.next.outputs.child }}.
       The code loop committed each phase, so read the change with
       `git log --oneline origin/main..HEAD` and `git diff origin/main...HEAD`, plus `git status`
-      for anything left uncommitted, and ignore `.dovo/run` and `.agentic/`. The skill's stop
+      for anything left uncommitted, and ignore `.dovo/run` and `.agentic/`. The prompt's stop
       when nothing is uncommitted does not apply here: always write .agentic/commit-msg, which
       commits whatever is still uncommitted, if anything. The commit message and branch name are
       used now; `pr-describe` rewrites the PR title and description after review. Also write
@@ -640,9 +626,7 @@ steps:
         name: Review the change
         type: agent
         prompt: |
-          /issue-review --slice {{ steps.next.outputs.slice }}
-
-          Follow .agents/skills/issue-review/SKILL.md if the slash command is not recognized.
+          Follow .dovo/catalog/prompts/sdlc/v1/issue-review.md in the mode `/issue-review --slice {{ steps.next.outputs.slice }}`.
           Review the commits on this branch against origin/main as slice
           {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked by issue
           {{ steps.next.outputs.child }}, and write .agentic/review.md, .agentic/review.json
@@ -664,9 +648,7 @@ steps:
         name: Fix the blockers and warnings
         type: agent
         prompt: |
-          /issue-code review --tiers blockers,warnings
-
-          Follow .agents/skills/issue-code/SKILL.md if the slash command is not recognized.
+          Follow .dovo/catalog/prompts/sdlc/v1/issue-code.md in the mode `/issue-code review --tiers blockers,warnings`.
           If .agentic/review.json lists no BLOCKER or WARNING findings, or its action is
           needs_human or replan, fix no findings. If .agentic/fix-gate.log exists, the last
           round's fixes failed the quality gate: fix what it reports, and add a line
@@ -740,7 +722,7 @@ steps:
            decision to the contract whose `id` is that question's id (such as `OQ-2`), with the
            answer that landed and `settled_by` naming this slice. land then drops the question
            from the epic's open questions; a question with no such decision stays open.
-         Keep plan.json in the shape the issue-plan skill defines (`.agents/skills/issue-plan/SKILL.md`),
+         Keep plan.json in the shape the issue-plan prompt defines (`.dovo/catalog/prompts/sdlc/v1/issue-plan.md`),
          and say under Later slices affected what was amended. Never change this slice or an
          earlier one.
       3. Find the open issues whose body this change makes false: the epic's open sub-issues,
@@ -771,13 +753,13 @@ steps:
     name: Describe the PR from the reviewed branch
     type: agent
     prompt: |
-      Follow .agents/skills/pr-prep/SKILL.md (or run /pr-prep) to draft only .agentic/pr-title
+      Follow .dovo/catalog/prompts/sdlc/v1/pr-prep.md to draft only .agentic/pr-title
       and .agentic/pr-description, overwriting both. The change implements slice
       {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked by issue
       {{ steps.next.outputs.child }}; .agentic/slice-report.md says how it departed from the plan.
       Everything is already committed, so read it with `git log --oneline origin/main..HEAD` and
       `git diff origin/main...HEAD` instead of the uncommitted diff, and ignore `.dovo/run`. The
-      skill's stop when nothing is uncommitted does not apply here: always rewrite both files.
+      prompt's stop when nothing is uncommitted does not apply here: always rewrite both files.
       End .agentic/pr-description with the closing lines between the two markers below, one or
       two of them, exactly as given and in this order, each on a line of its own. Use no other
       closing keyword (Fixes, Closes, Resolves) anywhere else in the description.
@@ -809,7 +791,7 @@ steps:
   - id: land
     name: Record the slice as landed and apply the sweep
     run: >-
-      uv run python scripts/workplan.py land --issue ${{ inputs.issue }}
+      uv run python .dovo/catalog/scripts/sdlc/v1/workplan.py land --issue ${{ inputs.issue }}
       --slice {{ steps.next.outputs.slice }} --session "$DOVO_SESSION_ID"
       --pr "$(head -n 1 .agentic/pr-url | sed 's#.*/##')"
       --report .agentic/slice-report.md --plan .agentic/plan.json --base-plan .agentic/epic-plan.json
