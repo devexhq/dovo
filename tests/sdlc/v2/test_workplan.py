@@ -358,10 +358,10 @@ At `944de0ce`.
 """
 
 
-def _render(monkeypatch: pytest.MonkeyPatch, fake: FakeGh, plan: str, revision: str = "1") -> int:
-    """Run render for EPIC from plan as PLAN_SESSION at revision."""
+def _render(monkeypatch: pytest.MonkeyPatch, fake: FakeGh, plan: str, revision: str = "1", *extra: str) -> int:
+    """Run render for EPIC from plan as PLAN_SESSION at revision, with extra arguments."""
     argv = ("render", "--issue", str(EPIC), "--plan", plan, "--session", PLAN_SESSION, "--revision", revision)
-    return _main(monkeypatch, fake, *argv)
+    return _main(monkeypatch, fake, *argv, *extra)
 
 
 class RenderTests:
@@ -376,7 +376,7 @@ class RenderTests:
         stored = (
             '{"plan_session":"blueprint_plan01","plan_revision":2,"slices":[{"id":"S1","title":"Title S1",'
             '"depends_on":[],"blocked_by":[],"closing_docs":false,"outcomes":["O-1"],"status":"pending","pr":null,'
-            '"session":null,"size":"s","child":null}]}'
+            '"session":null,"size":"s","child":null,"phased_session":null}]}'
         )
         assert fake.texts(EPIC) == [
             f"{MARKER}\n"
@@ -538,6 +538,59 @@ class RenderTests:
         assert "| S1 (#1131) | Title S1 | O-1 | — | merged | #1215 | bp_c |" in text
         assert text.endswith(f"-->\n\n{landed}\n")
 
+    def test_phased_records_the_one_slice_as_phased_in_this_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = FakeGh({})
+        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1", phases=[1, 2])]})
+
+        assert _render(monkeypatch, fake, plan, "5", "--phased") == 0
+
+        assert [(row["phased_session"], row["status"]) for row in _rows(fake.workplan())] == [(PLAN_SESSION, "pending")]
+
+    @pytest.mark.parametrize(
+        ("slices", "reason"),
+        [
+            pytest.param(
+                [_slice("S1"), _slice("S2", outcomes=["O-2"])],
+                "--phased needs a plan with one slice, not 2",
+                id="two-slices",
+            ),
+            pytest.param(
+                [_slice("S1", phases=[])], "--phased needs slice S1 to list its phases in plan.json", id="no-phases"
+            ),
+        ],
+    )
+    def test_phased_refuses_a_plan_whose_one_slice_is_not_phased(
+        self,
+        slices: list[dict[str, object]],
+        reason: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        fake = FakeGh({})
+        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices})
+
+        assert _render(monkeypatch, fake, plan, "5", "--phased") == 1
+
+        assert capsys.readouterr().err == f"workplan.py: {reason}\n"
+        assert fake.texts(EPIC) == []
+
+    @pytest.mark.parametrize(
+        ("status", "kept"),
+        [pytest.param("pending", None, id="pending-drops-it"), pytest.param("in_progress", "bp_old", id="started")],
+    )
+    def test_rerender_without_phased_keeps_the_phased_plan_only_of_a_started_slice(
+        self, status: str, kept: str | None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1", status=status, phased_session="bp_old"))})
+        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
+
+        assert _render(monkeypatch, fake, plan, "4") == 0
+
+        assert [row["phased_session"] for row in _rows(fake.workplan())] == [kept]
+
     def test_records_an_existing_sub_issue_the_plan_maps_to_a_slice(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -679,27 +732,33 @@ class NextTests:
         [
             pytest.param(
                 [_row("S1")],
-                f"slice=S1\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=0\n"
+                f"slice=S1\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nphased_session=\nremaining=0\n"
                 f"closing_lines=Closes #{EPIC}\n",
                 id="only-slice",
             ),
             pytest.param(
                 [_row("S1", status="merged", pr=1215), _row("S2", depends_on=["S1"]), _row("S3")],
-                f"slice=S2\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=1\n"
+                f"slice=S2\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nphased_session=\nremaining=1\n"
                 f"closing_lines=Part of #{EPIC} (slice S2 of 3)\n",
                 id="middle-slice",
             ),
             pytest.param(
                 [_row("S1", status="merged", pr=1215), _row("S2", status="merged", pr=1216), _row("S3")],
-                f"slice=S3\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=0\n"
+                f"slice=S3\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nphased_session=\nremaining=0\n"
                 f"closing_lines=Closes #{EPIC}\n",
                 id="last-slice",
             ),
             pytest.param(
                 [_row("S1", child=1131), _row("S2")],
-                f"slice=S1\nissue=1131\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=1\n"
+                f"slice=S1\nissue=1131\nplan_session={PLAN_SESSION}\nplan_revision=3\nphased_session=\nremaining=1\n"
                 f"closing_lines<<WORKPLAN_EOF\nCloses #1131\nPart of #{EPIC} (slice S1 of 2)\nWORKPLAN_EOF\n",
                 id="own-issue",
+            ),
+            pytest.param(
+                [_row("S1", phased_session=PLAN_SESSION)],
+                f"slice=S1\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\n"
+                f"phased_session={PLAN_SESSION}\nremaining=0\nclosing_lines=Closes #{EPIC}\n",
+                id="phased",
             ),
         ],
     )
@@ -751,7 +810,7 @@ class NextTests:
         assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
 
         assert output.read_text(encoding="utf-8") == (
-            f"slice=S2\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\n{closing}"
+            f"slice=S2\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nphased_session=\n{closing}"
         )
 
     def test_refuses_an_issue_planned_with_v1(
@@ -1160,6 +1219,19 @@ class LandTests:
 
         assert _stored(fake.workplan())["plan_session"] == PLAN_SESSION
         assert WORKPLAN.lf(fake.workplan()).startswith(f"{MARKER}\n\n{CONTRACT_SECTION}\n## Work plan\n")
+
+    def test_a_phased_slice_keeps_its_phased_plan_and_the_plan_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        row = _row("S1", status="in_progress", session=CODE_SESSION, phased_session=PLAN_SESSION)
+        fake = FakeGh({EPIC: _workplan(row)})
+        plan = {"contract": None, "slices": [_slice("S1", phases=[1, 2])]}
+
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0
+
+        text = fake.workplan()
+        assert _stored(text)["plan_session"] == PLAN_SESSION
+        assert [(row["status"], row["phased_session"]) for row in _rows(text)] == [("in_review", PLAN_SESSION)]
 
     def test_amended_plan_repoints_the_plan_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fake = FakeGh({EPIC: self._contract_workplan()})

@@ -26,7 +26,11 @@ outputs as `key=value` lines to `$DOVO_OUTPUT`: `remaining`, the number of
 other slices not yet done, and `closing_lines`, the lines the slice's pull
 request ends with; `land` computes both from the plan as landed. `next` also
 writes `issue`, the issue the slice is worked on: its `child` when it has one,
-otherwise the issue whose work plan holds it. `size-label` labels that issue
+otherwise the issue whose work plan holds it, and `phased_session`, the
+session whose artifacts hold the slice's approved phased plan, or "" when the
+slice is still to be phased. `render --phased`, run when the planning run
+phased the plan's one slice, records that session on its row; a pending row
+rendered again without `--phased` drops it. `size-label` labels that issue
 with the slice's `dovo-size-*` label and removes any other one. `land`'s
 `--sweep` corrects other issues' descriptions, and skips an entry for the issue
 or the slice's own issue, naming it on stderr. `pr-links` replaces the closing
@@ -96,7 +100,9 @@ class Slice:
     outcomes are the issue's O-n ids the slice delivers. child is the slice's
     own issue, an existing sub-issue the plan maps to it or the one `split-out`
     created, or None. status is pending, in_progress, in_review, merged, or
-    handed_off for a slice handed to someone outside the flow.
+    handed_off for a slice handed to someone outside the flow. phased_session
+    is the session whose plan and phases artifacts hold the slice's approved
+    phased plan, when the planning run phased it (`render --phased`), else None.
     """
 
     id: str
@@ -110,6 +116,7 @@ class Slice:
     session: str | None = None
     size: str | None = None
     child: int | None = None
+    phased_session: str | None = None
 
 
 @dataclass
@@ -270,12 +277,21 @@ def check_started_unchanged(plan_slices: list[Slice], current: list[Slice]) -> N
 
 
 def _carry_over(row: Slice, old: Slice | None) -> Slice:
-    """Return row with old's size and child (unless row names them), status, PR and session."""
+    """Return row with old's size and child (unless row names them), status, PR and session.
+
+    A started slice also keeps the phased plan it started from, unless row names one; a pending
+    slice takes row's, so planning the issue again drops a phased plan it did not write.
+    """
     if old is None:
         return row
     size = row.size if row.size is not None else old.size
     child = row.child if row.child is not None else old.child
-    return replace(row, size=size, status=old.status, pr=old.pr, session=old.session, child=child)
+    phased = row.phased_session
+    if phased is None and old.status != "pending":
+        phased = old.phased_session
+    return replace(
+        row, size=size, status=old.status, pr=old.pr, session=old.session, child=child, phased_session=phased
+    )
 
 
 # --- comment sections ---------------------------------------------------------
@@ -355,6 +371,7 @@ def current_rows(text: str, plan_slices: list[Slice]) -> tuple[list[Slice], str]
 def _stored_slice(data: dict[str, object]) -> Slice:
     """Return one slice row from the dovo:workplan JSON line."""
     session = data.get("session")
+    phased = data.get("phased_session")
     return Slice(
         id=str(data["id"]),
         title=str(data["title"]),
@@ -367,6 +384,7 @@ def _stored_slice(data: dict[str, object]) -> Slice:
         session=None if session is None else str(session),
         size=_size(data.get("size"), str(data["id"])),
         child=_optional_int(data.get("child"), "child"),
+        phased_session=None if phased is None else str(phased),
     )
 
 
@@ -1152,10 +1170,29 @@ def _rendered(text: str, plan: WorkPlan, contract: dict[str, object] | None, que
     return new if contract is None else with_contract(new, contract, questions)
 
 
-def cmd_render(issue: int, plan_path: str, session: str, revision: int) -> None:
-    """Write the feature contract and work plan from plan.json into issue's work plan comment, creating it when absent."""
+def phased_slices(data: object, slices: list[Slice], session: str) -> list[Slice]:
+    """Return slices with the plan's one slice recorded as phased in session.
+
+    Raises:
+        WorkplanError: When the plan has more than one slice, or its slice lists no phases.
+    """
+    if len(slices) != 1:
+        raise WorkplanError(f"--phased needs a plan with one slice, not {len(slices)}")
+    raw = _object(_list(_object(data, "plan.json").get("slices"))[0], "each plan.json slice")
+    if not _list(raw.get("phases")):
+        raise WorkplanError(f"--phased needs slice {slices[0].id} to list its phases in plan.json")
+    return [replace(slices[0], phased_session=session)]
+
+
+def cmd_render(issue: int, plan_path: str, session: str, revision: int, *, phased: bool) -> None:
+    """Write the feature contract and work plan from plan.json into issue's work plan comment, creating it when absent.
+
+    With phased, the plan's one slice is recorded as phased in session (see `phased_slices`).
+    """
     data = _load_json(plan_path)
     contract, slices = parse_plan(data)
+    if phased:
+        slices = phased_slices(data, slices, session)
     raw_questions = _list(_object(data, "plan.json").get("open_questions"))
     questions = render_questions([_object(item, "each open question") for item in raw_questions])
     plan = WorkPlan(session, revision, slices)
@@ -1181,6 +1218,7 @@ def cmd_next(issue: int) -> dict[str, str]:
         "issue": str(issue if row.child is None else row.child),
         "plan_session": plan.plan_session,
         "plan_revision": "" if plan.plan_revision is None else str(plan.plan_revision),
+        "phased_session": row.phased_session or "",
         **closing_outputs(issue, plan, row, issue_closed),
     }
 
@@ -1479,6 +1517,9 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--issue", type=int, required=True, help="The issue whose work plan holds the slices.")
     render.add_argument("--plan", required=True, help="Path to plan.json.")
     render.add_argument("--revision", type=int, required=True, help="The plan artifact's revision.")
+    render.add_argument(
+        "--phased", action="store_true", help="Record the plan's one slice as phased and approved in this session."
+    )
     nxt.add_argument(
         "--hold",
         type=Path,
@@ -1512,7 +1553,7 @@ def dispatch(args: argparse.Namespace) -> int:
     if args.command == "size-label":
         cmd_size_label(issue, args.slice)
     elif args.command == "render":
-        cmd_render(issue, args.plan, args.session, args.revision)
+        cmd_render(issue, args.plan, args.session, args.revision, phased=args.phased)
     elif args.command == "next":
         outputs = cmd_next_or_hold(issue, args.hold)
         if outputs:
