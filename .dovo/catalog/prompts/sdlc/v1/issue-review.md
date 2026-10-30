@@ -1,16 +1,3 @@
----
-name: issue-review
-description: >-
-  Experimental slice-flow copy of dovo-review, used only by the issue-code
-  blueprint or when asked for by name; use dovo-review otherwise. Review one
-  slice's Dovo CLI change for bugs and regressions first, then fidelity to the
-  slice's child issue and the epic contract, then violations of the AGENTS.md
-  rules R1–R18, and write line-level findings to .agentic/review.md and a
-  machine-readable verdict to .agentic/review.json, in dovo-review's format.
-  Invoked as /issue-review [<pr-number>] [--slice <id>] [--post].
-disable-model-invocation: true
----
-
 Forked from `dovo-review` at `de256118`. This copy is temporary: once the slice flow works, it replaces `dovo-review`. Its output files and the `<!-- dovo-review -->` comment marker stay in `dovo-review`'s format, byte for byte, because the scripts that publish and read reviews parse them.
 
 # issue-review
@@ -19,7 +6,7 @@ Review a change set in `Dovo CLI`, in this order of importance:
 
 1. **Correctness**: bugs, regressions and broken edge cases in what the diff does.
 2. **Slice fidelity**: does the code implement the slice's child issue and its phases of `.agentic/plan.md`, within the epic contract, no more and no less. Later slices' work is never a finding.
-3. **Rules**: does the diff break any of the 18 rules in [AGENTS.md](../../../AGENTS.md).
+3. **Rules**: does the diff break any of the 18 rules in [AGENTS.md](../../../../../AGENTS.md).
 4. **Docs**: did the change update the docs it had to, and nothing else.
 
 Output goes to `.agentic/review.md`, which `/issue-code review` consumes, paired with `.agentic/review.json` and `.agentic/verdict.txt`. A human reviews the PR after you; your job is to make that review short.
@@ -50,7 +37,7 @@ A reviewer that shares the author's context inherits its blind spots. If this se
 
 ## 3. Load the context
 
-Read [AGENTS.md](../../../AGENTS.md), [docs/agents/code-conventions.md](../../../docs/agents/code-conventions.md), the [docs/agents/architecture/](../../../docs/agents/architecture/README.md) files for the areas the diff touches, and the exemplar nearest to each changed file, since R5 asks new code to look like it. Do not open `.agentic/plan.md`, the child issue or the epic contract yet: the bug hunt reads the diff alone, so the plan's choices cannot pass for correctness. Section 5 reads them.
+Read [AGENTS.md](../../../../../AGENTS.md), [docs/agents/code-conventions.md](../../../../../docs/agents/code-conventions.md), the [docs/agents/architecture/](../../../../../docs/agents/architecture/README.md) files for the areas the diff touches, and the exemplar nearest to each changed file, since R5 asks new code to look like it. Do not open `.agentic/plan.md`, the child issue or the epic contract yet: the bug hunt reads the diff alone, so the plan's choices cannot pass for correctness. Section 5 reads them.
 
 ## 4. Hunt for bugs
 
@@ -83,7 +70,7 @@ Skip this when `.agentic/plan.md` is absent, and say so. Otherwise read now the 
 
 A plan decision is not evidence of correctness. When code that follows the plan is still wrong, keep the section 4 finding, cite the plan decision behind it, and set `action` to `replan` when fixing it means changing that decision. Contract coverage `met` says the code does what the plan says, not that what the plan says is right.
 
-- **Contract coverage.** Give every FR, NFR, numbered error case, guard and Definition of done item of the child issue a row, one per part (`FR-7 (fixer)`) when the plan's Phases table splits it, and check each row obligation by obligation (each sentence a test could observe) against the slice's phases and the test lines that cite it. A row is `met` only when every obligation is. Give each row a verdict against the whole change at the reviewed commit: `met` with the evidence (the test and the assertion that proves it, read from the assertion, not the test name, or the code path), `unmet` with what is missing, or `deferred` with the later step that owns it, such as CI. A row whose cited test stubs out what the requirement names is `unmet`. So is a row whose observable contract landed differently from the literal the child issue's Pre-determined data or a phase's `### Code` pins: CLI behaviour and output, flags and help text, exit codes, `error_code` and status values, JSON fields, persisted formats, entrypoint signatures and result model fields, with their types and defaults ([planning.md](../../../docs/agents/planning.md) Step 1). There a "better" name than the plan's is still `unmet`. Every `unmet` row is also a BLOCKER finding with `rule` `null`, citing the requirement id. An internal shape the plan writes as code (a helper, private type or module name, a module's placement, a private signature) is the planner's best guess, not the contract: when it landed differently and the requirement's observable contract is met, the row is `met`, and the difference is a deviation (below), never a Blocking or Warning finding on its own.
+- **Contract coverage.** Give every FR, NFR, numbered error case, guard and Definition of done item of the child issue a row, one per part (`FR-7 (fixer)`) when the plan's Phases table splits it, and check each row obligation by obligation (each sentence a test could observe) against the slice's phases and the test lines that cite it. A row is `met` only when every obligation is. Give each row a verdict against the whole change at the reviewed commit: `met` with the evidence (the test and the assertion that proves it, read from the assertion, not the test name, or the code path), `unmet` with what is missing, or `deferred` with the later step that owns it, such as CI. A row whose cited test stubs out what the requirement names is `unmet`. So is a row whose observable contract landed differently from the literal the child issue's Pre-determined data or a phase's `### Code` pins: CLI behaviour and output, flags and help text, exit codes, `error_code` and status values, JSON fields, persisted formats, entrypoint signatures and result model fields, with their types and defaults ([planning.md](../../../../../docs/agents/planning.md) Step 1). There a "better" name than the plan's is still `unmet`. Every `unmet` row is also a BLOCKER finding with `rule` `null`, citing the requirement id. An internal shape the plan writes as code (a helper, private type or module name, a module's placement, a private signature) is the planner's best guess, not the contract: when it landed differently and the requirement's observable contract is met, the row is `met`, and the difference is a deviation (below), never a Blocking or Warning finding on its own.
 - The change meets the slice's child issue and the epic contract's FRs, NFRs, guards and Definition of done; contract coverage above records each one. Later slices' work is not a finding.
 - Nothing landed that an issue the plan lists under `## Owned elsewhere` owns, unless the plan names it as a departure, or it is a sentence the change made false (R17). The same holds for work another slice owns, or an issue the child names under **Owned elsewhere**.
 - Unrequested surface is surface that serves no FR, NFR, guard or Definition of done item. It gets no finding when a rule requires it (R10 callers, R17 sentences) or the plan names it as a departure with an Open Question; otherwise it is a Warning when public and a Suggestion when internal.
@@ -101,13 +88,13 @@ A `review.json` on disk is the previous round only when it reviewed this same ch
 
 ## 6. Check the rules
 
-Go through R1–R18 in [AGENTS.md](../../../AGENTS.md), the conventions in [docs/agents/code-conventions.md](../../../docs/agents/code-conventions.md) (naming, model placement, `Any` and type-ignore rules) and the entries in [docs/agents/architecture/](../../../docs/agents/architecture/README.md) for the areas the diff touches against the diff. Every entry binds new and changed code; existing code the diff does not change may predate it. Report **only violations**, each as a finding with the rule id (or `conventions` for a conventions-doc item, `architecture` for an architecture entry, naming the entry's file and heading) and the `path:line` that breaks it. Do not list rules that pass, and do not report a rule the diff cannot touch. A rule violation is Blocking unless it is cosmetic in context, in which case say why it is a Warning; a naming violation is a Nit. Copying a neighbour does not excuse a convention violation in new code: R5 asks new work to follow its neighbours' layout and idiom, not their mistakes.
+Go through R1–R18 in [AGENTS.md](../../../../../AGENTS.md), the conventions in [docs/agents/code-conventions.md](../../../../../docs/agents/code-conventions.md) (naming, model placement, `Any` and type-ignore rules) and the entries in [docs/agents/architecture/](../../../../../docs/agents/architecture/README.md) for the areas the diff touches against the diff. Every entry binds new and changed code; existing code the diff does not change may predate it. Report **only violations**, each as a finding with the rule id (or `conventions` for a conventions-doc item, `architecture` for an architecture entry, naming the entry's file and heading) and the `path:line` that breaks it. Do not list rules that pass, and do not report a rule the diff cannot touch. A rule violation is Blocking unless it is cosmetic in context, in which case say why it is a Warning; a naming violation is a Nit. Copying a neighbour does not excuse a convention violation in new code: R5 asks new work to follow its neighbours' layout and idiom, not their mistakes.
 
 Do not re-check what tooling enforces: import direction, output routing, direct file writes, model strictness, ignore reasons and docstring presence are covered by `tests/lint/`, ruff and ty. Ruff `ANN401` rejects `Any` as a parameter or return annotation, and `tests/lint/test_explicit_any.py` caps the remaining explicit `Any` per file, so a change that raises an `ANY_BUDGET` entry must justify each new `Any` against the permitted list in `docs/agents/code-conventions.md`. Do flag a change that weakens that tooling: a new allowlist or baseline entry, a new per-file ignore, or a suppression.
 
 ## 7. Check the docs
 
-Work through [doc-adherence.md](doc-adherence.md) with the changed-file list. A missing required doc update is Blocking, and so is a doc sentence describing behaviour that was not built (R17). A doc update no gate required is a Suggestion to remove it.
+Work through [doc-adherence.md](issue-review-doc-adherence.md) with the changed-file list. A missing required doc update is Blocking, and so is a doc sentence describing behaviour that was not built (R17). A doc update no gate required is a Suggestion to remove it.
 
 ## 8. Write the report
 

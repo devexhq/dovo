@@ -1,4 +1,4 @@
-"""Tier 1 contract: scripts/workplan.py renders, picks, claims and lands an epic's slices on its issue body."""
+"""Tier 1 contract: sdlc v1's workplan.py renders, picks, claims and lands an epic's slices on its issue body."""
 
 from __future__ import annotations
 
@@ -22,12 +22,14 @@ INTRO = "Intro paragraph the script must keep.\n"
 
 
 def _load_script() -> ModuleType:
-    """Load scripts/workplan.py by path, since scripts/ is not a package."""
-    spec = importlib.util.spec_from_file_location("workplan_under_test", REPO_ROOT / "scripts" / "workplan.py")
+    """Load sdlc v1's workplan.py by path, since its folder is not a package."""
+    spec = importlib.util.spec_from_file_location(
+        "sdlc_v1_workplan", REPO_ROOT / ".dovo/catalog/scripts/sdlc/v1/workplan.py"
+    )
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    sys.modules["workplan_under_test"] = module
+    sys.modules["sdlc_v1_workplan"] = module
     spec.loader.exec_module(module)
     return module
 

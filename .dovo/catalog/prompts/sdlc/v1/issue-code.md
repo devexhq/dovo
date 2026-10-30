@@ -1,22 +1,3 @@
----
-name: issue-code
-description: >-
-  Experimental slice-flow copy of dovo-code, used only by the issue-code
-  blueprint or when asked for by name; use dovo-code otherwise. Implement one
-  slice of the approved plan in .agentic/plan.md for Dovo CLI, as phased just
-  in time by /issue-plan --slice, working through
-  that slice's phases one by one in order, following the epic contract, the
-  slice's child issue and the rules and exemplars in AGENTS.md, running scoped
-  tests while building and scoped completion checks once the slice is complete,
-  leaving the full quality gate to the issue-code blueprint's verify steps, and
-  never committing or pushing. Invoked as /issue-code --slice <id> to
-  implement a slice, /issue-code --slice <id> --phase <n> to implement one
-  phase of it, or /issue-code review [--tiers blockers,warnings,suggestions,nits|all |
-  --fix B1,W2,...] to address the findings in .agentic/review.md, or
-  /issue-code feedback --triage to draft a triage of the items in .agentic/feedback.json and /issue-code feedback to fix its approved fix items.
-disable-model-invocation: true
----
-
 Forked from `dovo-code` at `de256118`. This copy is temporary: once the slice flow works, it replaces `dovo-code`.
 
 # issue-code
@@ -46,7 +27,7 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 
 ## Before writing code
 
-Read [AGENTS.md](../../../AGENTS.md): its rules R1–R18 are what the reviewer will check, and its exemplars are what new code should look like. Then read the code you are about to change and its nearest exemplar. The plan's `.agentic/evidence.md`, when present, holds citations behind the plan; consult it to verify a claim, not as required reading.
+Read [AGENTS.md](../../../../../AGENTS.md): its rules R1–R18 are what the reviewer will check, and its exemplars are what new code should look like. Then read the code you are about to change and its nearest exemplar. The plan's `.agentic/evidence.md`, when present, holds citations behind the plan; consult it to verify a claim, not as required reading.
 
 Then build the slice's brief, and keep it in view for the whole run:
 
@@ -62,7 +43,7 @@ Work phase by phase, in the Phases table's order. Within a phase, work one FR at
 
 1. Re-read the plan section, then the current contents of every file you are about to touch.
 2. Write the production code at the paths the plan names.
-3. Write the tests the plan's test lines name, asserting the outcome each line states for the requirements it cites (R12–R16, [testing.md](../../../docs/agents/testing.md)).
+3. Write the tests the plan's test lines name, asserting the outcome each line states for the requirements it cites (R12–R16, [testing.md](../../../../../docs/agents/testing.md)).
 4. Run only the scoped tests for what you touched, and fix failures before the next FR:
 
    ```bash
@@ -86,7 +67,7 @@ If a contract cannot be implemented as written, or a cited symbol has moved or d
 The `issue-code` blueprint's `code-loop` runs this mode once per phase, each in a fresh session, on the phase its `phase` step picks. After the gate passes, its `checkpoint` step commits the phase and records it in `.agentic/code-progress.json`; earlier phases are already committed when a run starts.
 
 1. Given `--phase done`, change nothing and report that every phase of the slice is done.
-2. Otherwise, before any edit, run `uv run python scripts/code_progress.py check --slice <id> --phase <n>`. When it refuses (`Phase 5 is not a phase of slice S3; its phases are 1, 2, 3.`), stop and report its message.
+2. Otherwise, before any edit, run `uv run python .dovo/catalog/scripts/sdlc/v1/code_progress.py check --slice <id> --phase <n>`. When it refuses (`Phase 5 is not a phase of slice S3; its phases are 1, 2, 3.`), stop and report its message.
 3. Build the brief as [Before writing code](#before-writing-code) says, then read, before editing: phase `<n>`'s section, the Phases table, Traps and Artifact inventory of `.agentic/plan.md`; the plan's `## Feature contract`; the entries earlier phases added to `.agentic/implementation-report.md`; and the earlier phases' commits (`git log -p origin/main..HEAD`).
 4. Decide from the working tree, not from `.agentic/gate.log`, whether this phase was started. Uncommitted changes outside `.agentic/` and `.dovo/run` (`git status`, `git diff`) are an earlier attempt at this phase, cut short by an interrupted run or by a `checkpoint` commit that failed after the gate passed: keep them and finish the phase from them, rather than redoing or overwriting them. When `.agentic/gate.log` exists, that attempt failed the quality gate (`checkpoint` deletes a passing log before it commits): read the log and fix what it reports.
 5. Implement only phase `<n>` as the [Implementation loop](#implementation-loop) says: its FRs, tests and deletion-ledger entries, with its scoped tests and `uv run ty check` on its changed files passing. Never start another phase.

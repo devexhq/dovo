@@ -1,19 +1,3 @@
----
-name: issue-plan-review
-description: >-
-  Experimental slice-flow copy of dovo-plan-review, used only by the
-  issue-plan and issue-code blueprints or when asked for by name; use
-  dovo-plan-review otherwise. Review a plan written by /issue-plan before any
-  code is written: re-ground it against the current tree, hunt for existing
-  behaviour and persisted formats it breaks or relies on, then, for an
-  issue's plan, check its slicing and the epic ready criteria, or, for one
-  slice's plan (--slice), check that every part of every requirement is in the Phases table and
-  cited by a test line, its phasing and its fit with the epic contract, and the AGENTS.md
-  rules, then write findings to .agentic/plan-review.md and
-  .agentic/plan-review.json. Invoked as /issue-plan-review [--slice <id>] [<plan-path>].
-disable-model-invocation: true
----
-
 Forked from `dovo-plan-review` at `de256118`. This copy is temporary: once the slice flow works, it replaces `dovo-plan-review`.
 
 # issue-plan-review
@@ -23,7 +7,7 @@ Review a plan written by `/issue-plan`. Without `--slice`, the plan is an **issu
 1. **Grounding**: does the plan describe the code as it is today.
 2. **Missed behaviour**: what the planned change breaks or depends on that the plan does not say.
 3. **Coverage**: does every requirement land in a phase and a test, and nothing more.
-4. **Shape and rules**: phasing per [planning.md](../../../docs/agents/planning.md), slicing and the epic ready criteria per [issue-plan](../issue-plan/SKILL.md), and the design against R1–R18 in [AGENTS.md](../../../AGENTS.md).
+4. **Shape and rules**: phasing per [planning.md](../../../../../docs/agents/planning.md), slicing and the epic ready criteria per [issue-plan](issue-plan.md), and the design against R1–R18 in [AGENTS.md](../../../../../AGENTS.md).
 
 Output goes to `.agentic/plan-review.md`, paired with `.agentic/plan-review.json`. The plan's author applies the findings, and a human approves the plan before `/issue-code` runs. Your job is to make that approval short. The findings that matter most come from reading the code, not from re-reading the plan.
 
@@ -77,9 +61,9 @@ In an issue plan, read "phase" below as "slice": every requirement maps to the s
 
 ## 6. Check shape and rules
 
-In an issue plan, the template check's Phases table and the phase checks below do not apply: check instead that it writes no phases (`plan.json` `phases` is `0` and every slice's `phases` is `[]`), and that its `## Slices` table and `plan.json` `slices` agree. Every slice's `size` is `s`, `m` or `l` and fits the `dovo-size-*` label descriptions in `.agents/skills/issue-plan/SKILL.md` Step 3a; a missing or unknown `size` is a Blocking finding, since `workplan.py next` labels the child from it and ready mode refuses an unsized child. In a slice plan, they apply to the slice's phases.
+In an issue plan, the template check's Phases table and the phase checks below do not apply: check instead that it writes no phases (`plan.json` `phases` is `0` and every slice's `phases` is `[]`), and that its `## Slices` table and `plan.json` `slices` agree. Every slice's `size` is `s`, `m` or `l` and fits the `dovo-size-*` label descriptions in `.dovo/catalog/prompts/sdlc/v1/issue-plan.md` Step 3a; a missing or unknown `size` is a Blocking finding, since `workplan.py next` labels the child from it and ready mode refuses an unsized child. In a slice plan, they apply to the slice's phases.
 
-- The plan follows the template in [planning.md](../../../docs/agents/planning.md) Step 4, including the Phases table. That template has no Traceability, GWT Scenarios, per-phase Instructions, Edge cases or **Unchanged:** section, so their absence is never a finding. A phase's `### Code` that copies a literal the issue's Pre-determined data already holds, or stubs a private helper, is a Suggestion whose Fix is to cite the issue section or drop the stub.
+- The plan follows the template in [planning.md](../../../../../docs/agents/planning.md) Step 4, including the Phases table. That template has no Traceability, GWT Scenarios, per-phase Instructions, Edge cases or **Unchanged:** section, so their absence is never a finding. A phase's `### Code` that copies a literal the issue's Pre-determined data already holds, or stubs a private helper, is a Suggestion whose Fix is to cite the issue section or drop the stub.
 - Each phase is one concern, roughly 400 changed lines or less, passes the gate on its own and ships something. A phase over budget states why it cannot be split.
 - The phases of each slice together serve one responsibility, since each slice lands in one PR. A slice whose phases mix kinds of change (a foundation and its adoption, or a behaviour change and a refactor), not flagged under What you're approving with a recommendation to split the slice, is a Warning.
 - `.agentic/plan.json` `slices` agrees with the plan's `## Slices` table, every phase belongs to the slice under review, and a plain issue (`contract` is `null`) has one slice whose `child` is the issue.
@@ -101,7 +85,7 @@ Skip this for a slice plan, and when `plan.json` `contract` is `null`, and say s
 - **Pilot and closing docs:** exactly one slice has `pilot: true`, and the last slice, and only it, has `closing_docs: true`.
 - **Checkpoints:** with three or more slices, `contract.checkpoints` places one after the pilot, a shared-surface checkpoint after the slices of each `contract.ownership` row with a non-empty `extended_by`, and a baseline before the closing docs slice.
 - **No ownerless deferral:** every `non_goals` item of kind `deferred` or `owned` has `owners`, and no `stub` defers work without naming the slice or issue that does it (#1227).
-- **Full-shape stubs:** `workplan.py next` creates each child from its `stub` as written, and ready mode checks the child as a full issue the planner reads alone, so check every non-null `stub` against the stub shape in `.agents/skills/issue-plan/SKILL.md` Step 3a, which follows **Issue Structure**, **Split** and **Core Principles** in `.agents/skills/dovo-issue/SKILL.md`. Report each miss as a Blocking finding citing the slice (`slices[0].stub`): a section the slice needs missing, or out of order (Goal / User Story; Scope with In scope, Owned elsewhere and, when the slice reshapes a type, field or file, Shared surfaces changed with what happens to data written before the change; numbered FRs and NFRs; Pre-determined data for every literal contract; Error cases for every failure path; Definition of done; Notes for the planner last); an Owned elsewhere bullet not in the `#n owns <X>` form; a literal contract cited from another issue ("#1258's Pre-determined data") instead of copied into the stub's own Pre-determined data; an issue link outside Owned elsewhere other than the opening `Slice <id> of #<epic>.` line and citations of the epic's contract by section heading or decision ID; or a Definition of done item that restates an FR or NFR.
+- **Full-shape stubs:** `workplan.py next` creates each child from its `stub` as written, and ready mode checks the child as a full issue the planner reads alone, so check every non-null `stub` against the stub shape in `.dovo/catalog/prompts/sdlc/v1/issue-plan.md` Step 3a, which follows **Issue Structure**, **Split** and **Core Principles** in `.dovo/catalog/prompts/sdlc/v1/issue-ready.md`. Report each miss as a Blocking finding citing the slice (`slices[0].stub`): a section the slice needs missing, or out of order (Goal / User Story; Scope with In scope, Owned elsewhere and, when the slice reshapes a type, field or file, Shared surfaces changed with what happens to data written before the change; numbered FRs and NFRs; Pre-determined data for every literal contract; Error cases for every failure path; Definition of done; Notes for the planner last); an Owned elsewhere bullet not in the `#n owns <X>` form; a literal contract cited from another issue ("#1258's Pre-determined data") instead of copied into the stub's own Pre-determined data; an issue link outside Owned elsewhere other than the opening `Slice <id> of #<epic>.` line and citations of the epic's contract by section heading or decision ID; or a Definition of done item that restates an FR or NFR.
 - **Decisions confirmed:** no `decisions` item with `settled_by.kind` `inherited` lacks `confirmed`, and every open question that blocks a slice carries a recommended answer.
 - **Plan-challenge:** each `/dovo-plan-challenge` finding is resolved in the plan, recorded in `contract.decisions`, or, when routed `ask`, carried as an Open Question with a recommended answer until the human settles it and it moves into `contract.decisions`. Before the challenge has run, list this under **For the human** instead of as a finding.
 

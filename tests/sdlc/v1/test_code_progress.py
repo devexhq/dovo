@@ -1,4 +1,4 @@
-"""Tier 1 contract: scripts/code_progress.py picks, checks and records the phases of a slice the code loop commits."""
+"""Tier 1 contract: sdlc v1's code_progress.py picks, checks and records the phases of a slice the code loop commits."""
 
 from __future__ import annotations
 
@@ -14,14 +14,14 @@ from tests.lint.astlib import REPO_ROOT
 
 
 def _load_script() -> ModuleType:
-    """Load scripts/code_progress.py by path, since scripts/ is not a package."""
+    """Load sdlc v1's code_progress.py by path, since its folder is not a package."""
     spec = importlib.util.spec_from_file_location(
-        "code_progress_under_test", REPO_ROOT / "scripts" / "code_progress.py"
+        "sdlc_v1_code_progress", REPO_ROOT / ".dovo/catalog/scripts/sdlc/v1/code_progress.py"
     )
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    sys.modules["code_progress_under_test"] = module
+    sys.modules["sdlc_v1_code_progress"] = module
     spec.loader.exec_module(module)
     return module
 

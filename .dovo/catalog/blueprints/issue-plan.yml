@@ -5,7 +5,7 @@
 version: 1
 name: issue-plan
 id: issue-plan
-description: Ready a GitHub issue (re-ground it against main, re-check it, holding for a person and re-checking it while it is not ready, and, once a person approves, apply the edits and label it dovo:ready), slice it into PRs with the issue-plan skill (the feature contract and the slice table on an epic, one slice on a plain issue, and no phases, which each slice's issue-code run plans just in time), review and challenge the plan once and fold in every finding and fold-routed challenge, answer its open questions, walk the approver through it, then write the feature contract and the work plan into the issue body
+description: Ready a GitHub issue (re-ground it against main, re-check it, holding for a person and re-checking it while it is not ready, and, once a person approves, apply the edits and label it dovo:ready), slice it into PRs with the sdlc v1 issue-plan prompt (the feature contract and the slice table on an epic, one slice on a plain issue, and no phases, which each slice's issue-code run plans just in time), review and challenge the plan once and fold in every finding and fold-routed challenge, answer its open questions, walk the approver through it, then write the feature contract and the work plan into the issue body
 summary: Issue to an approved work plan on the ticket, with human gates
 
 inputs:
@@ -47,10 +47,7 @@ steps:
         name: Re-ground and re-check the issue
         type: agent
         prompt: |
-          /dovo-issue ready ${{ inputs.issue }}
-
-          Follow the Ready mode section of .agents/skills/dovo-issue/SKILL.md if the slash command is
-          not recognized. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
+          Follow the Ready mode section of .dovo/catalog/prompts/sdlc/v1/issue-ready.md for issue ${{ inputs.issue }}. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
           .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md when the
           verdict is needs_edits. Do not edit the issue, its labels or its comments.
           Findings of the previous check a person says they settled, if any: {{ steps.hold.outputs.selected }}
@@ -151,7 +148,7 @@ steps:
       gh issue comment ${{ inputs.issue }} --body-file .agentic/issue-ready-comment.md
     timeout_seconds: 300
 
-  # --- feature-dev's planning half, on the issue-plan skills. feature-dev's
+  # --- feature-dev's planning half, on the sdlc v1 issue-plan prompts. feature-dev's
   # `ready` check is dropped: the steps above have just labelled the issue.
   # The plan slices the issue and writes no phases: issue-code phases each
   # slice just in time, after the slices before it have landed. ---
@@ -160,9 +157,7 @@ steps:
     name: Slice the issue
     type: agent
     prompt: |
-      /issue-plan ${{ inputs.issue }}
-
-      Follow .agents/skills/issue-plan/SKILL.md if the slash command is not recognized.
+      Follow .dovo/catalog/prompts/sdlc/v1/issue-plan.md in the mode `/issue-plan ${{ inputs.issue }}`.
       Write the plan to .agentic/plan.md and its open questions, contract and slices to
       .agentic/plan.json, with no phases, then stop; do not implement anything.
     tools: { allow_all: true }
@@ -177,9 +172,7 @@ steps:
     name: Review the plan
     type: agent
     prompt: |
-      /issue-plan-review
-
-      Follow .agents/skills/issue-plan-review/SKILL.md if the slash command is not recognized.
+      Follow .dovo/catalog/prompts/sdlc/v1/issue-plan-review.md.
       Review .agentic/plan.md and write findings to .agentic/plan-review.md and
       .agentic/plan-review.json.
     tools: { allow_all: true }
@@ -195,9 +188,7 @@ steps:
     name: Challenge the plan's design
     type: agent
     prompt: |
-      /dovo-plan-challenge
-
-      Follow .agents/skills/dovo-plan-challenge/SKILL.md if the slash command is not recognized.
+      Follow .dovo/catalog/prompts/sdlc/v1/plan-challenge.md.
       Challenge .agentic/plan.md and write challenges to .agentic/plan-challenge.md and
       .agentic/plan-challenge.json. Do not read .agentic/plan-review.md or .agentic/plan-review.json.
       The plan splits the issue into slices, one PR each, listed under slices in
@@ -243,8 +234,8 @@ steps:
               the test that would pin it.
         - Addressing a finding or challenge may make an open question moot, change its assumed
           answer or raise a new one: remove, rewrite or add entries under Open questions to match.
-        - Keep .agentic/plan.json in the shape the issue-plan skill defines
-          (`.agents/skills/issue-plan/SKILL.md`), including its contract and slices, and in
+        - Keep .agentic/plan.json in the shape the issue-plan prompt defines
+          (`.dovo/catalog/prompts/sdlc/v1/issue-plan.md`), including its contract and slices, and in
           agreement with .agentic/plan.md.
       Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
     tools: { allow_all: true }
@@ -281,8 +272,8 @@ steps:
         - For each answered question, rewrite the plan against the human's answer, move the
           question from Open questions into Decisions as answered by the human, and remove it
           from open_questions in .agentic/plan.json.
-        - Keep .agentic/plan.json in the shape the issue-plan skill defines
-          (`.agents/skills/issue-plan/SKILL.md`), including its contract and slices, and in
+        - Keep .agentic/plan.json in the shape the issue-plan prompt defines
+          (`.dovo/catalog/prompts/sdlc/v1/issue-plan.md`), including its contract and slices, and in
           agreement with .agentic/plan.md.
       Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
     tools: { allow_all: true }
@@ -298,9 +289,7 @@ steps:
     name: Walk through the plan for the approver
     type: agent
     prompt: |
-      /dovo-plan-walkthrough
-
-      Follow .agents/skills/dovo-plan-walkthrough/SKILL.md if the slash command is not recognized.
+      Follow .dovo/catalog/prompts/sdlc/v1/plan-walkthrough.md.
       Explain .agentic/plan.md to the person approving it and write .agentic/plan-walkthrough.md.
       The plan splits the issue into slices, one PR each, listed under slices in
       .agentic/plan.json: say what each slice delivers and the order the slices land in, and
@@ -342,7 +331,7 @@ steps:
   - id: publish-workplan
     name: Write the feature contract and the work plan to the issue
     run: >-
-      uv run python scripts/workplan.py render --issue ${{ inputs.issue }}
+      uv run python .dovo/catalog/scripts/sdlc/v1/workplan.py render --issue ${{ inputs.issue }}
       --plan .agentic/plan.json --session "$DOVO_SESSION_ID"
       --revision {{ artifacts.plan.revision }}
     timeout_seconds: 120
