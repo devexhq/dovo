@@ -7,8 +7,10 @@ import json
 import subprocess
 import sys
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 from types import ModuleType
+from typing import Self
 
 import pytest
 
@@ -330,8 +332,9 @@ class FakeGh:
     """A `run` double answering the gh calls plan.py makes, against one issue's description and comments.
 
     It has `run`'s signature, so it replaces it at the subprocess boundary. `calls` records every call,
-    with a posted comment's temporary file replaced by its text; `failing` names the calls that fail by
-    their third word (`view`, `comment` or `graphql`); `view`, when given, is what `gh issue view` prints
+    with the body file of a posted comment or an edited description replaced by its text; `failing` names
+    the calls that fail by their third word (`view`, `comment`, `edit` or `graphql`); `view`, when given, is
+    what `gh issue view` prints
     in place of the issue's JSON, which otherwise holds the requested fields of body, comments and labels.
     """
 
@@ -352,8 +355,9 @@ class FakeGh:
 
     def __call__(self, *args: str) -> str:
         kind = args[2]
-        assert kind in {"view", "comment", "graphql"}, f"ran {args}"
-        self.calls.append((*args[:5], Path(args[5]).read_text(encoding="utf-8")) if kind == "comment" else args)
+        assert kind in {"view", "comment", "edit", "graphql"}, f"ran {args}"
+        posts = kind in {"comment", "edit"}
+        self.calls.append((*args[:5], Path(args[5]).read_text(encoding="utf-8")) if posts else args)
         if kind in self.failing:
             raise subprocess.CalledProcessError(1, list(args), stderr="HTTP 502\n")
         if kind == "view":
@@ -1025,24 +1029,15 @@ class PlanReadyTests:
         )
         assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body")]
 
-    def test_body_sha_prints_the_sha_of_an_issues_description_or_a_file(
+    def test_body_sha_prints_the_sha_of_an_issues_description(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        (workspace / ".agentic/issue-body.md").write_text(DESCRIPTION.replace("\n", "\r\n"), encoding="utf-8")
-        fake = FakeGh(DESCRIPTION.replace("Only", "Just"), [])
+        fake = FakeGh(DESCRIPTION.replace("\n", "\r\n"), [])
 
-        assert _run(monkeypatch, fake, "body-sha", "--file", ".agentic/issue-body.md") == 0
-        assert capsys.readouterr() == (f"{DESCRIPTION_SHA}\n", "")
         assert _run(monkeypatch, fake, "body-sha", "--issue", "1300") == 0
-        assert capsys.readouterr() == (f"{PLAN.body_sha(DESCRIPTION.replace('Only', 'Just'))}\n", "")
+
+        assert capsys.readouterr() == (f"{DESCRIPTION_SHA}\n", "")
         assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body")]
-
-    def test_body_sha_refuses_a_file_it_cannot_read(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        assert _run(monkeypatch, FakeGh(DESCRIPTION, []), "body-sha", "--file", ".agentic/issue-body.md") == 1
-
-        assert capsys.readouterr().err.startswith("plan.py: Cannot read .agentic/issue-body.md: ")
 
     def test_ready_comment_refuses_an_empty_comment(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -1113,6 +1108,112 @@ class PlanReadyTests:
 
         assert capsys.readouterr() == (f"{out}\n", f"plan.py: {reason}\n")
         assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body,labels,comments")]
+
+
+# --- the rewrite of a legacy issue -------------------------------------------------
+
+LEGACY_SHA = PLAN.body_sha(LEGACY_BODY)
+REWRITE = ("rewrite-apply", "--issue", "1300", "--body-file", ".agentic/issue-rewrite.md")
+ORIGINAL = (
+    "Original description, replaced on 2026-10-30 with the short issue format (why, outcomes, decisions, "
+    "binding values). Kept here so nothing is lost.\n"
+    "\n"
+    "<details>\n"
+    "<summary>Original description</summary>\n"
+    "\n"
+    f"{LEGACY_BODY.rstrip()}\n"
+    "\n"
+    "</details>\n"
+)
+
+
+class FixedDate(date):
+    """A date whose today is 2026-10-30."""
+
+    @classmethod
+    def today(cls) -> Self:
+        return cls(2026, 10, 30)
+
+
+@pytest.fixture
+def rewrite(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Write the approved draft to .agentic/issue-rewrite.md and fix today at 2026-10-30."""
+    monkeypatch.setattr(PLAN, "date", FixedDate)
+    (workspace / ".agentic/issue-rewrite.md").write_text(SHORT_BODY, encoding="utf-8")
+    return workspace
+
+
+class PlanRewriteTests:
+    @pytest.mark.parametrize(
+        ("body", "shape"),
+        [pytest.param(SHORT_BODY, "short", id="short"), pytest.param(LEGACY_BODY, "legacy", id="legacy")],
+    )
+    def test_issue_format_prints_the_descriptions_format_and_body_sha(
+        self,
+        body: str,
+        shape: str,
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        fake = FakeGh(body, [])
+
+        assert _run(monkeypatch, fake, "issue-format", "--issue", "1300") == 0
+
+        assert capsys.readouterr() == (f"format={shape}\nbody_sha={PLAN.body_sha(body)}\n", "")
+        assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body")]
+
+    def test_rewrite_apply_posts_the_old_description_collapsed_before_replacing_it(
+        self, rewrite: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh(LEGACY_BODY, [])
+
+        assert _run(monkeypatch, fake, *REWRITE, "--body-sha", LEGACY_SHA) == 0
+
+        assert fake.calls == [
+            ("gh", "issue", "view", "1300", "--json", "body"),
+            ("gh", "issue", "comment", "1300", "--body-file", ORIGINAL),
+            ("gh", "issue", "edit", "1300", "--body-file", SHORT_BODY),
+        ]
+        assert capsys.readouterr() == ("", "")
+
+    def test_rewrite_apply_refuses_a_description_edited_since_the_draft(
+        self, rewrite: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh(LEGACY_BODY, [])
+
+        assert _run(monkeypatch, fake, *REWRITE, "--body-sha", STALE_SHA) == 1
+
+        assert capsys.readouterr() == (
+            "",
+            f"plan.py: Issue 1300's description has body_sha {LEGACY_SHA}, not {STALE_SHA}, "
+            "the one the rewrite was drafted against; draft it again.\n",
+        )
+        assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body")]
+
+    def test_rewrite_apply_refuses_a_draft_not_in_the_short_format(
+        self, rewrite: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (rewrite / ".agentic/issue-rewrite.md").write_text(LEGACY_BODY, encoding="utf-8")
+        fake = FakeGh(LEGACY_BODY, [])
+
+        assert _run(monkeypatch, fake, *REWRITE, "--body-sha", LEGACY_SHA) == 1
+
+        assert capsys.readouterr() == (
+            "",
+            "plan.py: .agentic/issue-rewrite.md has no ## Outcomes section, so it is not in the short issue format.\n",
+        )
+        assert fake.calls == []
+
+    def test_rewrite_apply_leaves_the_description_when_the_comment_fails(
+        self, rewrite: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh(LEGACY_BODY, [], frozenset({"comment"}))
+
+        assert _run(monkeypatch, fake, *REWRITE, "--body-sha", LEGACY_SHA) == 1
+
+        assert [call[2] for call in fake.calls] == ["view", "comment"]
+        assert capsys.readouterr().err.startswith("plan.py: command failed: gh issue comment 1300 --body-file ")
 
 
 # --- check-breakdown -------------------------------------------------------------
