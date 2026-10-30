@@ -55,8 +55,8 @@ state the rule here and say which slice writes its entry.>
 - **Exemplars:** <path>, conforms / does not yet conform (fixed by Sx). <Why it qualifies>.
 
 ### Overrides
-<Sentences in existing issues that this contract makes wrong. The sweep and
-`/dovo-issue ready` apply them to each issue's body.>
+<Sentences in existing issues that this contract makes wrong. The sweep applies
+them to each issue's body; the ready check never does.>
 - #n, "<quoted sentence>" → <what is true instead>, per <section or decision>.
 
 ### Decisions

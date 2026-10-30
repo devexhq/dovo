@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks the slice plan the issue-code-v2 blueprint's planning steps write, and keeps its decisions on the issue.
+"""Checks the slice plan the issue-code-v2 blueprint's planning steps write, keeps its decisions on the issue, and lists the issue's numbered items.
 
 `check-questions` runs after `fold-answers`, which settles every open question
 as a decision. It refuses a plan whose `open_questions` is not `[]`, or whose
@@ -22,6 +22,18 @@ no other decision replaces (the shape is `PriorDecision` in plan_formats.py):
 each is `given` when its comment's body_sha matches the description now, and
 `to_confirm` otherwise.
 
+`requirements` runs in the ready check. It writes to requirements.json each
+numbered item of the issue's description with its exact text (the shape is
+`Requirement` in plan_formats.py). A short issue, one with an `## Outcomes`
+section, numbers its outcomes `- **O-<n>** ...` and the decisions under
+`## Decisions` `- **D-<n>** ...`. A legacy issue numbers `### FR-<n>: ...` and
+`### NFR-<n>: ...` sections, and the numbered list under
+`## Error cases to handle`, whose items become `EC-<n>`. A list item's indented
+continuation lines join its text with one space each; a section's text is its
+heading's words, a blank line, then its body. Anything inside a fenced code
+block is never read as an item. A description that numbers one id twice is
+refused; one with no numbered items writes an empty list.
+
 Every refusal is one line on stderr and exit code 1.
 """
 
@@ -38,10 +50,29 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from plan_formats import SESSION_ID, Decision, FormatError, PriorDecision, prior_decisions_json
+from plan_formats import (
+    SESSION_ID,
+    Decision,
+    FormatError,
+    PriorDecision,
+    Requirement,
+    prior_decisions_json,
+    requirements_json,
+)
 
 PLAN_JSON = Path(".agentic/plan.json")
 PRIOR_JSON = Path(".agentic/prior-decisions.json")
+REQUIREMENTS_JSON = Path(".agentic/requirements.json")
+OUTCOMES = "## Outcomes"
+SHORT_ITEMS = {
+    OUTCOMES: ("outcome", re.compile(r"- \*\*(?P<id>O-\d+)\*\* (?P<text>.+)")),
+    "## Decisions": ("decision", re.compile(r"- \*\*(?P<id>D-\d+)\*\* (?P<text>.+)")),
+}
+LEGACY_HEADING = re.compile(r"### (?P<id>N?FR-\d+)\b:?[ \t]*(?P<text>.*)")
+LEGACY_KINDS = {"FR": "functional", "NFR": "non_functional"}
+ERROR_CASES = "## Error cases to handle"
+ERROR_CASE = re.compile(r"(?P<id>\d+)\. (?P<text>.+)")
+FENCES = ("```", "~~~")
 MARKER = "<!-- dovo:decisions schema_version=1 slice={slice} session={session} body_sha={body_sha} -->"
 MARKER_RE = re.compile(
     r"<!-- dovo:decisions schema_version=1 slice=(?P<slice>\S+) session=(?P<session>\S+)"
@@ -225,18 +256,28 @@ def _posted(raw: object) -> PostedComment | None:
     return PostedComment(str(raw.get("id")), marker["slice"], marker["session"], marker["body_sha"], bullets)
 
 
+def _view(issue: int, fields: str) -> dict[str, object]:
+    """Return gh's JSON view of issue's fields.
+
+    Raises:
+        PlanError: gh printed something other than a JSON object.
+    """
+    try:
+        view = json.loads(run("gh", "issue", "view", str(issue), "--json", fields))
+    except ValueError as error:
+        raise PlanError(f"gh issue view {issue} printed no JSON: {error}.") from error
+    if not isinstance(view, dict):
+        raise PlanError(f"gh issue view {issue} printed no JSON object.")
+    return view
+
+
 def view_issue(issue: int) -> tuple[str, list[PostedComment]]:
     """Return issue's description and its dovo:decisions comments that are not hidden.
 
     Raises:
         PlanError: gh printed something other than a JSON object.
     """
-    try:
-        view = json.loads(run("gh", "issue", "view", str(issue), "--json", "body,comments"))
-    except ValueError as error:
-        raise PlanError(f"gh issue view {issue} printed no JSON: {error}.") from error
-    if not isinstance(view, dict):
-        raise PlanError(f"gh issue view {issue} printed no JSON object.")
+    view = _view(issue, "body,comments")
     comments = view.get("comments")
     found = (_posted(raw) for raw in (comments if isinstance(comments, list) else []))
     return str(view.get("body") or ""), [comment for comment in found if comment is not None]
@@ -313,8 +354,123 @@ def prior_decisions(issue: int, out: Path) -> None:
     out.write_text(json.dumps(prior_decisions_json(issue, decisions), indent=2) + "\n", encoding="utf-8")
 
 
+# --- requirements.json -----------------------------------------------------------
+
+
+def _lines(body: str) -> list[tuple[str, bool]]:
+    """Return body's lines without trailing whitespace, each paired with whether it is markup.
+
+    A line is markup when it is outside a fenced code block and is not a fence
+    itself, so a heading or a list item quoted in a code block is never read.
+    """
+    lines: list[tuple[str, bool]] = []
+    fenced = False
+    for line in body.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        fence = line.lstrip().startswith(FENCES)
+        lines.append((line.rstrip(), not fenced and not fence))
+        if fence:
+            fenced = not fenced
+    return lines
+
+
+def _sections(lines: list[tuple[str, bool]]) -> list[tuple[str, list[tuple[str, bool]]]]:
+    """Return lines split at each `## ` heading, as (heading, lines under it); text before any heading has ""."""
+    sections: list[tuple[str, list[tuple[str, bool]]]] = [("", [])]
+    for line, markup in lines:
+        if markup and line.startswith("## "):
+            sections.append((line, []))
+        else:
+            sections[-1][1].append((line, markup))
+    return sections
+
+
+def _list_items(lines: list[tuple[str, bool]], pattern: re.Pattern[str]) -> list[tuple[str, str]]:
+    """Return the (id, text) of each list item pattern matches, joining its indented continuation lines."""
+    items: list[tuple[str, list[str]]] = []
+    current: list[str] | None = None
+    for line, markup in lines:
+        match = pattern.fullmatch(line) if markup else None
+        if match is not None:
+            current = [match["text"]]
+            items.append((match["id"], current))
+        elif current is not None and line[:1].isspace() and line.strip():
+            current.append(line.strip())
+        else:
+            current = None
+    return [(ident, " ".join(parts)) for ident, parts in items]
+
+
+def _headed_items(lines: list[tuple[str, bool]]) -> list[tuple[str, str]]:
+    """Return the (id, text) of each `### FR-<n>` or `### NFR-<n>` section: its heading's words, then its body."""
+    items: list[tuple[str, str, list[str]]] = []
+    current: list[str] | None = None
+    for line, markup in lines:
+        match = LEGACY_HEADING.fullmatch(line) if markup else None
+        if match is not None:
+            current = []
+            items.append((match["id"], match["text"], current))
+        elif markup and line.startswith("#"):
+            current = None
+        elif current is not None:
+            current.append(line)
+    return [(ident, _section_text(title, body)) for ident, title, body in items]
+
+
+def _section_text(title: str, body: list[str]) -> str:
+    """Return a section's text: its heading's words and its body, a blank line apart, leaving out either when empty."""
+    return "\n\n".join(part for part in (title, "\n".join(body).strip()) if part)
+
+
+def _short_requirements(sections: list[tuple[str, list[tuple[str, bool]]]]) -> list[Requirement]:
+    """Return a short issue's outcomes and decisions, in the description's order."""
+    found: list[Requirement] = []
+    for heading, lines in sections:
+        if heading in SHORT_ITEMS:
+            kind, pattern = SHORT_ITEMS[heading]
+            found.extend(Requirement(ident, kind, text) for ident, text in _list_items(lines, pattern))
+    return found
+
+
+def _legacy_requirements(sections: list[tuple[str, list[tuple[str, bool]]]]) -> list[Requirement]:
+    """Return a legacy issue's FR-<n> and NFR-<n> sections and numbered error cases, in the description's order."""
+    found: list[Requirement] = []
+    for heading, lines in sections:
+        found.extend(
+            Requirement(ident, LEGACY_KINDS[ident.split("-")[0]], text) for ident, text in _headed_items(lines)
+        )
+        if heading == ERROR_CASES:
+            found.extend(
+                Requirement(f"EC-{number}", "error_case", text) for number, text in _list_items(lines, ERROR_CASE)
+            )
+    return found
+
+
+def parse_requirements(body: str) -> tuple[str, list[Requirement]]:
+    """Return a description's format, `short` when it has an `## Outcomes` section and `legacy` otherwise, and its items."""
+    sections = _sections(_lines(body))
+    if any(heading == OUTCOMES for heading, _ in sections):
+        return "short", _short_requirements(sections)
+    return "legacy", _legacy_requirements(sections)
+
+
+def requirements(issue: int, out: Path) -> None:
+    """Write to out the numbered items of issue's description, each with its exact text.
+
+    Raises:
+        PlanError: The description numbers one id twice.
+    """
+    issue_format, found = parse_requirements(str(_view(issue, "body").get("body") or ""))
+    seen: set[str] = set()
+    for requirement in found:
+        if requirement.id in seen:
+            raise PlanError(f"Issue {issue} numbers {requirement.id} twice; give each item its own id.")
+        seen.add(requirement.id)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(requirements_json(issue, issue_format, found), indent=2) + "\n", encoding="utf-8")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser for the check-questions, decisions-comment and prior-decisions subcommands."""
+    """Return the parser for the check-questions, decisions-comment, prior-decisions and requirements subcommands."""
     parser = argparse.ArgumentParser(description="Check the slice plan in .agentic/plan.json and keep its decisions.")
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check-questions", help="Refuse a plan with an open question or a malformed decision.")
@@ -327,6 +483,9 @@ def build_parser() -> argparse.ArgumentParser:
     prior = commands.add_parser("prior-decisions", help="Write the decisions earlier sessions posted to the issue.")
     prior.add_argument("--issue", type=int, required=True, help="The issue whose comments to read.")
     prior.add_argument("--out", type=Path, default=PRIOR_JSON, help="The prior-decisions.json to write.")
+    listed = commands.add_parser("requirements", help="Write the numbered items of the issue's description.")
+    listed.add_argument("--issue", type=int, required=True, help="The issue whose description to read.")
+    listed.add_argument("--out", type=Path, default=REQUIREMENTS_JSON, help="The requirements.json to write.")
     return parser
 
 
@@ -336,8 +495,10 @@ def dispatch(args: argparse.Namespace) -> None:
         check_questions(args.plan)
     elif args.command == "decisions-comment":
         decisions_comment(args.plan, args.issue, args.slice, args.session)
-    else:
+    elif args.command == "prior-decisions":
         prior_decisions(args.issue, args.out)
+    else:
+        requirements(args.issue, args.out)
 
 
 def main() -> int:

@@ -176,9 +176,9 @@ steps:
           "Issue #{{ steps.next.outputs.child }} is already labelled dovo:ready; not re-checked.",
           and stop. Otherwise run:
 
-          Follow the Ready mode section of .dovo/catalog/prompts/sdlc/v2/issue-ready.md for issue {{ steps.next.outputs.child }}. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
-          .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md when the
-          verdict is needs_edits. Do not edit the issue, its labels or its comments.
+          Follow .dovo/catalog/prompts/sdlc/v2/issue-ready.md for issue {{ steps.next.outputs.child }}. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
+          .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md only when the
+          verdict is needs_edits, which only a legacy issue's trim gets. Do not edit the issue, its labels or its comments.
           Findings of the previous check a person says they settled, if any: {{ steps.hold.outputs.selected }}
           Their notes: {{ steps.hold.outputs.comment }}
         tools: { allow_all: true }

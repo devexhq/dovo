@@ -14,6 +14,14 @@ A prior decision is one entry of `decisions` in .agentic/prior-decisions.json,
 which `plan.py prior-decisions` writes from the issue's `dovo:decisions`
 comments. Its `status` is `given` when the issue's description is unchanged
 since the comment was posted, and `to_confirm` otherwise.
+
+A requirement is one entry of `requirements` in .agentic/requirements.json,
+which `plan.py requirements` writes from an issue's description: a numbered
+item and its exact text. The document's `format` is `short` when the
+description has an `## Outcomes` section, whose items are outcomes (`O-<n>`)
+and whose `## Decisions` items are decisions (`D-<n>`), and `legacy` otherwise,
+whose items are functional and non-functional requirements (`FR-<n>`,
+`NFR-<n>`) and numbered error cases (`EC-<n>`).
 """
 
 from __future__ import annotations
@@ -29,6 +37,7 @@ QUESTION_ID = re.compile(r"OQ-\d+")
 ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 SESSION_ID = re.compile(r"[^\s()]+")
 PRIOR_SCHEMA_VERSION = 1
+REQUIREMENTS_SCHEMA_VERSION = 1
 
 
 class FormatError(ValueError):
@@ -217,4 +226,27 @@ def prior_decisions_json(issue: int, decisions: list[PriorDecision]) -> dict[str
         "schema_version": PRIOR_SCHEMA_VERSION,
         "issue": issue,
         "decisions": [decision.to_json() for decision in decisions],
+    }
+
+
+@dataclass(frozen=True)
+class Requirement:
+    """One numbered item of an issue's description: its id, its kind and its text after the id."""
+
+    id: str
+    kind: str
+    text: str
+
+    def to_json(self) -> dict[str, object]:
+        """Return the entry as requirements.json's requirements holds it."""
+        return {"id": self.id, "kind": self.kind, "text": self.text}
+
+
+def requirements_json(issue: int, issue_format: str, requirements: list[Requirement]) -> dict[str, object]:
+    """Return the requirements.json document listing issue's numbered items, in the description's order."""
+    return {
+        "schema_version": REQUIREMENTS_SCHEMA_VERSION,
+        "issue": issue,
+        "format": issue_format,
+        "requirements": [requirement.to_json() for requirement in requirements],
     }
