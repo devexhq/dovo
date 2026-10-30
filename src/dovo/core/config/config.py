@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.formatters import format_remediations
-from dovo.core.config.exceptions import ConfigLoadError
+from dovo.core.config.exceptions import ConfigLoadError, ConfigTierSource
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus, load_config
 from dovo.core.config.models import (
     ConcurrencyConfig,
@@ -62,19 +63,21 @@ class Config:
         if not repo_result.ok:
             return repo_result
 
-        tiered = load_tiered_config(self._paths)
-        if not tiered.ok or tiered.config is None:
+        with catch_failure("config.load", path=str(self._paths.config_file)) as caught:
+            config = load_tiered_config(self._paths)
+        if caught.failure is not None:
+            source = caught.failure.data
             return ConfigLoadResult(
                 status=ConfigLoadStatus.TIER_INVALID,
-                config_path=tiered.path or repo_result.config_path,
-                errors=list(tiered.errors),
+                config_path=source.path if isinstance(source, ConfigTierSource) else repo_result.config_path,
+                **caught.failure.result_fields(),
             )
 
         return ConfigLoadResult(
             status=ConfigLoadStatus.OK,
             config_path=repo_result.config_path,
-            raw=tiered.config.model_dump(mode="json"),
-            config=tiered.config,
+            raw=config.model_dump(mode="json"),
+            config=config,
             errors=[],
         )
 

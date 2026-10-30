@@ -22,7 +22,7 @@ Tiers, lowest to highest precedence: Packaged defaults, Global (`$DOVO_HOME/glob
 - A broken Repo tier exits with code 1 and reports its `error_code` with `--format json`: `CONFIG_PATH_INVALID` when `.dovo/config.json` is a directory, `CONFIG_UNREADABLE` when it cannot be read, `CONFIG_JSON_INVALID` when it is not valid JSON, `CONFIG_ROOT_INVALID` when its root is not an object, and `CONFIG_SCHEMA_INVALID` when it fails schema validation. A successful run reports `error_code` `null`.
 - When `.dovo/config.json` cannot be read, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record, prints a `Details logged: <path> (event <event_id>)` line after the panel, and lists the record in `diagnostics` with `--format json`. If the record cannot be written, the line is absent.
 - `environment.sensitive_variables` is the exception: names from the Global, User and Repo tiers are combined, with duplicates dropped.
-- A malformed or invalid Global or User file produces a "Config Error" panel naming the tier and file path.
+- A malformed or invalid Global or User file produces a "Config Error" panel naming the tier and file path. With `--format json`, `status` is `tier_invalid` and `error_code` is `CONFIG_TIER_UNREADABLE` when the file cannot be read, `CONFIG_TIER_JSON_INVALID` when it is not valid JSON, `CONFIG_TIER_ROOT_INVALID` when its root is not an object, and `CONFIG_TIER_SCHEMA_INVALID` when the merged configuration fails schema validation. An unreadable tier file also writes a [diagnostic log](doctor.md#diagnostic-logs) record, printed as a `Details logged:` line and listed in `diagnostics`.
 - With `--format json`, `raw` contains the full merged configuration, defaults included.
 
 ### `dovo config set`

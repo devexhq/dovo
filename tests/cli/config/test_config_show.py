@@ -14,6 +14,8 @@ from dovo.common.filesystem import Filesystem
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.models import ConfigTier
 
+WriteTierConfig = Callable[[ConfigTier, dict[str, Any] | str], Path]
+
 
 class ConfigShowCliIntegrationTests:
     """Typer runner integration tests for dovo config show."""
@@ -78,7 +80,7 @@ class ConfigShowCliIntegrationTests:
         self,
         cli_runner: CliRunner,
         isolated_workspace: Path,
-        write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
+        write_tier_config: WriteTierConfig,
     ) -> None:
         write_tier_config(ConfigTier.USER, "{not valid json")
 
@@ -90,3 +92,26 @@ class ConfigShowCliIntegrationTests:
         assert res.exit_code == 1
         assert "Config Error" in res.stdout
         assert "Invalid configuration in user tier" in res.stdout
+
+    def test_config_show_cli_malformed_user_tier_json_reports_tier_code(
+        self,
+        cli_runner: CliRunner,
+        isolated_workspace: Path,
+        write_tier_config: WriteTierConfig,
+    ) -> None:
+        """Exit 1 with status tier_invalid, error_code CONFIG_TIER_JSON_INVALID and the tier-attributed message."""
+        tier_config_path = write_tier_config(ConfigTier.USER, "")
+        Filesystem.atomic_write_json(
+            isolated_workspace / ".dovo" / "config.json", build_default_config("demo-workspace")
+        )
+
+        res = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "show", "--format", "json"])
+
+        assert res.exit_code == 1
+        payload = json.loads(res.stdout)["payload"]
+        assert payload["status"] == "tier_invalid"
+        assert payload["error_code"] == "CONFIG_TIER_JSON_INVALID"
+        assert payload["errors"] == [
+            f"Invalid configuration in user tier ({tier_config_path}): Expecting value at line 1 column 1 (char 0)"
+        ]
+        assert payload["diagnostics"] == []

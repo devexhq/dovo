@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.mcp_servers import McpServerDefinition
 from dovo.core.config.config import Config
@@ -15,6 +16,7 @@ from dovo.core.config.generator import build_default_config
 from dovo.core.config.loader import ConfigLoadStatus, load_config
 from dovo.core.config.models import AgentSettings, ConfigTier, DovoConfig
 from dovo.core.config.mutate import ConfigSetResult, ConfigUnsetResult
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 WriteTierConfig = Callable[[ConfigTier, dict[str, Any] | str], Path]
@@ -112,8 +114,68 @@ class ConfigLoadTests:
         result = Config(workspace_paths).load()
 
         assert result.status == ConfigLoadStatus.TIER_INVALID
+        assert result.error_code == ErrorCode.CONFIG_TIER_JSON_INVALID
+        assert result.errors == [
+            f"Invalid configuration in {tier} tier ({tier_config_path}): "
+            "Expecting property name enclosed in double quotes at line 1 column 2 (char 1)"
+        ]
+        assert result.remediations == []
+        assert result.diagnostics == []
         assert result.config_path == tier_config_path
-        assert result.errors[0].startswith(f"Invalid configuration in {tier} tier")
+
+    def test_unreadable_tier_reports_tier_unreadable_with_one_record(
+        self,
+        workspace_paths: WorkspacePaths,
+        write_tier_config: WriteTierConfig,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        tier_config_path = write_tier_config(ConfigTier.USER, {})
+        Filesystem.atomic_write_json(workspace_paths.config_file, build_default_config("demo-workspace"))
+        real_read_text = Path.read_text
+
+        def _denied_read(
+            self: Path, encoding: str | None = None, errors: str | None = None, newline: str | None = None
+        ) -> str:
+            if self == tier_config_path:
+                raise PermissionError("denied")
+            return real_read_text(self, encoding=encoding, errors=errors, newline=newline)
+
+        monkeypatch.setattr(Path, "read_text", _denied_read)
+
+        result = Config(workspace_paths).load()
+
+        assert result.status == ConfigLoadStatus.TIER_INVALID
+        assert result.error_code == ErrorCode.CONFIG_TIER_UNREADABLE
+        assert result.errors == [
+            f"Invalid configuration in user tier ({tier_config_path}): unable to read file: denied. "
+            "Check file permissions and that the path is readable."
+        ]
+        assert result.config_path == tier_config_path
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["operation"] == "config.load"
+        assert event["context"] == {"path": str(workspace_paths.config_file)}
+        assert event["exception_type"] == "PermissionError"
+
+    def test_unexpected_tier_error_reports_internal_error(
+        self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        Filesystem.atomic_write_json(workspace_paths.config_file, build_default_config("demo-workspace"))
+
+        def _boom(paths: WorkspacePaths) -> DovoConfig:
+            raise TypeError("boom")
+
+        monkeypatch.setattr("dovo.core.config.config.load_tiered_config", _boom)
+
+        result = Config(workspace_paths).load()
+
+        assert result.status == ConfigLoadStatus.TIER_INVALID
+        assert result.error_code == ErrorCode.INTERNAL_ERROR
+        assert result.errors == ["Unexpected error during config.load: boom"]
+        assert result.config_path == workspace_paths.config_file
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        assert read_single_event(frozen_diagnostic_clock)["exception_type"] == "TypeError"
 
 
 class ConfigLoadRequiredTests:
