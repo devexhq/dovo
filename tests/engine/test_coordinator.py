@@ -56,7 +56,7 @@ from dovo.engine.state_models import (
 from dovo.engine.writer import snapshot_blueprint_path
 from tests.engine.conftest import AgentRunnerBuild, SpySaveExecutionState
 from tests.harness.diagnostic_log import diagnostic_record
-from tests.harness.fakes import fixed_clock, fixed_new_id
+from tests.harness.fakes import FIXED_NOW, fixed_clock, fixed_new_id
 from tests.harness.sessions import (
     SEEDED_FAILURE,
     NoOpRunObserver,
@@ -251,6 +251,47 @@ def _last_result(node: ExecutionLeafNode) -> StepResult:
     return result
 
 
+def _rerun_warning(step_id: str, number: int) -> str:
+    return (
+        f"Step '{step_id}' was interrupted before it recorded a result and was run again as attempt {number}; "
+        "check for side effects its interrupted attempt already made."
+    )
+
+
+def _interrupt(leaf: ExecutionLeafNode) -> None:
+    """Leave leaf RUNNING with an open attempt numbered 1 and no result, as a crash mid-attempt does."""
+    leaf.state = NodeState.RUNNING
+    leaf.attempts = [StepAttemptRecord(number=1, span=TimeSpan(started_at=_SEEDED_START))]
+
+
+def _complete(leaf: ExecutionLeafNode) -> None:
+    """Leave leaf COMPLETED with one settled, passing attempt."""
+    leaf.state = NodeState.COMPLETED
+    result = StepResult(
+        step_id=leaf.id, status="completed", exit_code=0, stdout="", stderr="", duration_seconds=0.0, attempts=1
+    )
+    span = TimeSpan(started_at=_SEEDED_START, ended_at=_SEEDED_START, duration_seconds=0.0)
+    leaf.attempts = [StepAttemptRecord(number=1, span=span, result=result)]
+
+
+def _seed_interrupted(
+    paths: WorkspacePaths,
+    sessions: SessionsRepository,
+    session_id: str,
+    steps: list[dict[str, object]],
+    step_id: str,
+    *,
+    completed: tuple[str, ...] = (),
+) -> None:
+    """Seed a run whose leaf step_id was interrupted mid-attempt, after the leaves in completed finished."""
+    seed_new_session(paths, sessions, session_id=session_id, steps=steps)
+    state = _state(paths, sessions, session_id)
+    for done in completed:
+        _complete(_leaf(state, done))
+    _interrupt(_leaf(state, step_id))
+    SessionStateStore(sessions, paths, session_id).save(state, [])
+
+
 class CoordinatorExecuteTests:
     def test_two_leaf_run_completes_with_flattened_results_and_advancing_revision(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
@@ -320,27 +361,78 @@ class CoordinatorExecuteTests:
         assert outcome.errors[0].startswith("Failed to persist run state after step 'a' finished:")
         assert not (engine_workspace / "b.ran").exists()
 
-    def test_interrupted_attempt_is_closed_failed_and_never_completed(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
+    def test_interrupted_attempt_reruns_as_fresh_attempt_with_same_number(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        engine_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        seed_new_session(engine_paths, sessions_repo, session_id="crash", steps=[_step("a", "touch a.ran")])
-        store = SessionStateStore(sessions_repo, engine_paths, "crash")
-        state = _state(engine_paths, sessions_repo, "crash")
-        interrupted = _leaf(state, "a")
-        interrupted.state = NodeState.RUNNING
-        interrupted.attempts = [StepAttemptRecord(number=1, span=TimeSpan(started_at=_SEEDED_START))]
-        store.save(state, [])
+        monkeypatch.setattr("dovo.common.timing.utc_now", fixed_clock)
+        _seed_interrupted(engine_paths, sessions_repo, "crash", [_step("a", "touch a.ran")], "a")
 
         outcome = _coordinator(engine_paths, sessions_repo, "crash").execute()
 
         leaf = _leaf(_state(engine_paths, sessions_repo, "crash"), "a")
-        assert leaf.state == NodeState.FAILED
-        assert _last_result(leaf).status == "failed"
-        assert _last_result(leaf).error_message == "Step attempt was interrupted before it recorded a result."
-        assert leaf.attempts[-1].span.is_open is False
-        assert leaf.attempts[-1].span.started_at == _SEEDED_START
-        assert outcome.status == SessionStatus.FAILED
-        assert not (engine_workspace / "a.ran").exists()
+        assert (engine_workspace / "a.ran").exists()
+        assert leaf.state == NodeState.COMPLETED
+        assert [attempt.number for attempt in leaf.attempts] == [1]
+        assert leaf.attempts[0].span.started_at == FIXED_NOW.isoformat()
+        assert _last_result(leaf).status == "completed"
+        assert outcome.status == SessionStatus.COMPLETED
+        assert outcome.warnings == [_rerun_warning("a", 1)]
+
+    @pytest.mark.parametrize(
+        ("policy", "expected_state", "expected_status"),
+        [
+            pytest.param("abort", NodeState.FAILED, SessionStatus.FAILED, id="abort"),
+            pytest.param("continue", NodeState.IGNORED, SessionStatus.COMPLETED, id="continue"),
+        ],
+    )
+    def test_rerun_attempt_result_goes_through_on_failure(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        policy: str,
+        expected_state: NodeState,
+        expected_status: SessionStatus,
+    ) -> None:
+        _seed_interrupted(engine_paths, sessions_repo, "crash", [_step("a", "false", on_failure=policy)], "a")
+
+        outcome = _coordinator(engine_paths, sessions_repo, "crash").execute()
+
+        leaf = _leaf(_state(engine_paths, sessions_repo, "crash"), "a")
+        assert (leaf.state, outcome.status) == (expected_state, expected_status)
+        assert _last_result(leaf).error_message == _FAIL_DETAIL
+        if policy == "abort":
+            assert outcome.errors == [f"Step 'a' failed: {_FAIL_DETAIL}"]
+
+    def test_only_the_interrupted_step_runs_again(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
+    ) -> None:
+        steps = [_step(step_id, f"echo ran >> {step_id}.count") for step_id in ("a", "b", "c")]
+        _seed_interrupted(engine_paths, sessions_repo, "crash", steps, "b", completed=("a",))
+
+        outcome = _coordinator(engine_paths, sessions_repo, "crash").execute()
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert [_runs(engine_workspace, step_id) for step_id in ("a", "b", "c")] == [0, 1, 1]
+        assert outcome.warnings == [_rerun_warning("b", 1)]
+
+    def test_interrupted_retry_step_restarts_its_sequence_with_full_budget(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        flaky = 'n=$(cat count 2>/dev/null || echo 0); n=$((n+1)); echo $n > count; [ "$n" -ge 3 ]'
+        steps = [_step("a", flaky, on_failure={"action": "retry", "max_retries": 3, "backoff_ms": 0})]
+        _seed_interrupted(engine_paths, sessions_repo, "crash", steps, "a")
+
+        outcome = _coordinator(engine_paths, sessions_repo, "crash").execute()
+
+        leaf = _leaf(_state(engine_paths, sessions_repo, "crash"), "a")
+        assert outcome.status == SessionStatus.COMPLETED
+        assert leaf.state == NodeState.COMPLETED
+        assert _last_result(leaf).attempts == 3
+        assert outcome.warnings == [_rerun_warning("a", 1)]
 
     @pytest.mark.parametrize(
         ("steps", "decisions", "attempt_count"),
@@ -1200,31 +1292,33 @@ class CoordinatorLoopResumeTests:
             (r.step_id, r.status) for r in straight.step_results
         ]
 
-    def test_running_body_attempt_without_result_recovers_to_paused_and_reprompts(
+    def test_running_body_attempt_without_result_reruns_in_the_last_iteration(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
+        body = [_step("s", "echo ran >> s.count", on_failure="prompt_user")]
         seed_new_session(
-            engine_paths,
-            sessions_repo,
-            session_id="loop-crashed",
-            steps=[_loop("loop", [_step("s", "touch s.ran", on_failure="prompt_user")], max_iterations=1)],
+            engine_paths, sessions_repo, session_id="loop-crashed", steps=[_loop("loop", body, max_iterations=2)]
         )
         state = _state(engine_paths, sessions_repo, "loop-crashed")
         loop = _loop_node(state)
-        loop.state = loop.iterations[0].state = NodeState.RUNNING
-        leaf = loop.iterations[0].steps[0]
-        leaf.state = NodeState.RUNNING
-        leaf.attempts = [StepAttemptRecord(number=1, span=TimeSpan(started_at=_SEEDED_START))]
+        first = loop.iterations[0]
+        second = first.model_copy(deep=True, update={"number": 2, "state": NodeState.RUNNING})
+        first.state, first.until_passed = NodeState.COMPLETED, False
+        _complete(first.steps[0])
+        (engine_workspace / "s.count").write_text("ran\n", encoding="utf-8")
+        _interrupt(second.steps[0])
+        loop.iterations.append(second)
+        loop.state = NodeState.RUNNING
         SessionStateStore(sessions_repo, engine_paths, "loop-crashed").save(state, [])
-        prompter = ScriptedFailurePrompter([FailurePromptDecision.CONTINUE])
+        prompter = ScriptedFailurePrompter([])
 
         outcome = _coordinator(engine_paths, sessions_repo, "loop-crashed", prompter=prompter).execute()
 
         assert outcome.status == SessionStatus.COMPLETED
-        assert [r.error_message for r in prompter.prompted] == [
-            "Step attempt was interrupted before it recorded a result."
-        ]
-        assert not (engine_workspace / "s.ran").exists()
+        assert _runs(engine_workspace, "s") == 2
+        assert prompter.prompted == []
+        assert _loop_node(_state(engine_paths, sessions_repo, "loop-crashed")).state == NodeState.COMPLETED
+        assert outcome.warnings == [_rerun_warning("s", 1)]
 
     def test_resume_emits_no_second_loop_start_or_iteration_start_for_the_paused_iteration(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
@@ -1930,6 +2024,18 @@ class CoordinatorAskTests:
         assert outcome.status == SessionStatus.COMPLETED
         assert prompter.requests == [stored]
         assert ask_run.file("counter.txt").read_text(encoding="utf-8").splitlines() == ["x"]
+
+    def test_interrupted_ask_attempt_asks_again(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, ask_run: AskRun
+    ) -> None:
+        _seed_interrupted(engine_paths, sessions_repo, _SESSION_ID, [_approve_step()], "approve")
+
+        outcome = ask_run.execute(None)
+
+        leaf = ask_run.leaf("approve")
+        assert (outcome.status, outcome.paused_prompt_id) == (SessionStatus.PAUSED, "approve")
+        assert (leaf.state, leaf.pending_ask is not None) == (NodeState.PAUSED, True)
+        assert outcome.warnings == [_rerun_warning("approve", 1)]
 
     def test_invalid_stored_pending_ask_fails_the_run(self, ask_run: AskRun) -> None:
         """Return FAILED with "Pending ask for 'approve' is invalid." and the leaf FAILED for a one-option select."""

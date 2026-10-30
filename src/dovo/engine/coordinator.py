@@ -73,7 +73,10 @@ from dovo.engine.state_store import SessionStateStore, new_iteration
 from dovo.engine.state_validation import validate_loop_structure
 from dovo.engine.writer import load_blueprint_from_snapshot
 
-_INTERRUPTED_MESSAGE = "Step attempt was interrupted before it recorded a result."
+_RERUN_WARNING = (
+    "Step '{step_id}' was interrupted before it recorded a result and was run again as attempt {number}; "
+    "check for side effects its interrupted attempt already made."
+)
 _CEILING_GRANT_COUNT = 3
 
 
@@ -520,7 +523,7 @@ class RunCoordinator:
         return True
 
     def _recover_interrupted(self) -> bool:
-        """Close every RUNNING leaf whose last attempt has no result with a failed interrupted result and mark it PAUSED."""
+        """Replace the open attempt of every RUNNING leaf with a fresh open attempt of the same number, keep the leaf RUNNING so it runs again, and warn once per leaf."""
         recovered = False
         for node in iter_leaves(self._run.state):
             if node.state is not NodeState.RUNNING:
@@ -528,19 +531,9 @@ class RunCoordinator:
             if not node.attempts or node.attempts[-1].result is not None:
                 continue
 
-            attempt = node.attempts[-1]
-            interrupted = StepResult(
-                step_id=node.id,
-                status="failed",
-                exit_code=1,
-                stdout="",
-                stderr="",
-                duration_seconds=0.0,
-                attempts=attempt.number,
-                error_message=_INTERRUPTED_MESSAGE,
-            )
-            node.attempts[-1] = attempt.model_copy(update={"span": attempt.span.close(), "result": interrupted})
-            node.state = NodeState.PAUSED
+            number = node.attempts[-1].number
+            node.attempts[-1] = StepAttemptRecord(number=number, span=TimeSpan.open())
+            self._warnings.append(_RERUN_WARNING.format(step_id=node.id, number=number))
             recovered = True
 
         return self._commit("while recovering interrupted attempts") if recovered else True
