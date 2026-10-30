@@ -16,7 +16,7 @@ The check never edits the issue, its labels or its comments. It writes its verdi
 Each failure is a `gate` finding that only a person can settle, so the verdict is `not_ready`:
 
 - The issue is open.
-- It has no open sub-issues, unless it is the issue `issue-plan-v2` is about to slice, which maps its sub-issues onto slices. Any other issue with sub-issues is planned as an epic, not readied as one slice; name the first open sub-issue whose blockers are all closed.
+- It has no open sub-issues, unless it is the issue `issue-plan-v2` is about to slice, which maps its sub-issues onto slices, or the issue `issue-code-v2` works one of its slices on, whose work plan already maps them. Any other issue with sub-issues is planned as an epic, not readied as one slice; name the first open sub-issue whose blockers are all closed.
 - It has exactly one `dovo-size-*` label.
 
 ## 3. Checks
@@ -24,7 +24,7 @@ Each failure is a `gate` finding that only a person can settle, so the verdict i
 Run the four checks against `origin/main`. Every finding quotes the issue text it is about and cites its evidence.
 
 1. **Dependencies.** Every issue under **Depends on**, and every blocker, is closed, or its stated assumption still holds on `main`. An open dependency whose assumption no longer holds, or that states none, is a `gate` finding: a person merges it, restates the assumption or drops the dependency. On a legacy issue, the blockers and any issue the body says must land first are its dependencies.
-2. **Nothing already delivered.** No outcome (`O-n`; on a legacy issue, no `FR-n`) is already delivered on `main`. Check what the item says a user or caller observes: the CLI's help (`uv run dovo <command> --help`), merged pull requests (`gh pr list --state merged --search "<terms>"`) and the code (`rg`). A delivered item, or the delivered part of one, is a `stale` finding naming the commit or pull request that delivered it: a person drops the item or closes the issue.
+2. **Nothing already delivered.** No outcome (`O-n`; on a legacy issue, no `FR-n`) is already delivered on `main`. Check what the item says a user or caller observes: the CLI's help (`uv run dovo <command> --help`), merged pull requests (`gh pr list --state merged --search "<terms>"`) and the code (`rg`). A delivered item, or the delivered part of one, is a `stale` finding naming the commit or pull request that delivered it: a person drops the item or closes the issue. When `issue-code-v2` checks the issue for one slice of a plan with two or more slices, check only the outcomes that slice's `outcomes` lists: the plan's other slices deliver the rest, and those already merged delivered theirs by design.
 3. **No decision contradicted.** No decision (`D-n`; on a legacy issue, a choice the body states a person made, such as a guard, a scope boundary or a Pre-determined data value) is contradicted by work merged since the issue was written: a merged change that settled the same question another way. Each is a `contradiction` finding citing the decision and the commit or pull request: a person keeps the decision, which then reverses the merged work, or drops it.
 4. **The short template.** The description follows [templates/issue.md](templates/issue.md):
    - A short issue has Why, Outcomes and Done when; no section outside the template; its sections in the template's order; at least one numbered outcome in `requirements.json`; and no id numbered twice. Each miss is a `structure` finding, and the verdict is `not_ready`: a person fixes the description on GitHub, since this check never rewrites a short issue. Text the template's checklist would leave out, such as a path, a symbol or a count, is not a finding. The description is the person's, and planning grounds every such claim. List it under Notes in the report, one line each.
@@ -40,13 +40,13 @@ Only for a `needs_edits` verdict. Write `.agentic/issue-body.md`, the whole desc
 - **Outcomes** from the functional requirements and error cases: the behaviour a user or caller observes, one item each, numbered from `O-1`.
 - **Why** from the goal or user story; **Depends on** from the blockers and the issues it says must land first, each with its assumption; **Out of scope** from the items another issue owns, naming that issue; **Done when** naming the outcomes by id, plus any doc check the definition of done holds.
 - **Drop what the code can tell:** paths, symbols, revision numbers, column lists, test names, counts, inventories, implementation steps, restated `AGENTS.md` rules, and grep bars.
-- Keep an opening `Slice <id> of #<epic>.` line and any marker comment verbatim. No hard line wraps.
+- Keep an opening `Slice <id> of #<issue> ...` line and any marker comment verbatim. No hard line wraps.
 
 Write the title, on one line, to `.agentic/issue-title`, unchanged unless it names an internal, which it then drops. With any other verdict, write neither file.
 
 ## 5. Report
 
-Write `.agentic/issue-ready.md`: the verdict, the base sha, one line per finding with its evidence and fix, and a Notes heading with one line per note from check 4, left out when there is none. Write `.agentic/issue-ready-comment.md`, the comment posted with the label: `Ready to plan at <sha> (<YYYY-MM-DD>).`, followed, for a trim, by one bullet saying the description was trimmed to the short format with every decision kept, and one bullet mapping the old requirement ids onto the new ones (`FR-1, FR-2 → O-1`); otherwise followed by `No changes needed.` Write `.agentic/issue-ready.json` to agree with the report (the issue numbers and shas below are illustrative placeholders; do not look them up):
+Write `.agentic/issue-ready.md`: the verdict, the base sha, one line per finding with its evidence and fix, and a Notes heading with one line per note from check 4, left out when there is none. Write `.agentic/issue-ready-comment.md`, the comment posted with the label: `Ready to plan at <sha> (<YYYY-MM-DD>).`, followed, for a trim, by one bullet saying the description was trimmed to the short format with every decision kept, and one bullet mapping the old requirement ids onto the new ones (`FR-1, FR-2 → O-1`); otherwise followed by `No changes needed.` The blueprint posts it with `plan.py ready-comment`, which heads it with a `<!-- dovo:ready ... -->` marker naming the description it certifies, so `issue-code-v2` re-checks the issue only once that description changes. Write `.agentic/issue-ready.json` to agree with the report (the issue numbers and shas below are illustrative placeholders; do not look them up):
 
 ```json
 {

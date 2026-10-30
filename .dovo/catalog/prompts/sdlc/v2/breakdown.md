@@ -2,7 +2,7 @@
 
 Break the approved slice plan into one phase file per phase. The code loop gives each phase's agent only its own file, so a phase file holds everything that agent needs and nothing another phase needs.
 
-Inputs: `.agentic/plan.md`, `.agentic/plan.json` and `.agentic/requirements.json`, the child issue's numbered items with their exact text. Output: `.agentic/phases/phase-<n>.json`, one per phase number in `plan.json`'s `slices[].phases` for the slice. The next step, `plan.py check-breakdown`, refuses the files when they drop or misquote anything and then writes `.agentic/phases/index.json` itself.
+Inputs: `.agentic/plan.md`, `.agentic/plan.json` and `.agentic/requirements.json`, the slice's numbered items of the issue it is worked on, with their exact text. Output: `.agentic/phases/phase-<n>.json`, one per phase number in `plan.json`'s `slices[].phases` for the slice. The next step, `plan.py check-breakdown`, refuses the files when they drop or misquote anything and then writes `.agentic/phases/index.json` itself.
 
 ## Hard boundaries
 

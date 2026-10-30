@@ -2,7 +2,7 @@
 
 Settle every open question of a plan written by `issue-plan`: a slice plan, or in issue mode the plan that slices an issue. The human has just been asked which open questions to answer: each one they ticked is settled by their answer, and each one they left is settled by the answer the plan assumed. After this prompt the plan has no open questions, only decisions that say who settled them. The blueprint's next step, `check-questions`, stops the run if any question is left open or any decision is malformed.
 
-The blueprint gives you the ticked question ids, the human's answers (one comment, usually written as `OQ-1: <answer>`) and the slice id, or says the plan slices the issue in issue mode. The issue the decisions are posted to is the slice's child issue, or in issue mode the issue itself.
+The blueprint gives you the ticked question ids, the human's answers (one comment, usually written as `OQ-1: <answer>`) and the slice id, or says the plan slices the issue in issue mode. The issue the decisions are posted to is the slice's issue, the one the blueprint says the slice is worked on (its own issue when it has one, otherwise the issue it slices), or in issue mode the issue itself.
 
 ## Hard boundaries
 

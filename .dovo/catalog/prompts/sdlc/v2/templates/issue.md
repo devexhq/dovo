@@ -2,7 +2,7 @@
 
 An issue records what a person decided; the plan records what the code says. Planning grounds the issue in the code just in time, and anything the code can tell would go stale in the issue, so leave it out: no paths, symbols, revision numbers, column lists, test names or counts.
 
-Use the sections below in this order. Why, Outcomes and Done when are required; write every other section only when it has something to say, and leave it out otherwise, never filled with "none". Add no other section. A slice's child issue opens with one line before Why, `Slice <id> of #<epic>.`, and a seeded issue keeps its marker comment as its last line; nothing else goes outside the sections.
+Use the sections below in this order. Why, Outcomes and Done when are required; write every other section only when it has something to say, and leave it out otherwise, never filled with "none". Add no other section. An issue split out to give one slice its own issue keeps its opening line, `Slice <id> of #<issue> ...`, before Why, and a seeded issue keeps its marker comment as its last line; nothing else goes outside the sections.
 
 No hard line wraps: each paragraph and each list item is one line, so the text uses GitHub's full width.
 
