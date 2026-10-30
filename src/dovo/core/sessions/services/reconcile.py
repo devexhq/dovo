@@ -92,9 +92,9 @@ def _live_session_ids() -> set[str]:
             environ = process.info["environ"]
             if environ is not None and (session_id := environ.get("DOVO_SESSION_ID")):
                 session_ids.add(session_id)
-    except psutil.Error:
+    except psutil.Error as exc:
         # A process table that cannot be walked counts no further process.
-        pass
+        record_exception(exc, level=DiagnosticLevel.DEBUG, operation="sessions.reconcile_scan")
     return session_ids
 
 
