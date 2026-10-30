@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -11,7 +12,7 @@ import psutil
 from dovo.common.diagnostic_log import DiagnosticLevel, record_exception
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
-from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus, parse_timestamp
+from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus, WorktreesRepository, parse_timestamp
 from dovo.core.sessions.models import Reconciliation
 
 STALE_RUN_ERROR_MESSAGE = "Session interrupted by abnormal process termination"
@@ -83,23 +84,65 @@ def _resolve_sessions_repo_and_root(
     return sessions_repo, root
 
 
-def _reconcile_stale_records(sessions_repo: SessionsRepository) -> list[SessionRecord]:
-    """Inspect running session records and mark stale ones as failed."""
-    reconciled: list[SessionRecord] = []
-    for run in sessions_repo.list(status=SessionStatus.RUNNING):
-        if is_run_stale(run):
-            updated = sessions_repo.update_status(
-                run.session_id,
-                status=SessionStatus.FAILED,
-                error_message=STALE_RUN_ERROR_MESSAGE,
-            )
-            if updated is not None:
-                reconciled.append(updated)
-    return reconciled
+def _live_session_ids() -> set[str]:
+    """Return the DOVO_SESSION_ID of every live process; a process whose environment cannot be read is not counted."""
+    session_ids: set[str] = set()
+    try:
+        for process in psutil.process_iter(["environ"], ad_value=None):
+            environ = process.info["environ"]
+            if environ is not None and (session_id := environ.get("DOVO_SESSION_ID")):
+                session_ids.add(session_id)
+    except psutil.Error as exc:
+        # A process table that cannot be walked counts no further process.
+        record_exception(exc, level=DiagnosticLevel.DEBUG, operation="sessions.reconcile_scan")
+    return session_ids
+
+
+def _worktree_present(run: SessionRecord, sessions_repo: SessionsRepository) -> bool:
+    """Check whether the run records a worktree row whose recorded directory exists on disk."""
+    if run.worktree_id is None:
+        return False
+
+    worktrees = WorktreesRepository(
+        db_path=sessions_repo.db_path, project_id=sessions_repo.project_id, db_engine=sessions_repo.db_engine
+    )
+    worktree = worktrees.get(run.worktree_id)
+    return worktree is not None and worktree.worktree_path.exists()
+
+
+def _resumable(run: SessionRecord, sessions_repo: SessionsRepository, live_session_ids: set[str]) -> bool:
+    """Check whether a stale run has saved state, its worktree if it used one, and no live process."""
+    if run.execution_state_json is None or run.session_id in live_session_ids:
+        return False
+
+    return not run.use_worktree or _worktree_present(run, sessions_repo)
+
+
+def _reconcile_stale_records(sessions_repo: SessionsRepository) -> tuple[list[SessionRecord], list[SessionRecord]]:
+    """Mark each stale running record paused when it can resume and failed otherwise; return the paused and failed rows."""
+    stale = [run for run in sessions_repo.list(status=SessionStatus.RUNNING) if is_run_stale(run)]
+    has_state = any(run.execution_state_json is not None for run in stale)
+    live_session_ids = _live_session_ids() if has_state else set()
+
+    paused: list[SessionRecord] = []
+    failed: list[SessionRecord] = []
+    for run in stale:
+        resumable = _resumable(run, sessions_repo, live_session_ids)
+        updated = sessions_repo.update_status(
+            run.session_id,
+            status=SessionStatus.PAUSED if resumable else SessionStatus.FAILED,
+            error_message=None if resumable else STALE_RUN_ERROR_MESSAGE,
+        )
+        if updated is not None:
+            (paused if resumable else failed).append(updated)
+    return paused, failed
 
 
 def reconcile_stale_sessions(db: SessionsRepository, path: Path | None = None) -> Reconciliation:
-    """Mark stale RUNNING session records FAILED; on an unexpected failure, skip them and return its record.
+    """Mark stale RUNNING session records PAUSED or FAILED; on an unexpected failure, skip them and return its record.
+
+    A stale record is paused when it has saved execution state, its worktree is present if it used
+    one, and no live process carries its session id; every other stale record is marked failed.
 
     Raises:
         LockTimeoutError: If another process holds the workspace lock.
@@ -123,20 +166,40 @@ def reconcile_stale_sessions(db: SessionsRepository, path: Path | None = None) -
 
 
 def _reconcile_under_lock(sessions_repo: SessionsRepository, root_dir: Path) -> Reconciliation:
-    """Reconcile stale records while holding the workspace lock and return them with their warning."""
+    """Reconcile stale records while holding the workspace lock and return the paused and failed rows with their warning."""
     with WorkspaceLock(RepositoryPaths.from_root(root_dir).lock_file):
-        reconciled = _reconcile_stale_records(sessions_repo)
+        paused, failed = _reconcile_stale_records(sessions_repo)
 
-    return Reconciliation(reconciled=tuple(reconciled), warning=format_reconciliation_warning(reconciled))
+    return Reconciliation(
+        paused=tuple(paused), failed=tuple(failed), warning=format_reconciliation_warning(paused, failed)
+    )
 
 
-def format_reconciliation_warning(reconciled: list[SessionRecord]) -> str | None:
-    """Format non-intrusive warning message for reconciled stale sessions."""
-    if not reconciled:
+def _paused_sentence(paused: Sequence[SessionRecord]) -> str | None:
+    """Format the sentence naming the paused sessions and how to continue them."""
+    if not paused:
         return None
 
-    if len(reconciled) == 1:
-        return f"Reconciled 1 interrupted session (session_id: {reconciled[0].session_id})."
+    if len(paused) == 1:
+        return "Paused 1 interrupted session; continue it with 'dovo resume <session_id>'."
 
-    session_ids = ", ".join(r.session_id for r in reconciled)
-    return f"Reconciled {len(reconciled)} interrupted sessions ({session_ids})."
+    session_ids = ", ".join(r.session_id for r in paused)
+    return f"Paused {len(paused)} interrupted sessions ({session_ids}); continue each with 'dovo resume <session_id>'."
+
+
+def _failed_sentence(failed: Sequence[SessionRecord]) -> str | None:
+    """Format the sentence naming the sessions marked failed."""
+    if not failed:
+        return None
+
+    if len(failed) == 1:
+        return f"Marked 1 interrupted session failed (session_id: {failed[0].session_id})."
+
+    session_ids = ", ".join(r.session_id for r in failed)
+    return f"Marked {len(failed)} interrupted sessions failed ({session_ids})."
+
+
+def format_reconciliation_warning(paused: Sequence[SessionRecord], failed: Sequence[SessionRecord]) -> str | None:
+    """Format the reconciliation warning, the paused sentence before the failed one, or None when both are empty."""
+    sentences = [sentence for sentence in (_paused_sentence(paused), _failed_sentence(failed)) if sentence is not None]
+    return " ".join(sentences) or None

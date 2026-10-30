@@ -48,14 +48,14 @@ WARNINGS_RUNS = FormatterCase(
     data=HistoryListResult(
         status=HistoryListStatus.OK,
         sessions=[session_record()],
-        warnings=["Reconciled 1 interrupted session (session_id: sess-stale)."],
+        warnings=["Marked 1 interrupted session failed (session_id: sess-stale)."],
     ),
-    view=_make_session_list_view(warnings=["Reconciled 1 interrupted session (session_id: sess-stale)."]),
+    view=_make_session_list_view(warnings=["Marked 1 interrupted session failed (session_id: sess-stale)."]),
     render_expectations=[
         "sess-12345678",
         "deploy-blueprint",
         format_session_duration(10.0),
-        "Reconciled 1 interrupted session (session_id: sess-stale).",
+        "Marked 1 interrupted session failed (session_id: sess-stale).",
     ],
 )
 
@@ -104,7 +104,7 @@ HISTORY_LIST_PAYLOAD_CASES = [
             ],
             "total_sessions": 1,
             "errors": [],
-            "warnings": ["Reconciled 1 interrupted session (session_id: sess-stale)."],
+            "warnings": ["Marked 1 interrupted session failed (session_id: sess-stale)."],
             "remediations": [],
             "diagnostics": [],
         },

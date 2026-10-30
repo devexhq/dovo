@@ -191,8 +191,9 @@ class HistoryShowResult(BaseResult):
 
 @dataclass(frozen=True, slots=True)
 class Reconciliation:
-    """Stale sessions marked failed, the warning to show for them, and the record of an unexpected failure."""
+    """Stale sessions marked paused or failed, the warning to show for them, and the record of an unexpected failure."""
 
-    reconciled: tuple[SessionRecord, ...] = ()
+    paused: tuple[SessionRecord, ...] = ()
+    failed: tuple[SessionRecord, ...] = ()
     warning: str | None = None
     diagnostic: DiagnosticRecord | None = None

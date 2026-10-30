@@ -23,16 +23,12 @@ from dovo.engine import BlueprintResumeService
 from dovo.engine.models import BlueprintRunResult
 
 
-def _emit_resume_start_notice(context: CliContext, session_id: str | None) -> None:
-    """Emit a notice that a session resume operation is starting."""
+def _emit_resume_start_notice(session_id: str | None) -> None:
+    """Emit a notice that a session resume operation is starting; with no session_id, the outcome names the session."""
     if session_id:
         ui_dispatcher.dispatch(MessageEvent(message=f"Resuming session '{session_id}'..."))
         return
-    latest = context.db.sessions.get_latest_paused()
-    if latest is not None:
-        ui_dispatcher.dispatch(
-            MessageEvent(message=f"Resuming latest paused session '{latest.session_id}' ({latest.blueprint_name})...")
-        )
+    ui_dispatcher.dispatch(MessageEvent(message="Resuming the latest paused session..."))
 
 
 def _resume_failure_msg(result: BlueprintRunResult, session_id: str | None) -> str:
@@ -111,7 +107,7 @@ def session_resume_command(
         ui_dispatcher.dispatch(ErrorPanelEvent(title="Resume Failed", message="\n\n".join(arguments.errors)))
         return BlueprintRunResult(errors=arguments.errors)
 
-    _emit_resume_start_notice(context, session_id)
+    _emit_resume_start_notice(session_id)
     interaction_prompter = DispatcherInteractionPrompter(ui_dispatcher, no_tty=no_tty)
 
     observer = resolve_cli_observer(

@@ -121,7 +121,8 @@ steps:
         )
 
         assert resume_result.exit_code == 0
-        assert f"Resuming latest paused session '{session_id}'" in resume_result.transcript
+        assert "Resuming the latest paused session..." in resume_result.transcript
+        assert f"(session: {session_id}," in resume_result.transcript
         assert "Executing step-needs-fix" in resume_result.transcript
         assert "step-needs-fix COMPLETED" in resume_result.transcript
         assert "final step completed" in resume_result.transcript

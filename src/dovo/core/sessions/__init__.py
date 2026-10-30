@@ -15,10 +15,15 @@ from dovo.core.sessions.models import (
     SessionLogEventType,
     StepRunSummary,
 )
-from dovo.core.sessions.services.reconcile import current_process_started_at, reconcile_stale_sessions
+from dovo.core.sessions.services.reconcile import (
+    STALE_RUN_ERROR_MESSAGE,
+    current_process_started_at,
+    reconcile_stale_sessions,
+)
 from dovo.core.sessions.sessions import Session, SessionCollection, history_redactor
 
 __all__ = [
+    "STALE_RUN_ERROR_MESSAGE",
     "DiffResult",
     "DiffStatus",
     "HistoryListResult",

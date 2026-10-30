@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from dovo.common.clock import Clock
-from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.diagnostic_log import DiagnosticRecord, error_diagnostics
 from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.session_id import SessionIdFactory
@@ -14,6 +14,7 @@ from dovo.core.catalog import Catalog
 from dovo.core.db import SessionsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import HeadlessAnswerInput
+from dovo.core.sessions import reconcile_stale_sessions
 from dovo.engine.engine import Engine
 from dovo.engine.models import BlueprintRunResult, FailurePrompter, InteractionPrompter, RunObserver, RunOutcome
 from dovo.engine.services._shared import fail, finalize, load_record, resolve_env_overrides
@@ -40,7 +41,10 @@ class BlueprintResumeService:
     diagnostics: list[DiagnosticRecord] = field(default_factory=list)
 
     def execute(self) -> BlueprintRunResult:
-        """Find the session if omitted and resume it via Engine, reporting any failure behind the engine.resume_target or engine.resume catch.
+        """Reconcile stale runs, find the session if omitted and resume it via Engine, reporting any failure behind the engine.resume_target or engine.resume catch.
+
+        Reconciliation takes and releases the workspace lock before Engine.resume takes it, so a crashed run is
+        paused, and resumable, before the target is resolved.
 
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
@@ -48,6 +52,11 @@ class BlueprintResumeService:
         env_overrides, env_error = resolve_env_overrides(self.env_mode, self.env_passthrough)
         if env_error is not None:
             return fail(self.warnings, self.diagnostics, env_error)
+
+        reconciliation = reconcile_stale_sessions(self.db, path=self.paths.root_dir)
+        if reconciliation.warning:
+            self.warnings.append(reconciliation.warning)
+        self.diagnostics.extend(error_diagnostics(reconciliation.diagnostic))
 
         with catch_failure("engine.resume_target", session_id=self.session_id) as caught:
             target_session_id = self._target_session_id()

@@ -16,7 +16,7 @@ from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
-from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
+from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.engine import RunCoordinator, RunObserver, RunOutcome
@@ -289,6 +289,43 @@ def seed_new_session(
         agent=agent,
     )
     SessionStateStore(sessions, paths, session_id).initialize(blueprint, manifest, [])
+    row = sessions.get(session_id)
+    assert row is not None
+    return row
+
+
+def seed_crashed_session(
+    paths: WorkspacePaths,
+    sessions: SessionsRepository,
+    *,
+    session_id: str,
+    steps: list[dict[str, object]],
+    interrupted_step_id: str,
+    use_worktree: bool = False,
+    worktree_id: str | None = None,
+    worktree_path: Path | None = None,
+    auto_apply: bool = False,
+) -> SessionRecord:
+    """Seed a RUNNING row with no pid whose interrupted_step_id leaf is RUNNING on one open attempt, as a crash leaves it.
+
+    worktree_id is recorded on the row; with worktree_path too, a worktree row with that id and path is created.
+    """
+    seed_new_session(
+        paths, sessions, session_id=session_id, steps=steps, use_worktree=use_worktree, auto_apply=auto_apply
+    )
+    if worktree_id is not None and worktree_path is not None:
+        WorktreesRepository(db_path=sessions.db_path, project_id=sessions.project_id).create(
+            id=worktree_id, branch_name=f"dovo/{worktree_id}", base_commit="0" * 40, worktree_path=worktree_path
+        )
+    store = SessionStateStore(sessions, paths, session_id)
+    state = store.load([])
+
+    for node in state.nodes:
+        if isinstance(node, ExecutionLeafNode) and node.id == interrupted_step_id:
+            node.state = NodeState.RUNNING
+            node.attempts = [StepAttemptRecord(number=1, span=TimeSpan(started_at=SEEDED_SPAN.started_at))]
+
+    store.save(state, [], LifecycleUpdate(worktree_id=worktree_id))
     row = sessions.get(session_id)
     assert row is not None
     return row

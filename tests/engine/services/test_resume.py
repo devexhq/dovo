@@ -14,21 +14,34 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
 from dovo.core.agents.models import AgentEnvOverrides
-from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
+from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import HeadlessAnswerInput
+from dovo.core.worktree import Worktree
 from dovo.engine import BlueprintRunService
 from dovo.engine.exceptions import EngineError
+from dovo.engine.executors.models import StepResult
 from dovo.engine.models import BlueprintRunResult, RunOutcome
 from dovo.engine.services.resume import BlueprintResumeService
+from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
+from dovo.engine.state_store import SessionStateStore
 from tests.engine.conftest import StubDriveRun
 from tests.harness.ask import scripted_loop_blueprint
+from tests.harness.builders import WorkspaceBuilder
 from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.lock import time_out_first_lock
-from tests.harness.sessions import seed_paused_ask_session, seed_paused_session
+from tests.harness.sessions import SEEDED_SPAN, seed_crashed_session, seed_paused_ask_session, seed_paused_session
+from tests.harness.workspace_paths import initialized_workspace_paths
+
+PAUSED_SENTENCE = "Paused 1 interrupted session; continue it with 'dovo resume <session_id>'."
+RERUN_WARNING = (
+    "Step 'a' was interrupted before it recorded a result and was run again as attempt 1; "
+    "check for side effects its interrupted attempt already made."
+)
+STALE_RUN_MESSAGE = "Session interrupted by abnormal process termination"
 
 
 def _seed(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> None:
@@ -41,7 +54,120 @@ def _seed(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) 
     )
 
 
+def _end_crashed_run(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str, status: str) -> None:
+    """Record a result of status on the crashed run's one step, leaving every top-level node terminal."""
+    store = SessionStateStore(sessions, paths, session_id)
+    state = store.load([])
+    leaf = state.nodes[0]
+    assert isinstance(leaf, ExecutionLeafNode)
+    result = StepResult(
+        step_id=leaf.id,
+        status=status,
+        exit_code=0 if status == "completed" else 1,
+        stdout="",
+        stderr="",
+        duration_seconds=0.0,
+    )
+    leaf.attempts = [StepAttemptRecord(number=1, span=SEEDED_SPAN, result=result)]
+    leaf.state = NodeState.COMPLETED if status == "completed" else NodeState.FAILED
+    store.save(state, [])
+
+
+def _resume_service(
+    paths: WorkspacePaths, sessions: SessionsRepository, session_id: str | None
+) -> BlueprintResumeService:
+    return BlueprintResumeService(
+        paths=paths, db=sessions, session_id=session_id, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+    )
+
+
 class BlueprintResumeServiceExecuteTests:
+    @pytest.mark.parametrize(
+        "session_id", [pytest.param("crashed", id="explicit-id"), pytest.param(None, id="latest-paused")]
+    )
+    def test_execute_reconciles_and_resumes_a_crashed_run(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, session_id: str | None
+    ) -> None:
+        """Pause the RUNNING crashed row, rerun its interrupted step and complete it with no error message."""
+        seed_crashed_session(
+            engine_paths,
+            sessions_repo,
+            session_id="crashed",
+            steps=[{"id": "a", "type": "command", "command": "echo ran > a.txt"}],
+            interrupted_step_id="a",
+        )
+
+        result = _resume_service(engine_paths, sessions_repo, session_id).execute()
+
+        assert result.ok
+        assert result.session_record is not None
+        assert result.session_record.session_id == "crashed"
+        assert result.session_record.status == SessionStatus.COMPLETED
+        assert result.session_record.error_message is None
+        assert result.warnings == [PAUSED_SENTENCE, RERUN_WARNING]
+
+    def test_execute_crashed_run_with_a_failed_step_and_no_step_left_is_finalized(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        """Return SESSION_STATE_CORRUPT and leave the row failed, so no paused session is left to pick."""
+        seed_crashed_session(
+            engine_paths,
+            sessions_repo,
+            session_id="crashed",
+            steps=[{"id": "a", "type": "command", "command": "exit 1"}],
+            interrupted_step_id="a",
+        )
+        _end_crashed_run(engine_paths, sessions_repo, "crashed", "failed")
+
+        result = _resume_service(engine_paths, sessions_repo, "crashed").execute()
+
+        assert result.error_code == ErrorCode.SESSION_STATE_CORRUPT
+        assert sessions_repo.get_latest_paused() is None
+        row = sessions_repo.get("crashed")
+        assert row is not None
+        assert row.status == SessionStatus.FAILED
+        assert row.error_message == STALE_RUN_MESSAGE
+
+    def test_execute_finished_crashed_run_completes_and_auto_applies(self, tmp_path: Path) -> None:
+        """Complete a worktree-backed auto_apply crashed run whose every node completed and apply its committed change."""
+        paths = initialized_workspace_paths(
+            WorkspaceBuilder(tmp_path / "git-workspace").with_git().with_database().build()
+        )
+        sessions = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        created = Worktree(
+            paths,
+            db=WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        ).create(session_id="crashed")
+        assert created.session is not None
+        worktree_id = created.session.session_id
+        worktree = paths.worktree_dir(worktree_id)
+        (worktree / "applied.txt").write_text("change\n", encoding="utf-8")
+        GitRunner().run(["add", "applied.txt"], worktree)
+        GitRunner().run(["commit", "-m", "change"], worktree)
+        seed_crashed_session(
+            paths,
+            sessions,
+            session_id="crashed",
+            steps=[{"id": "a", "type": "command", "command": "true"}],
+            interrupted_step_id="a",
+            use_worktree=True,
+            worktree_id=worktree_id,
+            auto_apply=True,
+        )
+        _end_crashed_run(paths, sessions, "crashed", "completed")
+
+        result = _resume_service(paths, sessions, "crashed").execute()
+
+        assert result.ok
+        row = sessions.get("crashed")
+        assert row is not None
+        assert row.status == SessionStatus.COMPLETED
+        assert row.error_message is None
+        assert (paths.root_dir / "applied.txt").read_text(encoding="utf-8") == "change\n"
+
     def test_execute_passes_git_clock_and_new_id_to_drive_run(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
