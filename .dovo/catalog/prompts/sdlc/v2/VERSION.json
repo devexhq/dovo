@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "version": "v2",
+  "status": "dev",
+  "blueprints": ["issue-code-v2"],
+  "scripts": ".dovo/catalog/scripts/sdlc/v2",
+  "tests": "tests/sdlc/v2"
+}
