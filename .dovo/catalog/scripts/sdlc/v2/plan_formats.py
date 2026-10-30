@@ -24,7 +24,10 @@ item and its exact text. The document's `format` is `short` when the
 description has an `## Outcomes` section, whose items are outcomes (`O-<n>`)
 and whose `## Decisions` items are decisions (`D-<n>`), and `legacy` otherwise,
 whose items are functional and non-functional requirements (`FR-<n>`,
-`NFR-<n>`) and numbered error cases (`EC-<n>`).
+`NFR-<n>`) and numbered error cases (`EC-<n>`). An outcome a slice delivers
+only part of carries `part`, the part its slice's `outcomes` entry names in
+parentheses (`"part": "reply"` for `O-7 (reply)`); the outcome's other parts
+belong to other slices. An entry without `part` is the whole item.
 
 A phase is the document .agentic/phases/phase-<n>.json, which the breakdown
 step writes from the approved plan's `## Phase <n>` section: the one file the
@@ -275,27 +278,30 @@ def prior_decisions_json(issue: int, body_sha: str, decisions: list[PriorDecisio
 
 @dataclass(frozen=True)
 class Requirement:
-    """One numbered item of an issue's description: its id, its kind and its text after the id."""
+    """One numbered item of an issue's description: its id, its kind, its text after the id and any part a slice owns."""
 
     id: str
     kind: str
     text: str
+    part: str | None = None
 
     def to_json(self) -> dict[str, object]:
-        """Return the entry as requirements.json's requirements holds it."""
-        return {"id": self.id, "kind": self.kind, "text": self.text}
+        """Return the entry as requirements.json's requirements holds it, with `part` only when it has one."""
+        entry: dict[str, object] = {"id": self.id, "kind": self.kind, "text": self.text}
+        return entry if self.part is None else {**entry, "part": self.part}
 
     @classmethod
     def from_json(cls, raw: object, position: int) -> Requirement:
         """Return the requirement raw describes; position (from 1) names it while it has no id.
 
         Raises:
-            FormatError: raw is not a JSON object with an id, a kind and a text.
+            FormatError: raw is not a JSON object with an id, a kind and a text, or has a part that is no text.
         """
         if not isinstance(raw, dict):
             raise FormatError(f"Requirement {position} is not a JSON object.")
         owner = f"Requirement {position}"
-        return cls(id=_text(raw, "id", owner), kind=_text(raw, "kind", owner), text=_text(raw, "text", owner))
+        part = None if raw.get("part") is None else _text(raw, "part", owner)
+        return cls(_text(raw, "id", owner), _text(raw, "kind", owner), _text(raw, "text", owner), part)
 
 
 def requirements_json(issue: int, issue_format: str, requirements: list[Requirement]) -> dict[str, object]:

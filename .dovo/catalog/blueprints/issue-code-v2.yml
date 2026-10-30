@@ -13,7 +13,7 @@
 version: 1
 name: issue-code-v2
 id: issue-code-v2
-description: Pick the next ready slice of an issue's work plan, holding for a person while every slice waits on one, load the plan from the session that wrote it, ready the slice's child issue if it is not labelled dovo:ready, holding for a person and re-checking it while it is not ready, plan the slice's phases just in time and review, challenge and answer that plan, break it into one file per phase and approve both, post its decisions to the child issue, claim the slice, implement the slice one phase per agent session and commit each phase once it passes the quality gate, review and fix blockers and warnings until none remain or only a person can settle them, report how the slice departed from the plan, then open a PR that closes the child issue, post the final review and record the slice as landed in the work plan
+description: Pick the next ready slice of an issue's work plan, holding for a person while every slice waits on one, load the plan from the session that wrote it, label the issue the slice is worked on (the slice's own issue when it has one, otherwise the issue itself) with the slice's size, ready that issue unless it is labelled dovo:ready for its description as it is, holding for a person and re-checking it while it is not ready, plan the slice's phases just in time and review, challenge and answer that plan, break it into one file per phase and approve both, post its decisions to that issue, claim the slice, implement the slice one phase per agent session and commit each phase once it passes the quality gate, review and fix blockers and warnings until none remain or only a person can settle them, report how the slice departed from the plan, then open a PR that references the issue, or closes it when the slice is the last, post the final review, record the slice as landed in the work plan and correct the PR's closing lines when the plan as landed changed them
 summary: Next slice of a work plan to a reviewed PR
 
 inputs:
@@ -107,9 +107,10 @@ steps:
   # this run starts from is kept beside them: slice planning (and a retry of
   # it) starts from the copy, the slice plan's review diffs the contract and
   # slices against it, and land checks the epic's contract three ways with it.
-  # The copy records the child `next` picked on the slice, since a child
-  # `next` created from the slice's stub is still `null` in the downloaded plan,
-  # and every later step reads the child from plan.json.
+  # The copy records on the slice the issue `next` says it is worked on, when
+  # that is its own issue, since `split-out` may have given it one after the
+  # downloaded plan was written, and later steps read the slice's `child` from
+  # plan.json.
   - id: keep-epic-plan
     name: Keep the epic plan this run starts from
     run: |
@@ -117,39 +118,44 @@ steps:
       uv run --quiet python -c '
       import json, sys
       plan = json.load(open(".agentic/plan.json"))
+      issue = int(sys.argv[2])
       for row in plan["slices"]:
-          if row["id"] == sys.argv[1]:
-              row["child"], row["stub"] = int(sys.argv[2]), None
+          if row["id"] == sys.argv[1] and issue != plan.get("issue"):
+              row["child"] = issue
       json.dump(plan, open(".agentic/epic-plan.json", "w"), indent=2)
-      ' "{{ steps.next.outputs.slice }}" "{{ steps.next.outputs.child }}"
+      ' "{{ steps.next.outputs.slice }}" "{{ steps.next.outputs.issue }}"
     timeout_seconds: 120
 
-  # --- ready-issue's gate steps, run on the slice's child issue. A step cannot
-  # be skipped, so each of them passes straight through when the child is
-  # already labelled dovo:ready. ---
-
-  - id: child-ready
-    name: Check whether the child issue is labelled dovo:ready
-    run: |
-      set -eu
-      labels=$(gh issue view {{ steps.next.outputs.child }} --json labels --jq '.labels[].name')
-      if printf '%s\n' "$labels" | grep -qx 'dovo:ready'; then
-        echo "Issue {{ steps.next.outputs.child }} is labelled dovo:ready."
-        echo "labelled=true" >> "$DOVO_OUTPUT"
-      else
-        echo "Issue {{ steps.next.outputs.child }} is not labelled dovo:ready; readying it."
-        echo "labelled=false" >> "$DOVO_OUTPUT"
-      fi
+  # Before the ready check, whose gate wants exactly one dovo-size-* label: the
+  # issue the slice is worked on carries the slice's size, replacing the size
+  # it had for an earlier slice.
+  - id: size-label
+    name: Label the slice's issue with the slice's size
+    run: >-
+      uv run python .dovo/catalog/scripts/sdlc/v2/workplan.py size-label --issue ${{ inputs.issue }}
+      --slice {{ steps.next.outputs.slice }}
     timeout_seconds: 120
 
-  # A not_ready child needs a person: a size label, a split, a decision or a
+  # --- ready-issue's gate steps, run on the issue the slice is worked on. A
+  # step cannot be skipped, so each of them passes straight through when that
+  # issue is already labelled dovo:ready for its description as it is: the
+  # check that labelled it recorded the description's body_sha in its comment. ---
+
+  - id: ready-state
+    name: Check whether the slice's issue is labelled dovo:ready for its description
+    run: >-
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py ready-state
+      --issue {{ steps.next.outputs.issue }} >> "$DOVO_OUTPUT"
+    timeout_seconds: 120
+
+  # A not_ready issue needs a person: a size label, a split, a decision or a
   # closed blocker, which no edit here can supply. Rather than failing, the run
   # holds at a prompt that lists the findings, so the person settles them on
   # GitHub and answers (or leaves the run paused and continues it later with
   # `dovo resume`). The loop then re-runs the check, since the gate reads the
   # verdict the check wrote, and ends once the verdict is ready or needs_edits.
   - id: ready-loop
-    name: Check the child issue until no person needs to settle it
+    name: Check the slice's issue until no person needs to settle it
     type: loop
     max_iterations: 5
     until:
@@ -167,16 +173,16 @@ steps:
         timeout_seconds: 120
 
       - id: check
-        name: Re-ground and re-check the child issue
+        name: Re-ground and re-check the slice's issue
         type: agent
         prompt: |
-          Child issue already labelled dovo:ready: {{ steps.child-ready.outputs.labelled }}
+          Issue already labelled dovo:ready for its description as it is: {{ steps.ready-state.outputs.ready }}
 
           If that is true, write only .agentic/issue-ready.md, containing the one line
-          "Issue #{{ steps.next.outputs.child }} is already labelled dovo:ready; not re-checked.",
+          "Issue #{{ steps.next.outputs.issue }} is already labelled dovo:ready for its description; not re-checked.",
           and stop. Otherwise run:
 
-          Follow .dovo/catalog/prompts/sdlc/v2/issue-ready.md for issue {{ steps.next.outputs.child }}. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
+          Follow .dovo/catalog/prompts/sdlc/v2/issue-ready.md for issue {{ steps.next.outputs.issue }}, the issue issue-code-v2 works slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }} on. The slice's `outcomes` in .agentic/epic-plan.json are the outcomes it delivers. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
           .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md only when the
           verdict is needs_edits, which only a legacy issue's trim gets. Do not edit the issue, its labels or its comments.
           Findings of the previous check a person says they settled, if any: {{ steps.hold.outputs.selected }}
@@ -191,11 +197,11 @@ steps:
       # back after the edits. Lists what a person must settle: every finding of a
       # not_ready verdict, and nothing otherwise.
       - id: gate
-        name: List what a person must settle on the child issue
+        name: List what a person must settle on the slice's issue
         run: |
           set -eu
-          if [ "{{ steps.child-ready.outputs.labelled }}" = "true" ]; then
-            echo "Already labelled dovo:ready."
+          if [ "{{ steps.ready-state.outputs.ready }}" = "true" ]; then
+            echo "Already labelled dovo:ready for its description."
             echo "verdict=labelled" >> "$DOVO_OUTPUT"
             printf '{"holds": []}\n' > .agentic/issue-hold.json
             exit 0
@@ -204,9 +210,9 @@ steps:
           echo "Verdict: $verdict"
           echo "verdict=$verdict" >> "$DOVO_OUTPUT"
           if [ "$verdict" != "ready" ]; then
-            labels=$(gh issue view {{ steps.next.outputs.child }} --json labels --jq '.labels[].name')
+            labels=$(gh issue view {{ steps.next.outputs.issue }} --json labels --jq '.labels[].name')
             if printf '%s\n' "$labels" | grep -qx 'dovo:ready'; then
-              gh issue edit {{ steps.next.outputs.child }} --remove-label dovo:ready
+              gh issue edit {{ steps.next.outputs.issue }} --remove-label dovo:ready
             fi
           fi
           uv run --quiet python - <<'PY'
@@ -226,13 +232,13 @@ steps:
 
       # No prompt is shown when the gate lists nothing.
       - id: hold
-        name: Wait for a person to settle the child issue's findings
+        name: Wait for a person to settle the slice's issue's findings
         type: ask
         interaction:
           mode: multiselect
           message: >-
-            Child issue {{ steps.next.outputs.child }} of slice {{ steps.next.outputs.slice }} is not
-            ready to plan, and only a person can settle why: the check's findings are listed below,
+            Issue {{ steps.next.outputs.issue }}, which slice {{ steps.next.outputs.slice }} is worked on,
+            is not ready to plan, and only a person can settle why: the check's findings are listed below,
             and its report is attached. Settle them on GitHub (a size label, a split, a decision, a
             closed blocker), then select the ones you settled to re-check the issue. To stop for
             now, press Ctrl-C: the run stays paused, and `dovo resume` asks again.
@@ -247,44 +253,50 @@ steps:
 
       # Fails, and so repeats the loop, only when the verdict was not_ready.
       - id: settled
-        name: Re-check the child issue unless no person was needed
+        name: Re-check the slice's issue unless no person was needed
         run: test "{{ steps.gate.outputs.verdict }}" != "not_ready"
         timeout_seconds: 60
         on_failure: continue
 
-  # Asked on every run, including one where the child is already labelled,
-  # since a step cannot be skipped; denying stops the run with the issue
-  # untouched.
+  # Asked on every run, including one where the issue is already labelled for
+  # its description, since a step cannot be skipped; denying stops the run with
+  # the issue as size-label left it: relabelled with the slice's size, and
+  # otherwise untouched.
   - id: approve
     name: Approve the edits and the label
     type: ask
     interaction:
       mode: confirm
       message: >-
-        Apply the proposed edits, if any, to child issue {{ steps.next.outputs.child }} and label it
-        dovo:ready? Already labelled: {{ steps.child-ready.outputs.labelled }} (when true, nothing is applied).
+        Apply the proposed edits, if any, to issue {{ steps.next.outputs.issue }} and label it
+        dovo:ready? Already labelled for its description: {{ steps.ready-state.outputs.ready }} (when
+        true, nothing is applied).
       artifact: issue-ready
 
   # A command step: the writes to GitHub run exactly as approved, with the
-  # host's gh credentials.
+  # host's gh credentials. The comment records the body_sha of the description
+  # the check read, and ready-comment refuses, before the label is added, when
+  # the description is no longer that one, so a later run skips the check only
+  # while the description it checked is unchanged.
   - id: apply
-    name: Apply the edits, label the child issue and comment
+    name: Apply the edits, label the slice's issue and comment
     run: |
       set -eu
-      [ "{{ steps.child-ready.outputs.labelled }}" = "true" ] && { echo "Already labelled dovo:ready; nothing to apply."; exit 0; }
+      [ "{{ steps.ready-state.outputs.ready }}" = "true" ] && { echo "Already labelled dovo:ready for its description; nothing to apply."; exit 0; }
       verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
+      checked=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json")).get("body_sha", ""))')
       if [ "$verdict" = "needs_edits" ]; then
         for proposal in .agentic/issue-title .agentic/issue-body.md; do
           [ -s "$proposal" ] || { echo "Verdict is needs_edits but $proposal is missing or empty; not labelling."; exit 1; }
         done
-        gh issue edit {{ steps.next.outputs.child }} --title "$(head -n 1 .agentic/issue-title)" --body-file .agentic/issue-body.md
+        gh issue edit {{ steps.next.outputs.issue }} --title "$(head -n 1 .agentic/issue-title)" --body-file .agentic/issue-body.md
       elif [ "$verdict" != "ready" ]; then
         echo "Unexpected verdict '$verdict'; not labelling."
         exit 1
       fi
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py ready-comment --issue {{ steps.next.outputs.issue }} --comment .agentic/issue-ready-comment.md --body-sha "$checked"
       gh label create dovo:ready --color 0e8a16 --description "Re-grounded against main and ready to plan" --force
-      gh issue edit {{ steps.next.outputs.child }} --add-label dovo:ready
-      gh issue comment {{ steps.next.outputs.child }} --body-file .agentic/issue-ready-comment.md
+      gh issue edit {{ steps.next.outputs.issue }} --add-label dovo:ready
     timeout_seconds: 300
 
   # --- issue-plan.yml's planning half (feature-dev's), scoped to the slice:
@@ -293,31 +305,34 @@ steps:
   # publishes hold the slice's plan, with the epic's contract and slices kept
   # as downloaded. ---
 
-  # main can move while the child issue waits for a person above, so the
+  # main can move while the slice's issue waits for a person above, so the
   # slice is planned against main as it is when planning starts.
   - id: refresh-base
     name: Check out origin/main again
     run: git fetch -q origin main && git switch -q --detach origin/main
     timeout_seconds: 120
 
-  # The decisions earlier planning sessions posted to the child issue, read
-  # live so the planner neither re-asks a settled question nor misses one the
-  # description has since changed under.
+  # The decisions earlier planning sessions posted to the slice's issue, the
+  # slicing's and earlier slices' on a sliced issue, read live so the planner
+  # neither re-asks a settled question nor misses one the description has
+  # since changed under.
   - id: prior-decisions
     name: Read the decisions earlier planning posted
     run: >-
       uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py prior-decisions
-      --issue {{ steps.next.outputs.child }} --out .agentic/prior-decisions.json
+      --issue {{ steps.next.outputs.issue }} --out .agentic/prior-decisions.json
     timeout_seconds: 120
 
-  # The child issue's numbered items with their exact text, read live, since
-  # the ready check above writes them only when it re-checks the issue. The
-  # plan cites them by id, and the breakdown quotes them.
+  # The slice's numbered items with their exact text, read live, since the
+  # ready check above writes the issue's only when it re-checks the issue. On a
+  # sliced issue they are only the outcomes the slice delivers. The plan cites
+  # them by id, and the breakdown quotes them.
   - id: requirements
-    name: List the child issue's numbered items
+    name: List the slice's numbered items
     run: >-
       uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py requirements
-      --issue {{ steps.next.outputs.child }} --out .agentic/requirements.json
+      --issue {{ steps.next.outputs.issue }} --slice {{ steps.next.outputs.slice }}
+      --plan .agentic/epic-plan.json --out .agentic/requirements.json
     timeout_seconds: 120
 
   - id: plan
@@ -325,11 +340,11 @@ steps:
     type: agent
     prompt: |
       Follow .dovo/catalog/prompts/sdlc/v2/issue-plan.md in the mode `/issue-plan --slice {{ steps.next.outputs.slice }}`.
-      Plan slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked by issue
-      {{ steps.next.outputs.child }}, from the epic plan in .agentic/epic-plan.md and
+      Plan slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked on issue
+      {{ steps.next.outputs.issue }}, from the epic plan in .agentic/epic-plan.md and
       .agentic/epic-plan.json.
-      Read the decisions earlier planning posted to the child issue from .agentic/prior-decisions.json.
-      Read the child issue's numbered items from .agentic/requirements.json, and cite each requirement
+      Read the decisions earlier planning posted to issue {{ steps.next.outputs.issue }} from .agentic/prior-decisions.json.
+      Read the slice's numbered items from .agentic/requirements.json, and cite each requirement
       by its id there.
       Write its phases to .agentic/plan.md and .agentic/plan.json, keeping the contract and the
       slices as downloaded, then stop; do not implement anything.
@@ -365,7 +380,7 @@ steps:
       Challenge .agentic/plan.md and write challenges to .agentic/plan-challenge.md and
       .agentic/plan-challenge.json. Do not read .agentic/plan-review.md or .agentic/plan-review.json.
       The plan phases slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, one PR,
-      tracked by issue {{ steps.next.outputs.child }}. Its feature contract and its slices table
+      worked on issue {{ steps.next.outputs.issue }}. Its feature contract and its slices table
       were approved when the issue was sliced and bind it: challenge the slice's phases against
       them, and route "ask" any challenge that would change the contract or another slice.
     tools: { allow_all: true }
@@ -444,8 +459,8 @@ steps:
       Follow .dovo/catalog/prompts/sdlc/v2/fold-answers.md.
       Open questions the human ticked: {{ steps.answer-questions.outputs.selected }}
       The human's answers: {{ steps.answer-questions.outputs.comment }}
-      The plan phases slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked
-      by child issue {{ steps.next.outputs.child }}.
+      The plan phases slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked on
+      issue {{ steps.next.outputs.issue }}.
     tools: { allow_all: true }
     timeout_seconds: 1800
     artifacts:
@@ -484,8 +499,8 @@ steps:
         prompt: |
           Follow .dovo/catalog/prompts/sdlc/v2/breakdown.md.
           Break slice {{ steps.next.outputs.slice }} of .agentic/plan.md into .agentic/phases/phase-<n>.json,
-          quoting requirements from .agentic/requirements.json, the numbered items of child issue
-          {{ steps.next.outputs.child }}.
+          quoting requirements from .agentic/requirements.json, the slice's numbered items of issue
+          {{ steps.next.outputs.issue }}.
           Do not change the plan, implement anything, commit or push.
         tools: { allow_all: true }
         timeout_seconds: 1800
@@ -494,7 +509,7 @@ steps:
 
       # Writes .agentic/phases/index.json when the files pass.
       - id: check-breakdown
-        name: Check the phase files against the plan and the child issue
+        name: Check the phase files against the plan and the slice's numbered items
         run: |
           set -eu
           if uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py check-breakdown --slice {{ steps.next.outputs.slice }} 2> .agentic/check-breakdown.log; then
@@ -516,8 +531,8 @@ steps:
     prompt: |
       Follow .dovo/catalog/prompts/sdlc/v2/plan-walkthrough.md.
       Explain .agentic/plan.md to the person approving it and write .agentic/plan-walkthrough.md.
-      The plan phases slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked
-      by issue {{ steps.next.outputs.child }}, within the feature contract and slices approved
+      The plan phases slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked
+      on issue {{ steps.next.outputs.issue }}, within the feature contract and slices approved
       when the issue was sliced: explain this slice's phases, and say which "as landed" reports
       of earlier slices shaped them. Explain the breakdown too: the phase files in
       .agentic/phases/, listed in .agentic/phases/index.json, the only files each phase's code
@@ -535,21 +550,21 @@ steps:
       mode: confirm
       message: >-
         Approve this plan for slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}
-        (child issue {{ steps.next.outputs.child }}) and its phase files? The full plan is in the
+        (worked on issue {{ steps.next.outputs.issue }}) and its phase files? The full plan is in the
         plan artifact, and the phase files in the phases artifact.
       artifact: plan-walkthrough
       comment: { policy: optional, message: Instructions for the implementer }
 
-  # Posted once the plan is approved, so the child issue records what was
-  # decided; a plan with no decisions posts nothing. The comment carries the
-  # description's body_sha that prior-decisions read before planning, so an
-  # edit made since then marks these decisions to confirm. Runs before claim,
-  # so a failed post leaves the slice pending.
+  # Posted once the plan is approved, so the slice's issue records what was
+  # decided, marked with the slice id; a plan with no decisions posts nothing.
+  # The comment carries the description's body_sha that prior-decisions read
+  # before planning, so an edit made since then marks these decisions to
+  # confirm. Runs before claim, so a failed post leaves the slice pending.
   - id: decisions-comment
-    name: Post the slice plan's decisions to the child issue
+    name: Post the slice plan's decisions to the slice's issue
     run: >-
       uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py decisions-comment --plan .agentic/plan.json
-      --prior .agentic/prior-decisions.json --issue {{ steps.next.outputs.child }} --slice {{ steps.next.outputs.slice }} --session "$DOVO_SESSION_ID"
+      --prior .agentic/prior-decisions.json --issue {{ steps.next.outputs.issue }} --slice {{ steps.next.outputs.slice }} --session "$DOVO_SESSION_ID"
     timeout_seconds: 120
 
   # Installed after refresh-base's checkout and before the first agent writes
@@ -560,8 +575,8 @@ steps:
     run: uv sync --all-extras
     timeout_seconds: 900
 
-  # Claimed only once the child issue is ready, the slice's plan approved and
-  # the dependencies installed, so a run stopped while its child issue is held
+  # Claimed only once the slice's issue is ready, the slice's plan approved and
+  # the dependencies installed, so a run stopped while that issue is held
   # for a person, a plan the person denies, or a failed install leaves the slice
   # pending rather than stuck in progress.
   - id: claim
@@ -610,8 +625,8 @@ steps:
         prompt: |
           Follow .dovo/catalog/prompts/sdlc/v2/issue-code.md in the mode `/issue-code --slice {{ steps.next.outputs.slice }} --phase {{ steps.phase.outputs.phase }}`.
           Implement {{ steps.phase.outputs.phase_file }}, phase {{ steps.phase.outputs.phase }} of slice
-          {{ steps.next.outputs.slice }} for issue ${{ inputs.issue }}; its child issue is
-          {{ steps.next.outputs.child }}. Open a section of .agentic/plan.md only when an action's `do`
+          {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked on issue
+          {{ steps.next.outputs.issue }}. Open a section of .agentic/plan.md only when an action's `do`
           or a `tests` item names it (`grep -n '^## '`, then a ranged read). Earlier phases are
           already committed. Do not commit, stage or push.
           Instructions from the approver: {{ steps.approve-plan.outputs.comment }}
@@ -659,7 +674,7 @@ steps:
     type: agent
     prompt: |
       Follow .dovo/catalog/prompts/sdlc/v2/pr-prep.md. The change implements slice {{ steps.next.outputs.slice }} of
-      issue ${{ inputs.issue }}, tracked by issue {{ steps.next.outputs.child }}.
+      issue ${{ inputs.issue }}, worked on issue {{ steps.next.outputs.issue }}.
       The code loop committed each phase, so read the change with
       `git log --oneline origin/main..HEAD` and `git diff origin/main...HEAD`, plus `git status`
       for anything left uncommitted, and ignore `.dovo/run` and `.agentic/`. The prompt's stop
@@ -720,8 +735,8 @@ steps:
         prompt: |
           Follow .dovo/catalog/prompts/sdlc/v2/issue-review.md in the mode `/issue-review --slice {{ steps.next.outputs.slice }}`.
           Review the commits on this branch against origin/main as slice
-          {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked by issue
-          {{ steps.next.outputs.child }}, and write .agentic/review.md, .agentic/review.json
+          {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked on issue
+          {{ steps.next.outputs.issue }}, and write .agentic/review.md, .agentic/review.json
           and .agentic/verdict.txt. Do not read .agentic/implementation-report.md.
         tools: { allow_all: true }
         timeout_seconds: 1800
@@ -793,24 +808,27 @@ steps:
     type: agent
     prompt: |
       Compare `git diff origin/main...HEAD` with slice {{ steps.next.outputs.slice }} of
-      .agentic/plan.md and .agentic/plan.json, with issue ${{ inputs.issue }} and with its child
-      issue {{ steps.next.outputs.child }}. Read both issues with `gh issue view`.
+      .agentic/plan.md and .agentic/plan.json, with issue ${{ inputs.issue }} and with issue
+      {{ steps.next.outputs.issue }}, which the slice is worked on (the same issue unless the slice
+      has its own). Read them with `gh issue view`.
 
       1. Write .agentic/slice-report.md with bullets under the headings Departures, Later slices
          affected and Deferred, omitting a heading with nothing under it. Every deferred item
          names the slice or issue that owns it.
       2. Later slices are phased only when they come up, from this plan when it is amended, so
          amend what they will be planned against:
-         - If a later slice's row is now wrong (its title, dependencies or stub), amend that row
-           in the Slices section of .agentic/plan.md and in .agentic/plan.json. A later slice
-           whose child issue already exists is corrected through the sweep below, not its stub.
+         - If a later slice's row is now wrong (its title, dependencies or outcomes), amend that
+           row in the Slices section of .agentic/plan.md and in .agentic/plan.json. When a later
+           slice has its own issue (its `child`) whose description this change makes false, the
+           sweep below corrects that issue too.
          - If this slice landed a convention, exemplar, ownership row, lint gate or decision
            differently from the contract, or made a contract sentence false, amend the Feature
            contract section of .agentic/plan.md and the contract in .agentic/plan.json to match
            what landed. Never reverse a decision settled by the user (`settled_by.kind` `user`):
            report it under Departures instead.
          - If this slice settled one of the epic's open questions (listed under Decisions in the
-           epic's Feature contract, `gh issue view ${{ inputs.issue }} --json body`), add a
+           Feature contract of the epic's work plan comment, `gh issue view ${{ inputs.issue }} --json comments`,
+           the comment whose first line is `<!-- dovo:workplan schema_version=1 -->`), add a
            decision to the contract whose `id` is that question's id (such as `OQ-2`), with the
            answer that landed and `settled_by` naming this slice. land then drops the question
            from the epic's open questions; a question with no such decision stays open.
@@ -819,8 +837,8 @@ steps:
          earlier one.
       3. Find the open issues whose body this change makes false: the epic's open sub-issues,
          the issues the feature contract maps, and any open issue citing code this change moved,
-         renamed or removed. Leave out issue ${{ inputs.issue }}, whose body the work plan script
-         owns, and child issue {{ steps.next.outputs.child }}, which this PR closes. For each one:
+         renamed or removed. Leave out issue ${{ inputs.issue }}, whose description stays what a
+         person wrote, and issue {{ steps.next.outputs.issue }}, which this PR references. For each one:
          - Fetch its body once with `gh issue view <n> --json body` and take the sha256 of the
            `body` string, UTF-8 encoded, exactly as that JSON returns it (no newline added).
          - Write .agentic/sweep/<n>.md: the whole body with only the false sentences corrected.
@@ -847,8 +865,8 @@ steps:
     prompt: |
       Follow .dovo/catalog/prompts/sdlc/v2/pr-prep.md to draft only .agentic/pr-title
       and .agentic/pr-description, overwriting both. The change implements slice
-      {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked by issue
-      {{ steps.next.outputs.child }}; .agentic/slice-report.md says how it departed from the plan.
+      {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked on issue
+      {{ steps.next.outputs.issue }}; .agentic/slice-report.md says how it departed from the plan.
       Everything is already committed, so read it with `git log --oneline origin/main..HEAD` and
       `git diff origin/main...HEAD` instead of the uncommitted diff, and ignore `.dovo/run`. The
       prompt's stop when nothing is uncommitted does not apply here: always rewrite both files.
@@ -879,7 +897,9 @@ steps:
 
   # A command step: the issue bodies are written by the script alone, with the
   # host's gh credentials. Pauses on failure so a GitHub error can be retried;
-  # the PR is already open.
+  # the PR is already open. The sweep never writes the issue or the slice's own
+  # issue, whose descriptions only a person writes: land skips such an entry
+  # and names it.
   - id: land
     name: Record the slice as landed and apply the sweep
     run: >-
@@ -889,4 +909,21 @@ steps:
       --report .agentic/slice-report.md --plan .agentic/plan.json --base-plan .agentic/epic-plan.json
       --sweep .agentic/sweep.json
     timeout_seconds: 300
+    on_failure: prompt_user
+
+  # land computes the closing lines again from the plan as landed: a report
+  # that added a slice, or a slice handed off and closed meanwhile, changes them
+  # from the ones `next` gave pr-describe. The PR description is edited only
+  # when its closing lines differ, so a "Closes" line is never missing or wrong.
+  # A closing line for the issue or the slice's own issue under any GitHub
+  # closing keyword is replaced; one inside a code block or naming another
+  # issue is kept.
+  - id: pr-links
+    name: Correct the PR's closing lines to the plan as landed
+    run: >-
+      uv run python .dovo/catalog/scripts/sdlc/v2/workplan.py pr-links
+      --pr "$(head -n 1 .agentic/pr-url | sed 's#.*/##')" --closing-lines "$CLOSING_LINES"
+    env:
+      CLOSING_LINES: "{{ steps.land.outputs.closing_lines }}"
+    timeout_seconds: 120
     on_failure: prompt_user
