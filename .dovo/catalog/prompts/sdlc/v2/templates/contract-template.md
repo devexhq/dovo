@@ -25,7 +25,7 @@ sorting each issue into container or work (see "Mapping existing issues" below).
 |---|---|---|
 | #n | epic | this issue |
 | #n | child | Sx |
-| #n | split | Sx (keeps the issue), Sy (new child when it comes up) |
+| #n | split | Sx (keeps the issue), Sy (a slice of the epic, with no issue of its own) |
 | #n | superseded container | closed once its decisions are copied here |
 | #n | prerequisite | blocks Sx; must close first |
 | #n | sibling epic | shares <surface>; coordinated, not absorbed |
@@ -97,7 +97,7 @@ slice comes up, to catch drift.>
 When `issue-plan` runs on an epic that already has issues (the usual case), it sorts each one before writing slices:
 - **Container or work.** A container (a parent or tracking issue) never becomes a PR. A work issue does.
 - **Exactly one container becomes the epic.** Prefer the one other issues and architecture entries already cite. Every other container is closed as superseded, after its decisions, non-goals and user stories are copied into the epic.
-- **A work issue maps to one slice, or is split.** When split, the first part keeps the issue, and later parts get new child issues when they come up.
+- **A work issue maps to one slice, or is split.** When split, the first part keeps the issue, and later parts are slices of the epic with no issue of their own.
 - **A true duplicate of another work issue** is merged into the older one.
 - **Epics never nest.** An existing epic or container that belongs to another epic is never made a slice. Either it is closed as superseded, or it stays a sibling epic and its slice issues become prerequisites.
 - **An issue outside the group** that a slice needs is a prerequisite. One that shares a surface without being needed is a sibling epic.
@@ -156,7 +156,7 @@ The contract scales with how far the shared surfaces spread. An epic whose slice
 ```
 
 `slices[]` (its full shape is in `issue-plan.md` Step 5) carries:
-- `child`: the issue number, or null until it's created
+- `outcomes`: the issue's outcome ids (`O-n`) the slice delivers
 - `blocked_by`: prerequisite issue numbers, alongside `depends_on` for slice ids
 - `owns`: the surfaces and aspects the slice owns
 - `lint_gates`

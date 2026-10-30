@@ -1,6 +1,6 @@
 # The in-development v2 of `issue-code.yml`, run on sdlc v2's prompts and
 # scripts (`.dovo/catalog/prompts/sdlc/v2/VERSION.json`). Never run it on an
-# issue a v1 run touches: both write the same work plan.
+# issue a v1 run touches: v2 keeps the work plan in a comment v1 never reads.
 #
 # Forked from `feature-dev.yml` and `ready-issue.yml` at `944de0ce`.
 # Temporary: an experimental copy for the slice flow, which replaces

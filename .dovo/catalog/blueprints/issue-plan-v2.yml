@@ -1,0 +1,381 @@
+# The in-development v2 of `issue-plan.yml`, run on sdlc v2's prompts and
+# scripts (`.dovo/catalog/prompts/sdlc/v2/VERSION.json`). Never run it on an
+# issue a v1 run touches: v2 keeps the work plan in a comment v1 never reads.
+#
+# Forked from `ready-issue.yml` and `feature-dev.yml` at `944de0ce`.
+# Temporary: an experimental copy for the slice flow, which replaces
+# ready-issue's use before planning, feature-dev and the dovo-* skills once it
+# works. Compare fixes to either source against this copy and carry them over.
+version: 1
+name: issue-plan-v2
+id: issue-plan-v2
+description: Ready a GitHub issue (check it against main, holding for a person and re-checking it while it is not ready, and, once a person approves, apply a legacy issue's trim and label it dovo:ready), slice it into PRs with the sdlc v2 issue-plan prompt (the feature contract and the slice table, each slice with the outcomes it delivers, on an epic, one slice on a plain issue, and no phases, which each slice's issue-code-v2 run plans just in time), review and challenge the plan once and fold in every finding and fold-routed challenge, answer its open questions, check that each outcome belongs to one slice, walk the approver through it, then write the feature contract and the work plan into the issue's work plan comment, creating no sub-issues, and label the issue type:epic when it has two or more slices
+summary: Issue to an approved work plan comment on the ticket, with human gates
+
+inputs:
+  issue:
+    type: string
+    description: GitHub issue number to plan
+    required: true
+    aliases: ["-i", "--issue"]
+
+steps:
+  # --- ready-issue's steps, inlined: a blueprint cannot call another one. ---
+
+  # A not_ready issue needs a person: a size label, a split, a decision or a
+  # closed blocker, which no edit here can supply. Rather than failing, the run
+  # holds at a prompt that lists the findings, so the person settles them on
+  # GitHub and answers (or leaves the run paused and continues it later with
+  # `dovo resume`). The loop then re-runs the check, since the gate reads the
+  # verdict the check wrote, and ends once the verdict is ready or needs_edits.
+  - id: ready-loop
+    name: Check the issue until no person needs to settle it
+    type: loop
+    max_iterations: 5
+    until:
+      # Workaround for #1141: a failed settled is recorded as ignored with exit
+      # code 0, so only its status shows the failure. Revert to
+      # `steps.settled.exit_code == 0` when #1141 lands.
+      - steps.settled.status == "completed"
+    on_max_iterations: prompt_user
+    do:
+      # The session's own worktree, so moving it loses nothing: each check
+      # grounds against main as it is now, including a blocker merged while
+      # the run was held.
+      - id: base
+        name: Check out origin/main
+        run: git fetch -q origin main && git switch -q --detach origin/main
+        timeout_seconds: 120
+
+      - id: check
+        name: Check the issue
+        type: agent
+        prompt: |
+          Follow .dovo/catalog/prompts/sdlc/v2/issue-ready.md for issue ${{ inputs.issue }}. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
+          .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md only when the
+          verdict is needs_edits, which only a legacy issue's trim gets. Do not edit the issue, its labels or its comments.
+          Findings of the previous check a person says they settled, if any: {{ steps.hold.outputs.selected }}
+          Their notes: {{ steps.hold.outputs.comment }}
+        tools: { allow_all: true }
+        timeout_seconds: 1800
+        artifacts:
+          - { name: issue-ready, path: ".agentic/issue-*" }
+
+      # Any verdict but ready means the current body is stale, so a label left
+      # from an earlier run is removed and never vouches for it; apply adds it
+      # back after the edits. Lists what a person must settle: every finding of a
+      # not_ready verdict, and nothing otherwise.
+      - id: gate
+        name: List what a person must settle
+        run: |
+          set -eu
+          verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
+          echo "Verdict: $verdict"
+          echo "verdict=$verdict" >> "$DOVO_OUTPUT"
+          if [ "$verdict" != "ready" ]; then
+            labels=$(gh issue view ${{ inputs.issue }} --json labels --jq '.labels[].name')
+            if printf '%s\n' "$labels" | grep -qx 'dovo:ready'; then
+              gh issue edit ${{ inputs.issue }} --remove-label dovo:ready
+            fi
+          fi
+          uv run --quiet python - <<'PY'
+          import json
+          report = json.load(open(".agentic/issue-ready.json"))
+          findings = report["findings"] if report["verdict"] == "not_ready" else []
+          holds = [{"id": f["id"], "label": f"{f['id']} ({f['kind']}): {f['summary']} Fix: {f['fix']}"} for f in findings]
+          if report["verdict"] == "not_ready" and not holds:
+              holds = [{"id": "report", "label": "The check is not_ready but lists no finding; read its report."}]
+          json.dump({"holds": holds}, open(".agentic/issue-hold.json", "w"), indent=2)
+          PY
+          if [ "$verdict" = "not_ready" ]; then cat .agentic/issue-ready.md; fi
+        timeout_seconds: 120
+        artifacts:
+          - { name: issue-hold, path: .agentic/issue-hold.json }
+          - { name: issue-ready-report, path: .agentic/issue-ready.md }
+
+      # No prompt is shown when the gate lists nothing.
+      - id: hold
+        name: Wait for a person to settle the findings
+        type: ask
+        interaction:
+          mode: multiselect
+          message: >-
+            Issue ${{ inputs.issue }} is not ready to plan, and only a person can settle why: the
+            check's findings are listed below, and its report is attached. Settle them on GitHub (a
+            size label, a split, a decision, a closed blocker), then select the ones you settled to
+            re-check the issue. To stop for now, press Ctrl-C: the run stays paused, and
+            `dovo resume` asks again.
+          artifact: issue-ready-report
+          options_from:
+            artifact: issue-hold
+            file: .agentic/issue-hold.json
+            items_path: holds
+            value_field: id
+            label_field: label
+          comment: { policy: optional, message: "What you changed, for the re-check" }
+
+      # Fails, and so repeats the loop, only when the verdict was not_ready.
+      - id: settled
+        name: Re-check the issue unless no person was needed
+        run: test "{{ steps.gate.outputs.verdict }}" != "not_ready"
+        timeout_seconds: 60
+        on_failure: continue
+
+  # Asked on every run, including one with nothing to edit, since a step cannot
+  # be skipped; denying stops the run with the issue untouched.
+  - id: approve
+    name: Approve the edits and the label
+    type: ask
+    interaction:
+      mode: confirm
+      message: Apply the proposed edits, if any, to issue ${{ inputs.issue }} and label it dovo:ready?
+      artifact: issue-ready
+
+  # A command step: the writes to GitHub run exactly as approved, with the
+  # host's gh credentials.
+  - id: apply
+    name: Apply the edits, label the issue and comment
+    run: |
+      set -eu
+      verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
+      if [ "$verdict" = "needs_edits" ]; then
+        for proposal in .agentic/issue-title .agentic/issue-body.md; do
+          [ -s "$proposal" ] || { echo "Verdict is needs_edits but $proposal is missing or empty; not labelling."; exit 1; }
+        done
+        gh issue edit ${{ inputs.issue }} --title "$(head -n 1 .agentic/issue-title)" --body-file .agentic/issue-body.md
+      elif [ "$verdict" != "ready" ]; then
+        echo "Unexpected verdict '$verdict'; not labelling."
+        exit 1
+      fi
+      gh label create dovo:ready --color 0e8a16 --description "Re-grounded against main and ready to plan" --force
+      gh issue edit ${{ inputs.issue }} --add-label dovo:ready
+      gh issue comment ${{ inputs.issue }} --body-file .agentic/issue-ready-comment.md
+    timeout_seconds: 300
+
+  # --- feature-dev's planning half, on the sdlc v2 issue-plan prompts. feature-dev's
+  # `ready` check is dropped: the steps above have just labelled the issue.
+  # The plan slices the issue and writes no phases: issue-code-v2 phases each
+  # slice just in time, after the slices before it have landed. ---
+
+  - id: plan
+    name: Slice the issue
+    type: agent
+    prompt: |
+      Follow .dovo/catalog/prompts/sdlc/v2/issue-plan.md in the mode `/issue-plan ${{ inputs.issue }}`.
+      List under each slice the outcomes (`O-n`) of the issue it delivers.
+      Write the plan to .agentic/plan.md and its open questions, contract and slices to
+      .agentic/plan.json, with no phases, then stop; do not implement anything.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: plan, path: .agentic/plan.md }
+      - { name: plan-questions, path: .agentic/plan.json }
+
+  # One review, folded in whole without asking; the human weighs the result at
+  # the open questions and the plan approval that follow.
+  - id: plan-review
+    name: Review the plan
+    type: agent
+    prompt: |
+      Follow .dovo/catalog/prompts/sdlc/v2/issue-plan-review.md.
+      Review .agentic/plan.md and write findings to .agentic/plan-review.md and
+      .agentic/plan-review.json.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: plan-review, path: .agentic/plan-review.md }
+      - { name: plan-findings, path: .agentic/plan-review.json }
+
+  # Challenges the design rather than its compliance, without reading the
+  # review. Challenges routed fold are folded below; those routed ask become
+  # open questions, so a human settles every trade-off and issue departure.
+  - id: plan-challenge
+    name: Challenge the plan's design
+    type: agent
+    prompt: |
+      Follow .dovo/catalog/prompts/sdlc/v2/plan-challenge.md.
+      Challenge .agentic/plan.md and write challenges to .agentic/plan-challenge.md and
+      .agentic/plan-challenge.json. Do not read .agentic/plan-review.md or .agentic/plan-review.json.
+      The plan splits the issue into slices, one PR each, listed under slices in
+      .agentic/plan.json, and writes no phases: each slice is phased, challenged and approved
+      in its own issue-code-v2 run. Each slice lands on its own, so challenge the contract and
+      how the work is sliced and ordered, not phases.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: plan-challenge, path: .agentic/plan-challenge.md }
+      - { name: plan-challenges, path: .agentic/plan-challenge.json }
+
+  - id: fold-findings
+    name: Fold the review findings and challenges into the plan
+    type: agent
+    prompt: |
+      If .agentic/plan-review.json lists no findings and .agentic/plan-challenge.json lists no
+      challenges, change nothing and report that you did nothing.
+      Otherwise update .agentic/plan.md and .agentic/plan.json:
+        - Address every finding in .agentic/plan-review.json, by id, as each one describes.
+        - Fold every challenge in .agentic/plan-challenge.json routed "fold" by planning its
+          alternative.
+        - For every challenge routed "ask", add an open question, or rewrite the one it
+          concerns, that keeps the plan's current answer as the assumed answer and lists the
+          challenge's alternative under alternatives. End its summary with
+          "(assumed: <plan's answer>; challenged: <alternative>; recommended: <assumed |
+          challenged | none>)" and cite the challenge id and its evidence in why.
+        - When a challenge contradicts a review finding, fold neither: raise one open question
+          that states both positions with their ids.
+        - Write every open question in the bulleted form of the plan template in
+          docs/agents/planning.md, one fact per bullet. On each question a challenge or a
+          conflicting finding raised, add its Challenged, Turns on and Recommended bullets:
+            - Re-read the code at every `path:line` the plan and the challenge cite, and the
+              issue and its comments, before you weigh them. Base the recommendation only on
+              what you confirmed, and drop any evidence that does not hold.
+            - Turns on names the one fact or preference the choice depends on, so the human
+              can dispute the premise rather than the verdict.
+            - Recommend "assumed" or "challenged", or "none" when the choice depends on a
+              preference the code cannot settle. Give the strongest point for the side you
+              do not recommend. The plan being written against its answer is no reason to
+              recommend it.
+            - Add a Note for an issue sentence the choice reverses, a follow-up it needs, or
+              the test that would pin it.
+        - Addressing a finding or challenge may make an open question moot, change its assumed
+          answer or raise a new one: remove, rewrite or add entries under Open questions to match.
+        - Keep .agentic/plan.json in the shape the issue-plan prompt defines
+          (`.dovo/catalog/prompts/sdlc/v2/issue-plan.md`), including its contract and slices, and in
+          agreement with .agentic/plan.md.
+      Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: plan, path: .agentic/plan.md }
+      - { name: plan-questions, path: .agentic/plan.json }
+
+  # Asked after the findings are folded in, so every question reflects them.
+  - id: answer-questions
+    name: Answer the plan's open questions
+    type: ask
+    interaction:
+      mode: multiselect
+      message: Which open questions do you want to answer instead of accepting the plan's assumed answer?
+      artifact: plan
+      options_from:
+        artifact: plan-questions
+        file: .agentic/plan.json
+        items_path: open_questions
+        value_field: id
+        label_field: summary
+      comment: { policy: optional, message: "Your answers, one per selected question (e.g. OQ-1: show them)" }
+
+  - id: fold-answers
+    name: Fold the answers into the plan
+    type: agent
+    prompt: |
+      Open questions answered: {{ steps.answer-questions.outputs.selected }}
+      Answers: {{ steps.answer-questions.outputs.comment }}
+
+      If the list is empty, change nothing and report that you did nothing.
+      Otherwise update .agentic/plan.md and .agentic/plan.json:
+        - For each answered question, rewrite the plan against the human's answer, move the
+          question from Open questions into Decisions as answered by the human, and remove it
+          from open_questions in .agentic/plan.json.
+        - Keep .agentic/plan.json in the shape the issue-plan prompt defines
+          (`.dovo/catalog/prompts/sdlc/v2/issue-plan.md`), including its contract and slices, and in
+          agreement with .agentic/plan.md.
+      Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: plan, path: .agentic/plan.md }
+      - { name: plan-questions, path: .agentic/plan.json }
+
+  # The issue's numbered items with their exact text, read live once the plan
+  # is settled: the plan step resets .agentic/, and a legacy issue's trim
+  # above renumbers them.
+  - id: requirements
+    name: List the issue's numbered items
+    run: >-
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py requirements
+      --issue ${{ inputs.issue }} --out .agentic/requirements.json
+    timeout_seconds: 120
+
+  # Holds the run before the walkthrough when an outcome of the issue belongs
+  # to no slice, or to two without a split marker; the message names which. A
+  # failed session cannot resume, so the person fixes the slices' outcomes in
+  # .agentic/plan.json and .agentic/plan.md and retries rather than losing the run.
+  - id: check-slices
+    name: Check that each outcome belongs to one slice
+    run: >-
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py check-slices
+      --plan .agentic/plan.json --requirements .agentic/requirements.json
+    timeout_seconds: 120
+    on_failure: prompt_user
+
+  # Written after every answer is folded in, so it explains the plan being
+  # approved. The approval prompt shows it rather than the plan, which is cut
+  # at 200 lines there; the full plan stays in the plan artifact.
+  - id: plan-walkthrough
+    name: Walk through the plan for the approver
+    type: agent
+    prompt: |
+      Follow .dovo/catalog/prompts/sdlc/v2/plan-walkthrough.md.
+      Explain .agentic/plan.md to the person approving it and write .agentic/plan-walkthrough.md.
+      The plan splits the issue into slices, one PR each, listed under slices in
+      .agentic/plan.json: say what each slice delivers, by the outcomes it lists, and the order
+      the slices land in, and that each slice's phases are planned and approved in its own
+      issue-code-v2 run.
+      Do not change the plan, implement anything, commit or push.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: plan-walkthrough, path: .agentic/plan-walkthrough.md }
+
+  - id: approve-plan
+    name: Approve the plan
+    type: ask
+    interaction:
+      mode: confirm
+      message: Approve this plan for issue ${{ inputs.issue }}? The full plan is in the plan artifact.
+      artifact: plan-walkthrough
+      comment: { policy: optional, message: Instructions for the implementer }
+
+  # feature-dev hands the approver's instructions straight to its code step;
+  # here the code runs in later issue-code-v2 sessions, which read only the plan
+  # artifacts, so the instructions go into the plan. Passed through env so the
+  # comment is never parsed as shell.
+  - id: keep-instructions
+    name: Add the approver's instructions to the plan
+    run: |
+      set -eu
+      [ -n "$APPROVER_INSTRUCTIONS" ] || exit 0
+      printf '\n## Instructions from the approver\n\n%s\n' "$APPROVER_INSTRUCTIONS" >> .agentic/plan.md
+    env:
+      APPROVER_INSTRUCTIONS: "{{ steps.approve-plan.outputs.comment }}"
+    timeout_seconds: 120
+    artifacts:
+      - { name: plan, path: .agentic/plan.md }
+
+  # A command step: the work plan comment is written by the script alone, with
+  # the host's gh credentials; the issue's description is never written. The
+  # plan revision is the latest one this session published, which is the plan
+  # after every fold, answer and instruction above.
+  - id: publish-workplan
+    name: Write the feature contract and the work plan to the issue's work plan comment
+    run: >-
+      uv run python .dovo/catalog/scripts/sdlc/v2/workplan.py render --issue ${{ inputs.issue }}
+      --plan .agentic/plan.json --session "$DOVO_SESSION_ID"
+      --revision {{ artifacts.plan.revision }}
+    timeout_seconds: 120
+    on_failure: prompt_user
+
+  # An issue planned into two or more slices is an epic; a one-slice issue
+  # stays plain, and its one PR closes it.
+  - id: label-epic
+    name: Label the issue type:epic when it has two or more slices
+    run: |
+      set -eu
+      slices=$(uv run --quiet python -c 'import json; print(len(json.load(open(".agentic/plan.json"))["slices"]))')
+      if [ "$slices" -ge 2 ]; then
+        gh issue edit ${{ inputs.issue }} --add-label type:epic
+      else
+        echo "One slice; issue ${{ inputs.issue }} stays plain."
+      fi
+    timeout_seconds: 120
