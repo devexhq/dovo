@@ -19,6 +19,7 @@ from tests.lint.astlib import REPO_ROOT
 EPIC = 925
 PLAN_SESSION = "blueprint_plan01"
 CODE_SESSION = "blueprint_code02"
+BODY_SHA = "3e9b42c06706d5d412cbb04e4ae8f5aebf66cf9f669aff8088c050810507209e"
 INTRO = "Intro paragraph a person wrote.\n"
 MARKER = "<!-- dovo:workplan schema_version=1 -->"
 BY_HAND = "<!-- dovo:workplan schema_version=1 maintained=by-hand -->\n**Work plan** (edited by hand)\n"
@@ -376,7 +377,7 @@ class RenderTests:
         stored = (
             '{"plan_session":"blueprint_plan01","plan_revision":2,"slices":[{"id":"S1","title":"Title S1",'
             '"depends_on":[],"blocked_by":[],"closing_docs":false,"outcomes":["O-1"],"status":"pending","pr":null,'
-            '"session":null,"size":"s","child":null,"phased_session":null}]}'
+            '"session":null,"size":"s","child":null,"phased_session":null,"phased_body_sha":null}]}'
         )
         assert fake.texts(EPIC) == [
             f"{MARKER}\n"
@@ -538,26 +539,31 @@ class RenderTests:
         assert "| S1 (#1131) | Title S1 | O-1 | — | merged | #1215 | bp_c |" in text
         assert text.endswith(f"-->\n\n{landed}\n")
 
+    @pytest.mark.parametrize("contract", [pytest.param(None, id="plain"), pytest.param(CONTRACT, id="with-contract")])
     def test_phased_records_the_one_slice_as_phased_in_this_session(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, contract: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         fake = FakeGh({})
-        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1", phases=[1, 2])]})
+        plan = _write_json(tmp_path / "plan.json", {"contract": contract, "slices": [_slice("S1", phases=[1, 2])]})
 
-        assert _render(monkeypatch, fake, plan, "5", "--phased") == 0
+        assert _render(monkeypatch, fake, plan, "5", "--phased-body-sha", BODY_SHA) == 0
 
-        assert [(row["phased_session"], row["status"]) for row in _rows(fake.workplan())] == [(PLAN_SESSION, "pending")]
+        assert [(row["phased_session"], row["phased_body_sha"], row["status"]) for row in _rows(fake.workplan())] == [
+            (PLAN_SESSION, BODY_SHA, "pending")
+        ]
 
     @pytest.mark.parametrize(
         ("slices", "reason"),
         [
             pytest.param(
                 [_slice("S1"), _slice("S2", outcomes=["O-2"])],
-                "--phased needs a plan with one slice, not 2",
+                "--phased-body-sha needs a plan with one slice, not 2",
                 id="two-slices",
             ),
             pytest.param(
-                [_slice("S1", phases=[])], "--phased needs slice S1 to list its phases in plan.json", id="no-phases"
+                [_slice("S1", phases=[])],
+                "--phased-body-sha needs slice S1 to list its phases in plan.json",
+                id="no-phases",
             ),
         ],
     )
@@ -572,24 +578,28 @@ class RenderTests:
         fake = FakeGh({})
         plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices})
 
-        assert _render(monkeypatch, fake, plan, "5", "--phased") == 1
+        assert _render(monkeypatch, fake, plan, "5", "--phased-body-sha", BODY_SHA) == 1
 
         assert capsys.readouterr().err == f"workplan.py: {reason}\n"
         assert fake.texts(EPIC) == []
 
     @pytest.mark.parametrize(
         ("status", "kept"),
-        [pytest.param("pending", None, id="pending-drops-it"), pytest.param("in_progress", "bp_old", id="started")],
+        [
+            pytest.param("pending", (None, None), id="pending-drops-it"),
+            pytest.param("in_progress", ("bp_old", BODY_SHA), id="started"),
+        ],
     )
     def test_rerender_without_phased_keeps_the_phased_plan_only_of_a_started_slice(
-        self, status: str, kept: str | None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, status: str, kept: tuple[str | None, str | None], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        fake = FakeGh({EPIC: _workplan(_row("S1", status=status, phased_session="bp_old"))})
+        row = _row("S1", status=status, phased_session="bp_old", phased_body_sha=BODY_SHA)
+        fake = FakeGh({EPIC: _workplan(row)})
         plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
 
         assert _render(monkeypatch, fake, plan, "4") == 0
 
-        assert [row["phased_session"] for row in _rows(fake.workplan())] == [kept]
+        assert [(row["phased_session"], row["phased_body_sha"]) for row in _rows(fake.workplan())] == [kept]
 
     def test_records_an_existing_sub_issue_the_plan_maps_to_a_slice(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -979,6 +989,15 @@ class ClaimTests:
         assert (row["status"], row["session"]) == ("in_progress", CODE_SESSION)
         assert f"| S1 | Title S1 | O-1 | — | in_progress | — | {CODE_SESSION} |" in fake.workplan()
         assert fake.edits == []
+
+    def test_keeps_the_slices_phased_plan(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1", phased_session=PLAN_SESSION, phased_body_sha=BODY_SHA))})
+
+        code = _main(monkeypatch, fake, "claim", "--issue", str(EPIC), "--slice", "S1", "--session", CODE_SESSION)
+
+        assert code == 0
+        row = _rows(fake.workplan())[0]
+        assert (row["status"], row["phased_session"], row["phased_body_sha"]) == ("in_progress", PLAN_SESSION, BODY_SHA)
 
     @pytest.mark.parametrize(
         ("row", "reason"),
@@ -1474,6 +1493,64 @@ class SplitOutTests:
             "workplan.py: created a child issue for S2 but cannot read its number from gh's output "
             "'created, somewhere'; record it as S2's child by hand\n"
         )
+        assert fake.patched == []
+
+
+class PhasedTests:
+    @pytest.mark.parametrize(
+        ("row", "body_sha", "session", "reason"),
+        [
+            pytest.param(
+                _row("S1", phased_session=PLAN_SESSION, phased_body_sha=BODY_SHA),
+                BODY_SHA,
+                PLAN_SESSION,
+                f"S1 was phased and approved in session {PLAN_SESSION}; planning passes through.",
+                id="holds",
+            ),
+            pytest.param(_row("S1"), BODY_SHA, "", "S1 has no phased plan; it is phased in this run.", id="not-phased"),
+            pytest.param(
+                _row("S1", phased_session=PLAN_SESSION, phased_body_sha=BODY_SHA, child=1300),
+                BODY_SHA,
+                "",
+                "S1 is now worked on its own issue #1300, not the one it was phased for, "
+                "so S1 is phased again in this run.",
+                id="own-issue",
+            ),
+            pytest.param(
+                _row("S1", phased_session="bp_older", phased_body_sha=BODY_SHA),
+                BODY_SHA,
+                "",
+                f"the work plan now comes from session {PLAN_SESSION}, not bp_older, so S1 is phased again in this run.",
+                id="plan-amended",
+            ),
+            pytest.param(
+                _row("S1", phased_session=PLAN_SESSION, phased_body_sha=BODY_SHA),
+                "0" * 64,
+                "",
+                "the issue's description changed since S1 was phased, so S1 is phased again in this run.",
+                id="description-edited",
+            ),
+        ],
+    )
+    def test_writes_the_phased_session_only_while_the_phased_plan_holds(
+        self,
+        row: object,
+        body_sha: str,
+        session: str,
+        reason: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(row)})
+
+        argv = ("phased", "--issue", str(EPIC), "--slice", "S1", "--body-sha", body_sha)
+        assert _main(monkeypatch, fake, *argv) == 0
+
+        assert output.read_text(encoding="utf-8") == f"phased_session={session}\n"
+        assert capsys.readouterr() == (f"{reason}\n", "")
         assert fake.patched == []
 
 

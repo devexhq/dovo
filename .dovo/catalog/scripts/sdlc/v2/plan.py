@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Checks the plans and phase files the issue-plan-v2 and issue-code-v2 blueprints' planning steps write, keeps their decisions on the issue, lists the issue's numbered items, and applies a legacy issue's approved rewrite.
 
-`check-slices` runs after issue-plan-v2 slices an issue. It refuses, naming
-every problem it finds, a plan whose slices leave an outcome of the issue
+`check-slices` runs after issue-plan-v2 slices an issue. It refuses a plan
+with a slice whose `size` is not `s`, `m` or `l`, naming each, since that
+slice's issue would then get no `dovo-size-*` label and its ready check would
+hold. It refuses, naming every problem it finds, a plan whose slices leave an outcome of the issue
 (an `outcome` of requirements.json) to no slice, or list it in two slices
 when not every entry for it carries a split marker naming its part, as in
 `O-7 (reply)`. It also refuses an outcome only one slice lists with a split
@@ -102,6 +104,13 @@ repository's owner, a member or a collaborator, names the description's
 `body_sha` now, and `ready=false` otherwise, with the reason on stderr, so a
 check is skipped only for the description it checked.
 
+`pass-through --record FILE` writes a fingerprint of .agentic/plan.md,
+plan.json and the phase files to FILE before a stretch of steps that is to pass
+straight through (the slice phasing of a plan with two or more slices, the
+planning steps of an already phased slice); `pass-through --check FILE` after
+it refuses when the fingerprint changed, then removes FILE, and passes when
+FILE is absent, since the steps then did real work.
+
 Every refusal is one line on stderr and exit code 1.
 """
 
@@ -131,6 +140,7 @@ from plan_formats import (
     requirements_json,
 )
 
+AGENTIC = Path(".agentic")
 PLAN_JSON = Path(".agentic/plan.json")
 PLAN_MD = Path(".agentic/plan.md")
 PHASES_DIR = Path(".agentic/phases")
@@ -171,6 +181,7 @@ REWRITTEN = (
 BULLET_RE = re.compile(r"- \*\*(?P<id>D-\d+)\*\* (?P<text>.+)")
 REPLACES_RE = re.compile(r"Replaces (?P<id>D-\d+) \(session (?P<session>[^\s()]+)\)\.$")
 OUTCOME_ENTRY = re.compile(r"(?P<id>O-\d+)(?: \((?P<part>[^()]+)\))?")
+SIZES = ("s", "m", "l")
 SETTLED_LABELS = {"assumed_accepted": "Assumed answer, accepted", "planner": "Planner, approved with the plan"}
 MINIMIZE = "mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { clientMutationId } }"
 
@@ -333,16 +344,33 @@ def _outcome_problems(outcomes: list[str], entries: list[tuple[str, str, str | N
     return problems + [f"{slice_id} lists {ident}, which the issue does not have." for ident, slice_id in unknown]
 
 
+def _unsized(raw_slices: list[object]) -> list[str]:
+    """Return the ids (or positions) of the slices whose `size` is not one of SIZES."""
+    return [
+        str(raw.get("id") or position) if isinstance(raw, dict) else str(position)
+        for position, raw in enumerate(raw_slices, start=1)
+        if not isinstance(raw, dict) or raw.get("size") not in SIZES
+    ]
+
+
 def check_slices(path: Path, requirements_path: Path) -> None:
-    """Refuse the plan at path unless every outcome requirements.json lists belongs to one slice, or to parts of several.
+    """Refuse the plan at path unless every slice has a size and every outcome belongs to one slice, or to parts of several.
 
     Raises:
-        PlanError: An outcome belongs to no slice, to two without a split marker, or to one slice as parts; a slice
-            lists an outcome the issue does not have; or a slice or an outcomes entry is malformed.
+        PlanError: A slice has no size; an outcome belongs to no slice, to two without a split marker, or to one slice
+            as parts; a slice lists an outcome the issue does not have; or a slice or an outcomes entry is malformed.
     """
     outcomes = [item.id for item in load_requirements(requirements_path) if item.kind == "outcome"]
-    raw_slices = enumerate(_list(load_plan(path), "slices", path), start=1)
-    entries = [entry for position, raw in raw_slices for entry in _slice_entries(raw, position, path)]
+    raw_slices = _list(load_plan(path), "slices", path)
+    if unsized := _unsized(raw_slices):
+        sizes = ", ".join(SIZES)
+        raise PlanError(
+            f"{path}: slice {', '.join(unsized)} has no size ({sizes}); its issue then gets no dovo-size-* label "
+            "and its ready check holds."
+        )
+    entries = [
+        entry for position, raw in enumerate(raw_slices, start=1) for entry in _slice_entries(raw, position, path)
+    ]
     problems = _outcome_problems(outcomes, entries)
     if problems:
         raise PlanError(f"{path}'s slices do not deliver each outcome of the issue once: {' '.join(problems)}")
@@ -1140,8 +1168,36 @@ def requirements(issue: int, out: Path, share: dict[str, str | None] | None = No
     out.write_text(json.dumps(requirements_json(issue, found_format, found), indent=2) + "\n", encoding="utf-8")
 
 
+def fingerprint(agentic: Path) -> str:
+    """Return the sha256 of agentic's plan.md, plan.json and phase files, each named, absent ones included."""
+    digest = hashlib.sha256()
+    for path in [agentic / "plan.md", agentic / "plan.json", *sorted((agentic / "phases").glob("phase-*.json"))]:
+        digest.update(f"{path.relative_to(agentic)}\0".encode())
+        digest.update(path.read_bytes() if path.is_file() else b"<absent>")
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def pass_through_check(record: Path, agentic: Path) -> None:
+    """Refuse when agentic's plan changed since `pass-through --record` wrote record, then remove record.
+
+    Nothing recorded means the steps in between did real work, so there is nothing to check.
+
+    Raises:
+        PlanError: The plan or a phase file changed during steps that were to pass straight through.
+    """
+    if not record.is_file():
+        return
+    if record.read_text(encoding="utf-8").strip() != fingerprint(agentic):
+        raise PlanError(
+            f"{agentic}/plan.md, plan.json or a phase file changed during steps that were to pass straight "
+            "through; a step that should have changed nothing did."
+        )
+    record.unlink()
+
+
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser for the check-slices, check-questions, check-breakdown, decisions-comment, prior-decisions, requirements, body-sha, ready-comment, ready-state, issue-format and rewrite-apply subcommands."""
+    """Return the parser for the check-slices, check-questions, check-breakdown, decisions-comment, prior-decisions, requirements, body-sha, ready-comment, ready-state, issue-format, rewrite-apply and pass-through subcommands."""
     parser = argparse.ArgumentParser(description="Check the slice plan in .agentic/plan.json and keep its decisions.")
     commands = parser.add_subparsers(dest="command", required=True)
     slices = commands.add_parser("check-slices", help="Refuse slices that leave out an outcome or deliver it twice.")
@@ -1186,6 +1242,10 @@ def build_parser() -> argparse.ArgumentParser:
     rewrite.add_argument("--issue", type=int, required=True, help="The legacy issue to rewrite.")
     rewrite.add_argument("--body-file", type=Path, required=True, help="The approved short-format description.")
     rewrite.add_argument("--body-sha", required=True, help="The body_sha of the description the draft rewrites.")
+    guard = commands.add_parser("pass-through", help="Record, or check, that steps passing through change no plan.")
+    mode = guard.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--record", type=Path, help="Write the plan's fingerprint here before the steps.")
+    mode.add_argument("--check", type=Path, help="Refuse when the plan differs from the fingerprint here.")
     return parser
 
 
@@ -1213,9 +1273,21 @@ def _dispatch_rewrite(args: argparse.Namespace) -> bool:
     return True
 
 
+def _dispatch_pass_through(args: argparse.Namespace) -> bool:
+    """Run the pass-through subcommand when args names it; return False for any other."""
+    if args.command != "pass-through":
+        return False
+    if args.record is not None:
+        args.record.parent.mkdir(parents=True, exist_ok=True)
+        args.record.write_text(fingerprint(AGENTIC) + "\n", encoding="utf-8")
+    else:
+        pass_through_check(args.check, AGENTIC)
+    return True
+
+
 def dispatch(args: argparse.Namespace) -> None:
     """Run the subcommand args names."""
-    if _dispatch_ready(args) or _dispatch_rewrite(args):
+    if _dispatch_ready(args) or _dispatch_rewrite(args) or _dispatch_pass_through(args):
         return
     if args.command == "check-slices":
         check_slices(args.plan, args.requirements)

@@ -104,19 +104,36 @@ steps:
       ARTIFACT_SESSION_ID: "{{ steps.next.outputs.plan_session }}"
 
   # A slice issue-plan-v2 phased, the one slice of its plan, was approved there
-  # with its phase files: its row names that session, whose plan and phase
-  # files are loaded here, and the planning steps below pass straight through.
-  # Any other slice is phased in this run.
-  - id: load-phased-plan
-    name: Load the slice's approved phased plan when the planning run phased it
+  # with its phase files, and its row names that session. The phased plan is
+  # coded from only while it still holds: the slice is worked on the issue it
+  # was phased for, no landed slice has amended the plan since (so the session
+  # load-plan read from is that session), and the description is the one it
+  # was phased against. Otherwise phased_session is empty and this run phases
+  # the slice again, which also re-confirms decisions the edit made stale.
+  - id: phased-check
+    name: Check whether the slice's phased plan still holds
     run: |
       set -eu
-      session="{{ steps.next.outputs.phased_session }}"
+      sha=$(uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py body-sha --issue {{ steps.next.outputs.issue }})
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/workplan.py phased --issue ${{ inputs.issue }} \
+        --slice {{ steps.next.outputs.slice }} --body-sha "$sha"
+    timeout_seconds: 120
+
+  # load-plan already read that session's plan and plan-questions, so only the
+  # phase files are loaded; the planning steps below then pass straight
+  # through. A plan grounded behind main is coded from as approved, with a note.
+  - id: load-phased-plan
+    name: Load the slice's approved phase files when its phased plan holds
+    run: |
+      set -eu
+      session="{{ steps.phased-check.outputs.phased_session }}"
       [ -n "$session" ] || { echo "Slice {{ steps.next.outputs.slice }} is phased in this run."; exit 0; }
-      for name in plan plan-questions phases; do
-        uv run dovo artifacts download "$session" "$name" --dest .
-      done
-      echo "Slice {{ steps.next.outputs.slice }} was phased and approved in session $session; planning passes through."
+      uv run dovo artifacts download "$session" phases --dest .
+      grounded=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/plan.json")).get("grounded_at") or "")')
+      if [ -n "$grounded" ] && git cat-file -e "$grounded^{commit}" 2>/dev/null; then
+        behind=$(git rev-list --count "$grounded..HEAD")
+        [ "$behind" = 0 ] || echo "Note: the phased plan was grounded at $grounded, $behind commits behind main; it is coded from as approved."
+      fi
     timeout_seconds: 300
 
   # The plan step rewrites .agentic/plan.{md,json} in place, so the epic plan
@@ -421,11 +438,22 @@ steps:
   # slicing's and earlier slices' on a sliced issue, read live so the planner
   # neither re-asks a settled question nor misses one the description has
   # since changed under.
+  # A slice worked on its own issue also reads the decisions posted to the
+  # issue whose work plan holds it, where the slicing's decisions are, so the
+  # plan and its review see them even after a landed slice amended the plan.
   - id: prior-decisions
     name: Read the decisions earlier planning posted
-    run: >-
-      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py prior-decisions
-      --issue {{ steps.next.outputs.issue }} --out .agentic/prior-decisions.json
+    run: |
+      set -eu
+      read_decisions() {
+        uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py prior-decisions --issue "$1" --out "$2"
+      }
+      read_decisions {{ steps.next.outputs.issue }} .agentic/prior-decisions.json
+      if [ "{{ steps.next.outputs.issue }}" != "${{ inputs.issue }}" ]; then
+        read_decisions ${{ inputs.issue }} .agentic/prior-decisions-parent.json
+      else
+        rm -f .agentic/prior-decisions-parent.json
+      fi
     timeout_seconds: 120
 
   # The slice's numbered items with their exact text, read live, since the
@@ -440,11 +468,25 @@ steps:
       --plan .agentic/epic-plan.json --out .agentic/requirements.json
     timeout_seconds: 120
 
+  # For a slice phased at planning every planning step below passes straight
+  # through; pass-through-check refuses once they are done if any of them
+  # changed the approved plan or its phase files anyway.
+  - id: pass-through-record
+    name: Record the approved phased plan when planning passes through
+    run: |
+      set -eu
+      if [ -n "{{ steps.phased-check.outputs.phased_session }}" ]; then
+        uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py pass-through --record .agentic/pass-through.sha
+      else
+        rm -f .agentic/pass-through.sha
+      fi
+    timeout_seconds: 120
+
   - id: plan
     name: Plan the slice
     type: agent
     prompt: |
-      Session that already phased the slice, if any: "{{ steps.next.outputs.phased_session }}".
+      Session that already phased the slice, if any: "{{ steps.phased-check.outputs.phased_session }}".
 
       If that is not empty, change nothing and report that the slice was phased and approved in
       that session. Otherwise:
@@ -470,10 +512,10 @@ steps:
     name: Review the slice's plan
     type: agent
     prompt: |
-      Session that already phased the slice, if any: "{{ steps.next.outputs.phased_session }}".
+      Session that already phased the slice, if any: "{{ steps.phased-check.outputs.phased_session }}".
 
       If that is not empty, write only .agentic/plan-review.md, containing the one line
-      "Slice {{ steps.next.outputs.slice }} was reviewed and approved in session {{ steps.next.outputs.phased_session }}; not reviewed again.",
+      "Slice {{ steps.next.outputs.slice }} was reviewed and approved in session {{ steps.phased-check.outputs.phased_session }}; not reviewed again.",
       and .agentic/plan-review.json, containing {"findings": []}, and stop. Otherwise:
 
       Follow .dovo/catalog/prompts/sdlc/v2/issue-plan-review.md in the mode `/issue-plan-review --slice {{ steps.next.outputs.slice }}`.
@@ -535,7 +577,7 @@ steps:
     name: Settle the slice plan's open questions as decisions
     type: agent
     prompt: |
-      Session that already phased the slice, if any: "{{ steps.next.outputs.phased_session }}".
+      Session that already phased the slice, if any: "{{ steps.phased-check.outputs.phased_session }}".
 
       If that is not empty, change nothing and report that you did nothing. Otherwise:
 
@@ -580,7 +622,7 @@ steps:
         name: Break the slice's plan into phase files
         type: agent
         prompt: |
-          Session that already phased the slice, if any: "{{ steps.next.outputs.phased_session }}".
+          Session that already phased the slice, if any: "{{ steps.phased-check.outputs.phased_session }}".
 
           If that is not empty, the phase files in .agentic/phases/ were approved in that session:
           change nothing and report that you did nothing. Otherwise:
@@ -617,10 +659,10 @@ steps:
     name: Walk through the slice's plan for the approver
     type: agent
     prompt: |
-      Session that already phased the slice, if any: "{{ steps.next.outputs.phased_session }}".
+      Session that already phased the slice, if any: "{{ steps.phased-check.outputs.phased_session }}".
 
       If that is not empty, write only .agentic/plan-walkthrough.md, containing the one line
-      "Slice {{ steps.next.outputs.slice }} was phased and approved in session {{ steps.next.outputs.phased_session }}.",
+      "Slice {{ steps.next.outputs.slice }} was phased and approved in session {{ steps.phased-check.outputs.phased_session }}.",
       and stop. Otherwise:
 
       Follow .dovo/catalog/prompts/sdlc/v2/plan-walkthrough.md.
@@ -637,6 +679,11 @@ steps:
     artifacts:
       - { name: plan-walkthrough, path: .agentic/plan-walkthrough.md }
 
+  - id: pass-through-check
+    name: Check that the planning that passed through changed no plan
+    run: uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py pass-through --check .agentic/pass-through.sha
+    timeout_seconds: 120
+
   # A confirm prompt is always shown, so the approval is a multiselect whose
   # one option approves: a slice phased at planning was approved there, its
   # options list nothing and no prompt is shown. Selecting nothing denies the
@@ -645,7 +692,7 @@ steps:
     name: List the approval the slice's plan still needs
     run: |
       set -eu
-      if [ -n "{{ steps.next.outputs.phased_session }}" ]; then
+      if [ -n "{{ steps.phased-check.outputs.phased_session }}" ]; then
         printf '{"approvals": []}\n' > .agentic/plan-approval.json
       else
         printf '{"approvals": [{"id": "approve", "label": "Approve the plan and its phase files"}]}\n' > .agentic/plan-approval.json
@@ -676,7 +723,7 @@ steps:
   - id: approved
     name: Stop unless the slice's plan is approved
     run: |
-      if [ -n "{{ steps.next.outputs.phased_session }}" ]; then exit 0; fi
+      if [ -n "{{ steps.phased-check.outputs.phased_session }}" ]; then exit 0; fi
       if [ "{{ steps.approve-plan.outputs.selected_count }}" != 1 ]; then
         echo "The plan for slice {{ steps.next.outputs.slice }} was not approved; stopping before claim." >&2
         exit 1
@@ -693,7 +740,7 @@ steps:
     name: Post the slice plan's decisions to the slice's issue
     run: |
       set -eu
-      if [ -n "{{ steps.next.outputs.phased_session }}" ]; then echo "Posted by the planning session."; exit 0; fi
+      if [ -n "{{ steps.phased-check.outputs.phased_session }}" ]; then echo "Posted by the planning session."; exit 0; fi
       uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py decisions-comment --plan .agentic/plan.json \
         --prior .agentic/prior-decisions.json --issue {{ steps.next.outputs.issue }} --slice {{ steps.next.outputs.slice }} --session "$DOVO_SESSION_ID"
     timeout_seconds: 120

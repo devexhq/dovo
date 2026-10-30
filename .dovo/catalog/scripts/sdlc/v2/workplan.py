@@ -28,9 +28,13 @@ request ends with; `land` computes both from the plan as landed. `next` also
 writes `issue`, the issue the slice is worked on: its `child` when it has one,
 otherwise the issue whose work plan holds it, and `phased_session`, the
 session whose artifacts hold the slice's approved phased plan, or "" when the
-slice is still to be phased. `render --phased`, run when the planning run
-phased the plan's one slice, records that session on its row; a pending row
-rendered again without `--phased` drops it. `size-label` labels that issue
+slice is still to be phased. `render --phased-body-sha`, run when the planning
+run phased the plan's one slice, records that session on its row with the
+body_sha of the description it was phased against; a pending row rendered
+again without it drops both. `phased` writes `phased_session` again, empty
+unless that phased plan still holds: the slice has no issue of its own, no
+landed slice has amended the plan since, and the description's body_sha is
+unchanged. `size-label` labels that issue
 with the slice's `dovo-size-*` label and removes any other one. `land`'s
 `--sweep` corrects other issues' descriptions, and skips an entry for the issue
 or the slice's own issue, naming it on stderr. `pr-links` replaces the closing
@@ -102,7 +106,9 @@ class Slice:
     created, or None. status is pending, in_progress, in_review, merged, or
     handed_off for a slice handed to someone outside the flow. phased_session
     is the session whose plan and phases artifacts hold the slice's approved
-    phased plan, when the planning run phased it (`render --phased`), else None.
+    phased plan, when the planning run phased it (`render --phased`), else None;
+    phased_body_sha is the body_sha of the issue's description that plan was
+    written against.
     """
 
     id: str
@@ -117,6 +123,7 @@ class Slice:
     size: str | None = None
     child: int | None = None
     phased_session: str | None = None
+    phased_body_sha: str | None = None
 
 
 @dataclass
@@ -286,11 +293,18 @@ def _carry_over(row: Slice, old: Slice | None) -> Slice:
         return row
     size = row.size if row.size is not None else old.size
     child = row.child if row.child is not None else old.child
-    phased = row.phased_session
+    phased, phased_sha = row.phased_session, row.phased_body_sha
     if phased is None and old.status != "pending":
-        phased = old.phased_session
+        phased, phased_sha = old.phased_session, old.phased_body_sha
     return replace(
-        row, size=size, status=old.status, pr=old.pr, session=old.session, child=child, phased_session=phased
+        row,
+        size=size,
+        status=old.status,
+        pr=old.pr,
+        session=old.session,
+        child=child,
+        phased_session=phased,
+        phased_body_sha=phased_sha,
     )
 
 
@@ -372,6 +386,7 @@ def _stored_slice(data: dict[str, object]) -> Slice:
     """Return one slice row from the dovo:workplan JSON line."""
     session = data.get("session")
     phased = data.get("phased_session")
+    phased_sha = data.get("phased_body_sha")
     return Slice(
         id=str(data["id"]),
         title=str(data["title"]),
@@ -385,6 +400,7 @@ def _stored_slice(data: dict[str, object]) -> Slice:
         size=_size(data.get("size"), str(data["id"])),
         child=_optional_int(data.get("child"), "child"),
         phased_session=None if phased is None else str(phased),
+        phased_body_sha=None if phased_sha is None else str(phased_sha),
     )
 
 
@@ -1170,29 +1186,29 @@ def _rendered(text: str, plan: WorkPlan, contract: dict[str, object] | None, que
     return new if contract is None else with_contract(new, contract, questions)
 
 
-def phased_slices(data: object, slices: list[Slice], session: str) -> list[Slice]:
-    """Return slices with the plan's one slice recorded as phased in session.
+def phased_slices(data: object, slices: list[Slice], session: str, body_sha: str) -> list[Slice]:
+    """Return slices with the plan's one slice recorded as phased in session, against the description body_sha names.
 
     Raises:
         WorkplanError: When the plan has more than one slice, or its slice lists no phases.
     """
     if len(slices) != 1:
-        raise WorkplanError(f"--phased needs a plan with one slice, not {len(slices)}")
+        raise WorkplanError(f"--phased-body-sha needs a plan with one slice, not {len(slices)}")
     raw = _object(_list(_object(data, "plan.json").get("slices"))[0], "each plan.json slice")
     if not _list(raw.get("phases")):
-        raise WorkplanError(f"--phased needs slice {slices[0].id} to list its phases in plan.json")
-    return [replace(slices[0], phased_session=session)]
+        raise WorkplanError(f"--phased-body-sha needs slice {slices[0].id} to list its phases in plan.json")
+    return [replace(slices[0], phased_session=session, phased_body_sha=body_sha)]
 
 
-def cmd_render(issue: int, plan_path: str, session: str, revision: int, *, phased: bool) -> None:
+def cmd_render(issue: int, plan_path: str, session: str, revision: int, *, phased_body_sha: str | None) -> None:
     """Write the feature contract and work plan from plan.json into issue's work plan comment, creating it when absent.
 
-    With phased, the plan's one slice is recorded as phased in session (see `phased_slices`).
+    Given phased_body_sha, the plan's one slice is recorded as phased in session (see `phased_slices`).
     """
     data = _load_json(plan_path)
     contract, slices = parse_plan(data)
-    if phased:
-        slices = phased_slices(data, slices, session)
+    if phased_body_sha is not None:
+        slices = phased_slices(data, slices, session, phased_body_sha)
     raw_questions = _list(_object(data, "plan.json").get("open_questions"))
     questions = render_questions([_object(item, "each open question") for item in raw_questions])
     plan = WorkPlan(session, revision, slices)
@@ -1415,6 +1431,37 @@ def cmd_size_label(issue: int, slice_id: str) -> None:
     run("gh", "issue", "edit", str(target), "--add-label", wanted, *removals)
 
 
+def phased_plan(plan: WorkPlan, row: Slice, body_sha: str) -> tuple[str, str]:
+    """Return the session holding row's approved phased plan when it still holds, else "", with the reason.
+
+    It holds while the slice is worked on the issue it was phased for, the work
+    plan still comes from the session that phased it (no landed slice amended
+    the plan since), and the issue's description is the one it was phased
+    against (body_sha, from `plan.py body-sha`).
+    """
+    if row.phased_session is None:
+        return "", f"{row.id} has no phased plan; it is phased in this run."
+    again = f"so {row.id} is phased again in this run."
+    if row.child is not None:
+        return "", f"{row.id} is now worked on its own issue #{row.child}, not the one it was phased for, {again}"
+    if row.phased_session != plan.plan_session:
+        return "", f"the work plan now comes from session {plan.plan_session}, not {row.phased_session}, {again}"
+    if row.phased_body_sha != body_sha:
+        return "", f"the issue's description changed since {row.id} was phased, {again}"
+    return (
+        row.phased_session,
+        f"{row.id} was phased and approved in session {row.phased_session}; planning passes through.",
+    )
+
+
+def cmd_phased(issue: int, slice_id: str, body_sha: str) -> dict[str, str]:
+    """Return `phased_session`, the session whose phased plan the slice is coded from, or "" (see `phased_plan`)."""
+    plan, _ = split_workplan(read_workplan(issue).text)
+    session, reason = phased_plan(plan, find_slice(plan, slice_id), body_sha)
+    sys.stdout.write(f"{reason}\n")
+    return {"phased_session": session}
+
+
 def closed_issue(line: str) -> int | None:
     """Return the issue a closing line names, or None when line is not one.
 
@@ -1501,7 +1548,7 @@ def write_outputs(outputs: dict[str, str]) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser for the render, next, claim, land, split-out, size-label and pr-links subcommands."""
+    """Return the parser for the render, next, claim, land, split-out, size-label, phased and pr-links subcommands."""
     parser = argparse.ArgumentParser(description="Keep an issue's feature contract and work plan comment current.")
     commands = parser.add_subparsers(dest="command", required=True)
     render = commands.add_parser("render", help="Write the contract and work plan from plan.json.")
@@ -1510,22 +1557,25 @@ def build_parser() -> argparse.ArgumentParser:
     land = commands.add_parser("land", help="Mark a slice in_review, record its report and apply the sweep.")
     split = commands.add_parser("split-out", help="Give one slice its own issue, linked as a sub-issue.")
     size = commands.add_parser("size-label", help="Label the issue a slice is worked on with the slice's size.")
+    phased = commands.add_parser("phased", help="Write the session whose phased plan still holds for the slice.")
     links = commands.add_parser("pr-links", help="Make a pull request's description end with the closing lines.")
     links.add_argument("--pr", type=int, required=True, help="The slice's pull request number.")
     links.add_argument("--closing-lines", required=True, help="The closing lines, one per line, as land writes them.")
-    for sub in (render, nxt, claim, land, split, size):
+    for sub in (render, nxt, claim, land, split, size, phased):
         sub.add_argument("--issue", type=int, required=True, help="The issue whose work plan holds the slices.")
     render.add_argument("--plan", required=True, help="Path to plan.json.")
     render.add_argument("--revision", type=int, required=True, help="The plan artifact's revision.")
     render.add_argument(
-        "--phased", action="store_true", help="Record the plan's one slice as phased and approved in this session."
+        "--phased-body-sha",
+        help="Record the plan's one slice as phased and approved in this session, against this body_sha.",
     )
+    phased.add_argument("--body-sha", required=True, help="The body_sha of the slice's issue's description now.")
     nxt.add_argument(
         "--hold",
         type=Path,
         help="Write the slices waiting on a person here and exit 0 without outputs, instead of refusing.",
     )
-    for sub in (claim, land, split, size):
+    for sub in (claim, land, split, size, phased):
         sub.add_argument("--slice", required=True, help="The slice id, such as S2.")
     split.add_argument(
         "--handed-off",
@@ -1552,8 +1602,10 @@ def dispatch(args: argparse.Namespace) -> int:
     issue: int = args.issue
     if args.command == "size-label":
         cmd_size_label(issue, args.slice)
+    elif args.command == "phased":
+        write_outputs(cmd_phased(issue, args.slice, args.body_sha))
     elif args.command == "render":
-        cmd_render(issue, args.plan, args.session, args.revision, phased=args.phased)
+        cmd_render(issue, args.plan, args.session, args.revision, phased_body_sha=args.phased_body_sha)
     elif args.command == "next":
         outputs = cmd_next_or_hold(issue, args.hold)
         if outputs:

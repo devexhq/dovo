@@ -428,6 +428,20 @@ steps:
       if [ -n "$slice" ]; then echo "One slice, $slice: phasing it in this run."; else echo "Two or more slices: each is phased in its own issue-code-v2 run."; fi
     timeout_seconds: 120
 
+  # With two or more slices every slice-phasing step below passes straight
+  # through; pass-through-check refuses once they are done if any of them
+  # changed the plan or wrote a phase file anyway.
+  - id: pass-through-record
+    name: Record the plan when the slice phasing passes through
+    run: |
+      set -eu
+      if [ -z "{{ steps.one-slice.outputs.slice }}" ]; then
+        uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py pass-through --record .agentic/pass-through.sha
+      else
+        rm -f .agentic/pass-through.sha
+      fi
+    timeout_seconds: 120
+
   - id: slice-plan
     name: Phase the one slice
     type: agent
@@ -592,6 +606,11 @@ steps:
         timeout_seconds: 120
         on_failure: continue
 
+  - id: pass-through-check
+    name: Check that the slice phasing that passed through changed no plan
+    run: uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py pass-through --check .agentic/pass-through.sha
+    timeout_seconds: 120
+
   # Written after every answer is folded in, so it explains the plan being
   # approved. The approval prompt shows it rather than the plan, which is cut
   # at 200 lines there; the full plan stays in the plan artifact.
@@ -650,23 +669,30 @@ steps:
   # then marks these decisions to confirm. A plan of two or more slices posts
   # its decisions under the slice `all`, since issue-mode decisions shape the
   # slicing rather than one slice's phases. A plan of one slice posts the issue
-  # plan's decisions, then the slice plan's, each under the slice's id.
+  # plan's decisions and the slice plan's in one comment under the slice's id
+  # (the slice plan's ids continue after the issue plan's), so a failure never
+  # leaves half of them posted.
   - id: decisions-comment
     name: Post the plan's decisions to the issue
     run: |
       set -eu
       slice="{{ steps.one-slice.outputs.slice }}"
-      post() {
-        uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py decisions-comment --plan "$1" \
-          --prior .agentic/prior-decisions.json --issue ${{ inputs.issue }} --slice "$2" --session "$DOVO_SESSION_ID"
-      }
-      if [ -z "$slice" ]; then
-        post .agentic/plan.json all
-      else
-        post .agentic/epic-plan.json "$slice"
-        post .agentic/plan.json "$slice"
+      plan=.agentic/plan.json
+      if [ -n "$slice" ]; then
+        plan=.agentic/decisions-plan.json
+        uv run --quiet python -c '
+      import json
+      issue = json.load(open(".agentic/epic-plan.json"))
+      slice = json.load(open(".agentic/plan.json"))
+      by_id = {d["id"]: d for d in [*issue.get("decisions", []), *slice.get("decisions", [])]}
+      merged = dict(slice, decisions=list(by_id.values()))
+      json.dump(merged, open(".agentic/decisions-plan.json", "w"), indent=2)
+      '
       fi
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py decisions-comment --plan "$plan" \
+        --prior .agentic/prior-decisions.json --issue ${{ inputs.issue }} --slice "${slice:-all}" --session "$DOVO_SESSION_ID"
     timeout_seconds: 120
+    on_failure: prompt_user
 
   # A command step: the work plan comment is written by the script alone, with
   # the host's gh credentials; the issue's description is never written. The
@@ -674,13 +700,18 @@ steps:
   # after every fold, answer and instruction above. A plan of one slice is
   # rendered from the slice plan, which keeps the issue plan's contract and
   # slices, and records the slice as phased in this session, whose plan and
-  # phases artifacts issue-code-v2 then codes from.
+  # phases artifacts issue-code-v2 then codes from, against the body_sha of the
+  # description prior-decisions read before planning, so an edit made since
+  # sends the slice back to be phased in its issue-code-v2 run.
   - id: publish-workplan
     name: Write the feature contract and the work plan to the issue's work plan comment
     run: |
       set -eu
       phased=""
-      [ -z "{{ steps.one-slice.outputs.slice }}" ] || phased="--phased"
+      if [ -n "{{ steps.one-slice.outputs.slice }}" ]; then
+        sha=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/prior-decisions.json"))["body_sha"])')
+        phased="--phased-body-sha $sha"
+      fi
       uv run python .dovo/catalog/scripts/sdlc/v2/workplan.py render --issue ${{ inputs.issue }} \
         --plan .agentic/plan.json --session "$DOVO_SESSION_ID" \
         --revision {{ artifacts.plan.revision }} $phased

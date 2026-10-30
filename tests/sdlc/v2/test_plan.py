@@ -1895,8 +1895,8 @@ THREE_OUTCOMES = {
 
 
 def _check_slices(workspace: Path, monkeypatch: pytest.MonkeyPatch, *slices: dict[str, object]) -> int:
-    """Run plan.py check-slices on a plan.json of slices against THREE_OUTCOMES, both on the default paths."""
-    _write_json(workspace / ".agentic/plan.json", {"slices": list(slices)})
+    """Run plan.py check-slices on a plan.json of slices, sized s unless they say, against THREE_OUTCOMES."""
+    _write_json(workspace / ".agentic/plan.json", {"slices": [{"size": "s", **item} for item in slices]})
     _write_json(workspace / ".agentic/requirements.json", THREE_OUTCOMES)
     return _main(monkeypatch, "check-slices")
 
@@ -1969,6 +1969,21 @@ class PlanCheckSlicesTests:
             f"plan.py: .agentic/plan.json's slices do not deliver each outcome of the issue once: {problems}\n"
         )
 
+    def test_check_slices_refuses_a_slice_without_a_size(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        slices: list[dict[str, object]] = [
+            {"id": "S1", "outcomes": ["O-1", "O-2"], "size": None},
+            {"id": "S2", "outcomes": ["O-3"], "size": "xl"},
+        ]
+
+        assert _check_slices(workspace, monkeypatch, *slices) == 1
+
+        assert _refusal(capsys) == (
+            "plan.py: .agentic/plan.json: slice S1, S2 has no size (s, m, l); "
+            "its issue then gets no dovo-size-* label and its ready check holds.\n"
+        )
+
     def test_check_slices_refuses_an_outcome_entry_it_cannot_read(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -1977,3 +1992,70 @@ class PlanCheckSlicesTests:
         assert _refusal(capsys) == (
             "plan.py: .agentic/plan.json: slice S1 lists outcome 'outcome 2', which is not O-<n> or O-<n> (<part>).\n"
         )
+
+
+# --- pass-through -------------------------------------------------------------------
+
+
+def _plan_files(workspace: Path) -> None:
+    """Write a plan.md, plan.json and one phase file into workspace's .agentic."""
+    (workspace / ".agentic/phases").mkdir(parents=True, exist_ok=True)
+    (workspace / ".agentic/plan.md").write_text("# Plan\n", encoding="utf-8")
+    _write_json(workspace / ".agentic/plan.json", {"slices": [{"id": "S1", "phases": [1]}]})
+    _write_json(workspace / ".agentic/phases/phase-1.json", {"phase": 1})
+
+
+class PlanPassThroughTests:
+    def test_check_passes_and_removes_the_record_when_nothing_changed(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _plan_files(workspace)
+        (workspace / ".agentic/phases/index.json").write_text("{}", encoding="utf-8")
+
+        assert _main(monkeypatch, "pass-through", "--record", ".agentic/pass-through.sha") == 0
+        (workspace / ".agentic/phases/index.json").write_text('{"rewritten": true}', encoding="utf-8")
+        assert _main(monkeypatch, "pass-through", "--check", ".agentic/pass-through.sha") == 0
+
+        assert capsys.readouterr() == ("", "")
+        assert not (workspace / ".agentic/pass-through.sha").exists()
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            pytest.param(
+                lambda root: (root / ".agentic/plan.md").write_text("# Edited\n", encoding="utf-8"), id="plan-md"
+            ),
+            pytest.param(lambda root: _write_json(root / ".agentic/plan.json", {"slices": []}), id="plan-json"),
+            pytest.param(
+                lambda root: _write_json(root / ".agentic/phases/phase-2.json", {"phase": 2}), id="added-phase"
+            ),
+            pytest.param(lambda root: (root / ".agentic/phases/phase-1.json").unlink(), id="removed-phase"),
+        ],
+    )
+    def test_check_refuses_a_change_to_the_plan_or_a_phase_file(
+        self,
+        change: Callable[[Path], None],
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _plan_files(workspace)
+        assert _main(monkeypatch, "pass-through", "--record", ".agentic/pass-through.sha") == 0
+
+        change(workspace)
+
+        assert _main(monkeypatch, "pass-through", "--check", ".agentic/pass-through.sha") == 1
+        assert _refusal(capsys) == (
+            "plan.py: .agentic/plan.md, plan.json or a phase file changed during steps that were to pass straight "
+            "through; a step that should have changed nothing did.\n"
+        )
+
+    def test_check_passes_when_nothing_was_recorded(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _plan_files(workspace)
+        (workspace / ".agentic/plan.md").write_text("# Phased in this run\n", encoding="utf-8")
+
+        assert _main(monkeypatch, "pass-through", "--check", ".agentic/pass-through.sha") == 0
+
+        assert capsys.readouterr() == ("", "")

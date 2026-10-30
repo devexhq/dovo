@@ -1,6 +1,6 @@
 # plan-challenge
 
-Challenge an issue plan written by `issue-plan` in issue mode: the contract and the slices, with no phases. This prompt asks whether the plan, and the issue behind it, are the right design. It runs once per issue, never on a slice plan: `issue-plan-review` reviews each slice's phases against the decisions settled here. Leave grounding, coverage, R13 matrices and rule-by-rule checks to that review.
+Challenge an issue plan written by `issue-plan` in issue mode: the contract and the slices, with no phases. This prompt asks whether the plan, and the issue behind it, are the right design. It runs once per issue, never on a slice plan: `issue-plan-review` reviews each slice's phases against the decisions settled here. No review runs on the issue plan itself: its outcome coverage and slice sizes are checked by `plan.py check-slices`, and grounding, R13 matrices and rule-by-rule checks belong to each slice's review, so leave them out.
 
 Output goes to `.agentic/plan-challenge.md`, paired with `.agentic/plan-challenge.json`. The blueprint folds challenges routed `fold` into the plan and asks a human about those routed `ask`, so every challenge you write costs either a plan change or a human decision. "No challenges" is a normal result for a plan whose design holds.
 
