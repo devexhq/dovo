@@ -165,7 +165,7 @@ A Location is `path:line`, or `path:<start>-<end>` for a range of lines.
 
 Contract coverage reads "No contract: `.agentic/plan.md` absent" when there is no plan. Earlier rounds reads `none` in round 1.
 
-**Action** follows from the verdict and what is left. On `APPROVE` it is `none`, or `needs_human` when a Warning is left that only a person can settle. On `CHANGES REQUIRED` it is `fix` when every Blocking finding can be fixed inside the plan, `replan` when a Blocking finding needs a different design from the plan's, and `needs_human` when only a person can settle what is left. Only a person can settle a finding whose fix needs a decision the plan does not make, goes back on a decision the plan made, or needs evidence no agent here can obtain; name that decision in the one-sentence reason. A finding you send to a person in the report always sets `needs_human`, because the `feature-dev` blueprint stops fixing only on `needs_human` or `replan`.
+**Action** follows from the verdict and what is left. On `APPROVE` it is `none`, or `needs_human` when a Warning is left that only a person can settle. On `CHANGES REQUIRED` it is `fix` when every Blocking finding can be fixed inside the plan, `replan` when a Blocking finding needs a different design from the plan's, and `needs_human` when only a person can settle what is left. Only a person can settle a finding whose fix needs a decision the plan does not make, goes back on a decision the plan made, or needs evidence no agent here can obtain; name that decision in the one-sentence reason. A finding you send to a person in the report always sets `needs_human`, because the `issue-code-v2` blueprint stops fixing only on `needs_human` or `replan`.
 
 `Rule` is an R-id, `conventions` for a `docs/agents/code-conventions.md` item, `architecture` for a `docs/agents/architecture/` entry, or `-` for a bug or plan finding with no rule behind it. An empty section keeps its heading with the line `none`. IDs are the tier letter plus a number from 1 within the tier, in row order, reassigned every round; `/issue-code review --fix` consumes them.
 
@@ -177,7 +177,7 @@ On `CHANGES REQUIRED`, hand off to `/issue-code review`, then re-run this prompt
 
 ## 9. Emit the machine-readable verdict
 
-Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, and print `verdict`, `action`, `round`, `head` and `counts` as one minified JSON object on the last line of stdout. `.dovo/catalog/blueprints/feature-dev.yml` fixes until `review.json` lists no `BLOCKER` or `WARNING` finding, `scripts/publish_review.py` posts `review.json`'s findings to the pull request, and `/issue-code review` reads the ids.
+Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, and print `verdict`, `action`, `round`, `head` and `counts` as one minified JSON object on the last line of stdout. `.dovo/catalog/blueprints/issue-code-v2.yml` fixes until `review.json` lists no `BLOCKER` or `WARNING` finding, `scripts/publish_review.py` posts `review.json`'s findings to the pull request, and `/issue-code review` reads the ids.
 
 ```json
 {

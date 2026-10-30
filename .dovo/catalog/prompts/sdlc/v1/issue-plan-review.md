@@ -139,7 +139,7 @@ An empty section keeps its heading with the line `none`. IDs are the tier letter
 
 ## 8. Emit the machine-readable findings
 
-Write `.agentic/plan-review.json` alongside the markdown, overwriting any earlier one. `.dovo/catalog/blueprints/feature-dev.yml` folds every finding it lists into the plan, so it must agree with `plan-review.md` row for row.
+Write `.agentic/plan-review.json` alongside the markdown, overwriting any earlier one. The `issue-plan` and `issue-code` blueprints (`.dovo/catalog/blueprints/issue-plan.yml`, `.dovo/catalog/blueprints/issue-code.yml`) fold every finding it lists into the plan, so it must agree with `plan-review.md` row for row.
 
 ```json
 {

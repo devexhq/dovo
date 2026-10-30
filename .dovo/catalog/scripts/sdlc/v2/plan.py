@@ -34,16 +34,20 @@ from it.
 listing the plan's decisions to the issue, headed by a
 `<!-- dovo:decisions ... -->` marker naming the slice, the session and
 `body_sha`, the sha256 of the part of the issue's description a person wrote
-(`body_sha` below). The comment is dated with the latest decision's date. Then
-it hides, as outdated, each earlier dovo:decisions comment of another session
-whose every decision this plan replaces. It never edits a comment, and a plan
-with no decisions posts nothing.
+(`body_sha` below), as prior-decisions.json recorded it before planning, so
+the comment names the description the plan was written against. The comment
+is dated with the latest decision's date. Then it hides, as outdated, each
+earlier dovo:decisions comment of another session that is not hidden and whose
+every decision this plan replaces. It never edits a comment, and a plan with
+no decisions posts nothing.
 
 `prior-decisions` runs before planning. It writes to prior-decisions.json the
-decisions in the issue's dovo:decisions comments that are not hidden and that
-no other decision replaces (the shape is `PriorDecision` in plan_formats.py):
-each is `given` when its comment's body_sha matches the description now, and
-`to_confirm` otherwise.
+description's `body_sha` and the decisions in the issue's dovo:decisions
+comments that are not hidden and that no other decision replaces (the shape is
+`PriorDecision` in plan_formats.py): each is `given` when its comment's
+body_sha matches the description now, and `to_confirm` otherwise. A hidden
+comment's own decisions are left out, but the decisions it says it replaces
+stay replaced, so hiding a comment never brings back what it replaced.
 
 `requirements` runs in the ready check. It writes to requirements.json each
 numbered item of the issue's description with its exact text (the shape is
@@ -51,7 +55,8 @@ numbered item of the issue's description with its exact text (the shape is
 section, numbers its outcomes `- **O-<n>** ...` and the decisions under
 `## Decisions` `- **D-<n>** ...`. A legacy issue numbers `### FR-<n>: ...` and
 `### NFR-<n>: ...` sections, and the numbered list under
-`## Error cases to handle`, whose items become `EC-<n>`. A list item's indented
+`## Error cases to handle`, whose items become `EC-<n>` by their position
+in it, whatever number each is written with. A list item's indented
 continuation lines join its text with one space each; a section's text is its
 heading's words, a blank line, then its body. Anything inside a fenced code
 block is never read as an item. A description that numbers one id twice is
@@ -113,6 +118,7 @@ MARKER_RE = re.compile(
     r"<!-- dovo:decisions schema_version=1 slice=(?P<slice>\S+) session=(?P<session>\S+)"
     r" body_sha=(?P<body_sha>[0-9a-f]{64}) -->"
 )
+BODY_SHA = re.compile(r"[0-9a-f]{64}")
 BULLET_RE = re.compile(r"- \*\*(?P<id>D-\d+)\*\* (?P<text>.+)")
 REPLACES_RE = re.compile(r"Replaces (?P<id>D-\d+) \(session (?P<session>[^\s()]+)\)\.$")
 GENERATED_SECTIONS = frozenset({"## Feature contract", "## Work plan"})
@@ -126,13 +132,14 @@ class PlanError(RuntimeError):
 
 @dataclass(frozen=True)
 class PostedComment:
-    """One of the issue's dovo:decisions comments that is not hidden, with its decision bullets as (id, text)."""
+    """One of the issue's dovo:decisions comments, with its decision bullets as (id, text) and whether it is hidden."""
 
     node_id: str
     slice: str
     session: str
     body_sha: str
     bullets: tuple[tuple[str, str], ...]
+    hidden: bool
 
 
 def run(*args: str) -> str:
@@ -564,14 +571,15 @@ def body_sha(body: str) -> str:
     """Return the sha256 hex of the part of an issue's description a person wrote.
 
     Line endings become LF, each `## Feature contract` and `## Work plan` section
-    (from its heading to the next `## ` heading or the end) is cut, every line
-    loses its trailing whitespace, and the text loses its leading and trailing
-    newlines, so a work plan rewrite or a stray space never marks a decision stale.
+    (from its heading to the next `## ` heading outside a fenced code block, or
+    the end) is cut, every line loses its trailing whitespace, and the text loses
+    its leading and trailing newlines, so a work plan rewrite or a stray space
+    never marks a decision stale.
     """
     kept: list[str] = []
     cutting = False
-    for line in body.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        if line.startswith("## "):
+    for line, role in _fence_roles(body.replace("\r\n", "\n").replace("\r", "\n").split("\n")):
+        if role == "text" and line.startswith("## "):
             cutting = line.rstrip() in GENERATED_SECTIONS
         if not cutting:
             kept.append(line.rstrip())
@@ -613,8 +621,8 @@ def render_comment(decisions: list[Decision], slice_id: str, session: str, sha: 
 
 
 def _posted(raw: object) -> PostedComment | None:
-    """Return raw as a dovo:decisions comment, or None when it is hidden or another comment."""
-    if not isinstance(raw, dict) or raw.get("isMinimized"):
+    """Return raw as a dovo:decisions comment, hidden or not, or None when it is another comment."""
+    if not isinstance(raw, dict):
         return None
     body = str(raw.get("body") or "")
     marker = MARKER_RE.match(body)
@@ -622,7 +630,8 @@ def _posted(raw: object) -> PostedComment | None:
         return None
     lines = (BULLET_RE.fullmatch(line.rstrip()) for line in body.splitlines())
     bullets = tuple((match["id"], match["text"]) for match in lines if match is not None)
-    return PostedComment(str(raw.get("id")), marker["slice"], marker["session"], marker["body_sha"], bullets)
+    hidden = bool(raw.get("isMinimized"))
+    return PostedComment(str(raw.get("id")), marker["slice"], marker["session"], marker["body_sha"], bullets, hidden)
 
 
 def _view(issue: int, fields: str) -> dict[str, object]:
@@ -641,7 +650,7 @@ def _view(issue: int, fields: str) -> dict[str, object]:
 
 
 def view_issue(issue: int) -> tuple[str, list[PostedComment]]:
-    """Return issue's description and its dovo:decisions comments that are not hidden.
+    """Return issue's description and its dovo:decisions comments, hidden ones included.
 
     Raises:
         PlanError: gh printed something other than a JSON object.
@@ -678,49 +687,68 @@ def _hide(comment: PostedComment) -> None:
         sys.stderr.write(f"plan.py: could not hide comment {comment.node_id} of session {comment.session}: {stderr}\n")
 
 
-def decisions_comment(path: Path, issue: int, slice_id: str, session: str) -> None:
+def recorded_body_sha(path: Path) -> str:
+    """Return the description's body_sha that prior-decisions recorded in the prior-decisions.json at path.
+
+    Raises:
+        PlanError: The file cannot be read, is not a JSON object or has no body_sha.
+    """
+    sha = load_plan(path).get("body_sha")
+    if not isinstance(sha, str) or not BODY_SHA.fullmatch(sha):
+        raise PlanError(f"{path} has no body_sha; run prior-decisions before planning.")
+    return sha
+
+
+def decisions_comment(path: Path, prior: Path, issue: int, slice_id: str, session: str) -> None:
     """Post the plan's decisions to issue, then hide the earlier comments they wholly replace.
 
     Raises:
-        PlanError: The plan or its decisions are malformed, or slice_id or session is not one token.
+        PlanError: The plan or its decisions are malformed, slice_id or session is not one token, or prior
+            records no body_sha.
     """
     decisions = load_decisions(load_plan(path), path)
     _token(slice_id, "Slice")
     _token(session, "Session")
     if not decisions:
         return
-    body, posted = view_issue(issue)
-    comment = render_comment(decisions, slice_id, session, body_sha(body))
+    sha = recorded_body_sha(prior)
+    _, posted = view_issue(issue)
+    comment = render_comment(decisions, slice_id, session, sha)
     _with_file(comment, lambda file: run("gh", "issue", "comment", str(issue), "--body-file", file))
     for earlier in outdated(posted, decisions, session):
         _hide(earlier)
 
 
 def outdated(posted: list[PostedComment], decisions: list[Decision], session: str) -> list[PostedComment]:
-    """Return the comments of other sessions than session whose every decision one of decisions replaces."""
+    """Return the comments, not hidden, of other sessions than session whose every decision one of decisions replaces."""
     replaced = {(item.replaces.id, item.replaces.session) for item in decisions if item.replaces is not None}
     return [
         earlier
         for earlier in posted
-        if earlier.session != session
+        if not earlier.hidden
+        and earlier.session != session
         and earlier.bullets
         and all((ident, earlier.session) in replaced for ident, _ in earlier.bullets)
     ]
 
 
 def prior_decisions(issue: int, out: Path) -> None:
-    """Write to out the decisions of issue's dovo:decisions comments that no other decision replaces."""
+    """Write to out the description's body_sha and the decisions of issue's dovo:decisions comments that are not hidden and that no decision replaces.
+
+    The decisions a hidden comment says it replaces stay replaced.
+    """
     body, posted = view_issue(issue)
     sha = body_sha(body)
     replaced = {pair for comment in posted for _, text in comment.bullets if (pair := _replaced(text)) is not None}
     decisions = [
         PriorDecision(ident, text, comment.slice, comment.session, "given" if comment.body_sha == sha else "to_confirm")
         for comment in posted
+        if not comment.hidden
         for ident, text in comment.bullets
         if (ident, comment.session) not in replaced
     ]
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(prior_decisions_json(issue, decisions), indent=2) + "\n", encoding="utf-8")
+    out.write_text(json.dumps(prior_decisions_json(issue, sha, decisions), indent=2) + "\n", encoding="utf-8")
 
 
 # --- requirements.json -----------------------------------------------------------
@@ -825,9 +853,8 @@ def _legacy_requirements(sections: list[tuple[str, list[tuple[str, bool]]]]) -> 
             Requirement(ident, LEGACY_KINDS[ident.split("-")[0]], text) for ident, text in _headed_items(lines)
         )
         if heading == ERROR_CASES:
-            found.extend(
-                Requirement(f"EC-{number}", "error_case", text) for number, text in _list_items(lines, ERROR_CASE)
-            )
+            cases = enumerate(_list_items(lines, ERROR_CASE), start=1)
+            found.extend(Requirement(f"EC-{position}", "error_case", text) for position, (_, text) in cases)
     return found
 
 
@@ -870,6 +897,9 @@ def build_parser() -> argparse.ArgumentParser:
     breakdown.add_argument("--phases", type=Path, default=PHASES_DIR, help="The folder holding the phase files.")
     comment = commands.add_parser("decisions-comment", help="Post the approved plan's decisions to the issue.")
     comment.add_argument("--plan", type=Path, default=PLAN_JSON, help="The approved plan.json.")
+    comment.add_argument(
+        "--prior", type=Path, default=PRIOR_JSON, help="The prior-decisions.json whose body_sha the comment names."
+    )
     comment.add_argument("--issue", type=int, required=True, help="The issue to post the comment on.")
     comment.add_argument("--slice", required=True, help="The slice the plan phases.")
     comment.add_argument("--session", required=True, help="The planning session's id.")
@@ -889,7 +919,7 @@ def dispatch(args: argparse.Namespace) -> None:
     elif args.command == "check-breakdown":
         check_breakdown(args.plan, args.plan_md, args.requirements, args.phases, args.slice)
     elif args.command == "decisions-comment":
-        decisions_comment(args.plan, args.issue, args.slice, args.session)
+        decisions_comment(args.plan, args.prior, args.issue, args.slice, args.session)
     elif args.command == "prior-decisions":
         prior_decisions(args.issue, args.out)
     else:

@@ -18,7 +18,7 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 
 ## Hard boundaries
 
-- **Never commit, stage, push, or touch PR state.** `/dovo-push` owns that.
+- **Never commit, stage, push, or touch PR state.** The `issue-code` blueprint's `checkpoint`, `commit`, `commit-fixes` and `push` steps own that.
 - **The slice's phases, one at a time.** Finish a phase (its FRs, tests and deletion ledger, with its scoped tests green) before starting the next, and never interleave FRs across phases. The phases still order the work and bound each step; the slice's phases all land in one PR, in this one run or, in one-phase mode, one run per phase. Another slice's phases are never started, even when the work looks adjacent.
 - **Stay within the size budget.** A slice's `src/` plus docs stay under about 400 changed lines and the whole diff, tests included, under about 900 (`git diff --stat origin/main`). When the diff passes either with work left, stop, flag it 🚨 and report what remains, rather than finishing over budget.
 - **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes and message strings in the child issue's Pre-determined data, or written as code in a phase's `### Code`, are normative. Do not rename or extend them.
