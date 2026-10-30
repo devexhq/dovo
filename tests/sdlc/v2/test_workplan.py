@@ -53,7 +53,8 @@ class FakeGh:
     `race[(issue, n)]` is the text another writer stores in that issue's work plan comment right after
     the n-th read of its comments, to exercise compare-and-set. `failing_links` makes that many
     sub-issue POSTs fail, and `create_output` replaces what `gh issue create` prints. `labels` holds each
-    issue's labels, which `--label` on create adds to.
+    issue's labels, which `--label` on create and `--add-label` on edit add to and `--remove-label` takes
+    from. `pr_bodies` holds each pull request's description, which `gh pr edit --body-file` replaces.
     """
 
     def __init__(self, workplans: Mapping[int, str], bodies: Mapping[int, str] | None = None) -> None:
@@ -65,6 +66,8 @@ class FakeGh:
         self.labels: dict[int, list[str]] = {}
         self.closed: set[int] = set()
         self.pr_states: dict[int, str] = {}
+        self.pr_bodies: dict[int, str] = {}
+        self.pr_edits: list[int] = []
         self.race: dict[tuple[int, int], str] = {}
         self.reads: dict[int, int] = {}
         self.edits: list[int] = []
@@ -80,9 +83,14 @@ class FakeGh:
         if args[:3] == ("gh", "issue", "view"):
             return self._view(int(args[3]), args[5])
         if args[:3] == ("gh", "pr", "view"):
-            return json.dumps({"state": self.pr_states[int(args[3])]})
+            pr = int(args[3])
+            return json.dumps({"state": self.pr_states[pr]} if args[5] == "state" else {"body": self.pr_bodies[pr]})
+        if args[:4] == ("gh", "pr", "edit", args[3]) and args[4] == "--body-file":
+            self.pr_bodies[int(args[3])] = Path(args[5]).read_text(encoding="utf-8")
+            self.pr_edits.append(int(args[3]))
+            return ""
         if args[:3] == ("gh", "issue", "edit"):
-            return self._edit(int(args[3]), args[4], args[5])
+            return self._edit(int(args[3]), args[4:])
         if args[:3] == ("gh", "issue", "comment"):
             self._comment(int(args[3]), Path(args[5]).read_text(encoding="utf-8"))
             return ""
@@ -129,13 +137,17 @@ class FakeGh:
             if str(item["body"]).startswith(MARKER):
                 item["body"] = text
 
-    def _edit(self, issue: int, flag: str, value: str) -> str:
-        if flag == "--remove-label":
-            self.removed_labels.append((issue, value))
-            return ""
-        assert flag == "--body-file"
-        self.bodies[issue] = Path(value).read_text(encoding="utf-8")
-        self.edits.append(issue)
+    def _edit(self, issue: int, flags: tuple[str, ...]) -> str:
+        for flag, value in zip(flags[::2], flags[1::2], strict=True):
+            if flag == "--remove-label":
+                self.removed_labels.append((issue, value))
+                self.labels[issue] = [name for name in self.labels.get(issue, []) if name != value]
+            elif flag == "--add-label":
+                self.labels.setdefault(issue, []).append(value)
+            else:
+                assert flag == "--body-file"
+                self.bodies[issue] = Path(value).read_text(encoding="utf-8")
+                self.edits.append(issue)
         return ""
 
     def _create(self, title: str, body: str, flags: tuple[str, ...]) -> str:
@@ -667,23 +679,25 @@ class NextTests:
         [
             pytest.param(
                 [_row("S1")],
-                f"slice=S1\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=0\nclosing_lines=Closes #{EPIC}\n",
+                f"slice=S1\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=0\n"
+                f"closing_lines=Closes #{EPIC}\n",
                 id="only-slice",
             ),
             pytest.param(
                 [_row("S1", status="merged", pr=1215), _row("S2", depends_on=["S1"]), _row("S3")],
-                f"slice=S2\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=1\n"
+                f"slice=S2\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=1\n"
                 f"closing_lines=Part of #{EPIC} (slice S2 of 3)\n",
                 id="middle-slice",
             ),
             pytest.param(
                 [_row("S1", status="merged", pr=1215), _row("S2", status="merged", pr=1216), _row("S3")],
-                f"slice=S3\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=0\nclosing_lines=Closes #{EPIC}\n",
+                f"slice=S3\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=0\n"
+                f"closing_lines=Closes #{EPIC}\n",
                 id="last-slice",
             ),
             pytest.param(
                 [_row("S1", child=1131), _row("S2")],
-                f"slice=S1\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=1\n"
+                f"slice=S1\nissue=1131\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=1\n"
                 f"closing_lines<<WORKPLAN_EOF\nCloses #1131\nPart of #{EPIC} (slice S1 of 2)\nWORKPLAN_EOF\n",
                 id="own-issue",
             ),
@@ -737,7 +751,7 @@ class NextTests:
         assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
 
         assert output.read_text(encoding="utf-8") == (
-            f"slice=S2\nplan_session={PLAN_SESSION}\nplan_revision=3\n{closing}"
+            f"slice=S2\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\n{closing}"
         )
 
     def test_refuses_an_issue_planned_with_v1(
@@ -1358,6 +1372,119 @@ class SplitOutTests:
             "'created, somewhere'; record it as S2's child by hand\n"
         )
         assert fake.patched == []
+
+
+class SizeLabelTests:
+    @pytest.mark.parametrize(
+        ("row", "labels", "issue", "after", "removed"),
+        [
+            pytest.param(
+                _row("S2", size="m"),
+                ["type:epic", "dovo-size-l"],
+                EPIC,
+                ["type:epic", "dovo-size-m"],
+                [(EPIC, "dovo-size-l")],
+                id="worked-on-the-issue",
+            ),
+            pytest.param(_row("S2", size="s", child=1300), [], 1300, ["dovo-size-s"], [], id="own-issue"),
+            pytest.param(_row("S2", size="m"), ["dovo-size-m"], EPIC, ["dovo-size-m"], [], id="already-labelled"),
+        ],
+    )
+    def test_labels_the_issue_the_slice_is_worked_on_with_its_size_alone(
+        self,
+        row: object,
+        labels: list[str],
+        issue: int,
+        after: list[str],
+        removed: list[tuple[int, str]],
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1"), row)})
+        fake.labels[issue] = labels
+
+        assert _main(monkeypatch, fake, "size-label", "--issue", str(EPIC), "--slice", "S2") == 0
+
+        assert (fake.labels[issue], fake.removed_labels) == (after, removed)
+        assert capsys.readouterr() == ("", "")
+
+    def test_a_slice_without_a_size_leaves_the_labels_and_says_so(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1", size=None))})
+        fake.labels[EPIC] = ["dovo-size-l"]
+
+        assert _main(monkeypatch, fake, "size-label", "--issue", str(EPIC), "--slice", "S1") == 0
+
+        assert fake.labels[EPIC] == ["dovo-size-l"]
+        assert capsys.readouterr().err == (
+            f"workplan.py: S1 has no size in the work plan, so #{EPIC} gets no dovo-size-* label; label it by hand\n"
+        )
+
+
+class PrLinksTests:
+    DESCRIPTION = "## Why\nSlices need links.\n\nPart of #925 (slice S2 of 3)\n"
+
+    def _links(self, monkeypatch: pytest.MonkeyPatch, fake: FakeGh, closing: str) -> int:
+        return _main(monkeypatch, fake, "pr-links", "--pr", "1216", "--closing-lines", closing)
+
+    @pytest.mark.parametrize(
+        ("body", "closing", "after"),
+        [
+            pytest.param(
+                DESCRIPTION, "Closes #925", "## Why\nSlices need links.\n\nCloses #925\n", id="last-slice-now"
+            ),
+            pytest.param(
+                "## Why\nSlices need links.\r\nCloses #1131\r\nPart of #925 (slice S2 of 3)\r\n\r\n",
+                "Closes #1131\nPart of #925 (slice S2 of 4)",
+                "## Why\nSlices need links.\n\nCloses #1131\nPart of #925 (slice S2 of 4)\n",
+                id="slice-added",
+            ),
+            pytest.param(
+                "## Why\nSlices need links.\n",
+                "Closes #925",
+                "## Why\nSlices need links.\n\nCloses #925\n",
+                id="missing",
+            ),
+        ],
+    )
+    def test_replaces_closing_lines_that_differ(
+        self, body: str, closing: str, after: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({})
+        fake.pr_bodies[1216] = body
+
+        assert self._links(monkeypatch, fake, closing) == 0
+
+        assert (fake.pr_bodies[1216], fake.pr_edits) == (after, [1216])
+        lines = "; ".join(closing.split("\n"))
+        assert capsys.readouterr() == (f"#1216's description now ends with: {lines}.\n", "")
+
+    def test_leaves_a_description_with_the_same_closing_lines_alone(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({})
+        fake.pr_bodies[1216] = self.DESCRIPTION
+
+        assert self._links(monkeypatch, fake, "Part of #925 (slice S2 of 3)\n") == 0
+
+        assert (fake.pr_bodies[1216], fake.pr_edits) == (self.DESCRIPTION, [])
+        assert capsys.readouterr() == ("#1216's description already ends with its closing lines.\n", "")
+
+    @pytest.mark.parametrize("closing", [pytest.param("", id="empty"), pytest.param("Fixes #925", id="not-closing")])
+    def test_refuses_closing_lines_land_would_not_write(
+        self, closing: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({})
+        fake.pr_bodies[1216] = self.DESCRIPTION
+
+        assert self._links(monkeypatch, fake, closing) == 1
+
+        assert capsys.readouterr().err == (
+            "workplan.py: --closing-lines must be lines such as `Closes #925` or `Part of #925 (slice S2 of 4)`, "
+            f"not {closing!r}\n"
+        )
+        assert fake.pr_edits == []
 
 
 @pytest.mark.parametrize(
