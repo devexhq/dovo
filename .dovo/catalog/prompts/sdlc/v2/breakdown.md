@@ -55,7 +55,7 @@ For each phase number `n` of the slice, write `.agentic/phases/phase-<n>.json` f
 
 - `slice` is the slice id, `phase` is `n`, `title` the phase's heading without `Phase <n>:`, and `depends_on` the earlier phases of the slice whose work this one uses.
 - `intent` explains why the phase exists and how its parts fit together, from the phase section and the plan's approach, so the agent understands the actions rather than only following them.
-- `requirements` quotes every item of `requirements.json` this phase answers, `id` and `text` copied exactly, never paraphrased or cut. An item's `part`, when it has one, is not quoted: the slice answers only that part, and the quote holds only `id` and `text`. An item that several phases answer in part is quoted whole in each of them.
+- `requirements` quotes every item of `requirements.json` this phase answers, `id` and `text` copied exactly, never paraphrased or cut. A quote never copies an item's `part`. An item that several phases answer in part is quoted whole in each of them.
 - `decisions` lists the id of every `plan.json` decision whose `phases` include `n`, and of every decision whose `phases` is `[]` (it applies to every phase), and no other. The agent reads their text from `plan.json`.
 - `traps` holds the plan's traps and edge cases that touch this phase's files, one sentence each.
 - `builds_on` names each symbol from main or an earlier phase that this phase uses, with the path where it lives (for an earlier phase's symbol, the path the plan's Artifact inventory gives it).
