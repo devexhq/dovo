@@ -13,7 +13,7 @@ Output goes to `.agentic/plan-walkthrough.md`. The blueprint shows it at the pla
 
 ## 1. Resolve the input
 
-The plan is `<plan-path>` when given, otherwise `.agentic/plan.md`. If it is missing, stop and say so. Read it in full, every file it links to, and `plan.json` beside it. In slice mode, also read the breakdown: `.agentic/phases/index.json` and every phase file it lists, which are all each phase's code agent reads. When `plan.json`'s `issue` is a number, read that issue with `gh issue view <n> --json number,title,body`. When it is `null`, the plan was written from a plain-language request: work from the plan, its `## Requirements` list and its linked files, and run no issue lookup.
+The plan is `<plan-path>` when given, otherwise `.agentic/plan.md`. If it is missing, stop and say so. Read it in full, every file it links to, and `plan.json` beside it. In slice mode, also read the breakdown: `.agentic/phases/index.json` and every phase file it lists, the only files each phase's code agent reads. When `plan.json`'s `issue` is a number, read that issue with `gh issue view <n> --json number,title,body`. When it is `null`, the plan was written from a plain-language request: work from the plan, its `## Requirements` list and its linked files, and run no issue lookup.
 
 ## 2. Ground "today" in the code
 

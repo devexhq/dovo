@@ -8,7 +8,7 @@ Inputs: `.agentic/plan.md`, `.agentic/plan.json` and `.agentic/requirements.json
 
 - **Never edit `.agentic/plan.md`, `.agentic/plan.json` or `.agentic/requirements.json`**, the issue, `src/`, `tests/` or `docs/`, and never commit or push. Write only `.agentic/phases/phase-<n>.json`.
 - **Add nothing the plan does not say.** Every action, trap and decision comes from the plan as approved. When the plan is silent on something a phase needs, leave it out and say so in your report; never fill the gap with a design of your own.
-- **No code.** A phase file has no `sketch` or `data` field and no code blocks: how to do the work is prose in `intent` and each action's `do`.
+- **No code.** A phase file has no `sketch` or `data` field and no code blocks. It says how to do the work in prose, in `intent` and each action's `do`.
 
 ## 1. Start clean
 

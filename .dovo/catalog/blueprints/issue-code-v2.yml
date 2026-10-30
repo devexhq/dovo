@@ -517,7 +517,7 @@ steps:
       by issue {{ steps.next.outputs.child }}, within the feature contract and slices approved
       when the issue was sliced: explain this slice's phases, and say which "as landed" reports
       of earlier slices shaped them. Explain the breakdown too: the phase files in
-      .agentic/phases/, listed in .agentic/phases/index.json, which are all each phase's code
+      .agentic/phases/, listed in .agentic/phases/index.json, the only files each phase's code
       agent reads.
       Do not change the plan, implement anything, commit or push.
     tools: { allow_all: true }
