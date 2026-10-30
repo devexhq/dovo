@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Checks the slice plan and phase files the issue-code-v2 blueprint's planning steps write, keeps its decisions on the issue, and lists the issue's numbered items.
+"""Checks the plans and phase files the issue-plan-v2 and issue-code-v2 blueprints' planning steps write, keeps their decisions on the issue, and lists the issue's numbered items.
+
+`check-slices` runs after issue-plan-v2 slices an issue. It refuses, naming
+every problem it finds, a plan whose slices leave an outcome of the issue
+(an `outcome` of requirements.json) to no slice, or list it in two slices
+when not every entry for it carries a split marker naming its part, as in
+`O-7 (reply)`. A slice's `outcomes` entry that is neither `O-<n>` nor
+`O-<n> (<part>)` is refused. A plan that passes prints nothing and exits 0.
 
 `check-questions` runs after `fold-answers`, which settles every open question
 as a decision. It refuses a plan whose `open_questions` is not `[]`, or whose
@@ -33,8 +40,8 @@ from it.
 `decisions-comment` runs once the plan is approved. It posts one comment
 listing the plan's decisions to the issue, headed by a
 `<!-- dovo:decisions ... -->` marker naming the slice, the session and
-`body_sha`, the sha256 of the part of the issue's description a person wrote
-(`body_sha` below), as prior-decisions.json recorded it before planning, so
+`body_sha`, the sha256 of the issue's description (`body_sha` below), as
+prior-decisions.json recorded it before planning, so
 the comment names the description the plan was written against. The comment
 is dated with the latest decision's date. Then it hides, as outdated, each
 earlier dovo:decisions comment of another session that is not hidden and whose
@@ -121,7 +128,7 @@ MARKER_RE = re.compile(
 BODY_SHA = re.compile(r"[0-9a-f]{64}")
 BULLET_RE = re.compile(r"- \*\*(?P<id>D-\d+)\*\* (?P<text>.+)")
 REPLACES_RE = re.compile(r"Replaces (?P<id>D-\d+) \(session (?P<session>[^\s()]+)\)\.$")
-GENERATED_SECTIONS = frozenset({"## Feature contract", "## Work plan"})
+OUTCOME_ENTRY = re.compile(r"(?P<id>O-\d+)(?P<part> \([^()]+\))?")
 SETTLED_LABELS = {"assumed_accepted": "Assumed answer, accepted", "planner": "Planner, approved with the plan"}
 MINIMIZE = "mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { clientMutationId } }"
 
@@ -240,6 +247,59 @@ def check_questions(path: Path, slice_id: str | None) -> None:
     if stray:
         listed = ", ".join(str(n) for n in numbers)
         raise PlanError(f"{path}: {'; '.join(stray)}, which slice {slice_id} does not have; its phases are {listed}.")
+
+
+# --- the slices ----------------------------------------------------------------
+
+
+def _slice_entries(raw: object, position: int, path: Path) -> list[tuple[str, str, bool]]:
+    """Return a plan.json slice's outcomes as (outcome id, slice id, whether the entry names a part).
+
+    Raises:
+        PlanError: The slice is not a JSON object, or an entry is neither `O-<n>` nor `O-<n> (<part>)`.
+    """
+    if not isinstance(raw, dict):
+        raise PlanError(f"{path}: slice {position} is not a JSON object.")
+    slice_id = str(raw.get("id") or position)
+    outcomes = raw.get("outcomes")
+    entries: list[tuple[str, str, bool]] = []
+    for entry in outcomes if isinstance(outcomes, list) else []:
+        match = OUTCOME_ENTRY.fullmatch(str(entry))
+        if match is None:
+            raise PlanError(f"{path}: slice {slice_id} lists outcome {entry!r}, which is not O-<n> or O-<n> (<part>).")
+        entries.append((match["id"], slice_id, match["part"] is not None))
+    return entries
+
+
+def _outcome_problem(outcome: str, entries: list[tuple[str, str, bool]]) -> str | None:
+    """Return why outcome is not delivered once: no slice lists it, or two do without a split marker on each."""
+    owners = [(slice_id, split) for ident, slice_id, split in entries if ident == outcome]
+    if not owners:
+        return f"{outcome} belongs to no slice."
+    listed = list(dict.fromkeys(slice_id for slice_id, _ in owners))
+    if len(listed) > 1 and not all(split for _, split in owners):
+        return f"{outcome} belongs to {', '.join(listed)} without a split marker on each, as in {outcome} (reply)."
+    return None
+
+
+def _outcome_problems(outcomes: list[str], entries: list[tuple[str, str, bool]]) -> list[str]:
+    """Return one sentence per outcome the slices do not deliver once."""
+    return [problem for outcome in outcomes if (problem := _outcome_problem(outcome, entries)) is not None]
+
+
+def check_slices(path: Path, requirements_path: Path) -> None:
+    """Refuse the plan at path unless every outcome requirements.json lists belongs to one slice, or to parts of several.
+
+    Raises:
+        PlanError: An outcome belongs to no slice or to two without a split marker, or a slice or an outcomes
+            entry is malformed.
+    """
+    outcomes = [item.id for item in load_requirements(requirements_path) if item.kind == "outcome"]
+    raw_slices = enumerate(_list(load_plan(path), "slices", path), start=1)
+    entries = [entry for position, raw in raw_slices for entry in _slice_entries(raw, position, path)]
+    problems = _outcome_problems(outcomes, entries)
+    if problems:
+        raise PlanError(f"{path}'s slices do not deliver each outcome of the issue once: {' '.join(problems)}")
 
 
 # --- the phase breakdown ---------------------------------------------------------
@@ -568,22 +628,14 @@ def check_breakdown(plan_path: Path, plan_md: Path, requirements_path: Path, fol
 
 
 def body_sha(body: str) -> str:
-    """Return the sha256 hex of the part of an issue's description a person wrote.
+    """Return the sha256 hex of an issue's description, which only a person writes.
 
-    Line endings become LF, each `## Feature contract` and `## Work plan` section
-    (from its heading to the next `## ` heading outside a fenced code block, or
-    the end) is cut, every line loses its trailing whitespace, and the text loses
-    its leading and trailing newlines, so a work plan rewrite or a stray space
-    never marks a decision stale.
+    Line endings become LF, every line loses its trailing whitespace, and the
+    text loses its leading and trailing newlines, so a stray space never marks a
+    decision stale.
     """
-    kept: list[str] = []
-    cutting = False
-    for line, role in _fence_roles(body.replace("\r\n", "\n").replace("\r", "\n").split("\n")):
-        if role == "text" and line.startswith("## "):
-            cutting = line.rstrip() in GENERATED_SECTIONS
-        if not cutting:
-            kept.append(line.rstrip())
-    return hashlib.sha256("\n".join(kept).strip("\n").encode("utf-8")).hexdigest()
+    lines = body.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    return hashlib.sha256("\n".join(line.rstrip() for line in lines).strip("\n").encode("utf-8")).hexdigest()
 
 
 def _sentence(text: str) -> str:
@@ -883,9 +935,12 @@ def requirements(issue: int, out: Path) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser for the check-questions, check-breakdown, decisions-comment, prior-decisions and requirements subcommands."""
+    """Return the parser for the check-slices, check-questions, check-breakdown, decisions-comment, prior-decisions and requirements subcommands."""
     parser = argparse.ArgumentParser(description="Check the slice plan in .agentic/plan.json and keep its decisions.")
     commands = parser.add_subparsers(dest="command", required=True)
+    slices = commands.add_parser("check-slices", help="Refuse slices that leave out an outcome or deliver it twice.")
+    slices.add_argument("--plan", type=Path, default=PLAN_JSON, help="The plan.json whose slices to check.")
+    slices.add_argument("--requirements", type=Path, default=REQUIREMENTS_JSON, help="The issue's requirements.json.")
     check = commands.add_parser("check-questions", help="Refuse a plan with an open question or a malformed decision.")
     check.add_argument("--plan", type=Path, default=PLAN_JSON, help="The plan.json to check.")
     check.add_argument("--slice", help="The slice whose phases every decision's phases must belong to.")
@@ -914,7 +969,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def dispatch(args: argparse.Namespace) -> None:
     """Run the subcommand args names."""
-    if args.command == "check-questions":
+    if args.command == "check-slices":
+        check_slices(args.plan, args.requirements)
+    elif args.command == "check-questions":
         check_questions(args.plan, args.slice)
     elif args.command == "check-breakdown":
         check_breakdown(args.plan, args.plan_md, args.requirements, args.phases, args.slice)
