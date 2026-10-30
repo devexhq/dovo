@@ -173,7 +173,7 @@ Say `APPROVE` only with zero Blocking findings.
 
 With `--post` and a PR scope, run `uv run python scripts/publish_review.py --pr <n>`. It posts this round's findings as one pull request review: each finding goes inline on its line or line range of the diff, with its severity, a suggested fix and a prompt for an AI agent, or in the review body's outside-diff block. It never replies on or resolves a review thread, and it reuses the review on the reviewed commit only when that review is identical to this post. It then posts or edits this PR's one dovo-review comment, which holds `review.md` without its finding sections. It refuses when the PR head is not the reviewed commit. Never `gh pr review --approve` or `--request-changes`. A blueprint's `post-review` step adds `--session <id>`, which stamps a `Dovo session:` header line naming the run whose state `pr-fix` restores. A post without `--session` rewrites the header without that line, so the next `pr-fix` run stops until a blueprint posts again.
 
-On `CHANGES REQUIRED`, hand off to `/issue-code review`, then re-run this skill as round n+1. **Cap at 3 rounds**; at the cap, list the id of every unresolved finding, comma-separated on one line and never as a table, under a `### Residual` heading and in `review.json` under `residual`, for the human.
+On `CHANGES REQUIRED`, hand off to `/issue-code review`, then re-run this prompt as round n+1. **Cap at 3 rounds**; at the cap, list the id of every unresolved finding, comma-separated on one line and never as a table, under a `### Residual` heading and in `review.json` under `residual`, for the human.
 
 ## 9. Emit the machine-readable verdict
 

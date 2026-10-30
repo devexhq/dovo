@@ -1,7 +1,7 @@
 # pr-prep
 
 Turn the current uncommitted diff into three drafted text files, and nothing
-else: this skill never runs `scripts/pr.py` itself. The script commits,
+else: this prompt never runs `scripts/pr.py` itself. The script commits,
 pushes, and opens a PR, and a human decides to run it after reviewing the
 drafts.
 
@@ -33,7 +33,7 @@ mkdir -p .agentic
   changed and why. No file-by-file listing.
 - **`.agentic/pr-title`**: a single line in the commit title's
   imperative, semantic style. It can match the commit title exactly.
-- **`.agentic/pr-description`**: the three-section, intent-focused format below.
+- **`.agentic/pr-description`**: the intent-focused format below: a Why section, an Approach section and a closing `Fixes` line.
 
   ```markdown
   ## Why
@@ -66,7 +66,7 @@ Tell the user the drafts are ready and that running
 uv run python scripts/pr.py
 ```
 
-is theirs to do, not this skill's. Mention what it will do when they run it:
+is theirs to do, not this prompt's. Mention what it will do when they run it:
 stage the uncommitted changes, commit with `.agentic/commit-msg`, create a
 feature branch first if `HEAD` is still on the default branch, push, and then
 create a new PR from `.agentic/pr-title` and `.agentic/pr-description` or
@@ -82,11 +82,11 @@ breath. Stop after the drafts and let them invoke it.
 ## Hard boundaries
 
 - **Never run `scripts/pr.py` yourself, and never hand-run `git commit` /
-  `git push` / `gh pr create` either.** This skill's output is three drafted
+  `git push` / `gh pr create` either.** This prompt's output is three drafted
   files. Committing, pushing, and opening the PR is a human
-  action taken outside this skill.
+  action taken outside this prompt.
 - **Never run tests or tooling** (`dovo run tests`, `dovo run quality`, `ruff`,
-  `ty`). This skill packages what's already there; it doesn't gate it.
+  `ty`). This prompt packages what's already there; it doesn't gate it.
 - **Never edit code** while drafting. If the diff looks wrong or mixes
   unrelated concerns, say so and ask before drafting, since this repo
   requires one fix or feature per PR.

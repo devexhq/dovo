@@ -1,6 +1,6 @@
-# dovo-plan-walkthrough
+# plan-walkthrough
 
-Explain a plan written by `/dovo-plan` to the human who approves it. The plan is written for the coding and review agents: it is long, cites code by `path:line` and is organised by phase and requirement. The walkthrough is written for a person: it is short, organised by what a Dovo user sees, and ends with the consequences the person should weigh before approving.
+Explain a plan written by `issue-plan` to the human who approves it. The plan is written for the coding and review agents: it is long, cites code by `path:line` and is organised by phase and requirement. The walkthrough is written for a person: it is short, organised by what a Dovo user sees, and ends with the consequences the person should weigh before approving.
 
 Output goes to `.agentic/plan-walkthrough.md`. The blueprint shows it at the plan approval prompt, which cuts a file at 200 lines, so the whole walkthrough must fit in 200 lines; aim for about 100.
 
