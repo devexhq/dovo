@@ -67,6 +67,8 @@ dovo config set worktree.base_ref main
 dovo config set worktree.base_ref '"12345"'
 ```
 
+On failure, `dovo config set` exits with code 1, leaves `.dovo/config.json` unchanged and reports an `error_code` with `--format json`: the code [`dovo config show`](#dovo-config-show) reports when `.dovo/config.json` is missing or broken, `CONFIG_SCHEMA_INVALID` when the new value fails schema validation, `CONFIG_TYPE_CONFLICT` when the key crosses a value that is not an object, `CONFIG_KEY_PATH_INVALID` when the key is empty or has an empty segment, and `CONFIG_WRITE_FAILED` when the file cannot be written. When the file cannot be read or written, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record, prints a `Details logged: <path> (event <event_id>)` line after the panel, and lists the record in `diagnostics` with `--format json`. A successful run reports `error_code` `null`.
+
 #### `environment.sensitive_variables`
 
 Names of environment variables whose values Dovo masks as `[REDACTED:<NAME>]` in step output, `diff.patch`, `dovo session` commands, with no minimum length. The config stores names only; values are read at masking time from the process environment, a step's `env:` or the repository `.env`. A listed name that is unset or blank is ignored.
@@ -100,6 +102,8 @@ dovo config unset agents
 ```
 
 Removing a key that is already absent is a no-op and exits successfully without writing to disk. Removing the last key of a provider block leaves an empty block (`"copilot": {}`) under `agents`.
+
+On failure, `dovo config unset` exits with code 1, leaves `.dovo/config.json` unchanged and reports the same `error_code`, `Details logged:` line and `diagnostics` entry as [`dovo config set`](#dovo-config-set), with `CONFIG_SCHEMA_INVALID` when the file would fail schema validation without the key.
 
 ### `dovo config validate`
 

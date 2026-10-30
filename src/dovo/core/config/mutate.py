@@ -10,6 +10,9 @@ from typing import Any
 
 from pydantic import JsonValue
 
+from dovo.common.diagnostic_log import DiagnosticLevel, error_diagnostics, record_exception
+from dovo.common.error_codes import ErrorCode
+from dovo.common.exceptions import FailureFields
 from dovo.common.filesystem import Filesystem
 from dovo.common.models import BaseResult, Remediation
 from dovo.common.schema_validation import CONFIG_VALIDATOR
@@ -79,6 +82,15 @@ class ConfigUnsetResult(BaseResult):
         return self.status == ConfigUnsetStatus.OK
 
 
+def _key_path_error(verb: str, dot_path: str) -> str | None:
+    """Return the message for an empty ``dot_path`` or one with an empty segment, or ``None`` when it is well formed."""
+    if not dot_path or not dot_path.strip():
+        return f"Cannot {verb} '': config key path must be a non-empty dot path."
+    if any(key == "" for key in dot_path.split(".")):
+        return f"Cannot {verb} '{dot_path}': config key path contains an empty segment."
+    return None
+
+
 def set_nested_value(config_dict: dict[str, Any], dot_path: str, value: object) -> None:
     """Set ``value`` at ``dot_path`` inside ``config_dict`` (in place).
 
@@ -88,12 +100,11 @@ def set_nested_value(config_dict: dict[str, Any], dot_path: str, value: object) 
     Raises:
         ValueError: Empty/invalid path or scalar-vs-dict type collision.
     """
-    if not dot_path or not dot_path.strip():
-        raise ValueError("Cannot set '': config key path must be a non-empty dot path.")
+    message = _key_path_error("set", dot_path)
+    if message is not None:
+        raise ValueError(message)
 
     keys = dot_path.split(".")
-    if any(key == "" for key in keys):
-        raise ValueError(f"Cannot set '{dot_path}': config key path contains an empty segment.")
 
     current: dict[str, Any] = config_dict
     for i, key in enumerate(keys[:-1]):
@@ -122,12 +133,11 @@ def unset_nested_value(config_dict: dict[str, Any], dot_path: str) -> bool:
     Raises:
         ValueError: Empty/invalid path or scalar-vs-dict type collision.
     """
-    if not dot_path or not dot_path.strip():
-        raise ValueError("Cannot unset '': config key path must be a non-empty dot path.")
+    message = _key_path_error("unset", dot_path)
+    if message is not None:
+        raise ValueError(message)
 
     keys = dot_path.split(".")
-    if any(key == "" for key in keys):
-        raise ValueError(f"Cannot unset '{dot_path}': config key path contains an empty segment.")
 
     current: dict[str, Any] = config_dict
     for i, key in enumerate(keys[:-1]):
@@ -160,6 +170,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
     if path.exists() and path.is_dir():
         return ConfigSetResult(
             status=ConfigSetStatus.PATH_IS_DIRECTORY,
+            error_code=ErrorCode.CONFIG_PATH_INVALID,
             config_path=path,
             key=key,
             errors=[f"Config path is a directory, not a file: '{path}'."],
@@ -169,6 +180,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
     if not path.exists():
         return ConfigSetResult(
             status=ConfigSetStatus.NOT_FOUND,
+            error_code=ErrorCode.CONFIG_NOT_FOUND,
             config_path=path,
             key=key,
             errors=[f"Configuration file not found at '{path}'."],
@@ -178,12 +190,17 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
+        record = record_exception(
+            exc, level=DiagnosticLevel.ERROR, operation="config.read", context={"path": str(path)}
+        )
         return ConfigSetResult(
             status=ConfigSetStatus.UNREADABLE,
+            error_code=ErrorCode.CONFIG_UNREADABLE,
             config_path=path,
             key=key,
             errors=[f"Unable to read config.json at '{path}': {exc}."],
             remediations=[Remediation(message="Check file permissions and that the path is readable")],
+            diagnostics=error_diagnostics(record),
         )
 
     try:
@@ -194,6 +211,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
             detail = f"{exc.msg} at {detail}"
         return ConfigSetResult(
             status=ConfigSetStatus.MALFORMED_JSON,
+            error_code=ErrorCode.CONFIG_JSON_INVALID,
             config_path=path,
             key=key,
             errors=[f"Malformed config.json at '{path}': {detail}."],
@@ -203,6 +221,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
     if not isinstance(data, dict):
         return ConfigSetResult(
             status=ConfigSetStatus.ROOT_NOT_OBJECT,
+            error_code=ErrorCode.CONFIG_ROOT_INVALID,
             config_path=path,
             key=key,
             errors=[f"Malformed config.json at '{path}': root must be an object."],
@@ -223,6 +242,7 @@ def _validate_mutated_config(
     if schema_errors:
         return ConfigSetResult(
             status=ConfigSetStatus.SCHEMA_INVALID,
+            error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
             config_path=path,
             key=key,
             value=value,
@@ -248,6 +268,7 @@ def _validate_mutated_config(
     except Exception as exc:
         return ConfigSetResult(
             status=ConfigSetStatus.SCHEMA_INVALID,
+            error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
             config_path=path,
             key=key,
             value=value,
@@ -268,6 +289,23 @@ def _validate_mutated_config(
             ],
         )
 
+    return None
+
+
+def _write_config(path: Path, payload: dict[str, JsonValue]) -> FailureFields | None:
+    """Write ``payload`` to ``path`` atomically, or record the ``OSError`` and return its failure fields."""
+    try:
+        Filesystem.atomic_write_json(path, payload)
+    except OSError as exc:
+        record = record_exception(
+            exc, level=DiagnosticLevel.ERROR, operation="config.write", context={"path": str(path)}
+        )
+        return FailureFields(
+            error_code=ErrorCode.CONFIG_WRITE_FAILED,
+            errors=[f"Unable to write config.json at '{path}': {exc}."],
+            remediations=[Remediation(message="Check file permissions and free disk space")],
+            diagnostics=error_diagnostics(record),
+        )
     return None
 
 
@@ -294,38 +332,38 @@ def set_config_value_result(
         return loaded
 
     parsed_value = parse_config_value(raw_value)
+    path_error = _key_path_error("set", key)
+    if path_error is not None:
+        return ConfigSetResult(
+            status=ConfigSetStatus.INVALID_PATH,
+            error_code=ErrorCode.CONFIG_KEY_PATH_INVALID,
+            config_path=config_path,
+            key=key,
+            value=parsed_value,
+            errors=[path_error],
+        )
+
     updated = copy.deepcopy(loaded)
     try:
         set_nested_value(updated, key, parsed_value)
     except ValueError as exc:
-        message = str(exc)
-        status = (
-            ConfigSetStatus.TYPE_COLLISION
-            if "already defined as a scalar value" in message
-            else ConfigSetStatus.INVALID_PATH
-        )
         return ConfigSetResult(
-            status=status,
+            status=ConfigSetStatus.TYPE_COLLISION,
+            error_code=ErrorCode.CONFIG_TYPE_CONFLICT,
             config_path=config_path,
             key=key,
             value=parsed_value,
-            errors=[message],
+            errors=[str(exc)],
         )
 
     schema_error = _validate_mutated_config(updated, config_path, key, value=parsed_value)
     if schema_error is not None:
         return schema_error
 
-    try:
-        Filesystem.atomic_write_json(config_path, updated)
-    except OSError as exc:
+    write_failure = _write_config(config_path, updated)
+    if write_failure is not None:
         return ConfigSetResult(
-            status=ConfigSetStatus.WRITE_FAILED,
-            config_path=config_path,
-            key=key,
-            value=parsed_value,
-            errors=[f"Unable to write config.json at '{config_path}': {exc}."],
-            remediations=[Remediation(message="Check file permissions and free disk space")],
+            status=ConfigSetStatus.WRITE_FAILED, config_path=config_path, key=key, value=parsed_value, **write_failure
         )
 
     clear_config_cache(config_path)
@@ -360,29 +398,37 @@ def unset_config_value_result(
     if isinstance(loaded, ConfigSetResult):
         return ConfigUnsetResult(
             status=ConfigUnsetStatus(loaded.status.value),
+            error_code=loaded.error_code,
             config_path=config_path,
             key=key,
             existed=False,
             errors=loaded.errors,
             remediations=list(loaded.remediations),
+            diagnostics=list(loaded.diagnostics),
+        )
+
+    path_error = _key_path_error("unset", key)
+    if path_error is not None:
+        return ConfigUnsetResult(
+            status=ConfigUnsetStatus.INVALID_PATH,
+            error_code=ErrorCode.CONFIG_KEY_PATH_INVALID,
+            config_path=config_path,
+            key=key,
+            existed=False,
+            errors=[path_error],
         )
 
     updated = copy.deepcopy(loaded)
     try:
         existed = unset_nested_value(updated, key)
     except ValueError as exc:
-        message = str(exc)
-        status = (
-            ConfigUnsetStatus.TYPE_COLLISION
-            if "already defined as a scalar value" in message
-            else ConfigUnsetStatus.INVALID_PATH
-        )
         return ConfigUnsetResult(
-            status=status,
+            status=ConfigUnsetStatus.TYPE_COLLISION,
+            error_code=ErrorCode.CONFIG_TYPE_CONFLICT,
             config_path=config_path,
             key=key,
             existed=False,
-            errors=[message],
+            errors=[str(exc)],
         )
 
     if not existed:
@@ -399,25 +445,25 @@ def unset_config_value_result(
     if schema_error is not None:
         return ConfigUnsetResult(
             status=ConfigUnsetStatus(schema_error.status.value),
+            error_code=schema_error.error_code,
             config_path=config_path,
             key=key,
             existed=True,
             previous_value=previous_value,
             errors=schema_error.errors,
             remediations=schema_error.remediations,
+            diagnostics=list(schema_error.diagnostics),
         )
 
-    try:
-        Filesystem.atomic_write_json(config_path, updated)
-    except OSError as exc:
+    write_failure = _write_config(config_path, updated)
+    if write_failure is not None:
         return ConfigUnsetResult(
             status=ConfigUnsetStatus.WRITE_FAILED,
             config_path=config_path,
             key=key,
             existed=True,
             previous_value=previous_value,
-            errors=[f"Unable to write config.json at '{config_path}': {exc}."],
-            remediations=[Remediation(message="Check file permissions and free disk space")],
+            **write_failure,
         )
 
     clear_config_cache(config_path)
