@@ -591,8 +591,9 @@ steps:
       - steps.verify.status == "completed"
     on_max_iterations: prompt_user
     do:
-      # Fails, and stops the run before code, when the slice has no phases or
-      # the progress record is unreadable or for another slice.
+      # Fails, and stops the run before code, when the slice has no phases, the
+      # progress record is unreadable or for another slice, or the next phase is
+      # not in .agentic/phases/index.json or has no phase file.
       - id: phase
         name: Pick the next unfinished phase
         run: uv run --quiet python .dovo/catalog/scripts/sdlc/v2/code_progress.py next --slice {{ steps.next.outputs.slice }}
@@ -605,8 +606,8 @@ steps:
           Follow .dovo/catalog/prompts/sdlc/v2/issue-code.md in the mode `/issue-code --slice {{ steps.next.outputs.slice }} --phase {{ steps.phase.outputs.phase }}`.
           Implement {{ steps.phase.outputs.phase_file }}, phase {{ steps.phase.outputs.phase }} of slice
           {{ steps.next.outputs.slice }} for issue ${{ inputs.issue }}; its child issue is
-          {{ steps.next.outputs.child }}. Open .agentic/plan.md only by section (`grep -n '^## '`,
-          then a ranged read), and only when the phase file points you there. Earlier phases are
+          {{ steps.next.outputs.child }}. Open a section of .agentic/plan.md only when an action's `do`
+          or a `tests` item names it (`grep -n '^## '`, then a ranged read). Earlier phases are
           already committed. Do not commit, stage or push.
           Instructions from the approver: {{ steps.approve-plan.outputs.comment }}
           Uncommitted changes outside .agentic/ and .dovo/run are an earlier attempt at this

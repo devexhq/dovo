@@ -17,11 +17,18 @@ no phase of it; a phase that depends on a phase that is not an earlier one of
 the slice; a quoted requirement requirements.json does not list, or whose text
 differs from it; a requirement of requirements.json no action cites; a phase
 missing a plan.json decision whose `phases` include it, or that names no phase
-and so applies to every phase, or listing one that applies to neither; and a
-phase whose `binding` is not an exact copy of the code blocks under `### Code`
-in plan.md's `## Phase <n>` section, or whose `owned_elsewhere` is not a copy
-of plan.md's `## Owned elsewhere` list. A breakdown that passes prints
-nothing, exits 0 and has .agentic/phases/index.json written from it.
+and so applies to every phase, or listing one that applies to neither, or one
+plan.json does not have; and a phase whose `binding` is not an exact copy of
+the code blocks under `### Code` in plan.md's `## Phase <n>` section, whose
+`departures` and `tests` are not copies of the list items under that section's
+`### Decisions` and `### Tests`, or whose `owned_elsewhere` is not a copy of
+plan.md's `## Owned elsewhere` list. Quotes and list items are compared with
+every run of whitespace as one space. A list item is a top-level one, starting
+at column 0 with `- `, `* `, `+ ` or `<n>. `, and runs until the next, a blank
+line or a heading. Code fences follow CommonMark. A refusal about a quote, the
+binding or a copied list shows the text expected, JSON-encoded. A breakdown
+that passes prints nothing, exits 0 and has .agentic/phases/index.json written
+from it.
 
 `decisions-comment` runs once the plan is approved. It posts one comment
 listing the plan's decisions to the issue, headed by a
@@ -62,7 +69,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -84,9 +91,11 @@ PHASES_DIR = Path(".agentic/phases")
 PHASE_NAME = re.compile(r"phase-(?P<phase>[1-9]\d*)\.json")
 PHASE_HEADING = re.compile(r"## Phase (?P<phase>\d+)\b")
 CODE_HEADING = "### Code"
+DECISIONS_HEADING = "### Decisions"
+TESTS_HEADING = "### Tests"
 OWNED_ELSEWHERE = "## Owned elsewhere"
-# `id` captures the list marker, so _list_items can read a plain bulleted list; only the text is kept.
-BULLET_ITEM = re.compile(r"(?P<id>[-*]) (?P<text>.+)")
+TOP_ITEM = re.compile(r"(?:[-*+]|\d+\.) (?P<text>.*)")
+ATX_HEADING = re.compile(r"#{1,6}(?:[ \t]|$)")
 PRIOR_JSON = Path(".agentic/prior-decisions.json")
 REQUIREMENTS_JSON = Path(".agentic/requirements.json")
 OUTCOMES = "## Outcomes"
@@ -98,7 +107,7 @@ LEGACY_HEADING = re.compile(r"### (?P<id>N?FR-\d+)\b:?[ \t]*(?P<text>.*)")
 LEGACY_KINDS = {"FR": "functional", "NFR": "non_functional"}
 ERROR_CASES = "## Error cases to handle"
 ERROR_CASE = re.compile(r"(?P<id>\d+)\. (?P<text>.+)")
-FENCES = ("```", "~~~")
+FENCE_OPEN = re.compile(r" {0,3}(?P<fence>`{3,}|~{3,})")
 MARKER = "<!-- dovo:decisions schema_version=1 slice={slice} session={session} body_sha={body_sha} -->"
 MARKER_RE = re.compile(
     r"<!-- dovo:decisions schema_version=1 slice=(?P<slice>\S+) session=(?P<session>\S+)"
@@ -311,15 +320,21 @@ def _file_problems(numbers: list[int], phases: dict[int, Phase], slice_id: str) 
 
 
 def _quote_problems(phases: dict[int, Phase], required: list[Requirement]) -> list[str]:
-    """Return a line for each quoted requirement requirements.json does not list or words differently."""
+    """Return a line for each quoted requirement requirements.json does not list or words differently.
+
+    Quotes are compared with every run of whitespace as one space.
+    """
     texts = {requirement.id: requirement.text for requirement in required}
     problems: list[str] = []
     for n, phase in phases.items():
         for quote in phase.requirements:
             if quote.id not in texts:
                 problems.append(f"phase-{n}.json quotes {quote.id}, which requirements.json does not list.")
-            elif quote.text != texts[quote.id]:
-                problems.append(f"phase-{n}.json quotes {quote.id} in words that differ from requirements.json.")
+            elif _words(quote.text) != _words(texts[quote.id]):
+                problems.append(
+                    f"phase-{n}.json quotes {quote.id} in words that differ from requirements.json, "
+                    f"which has {json.dumps(texts[quote.id])}."
+                )
     return problems
 
 
@@ -335,23 +350,34 @@ def _decision_problems(phases: dict[int, Phase], decisions: list[Decision]) -> l
 
     A decision applies to the phases its `phases` name, and to every phase when it names none.
     """
+    known = {decision.id for decision in decisions}
     every = [decision.id for decision in decisions if not decision.phases]
     problems: list[str] = []
     for n, phase in phases.items():
         named = [decision.id for decision in decisions if n in decision.phases]
         problems.extend(_phase_decision_problems(n, phase, named, every))
+        problems.extend(_listed_decision_problems(n, phase, {*named, *every}, known))
     return problems
 
 
 def _phase_decision_problems(n: int, phase: Phase, named: list[str], every: list[str]) -> list[str]:
-    """Return phase n's lines for missing decisions that name it or name no phase, and for listed ones that do neither."""
+    """Return phase n's lines for missing decisions that name it or that name no phase."""
     problems: list[str] = []
     if missing := [ident for ident in named if ident not in phase.decisions]:
         problems.append(f"phase-{n}.json lacks {', '.join(missing)}, whose phases in plan.json include {n}.")
     if missing := [ident for ident in every if ident not in phase.decisions]:
         problems.append(f"phase-{n}.json lacks {', '.join(missing)}; a decision with no phases applies to every phase.")
-    if extra := [ident for ident in phase.decisions if ident not in named and ident not in every]:
-        problems.append(f"phase-{n}.json lists {', '.join(extra)}, whose phases in plan.json do not include {n}.")
+    return problems
+
+
+def _listed_decision_problems(n: int, phase: Phase, applying: set[str], known: set[str]) -> list[str]:
+    """Return phase n's lines for the decisions it lists outside applying: ones plan.json has, then ones it lacks."""
+    listed = [ident for ident in phase.decisions if ident not in applying]
+    problems: list[str] = []
+    if other := [ident for ident in listed if ident in known]:
+        problems.append(f"phase-{n}.json lists {', '.join(other)}, whose phases in plan.json do not include {n}.")
+    if unknown := [ident for ident in listed if ident not in known]:
+        problems.append(f"phase-{n}.json lists {', '.join(unknown)}, which plan.json does not have.")
     return problems
 
 
@@ -373,35 +399,69 @@ def _dependency_problems(numbers: list[int], phases: dict[int, Phase], slice_id:
 
 
 def _code_blocks(lines: list[str]) -> list[str]:
-    """Return the text inside each fenced code block in lines, without its fences."""
+    """Return the text inside each closed fenced code block in lines, without its fences."""
     blocks: list[str] = []
-    current: list[str] | None = None
-    for line in lines:
-        if line.lstrip().startswith(FENCES):
-            if current is None:
-                current = []
-            else:
-                blocks.append("\n".join(current))
-                current = None
-        elif current is not None:
+    current: list[str] = []
+    for line, role in _fence_roles(lines):
+        if role == "open":
+            current = []
+        elif role == "close":
+            blocks.append("\n".join(current))
+        elif role == "code":
             current.append(line)
     return blocks
 
 
-def _phase_code(lines: list[tuple[str, bool]]) -> list[str]:
-    """Return the code blocks under a `## Phase <n>` section's `### Code` subsection."""
-    code: list[str] = []
-    inside = False
+def _top_items(lines: list[tuple[str, bool]]) -> list[str]:
+    """Return the text of each top-level list item in lines, its lines joined with one space.
+
+    A top-level item starts at column 0 with `- `, `* `, `+ ` or `<n>. ` and runs
+    until the next one, a blank line or a heading, taking in its unindented
+    (lazy) continuation lines and its nested items.
+    """
+    items: list[list[str]] = []
+    current: list[str] | None = None
+    for line, markup in lines:
+        match = TOP_ITEM.fullmatch(line) if markup else None
+        if match is not None:
+            current = [match["text"]]
+            items.append(current)
+        elif _ends_item(line, markup):
+            current = None
+        elif current is not None:
+            current.append(line.strip())
+    return [" ".join(parts) for parts in items]
+
+
+def _ends_item(line: str, markup: bool) -> bool:
+    """Return whether line ends the list item before it: a blank line or a heading."""
+    return not line.strip() or (markup and ATX_HEADING.match(line) is not None)
+
+
+def _subsections(lines: list[tuple[str, bool]]) -> dict[str, list[tuple[str, bool]]]:
+    """Return a section's lines under each of its `### ` headings, by heading."""
+    found: dict[str, list[tuple[str, bool]]] = {}
+    current: list[tuple[str, bool]] | None = None
     for line, markup in lines:
         if markup and line.startswith("### "):
-            inside = line == CODE_HEADING
-        elif inside:
-            code.append(line)
-    return _code_blocks(code)
+            current = found.setdefault(line, [])
+        elif current is not None:
+            current.append((line, markup))
+    return found
 
 
-def plan_bindings(path: Path) -> tuple[dict[int, list[str]], list[str]]:
-    """Return plan.md's code blocks under each phase's `### Code`, by phase number, and its Owned elsewhere items.
+@dataclass(frozen=True)
+class PlanCopies:
+    """What phase files copy from plan.md: each phase section's code blocks, departures and test lines, and the Owned elsewhere items."""
+
+    code: dict[int, list[str]]
+    departures: dict[int, list[str]]
+    tests: dict[int, list[str]]
+    owned: list[str]
+
+
+def plan_copies(path: Path) -> PlanCopies:
+    """Return what plan.md's `## Phase <n>` sections and `## Owned elsewhere` list hold for the phase files to copy.
 
     Raises:
         PlanError: plan.md cannot be read.
@@ -410,14 +470,17 @@ def plan_bindings(path: Path) -> tuple[dict[int, list[str]], list[str]]:
         text = path.read_text(encoding="utf-8")
     except OSError as error:
         raise PlanError(f"{path} cannot be read: {error}.") from error
-    code: dict[int, list[str]] = {}
-    owned: list[str] = []
+    copies = PlanCopies(code={}, departures={}, tests={}, owned=[])
     for heading, lines in _sections(_lines(text)):
         if match := PHASE_HEADING.match(heading):
-            code[int(match["phase"])] = _phase_code(lines)
+            n = int(match["phase"])
+            parts = _subsections(lines)
+            copies.code[n] = _code_blocks([line for line, _ in parts.get(CODE_HEADING, [])])
+            copies.departures[n] = _top_items(parts.get(DECISIONS_HEADING, []))
+            copies.tests[n] = _top_items(parts.get(TESTS_HEADING, []))
         elif heading == OWNED_ELSEWHERE:
-            owned = [item for _, item in _list_items(lines, BULLET_ITEM)]
-    return code, owned
+            copies.owned.extend(_top_items(lines))
+    return copies
 
 
 def _block(text: str) -> str:
@@ -426,31 +489,45 @@ def _block(text: str) -> str:
 
 
 def _words(text: str) -> str:
-    """Return text with every run of whitespace as one space, as an Owned elsewhere item is compared."""
+    """Return text with every run of whitespace as one space, as a quote or a copied list item is compared."""
     return " ".join(text.split())
 
 
-def _binding_problems(phases: dict[int, Phase], code: dict[int, list[str]]) -> list[str]:
-    """Return a line for each phase whose binding is not an exact copy of its plan.md section's code blocks."""
+def _binding_problem(n: int, binding: tuple[str, ...], code: list[str]) -> list[str]:
+    """Return a line when phase n's binding is not an exact copy of its plan.md section's code blocks."""
+    expected = [_block(block) for block in code]
+    if [_block(block) for block in binding] == expected:
+        return []
+    return [
+        f"phase-{n}.json's binding does not copy, exactly and in order, the {len(expected)} code block(s) "
+        f"under {CODE_HEADING} in plan.md's ## Phase {n}, which are {json.dumps(expected)}."
+    ]
+
+
+def _items_problem(n: int, field: str, copied: tuple[str, ...], items: list[str], where: str) -> list[str]:
+    """Return a line when phase n's field is not a copy of the plan.md list items found where."""
+    expected = [_words(item) for item in items]
+    if [_words(item) for item in copied] == expected:
+        return []
+    return [
+        f"phase-{n}.json's {field} does not copy the {len(expected)} item(s) {where}, which are {json.dumps(expected)}."
+    ]
+
+
+def _copy_problems(phases: dict[int, Phase], copies: PlanCopies) -> list[str]:
+    """Return a line for each phase whose binding, departures, tests or owned_elsewhere is not a copy of plan.md's."""
     problems: list[str] = []
     for n, phase in phases.items():
-        expected = [_block(block) for block in code.get(n, [])]
-        if [_block(block) for block in phase.binding] != expected:
-            problems.append(
-                f"phase-{n}.json's binding does not copy, exactly and in order, the {len(expected)} code block(s) "
-                f"under {CODE_HEADING} in plan.md's ## Phase {n}."
-            )
+        section = f"in plan.md's ## Phase {n}"
+        problems += _binding_problem(n, phase.binding, copies.code.get(n, []))
+        problems += _items_problem(
+            n, "departures", phase.departures, copies.departures.get(n, []), f"under {DECISIONS_HEADING} {section}"
+        )
+        problems += _items_problem(n, "tests", phase.tests, copies.tests.get(n, []), f"under {TESTS_HEADING} {section}")
+        problems += _items_problem(
+            n, "owned_elsewhere", phase.owned_elsewhere, copies.owned, f"of plan.md's {OWNED_ELSEWHERE}"
+        )
     return problems
-
-
-def _owned_problems(phases: dict[int, Phase], owned: list[str]) -> list[str]:
-    """Return a line for each phase whose owned_elsewhere is not a copy of plan.md's Owned elsewhere list."""
-    expected = [_words(item) for item in owned]
-    return [
-        f"phase-{n}.json's owned_elsewhere does not copy the {len(owned)} item(s) of plan.md's {OWNED_ELSEWHERE}."
-        for n, phase in phases.items()
-        if [_words(item) for item in phase.owned_elsewhere] != expected
-    ]
 
 
 def check_breakdown(plan_path: Path, plan_md: Path, requirements_path: Path, folder: Path, slice_id: str) -> None:
@@ -462,7 +539,7 @@ def check_breakdown(plan_path: Path, plan_md: Path, requirements_path: Path, fol
     plan = load_plan(plan_path)
     numbers = slice_phases(plan, slice_id, plan_path)
     decisions = load_decisions(plan, plan_path)
-    code, owned = plan_bindings(plan_md)
+    copies = plan_copies(plan_md)
     required = load_requirements(requirements_path)
     phases = load_phases(folder, slice_id)
     problems = [
@@ -471,8 +548,7 @@ def check_breakdown(plan_path: Path, plan_md: Path, requirements_path: Path, fol
         *_quote_problems(phases, required),
         *_coverage_problems(phases, required),
         *_decision_problems(phases, decisions),
-        *_binding_problems(phases, code),
-        *_owned_problems(phases, owned),
+        *_copy_problems(phases, copies),
     ]
     if problems:
         raise PlanError(f"{folder} does not break down slice {slice_id}: {' '.join(problems)}")
@@ -650,20 +726,37 @@ def prior_decisions(issue: int, out: Path) -> None:
 # --- requirements.json -----------------------------------------------------------
 
 
+def _fence_roles(lines: list[str]) -> Iterator[tuple[str, str]]:
+    """Yield each line with its role: `open` or `close` for a code fence, `code` inside a fenced block, else `text`.
+
+    Fences follow CommonMark: a block opens on a line indented at most 3 spaces
+    that starts with 3 or more backticks or tildes, and closes only on a line of
+    the same character, at least as long, indented at most 3 spaces and with
+    nothing after it but whitespace. A block left open runs to the end of lines.
+    """
+    closing: re.Pattern[str] | None = None
+    for line in lines:
+        if closing is None:
+            opening = FENCE_OPEN.match(line)
+            if opening is not None:
+                fence = opening["fence"]
+                closing = re.compile(rf" {{0,3}}{re.escape(fence[0])}{{{len(fence)},}}[ \t]*")
+            yield line, "text" if opening is None else "open"
+        elif closing.fullmatch(line):
+            closing = None
+            yield line, "close"
+        else:
+            yield line, "code"
+
+
 def _lines(body: str) -> list[tuple[str, bool]]:
     """Return body's lines without trailing whitespace, each paired with whether it is markup.
 
     A line is markup when it is outside a fenced code block and is not a fence
     itself, so a heading or a list item quoted in a code block is never read.
     """
-    lines: list[tuple[str, bool]] = []
-    fenced = False
-    for line in body.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        fence = line.lstrip().startswith(FENCES)
-        lines.append((line.rstrip(), not fenced and not fence))
-        if fence:
-            fenced = not fenced
-    return lines
+    split = body.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    return [(line.rstrip(), role == "text") for line, role in _fence_roles(split)]
 
 
 def _sections(lines: list[tuple[str, bool]]) -> list[tuple[str, list[tuple[str, bool]]]]:

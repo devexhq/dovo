@@ -31,9 +31,10 @@ plan.json decisions whose `phases` include n, and each of its `actions` is one
 obligation (`code`, `test`, `delete` or `doc`) on a `path[::symbol]` target,
 citing the ids of the quoted requirements it answers. Its `binding` copies,
 exactly, the code blocks under `### Code` in the plan's `## Phase <n>`
-section, the new surface the plan makes binding, and its `owned_elsewhere`
-copies the plan's `## Owned elsewhere` list; both may be empty. A phase has no
-other field. `plan.py check-breakdown` writes .agentic/phases/index.json from the
+section, the new surface the plan makes binding. Its `departures` and `tests`
+copy the list items under that section's `### Decisions` and `### Tests`, and
+its `owned_elsewhere` copies the plan's `## Owned elsewhere` list; each may be
+empty. A phase has no other field. `plan.py check-breakdown` writes .agentic/phases/index.json from the
 phases it passes: per phase, its file, title, dependencies, requirement and
 decision ids, and action targets.
 """
@@ -69,6 +70,8 @@ PHASE_FIELDS = frozenset(
         "traps",
         "builds_on",
         "binding",
+        "departures",
+        "tests",
         "owned_elsewhere",
         "actions",
         "not_this_phase",
@@ -432,6 +435,8 @@ class Phase:
     traps: tuple[str, ...]
     builds_on: tuple[BuildsOn, ...]
     binding: tuple[str, ...]
+    departures: tuple[str, ...]
+    tests: tuple[str, ...]
     owned_elsewhere: tuple[str, ...]
     actions: tuple[Action, ...]
     not_this_phase: tuple[str, ...]
@@ -460,6 +465,8 @@ class Phase:
             traps=_texts(doc, "traps", owner),
             builds_on=tuple(BuildsOn.from_json(item, owner) for item in _objects(doc, "builds_on", owner)),
             binding=_texts(doc, "binding", owner),
+            departures=_texts(doc, "departures", owner),
+            tests=_texts(doc, "tests", owner),
             owned_elsewhere=_texts(doc, "owned_elsewhere", owner),
             actions=tuple(Action.from_json(item, number, owner) for item in _objects(doc, "actions", owner)),
             not_this_phase=_texts(doc, "not_this_phase", owner),

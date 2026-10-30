@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
@@ -31,14 +32,22 @@ PROGRESS = _load_script()
 
 @pytest.fixture
 def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Return a working directory whose .agentic/plan.json gives slice S3 the phases 1, 2 and 3, each with a phase file."""
+    """Return a working directory whose .agentic/plan.json gives slice S3 the phases 1, 2 and 3, each with a phase file in the index."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("DOVO_OUTPUT", raising=False)
     (tmp_path / ".agentic" / "phases").mkdir(parents=True)
     _write_plan(tmp_path, [1, 2, 3])
     for phase in (1, 2, 3):
         (tmp_path / ".agentic" / "phases" / f"phase-{phase}.json").write_text("{}", encoding="utf-8")
+    _write_index(tmp_path, [1, 2, 3])
     return tmp_path
+
+
+def _write_index(root: Path, phases: list[int]) -> None:
+    """Write an index.json for slice S3 listing phases, as a passing check-breakdown would."""
+    entries = [{"phase": phase, "file": f".agentic/phases/phase-{phase}.json"} for phase in phases]
+    index = {"schema_version": 1, "slice": "S3", "phases": entries}
+    (root / ".agentic" / "phases" / "index.json").write_text(json.dumps(index), encoding="utf-8")
 
 
 def _write_plan(root: Path, phases: list[int]) -> None:
@@ -117,6 +126,38 @@ class CodeProgressNextTests:
         assert captured.out == ""
         assert captured.err == (
             "code_progress.py: .agentic/phases/phase-2.json is missing; check-breakdown must pass before phase 2 is coded.\n"
+        )
+        assert not output.exists()
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            pytest.param(lambda root: (root / ".agentic/phases/index.json").unlink(), id="no-index"),
+            pytest.param(lambda root: _write_index(root, [1, 3]), id="phase-not-indexed"),
+            pytest.param(
+                lambda root: (root / ".agentic/phases/index.json").write_text("not json", encoding="utf-8"),
+                id="index-not-json",
+            ),
+        ],
+    )
+    def test_next_refuses_a_phase_the_index_does_not_list(
+        self,
+        change: Callable[[Path], None],
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        output = workspace / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        _write_progress(workspace, json.dumps({"slice": "S3", "done": [1]}))
+        change(workspace)
+
+        assert _main(monkeypatch, "next", "--slice", "S3") == 1
+
+        assert capsys.readouterr() == (
+            "",
+            "code_progress.py: .agentic/phases/index.json does not list phase 2; "
+            "check-breakdown must pass before phase 2 is coded.\n",
         )
         assert not output.exists()
 

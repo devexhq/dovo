@@ -10,8 +10,10 @@ breakdown wrote for it, and how many of the slice's other phases remain, as
 phase is done) and `remaining`: written as
 `key=value` lines to `$DOVO_OUTPUT` for later steps' templates, and printed as
 one JSON object on stdout for a loop's `until`. `next` refuses when the phase
-it names has no phase file, so the code loop stops rather than record a phase
-no agent could implement. `check` refuses a phase the slice does not have, and
+it names is not listed in .agentic/phases/index.json, which only a passing
+`plan.py check-breakdown` writes, or has no phase file, so the code loop stops
+rather than code a phase from unchecked files or record one no agent could
+implement. `check` refuses a phase the slice does not have, and
 `record` adds a committed phase to `done`. Every refusal is one line on stderr
 and exit code 1.
 """
@@ -27,6 +29,7 @@ from pathlib import Path
 PLAN_JSON = Path(".agentic/plan.json")
 PROGRESS_JSON = Path(".agentic/code-progress.json")
 PHASE_FILE = ".agentic/phases/phase-{phase}.json"
+PHASE_INDEX = Path(".agentic/phases/index.json")
 ALL_DONE = "done"
 
 
@@ -96,16 +99,30 @@ def done_phases(slice_id: str) -> list[int]:
     return [p for p in _list(record["done"]) if isinstance(p, int)]
 
 
+def _indexed(phase: int) -> bool:
+    """Return whether index.json lists phase, counting an unreadable or absent index as listing none."""
+    try:
+        index = _load_json(PHASE_INDEX)
+    except (OSError, ValueError):
+        return False
+    entries = index.get("phases") if isinstance(index, dict) else None
+    return any(isinstance(entry, dict) and entry.get("phase") == phase for entry in _list(entries))
+
+
 def next_phase(slice_id: str) -> dict[str, object]:
     """Return the first phase of the slice not yet done, or `done`, its phase file and how many others remain.
 
     Raises:
-        ProgressError: The phase not yet done has no phase file.
+        ProgressError: The phase not yet done is not in index.json or has no phase file.
     """
     done = set(done_phases(slice_id))
     pending = [p for p in slice_phases(slice_id) if p not in done]
     if not pending:
         return {"phase": ALL_DONE, "phase_file": "", "remaining": 0}
+    if not _indexed(pending[0]):
+        raise ProgressError(
+            f"{PHASE_INDEX} does not list phase {pending[0]}; check-breakdown must pass before phase {pending[0]} is coded."
+        )
     phase_file = PHASE_FILE.format(phase=pending[0])
     if not Path(phase_file).is_file():
         raise ProgressError(f"{phase_file} is missing; check-breakdown must pass before phase {pending[0]} is coded.")
