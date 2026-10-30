@@ -2,7 +2,7 @@
 
 Decide whether an existing issue is ready to plan, against `origin/main` as it is now. An issue records what a person decided, in the short format of [templates/issue.md](templates/issue.md), and planning grounds it in the code just in time. So the check is light. It asks whether the person's intent still holds on `main`, never whether the description matches the code.
 
-The check never edits the issue, its labels or its comments. It writes its verdict to `.agentic/`, and the blueprint applies it after a person approves; run by hand, report the verdict and ask before applying anything. The description is the person's, so no finding proposes a change to the title or the body. A legacy issue, written before the short format, is rewritten to it before the check, by the rewrite mode of [issue-write.md](issue-write.md#rewrite-a-legacy-issue) and with a person's approval; the blueprints run that rewrite first, so the check reads only short issues.
+The check never edits the issue, its labels or its comments. It writes its verdict to `.agentic/`, and the blueprint applies it after a person approves; run by hand, report the verdict and ask before applying anything. The description is the person's, so no finding proposes a change to the title or the body. The blueprints rewrite a legacy issue, one written before the short format, with the rewrite mode of [issue-write.md](issue-write.md#rewrite-a-legacy-issue) and a person's approval before they run the check, so the check reads only short issues.
 
 ## 1. Read
 

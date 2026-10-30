@@ -2,7 +2,7 @@
 
 Turn a person's description of a change into a GitHub issue in the short format of [templates/issue.md](templates/issue.md). The issue records what the person decided; planning grounds it in the code later, so ground only enough to name dependencies and to catch work that has already shipped.
 
-In rewrite mode, the input is instead an existing issue written before the short format, one with no `## Outcomes` section, and the output is a draft of its description in that format for a person to approve: follow [Rewrite a legacy issue](#rewrite-a-legacy-issue) below rather than steps 1 to 4.
+In rewrite mode, the input is an existing issue written before the short format, one with no `## Outcomes` section, and the output is a draft of its description in that format for a person to approve: follow [Rewrite a legacy issue](#rewrite-a-legacy-issue) below rather than steps 1 to 4.
 
 ## 1. Read the request
 
