@@ -412,29 +412,29 @@ steps:
         label_field: summary
       comment: { policy: optional, message: "Your answers, one per selected question (e.g. OQ-1: show them)" }
 
+  # Always runs its fold, ticked or not: every open question leaves as a
+  # decision, settled by the human's answer or by the plan's assumed one.
   - id: fold-answers
-    name: Fold the answers into the slice's plan
+    name: Settle the slice plan's open questions as decisions
     type: agent
     prompt: |
-      Open questions answered: {{ steps.answer-questions.outputs.selected }}
-      Answers: {{ steps.answer-questions.outputs.comment }}
-
-      If the list is empty, change nothing and report that you did nothing.
-      Otherwise update .agentic/plan.md and .agentic/plan.json:
-        - For each answered question, rewrite the plan against the human's answer, move the
-          question from Open questions into Decisions as answered by the human, and remove it
-          from open_questions in .agentic/plan.json.
-        - Keep .agentic/plan.json in the shape the issue-plan prompt defines for slice mode
-          (`.dovo/catalog/prompts/sdlc/v2/issue-plan.md`), and in agreement with .agentic/plan.md. Never
-          change its contract or slices other than slice {{ steps.next.outputs.slice }}'s phases:
-          an answer that departs from the contract is planned as a named departure in this
-          slice's phases, and the slice's report amends the contract when the slice lands.
-      Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
+      Follow .dovo/catalog/prompts/sdlc/v2/fold-answers.md.
+      Open questions the human ticked: {{ steps.answer-questions.outputs.selected }}
+      The human's answers: {{ steps.answer-questions.outputs.comment }}
+      The plan phases slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, tracked
+      by child issue {{ steps.next.outputs.child }}.
     tools: { allow_all: true }
     timeout_seconds: 1800
     artifacts:
       - { name: plan, path: .agentic/plan.md }
       - { name: plan-questions, path: .agentic/plan.json }
+
+  # Stops the run before the walkthrough when fold-answers left a question
+  # open or wrote a malformed decision; the message names which.
+  - id: check-questions
+    name: Check that every open question is settled
+    run: uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py check-questions --plan .agentic/plan.json
+    timeout_seconds: 120
 
   # Written after every answer is folded in, so it explains the plan being
   # approved. The approval prompt shows it rather than the plan, which is cut

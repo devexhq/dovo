@@ -151,6 +151,17 @@ Write `.agentic/plan.json` alongside the markdown. `.dovo/catalog/blueprints/fea
       "phases": [1]
     }
   ],
+  "decisions": [
+    {
+      "id": "D-1",
+      "was": null,
+      "decision": "The list reuses `dovo worktree list`'s empty-state line rather than the issue's wording.",
+      "settled_by": "planner",
+      "rejected": ["The issue's \"No sessions.\" line."],
+      "phases": [2],
+      "date": "2026-10-29"
+    }
+  ],
   "contract": null,
   "slices": [
     {
@@ -175,12 +186,13 @@ Write `.agentic/plan.json` alongside the markdown. `.dovo/catalog/blueprints/fea
 - `issue` is the issue number, or `null` when planning from a plain-language request. `grounded_at` is the short sha from the plan's "Grounded against" line. `phases` is the number of rows in the Phases table.
 - `open_questions` lists every numbered Open Question in order, each with the `OQ-<n>` id from `plan.md`. `summary` is the one-line question followed by ` (assumed: <short answer>)`, since it is the only text the blueprint's pick-list shows for the question; `assumed` is the full answer the plan is written against, `why` the reason with its `path:line`, `alternatives` the rejected answers (`[]` when none), and `phases` the phase numbers whose plan changes if the answer changes.
 - `open_questions` is `[]` when the plan says "None." On an epic, each item may add `"blocks": ["S3"]`, the slices it blocks.
+- `decisions` lists every choice the plan is written against that the issue does not make, `[]` when there is none. The planner writes one per departure in a phase's `### Decisions` section, with `settled_by` `"planner"` (the human approves it with the plan) and `was` `null`; the blueprint's `fold-answers` step later settles each open question as a decision with `settled_by` `"human"` (adding `answer`, the human's words) or `"assumed_accepted"`, and `was` the question's id. `id` is `D-<n>`, continuing after the highest decision id the issue already has; `decision` is one sentence stating the choice; `rejected` the alternatives not taken (`[]` when none); `phases` the phase numbers it shapes; `date` the day it was settled, as `YYYY-MM-DD`. Name the decision's id in its `### Decisions` bullet.
 - `contract` is `null` on a plain issue. On an epic it is exactly the `contract` object in [contract-template.md](templates/contract-template.md) under "`plan.json` shape", agreeing with the plan's `## Feature contract`. A section left out of the markdown keeps its key, as `[]` (or `null` for `inventory`).
 - `slices` lists every slice in dependency order, one per row of the plan's `## Slices` table. `id` is `S<n>`, unless the issue's body already holds a hand-maintained `## Work plan` table (one without a `dovo:workplan` comment): then every row of that table keeps its id (such as `A1`) on the slice it becomes, since the work plan script adopts the table by id, carrying each row's child and status, and refuses a row no slice matches; `phases` the phase numbers it lands; `depends_on` slice ids; `blocked_by` prerequisite issue numbers outside the epic; `child` the child issue number, or `null` until it is created; `owns` the surfaces and aspects the slice owns in the ownership table; `lint_gates` the `tests/lint/` checks it lands; `estimate` the `src_docs` and `tests` changed-line estimates with their `basis`; `size` the slice's review size, `s`, `m` or `l` (Step 3a), which the work plan stores so `workplan.py next` can label the child; `stub` the child issue's markdown body when `child` is `null`, otherwise `null`.
 - On an epic, exactly one slice has `pilot: true` and only the last has `closing_docs: true`. A plain issue's one slice has both `false`, `child` equal to `issue`, `size` matching the issue's `dovo-size-*` label and `stub` `null`.
-- These fields only add to the shape above: `issue`, `plan`, `grounded_at`, `phases` and `open_questions` keep their meaning.
+- These fields only add to the shape above: `issue`, `plan`, `grounded_at`, `phases`, `open_questions` and `decisions` keep their meaning.
 - **Issue mode** writes no phases: `phases` is `0`, every slice's `phases` is `[]`, and each open question's `phases` is `[]`, with `blocks` naming the slices whose scope changes if the answer changes.
-- **Slice mode** keeps `issue`, `contract` and `slices` exactly as in `.agentic/epic-plan.json`, except that this slice's `phases` lists the phase numbers of this plan's Phases table and every other slice's `phases` is `[]`. `grounded_at`, `phases` and `open_questions` are this slice's own: `open_questions` lists only the questions this plan raises. The epic's open questions belong to the epic plan and stay listed on the epic's body, open with their assumed answers, until a slice's report settles one by adding a `contract.decisions` entry with the question's id, or the epic is re-sliced.
+- **Slice mode** keeps `issue`, `contract` and `slices` exactly as in `.agentic/epic-plan.json`, except that this slice's `phases` lists the phase numbers of this plan's Phases table and every other slice's `phases` is `[]`. `grounded_at`, `phases`, `open_questions` and `decisions` are this slice's own: `open_questions` lists only the questions this plan raises, and `decisions` only this plan's, replacing any an earlier slice left in `.agentic/epic-plan.json`. The epic's open questions belong to the epic plan and stay listed on the epic's body, open with their assumed answers, until a slice's report settles one by adding a `contract.decisions` entry with the question's id, or the epic is re-sliced.
 
 ## 6. Hand off
 
