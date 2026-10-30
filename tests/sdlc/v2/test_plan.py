@@ -544,3 +544,205 @@ class PlanPriorDecisionsTests:
             "plan.py: command failed: gh issue view 1300 --json body,comments: HTTP 502\n",
         )
         assert not (workspace / ".agentic" / "prior-decisions.json").exists()
+
+
+SHORT_BODY = """Slice S1 of #1173.
+
+## Why
+Git becomes the only store of worktree state, so the table only receives writes nobody reads.
+
+## Depends on
+- #1174: nothing reads the table after it; if planning finds a reader, stop and raise it.
+
+## Outcomes
+- **O-1** A fresh `dovo init` database has no worktrees table.
+- **O-2** `dovo worktree create` and `dovo worktree delete` work without the table
+  and never recreate it.
+
+```markdown
+- **O-9** A quoted example, never an outcome.
+```
+
+## Decisions
+- **D-1** Downgrading recreates the table empty; rows are not rebuilt from Git. Accepted.
+- **O-3** An outcome under Decisions is not read.
+
+## Out of scope
+- **D-2** A decision outside Decisions is not read.
+
+## Done when
+O-1 and O-2 hold.
+"""
+LEGACY_BODY = """## Goal / User Story
+
+**As a** user, **I want** the table dropped, **so that** Git is the only store.
+
+## Functional requirements
+
+### FR-1: Drop the table
+A fresh database has no `worktrees` table.
+
+```text
+### FR-9: quoted, never a requirement
+```
+
+### FR-2: Commands work without it
+
+## Non-functional requirements
+
+### NFR-1: Reversible
+The migration has a downgrade.
+
+## Error cases to handle
+
+1. A database already without the table → the upgrade is a no-op,
+   exit 0.
+2. A locked database → `LockTimeoutError` propagates.
+
+## Definition of done
+
+1. Not an error case.
+"""
+
+
+def _requirements(monkeypatch: pytest.MonkeyPatch, fake: FakeGh, *argv: str) -> int:
+    """Run plan.py requirements for issue 1300 against fake."""
+    return _run(monkeypatch, fake, "requirements", "--issue", "1300", *argv)
+
+
+def _written(workspace: Path, name: str = "requirements.json") -> dict[str, object]:
+    """Return the parsed .agentic/<name>."""
+    written = json.loads((workspace / ".agentic" / name).read_text(encoding="utf-8"))
+    assert isinstance(written, dict)
+    return written
+
+
+class PlanRequirementsTests:
+    def test_requirements_lists_a_short_issues_outcomes_and_decisions(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh(SHORT_BODY, [])
+
+        assert _requirements(monkeypatch, fake, "--out", ".agentic/req.json") == 0
+
+        assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body")]
+        assert _written(workspace, "req.json") == {
+            "schema_version": 1,
+            "issue": 1300,
+            "format": "short",
+            "requirements": [
+                {"id": "O-1", "kind": "outcome", "text": "A fresh `dovo init` database has no worktrees table."},
+                {
+                    "id": "O-2",
+                    "kind": "outcome",
+                    "text": "`dovo worktree create` and `dovo worktree delete` work without the table and never "
+                    "recreate it.",
+                },
+                {
+                    "id": "D-1",
+                    "kind": "decision",
+                    "text": "Downgrading recreates the table empty; rows are not rebuilt from Git. Accepted.",
+                },
+            ],
+        }
+        assert capsys.readouterr() == ("", "")
+
+    def test_requirements_lists_a_legacy_issues_requirements_and_error_cases(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh(LEGACY_BODY.replace("\n", "\r\n"), [])
+
+        assert _requirements(monkeypatch, fake) == 0
+
+        assert _written(workspace) == {
+            "schema_version": 1,
+            "issue": 1300,
+            "format": "legacy",
+            "requirements": [
+                {
+                    "id": "FR-1",
+                    "kind": "functional",
+                    "text": "Drop the table\n\nA fresh database has no `worktrees` table.\n\n"
+                    "```text\n### FR-9: quoted, never a requirement\n```",
+                },
+                {"id": "FR-2", "kind": "functional", "text": "Commands work without it"},
+                {"id": "NFR-1", "kind": "non_functional", "text": "Reversible\n\nThe migration has a downgrade."},
+                {
+                    "id": "EC-1",
+                    "kind": "error_case",
+                    "text": "A database already without the table → the upgrade is a no-op, exit 0.",
+                },
+                {"id": "EC-2", "kind": "error_case", "text": "A locked database → `LockTimeoutError` propagates."},
+            ],
+        }
+        assert capsys.readouterr() == ("", "")
+
+    def test_requirements_reads_the_issue_templates_skeleton_as_a_short_issue(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        template = (REPO_ROOT / ".dovo/catalog/prompts/sdlc/v2/templates/issue.md").read_text(encoding="utf-8")
+        skeleton = template.split("```markdown\n", 1)[1].split("\n```", 1)[0]
+        fake = FakeGh(skeleton, [])
+
+        assert _requirements(monkeypatch, fake) == 0
+
+        written = _written(workspace)
+        assert written["format"] == "short"
+        assert written["requirements"] == [
+            {
+                "id": "O-1",
+                "kind": "outcome",
+                "text": "<Behaviour a user or caller can observe once the issue is done: what they run, see or get.>",
+            },
+            {"id": "D-1", "kind": "decision", "text": "<A trade-off a person settled, and what it costs. Accepted.>"},
+        ]
+
+    @pytest.mark.parametrize(
+        ("body", "ident"),
+        [
+            pytest.param(SHORT_BODY.replace("- **O-1**", "- **O-2**"), "O-2", id="outcome"),
+            pytest.param(LEGACY_BODY.replace("### NFR-1", "### FR-2"), "FR-2", id="functional"),
+            pytest.param(LEGACY_BODY.replace("2. A locked", "1. A locked"), "EC-1", id="error-case"),
+        ],
+    )
+    def test_requirements_refuses_an_id_numbered_twice(
+        self,
+        body: str,
+        ident: str,
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        fake = FakeGh(body, [])
+
+        assert _requirements(monkeypatch, fake) == 1
+
+        assert capsys.readouterr() == ("", f"plan.py: Issue 1300 numbers {ident} twice; give each item its own id.\n")
+        assert not (workspace / ".agentic" / "requirements.json").exists()
+
+    @pytest.mark.parametrize(
+        ("body", "issue_format"),
+        [
+            pytest.param("## Why\nNo outcomes yet.\n\n## Outcomes\n- O-1 without bold.\n", "short", id="short"),
+            pytest.param("## Goal / User Story\n\nJust a goal.\n", "legacy", id="legacy"),
+            pytest.param("", "legacy", id="empty"),
+        ],
+    )
+    def test_requirements_writes_an_empty_list_when_nothing_is_numbered(
+        self, body: str, issue_format: str, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = FakeGh(body, [])
+
+        assert _requirements(monkeypatch, fake) == 0
+
+        assert _written(workspace) == {"schema_version": 1, "issue": 1300, "format": issue_format, "requirements": []}
+
+    def test_requirements_refuses_when_gh_fails(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh(SHORT_BODY, [], frozenset({"view"}))
+
+        assert _requirements(monkeypatch, fake) == 1
+
+        assert capsys.readouterr() == ("", "plan.py: command failed: gh issue view 1300 --json body: HTTP 502\n")
+        assert not (workspace / ".agentic" / "requirements.json").exists()
