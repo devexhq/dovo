@@ -22,6 +22,21 @@ description has an `## Outcomes` section, whose items are outcomes (`O-<n>`)
 and whose `## Decisions` items are decisions (`D-<n>`), and `legacy` otherwise,
 whose items are functional and non-functional requirements (`FR-<n>`,
 `NFR-<n>`) and numbered error cases (`EC-<n>`).
+
+A phase is the document .agentic/phases/phase-<n>.json, which the breakdown
+step writes from the approved plan's `## Phase <n>` section: the one file the
+code loop's agent for phase n implements. Its `requirements` quote entries of
+requirements.json with their exact text, its `decisions` are the ids of the
+plan.json decisions whose `phases` include n, and each of its `actions` is one
+obligation (`code`, `test`, `delete` or `doc`) on a `path[::symbol]` target,
+citing the ids of the quoted requirements it answers. Its `binding` copies,
+exactly, the code blocks under `### Code` in the plan's `## Phase <n>`
+section, the new surface the plan makes binding. Its `departures` and `tests`
+copy the list items under that section's `### Decisions` and `### Tests`, and
+its `owned_elsewhere` copies the plan's `## Owned elsewhere` list; each may be
+empty. A phase has no other field. `plan.py check-breakdown` writes .agentic/phases/index.json from the
+phases it passes: per phase, its file, title, dependencies, requirement and
+decision ids, and action targets.
 """
 
 from __future__ import annotations
@@ -38,6 +53,31 @@ ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 SESSION_ID = re.compile(r"[^\s()]+")
 PRIOR_SCHEMA_VERSION = 1
 REQUIREMENTS_SCHEMA_VERSION = 1
+PHASE_SCHEMA_VERSION = 1
+INDEX_SCHEMA_VERSION = 1
+ACTION_KINDS = ("code", "test", "delete", "doc")
+ACTION_ID = re.compile(r"(?P<phase>\d+)\.\d+")
+PHASE_FIELDS = frozenset(
+    {
+        "schema_version",
+        "slice",
+        "phase",
+        "title",
+        "depends_on",
+        "intent",
+        "requirements",
+        "decisions",
+        "traps",
+        "builds_on",
+        "binding",
+        "departures",
+        "tests",
+        "owned_elsewhere",
+        "actions",
+        "not_this_phase",
+    }
+)
+ACTION_FIELDS = frozenset({"id", "kind", "target", "do", "requirements"})
 
 
 class FormatError(ValueError):
@@ -241,6 +281,18 @@ class Requirement:
         """Return the entry as requirements.json's requirements holds it."""
         return {"id": self.id, "kind": self.kind, "text": self.text}
 
+    @classmethod
+    def from_json(cls, raw: object, position: int) -> Requirement:
+        """Return the requirement raw describes; position (from 1) names it while it has no id.
+
+        Raises:
+            FormatError: raw is not a JSON object with an id, a kind and a text.
+        """
+        if not isinstance(raw, dict):
+            raise FormatError(f"Requirement {position} is not a JSON object.")
+        owner = f"Requirement {position}"
+        return cls(id=_text(raw, "id", owner), kind=_text(raw, "kind", owner), text=_text(raw, "text", owner))
+
 
 def requirements_json(issue: int, issue_format: str, requirements: list[Requirement]) -> dict[str, object]:
     """Return the requirements.json document listing issue's numbered items, in the description's order."""
@@ -250,3 +302,207 @@ def requirements_json(issue: int, issue_format: str, requirements: list[Requirem
         "format": issue_format,
         "requirements": [requirement.to_json() for requirement in requirements],
     }
+
+
+def _object(raw: object, owner: str, allowed: frozenset[str]) -> dict[str, object]:
+    """Return raw when it is a JSON object holding only fields in allowed.
+
+    Raises:
+        FormatError: raw is not a JSON object, or holds a field outside allowed.
+    """
+    if not isinstance(raw, dict):
+        raise FormatError(f"{owner} is not a JSON object.")
+    unknown = sorted(str(key) for key in raw if key not in allowed)
+    if unknown:
+        raise FormatError(f"{owner} has unknown field {', '.join(unknown)}.")
+    return raw
+
+
+def _objects(raw: dict[str, object], key: str, owner: str) -> list[object]:
+    """Return raw[key] when it is a list.
+
+    Raises:
+        FormatError: raw[key] is missing or not a list.
+    """
+    value = raw.get(key)
+    if not isinstance(value, list):
+        raise FormatError(f"{owner} has no {key} list.")
+    return value
+
+
+@dataclass(frozen=True)
+class Quote:
+    """A requirement a phase answers: its id and its text, quoted exactly from requirements.json."""
+
+    id: str
+    text: str
+
+    @classmethod
+    def from_json(cls, raw: object, owner: str) -> Quote:
+        """Return the quote raw describes.
+
+        Raises:
+            FormatError: raw is not an object with exactly an id and a text.
+        """
+        named = f"{owner} requirement"
+        quote = _object(raw, named, frozenset({"id", "text"}))
+        return cls(id=_text(quote, "id", named), text=_text(quote, "text", named))
+
+
+@dataclass(frozen=True)
+class BuildsOn:
+    """A symbol main or an earlier phase already holds that a phase uses, with the path it lives at."""
+
+    symbol: str
+    path: str
+
+    @classmethod
+    def from_json(cls, raw: object, owner: str) -> BuildsOn:
+        """Return the entry raw describes.
+
+        Raises:
+            FormatError: raw is not an object with exactly a symbol and a path.
+        """
+        named = f"{owner} builds_on entry"
+        entry = _object(raw, named, frozenset({"symbol", "path"}))
+        return cls(symbol=_text(entry, "symbol", named), path=_text(entry, "path", named))
+
+
+@dataclass(frozen=True)
+class Action:
+    """One obligation of a phase: what to do to which target, and the requirements it answers."""
+
+    id: str
+    kind: str
+    target: str
+    do: str
+    requirements: tuple[str, ...]
+
+    @classmethod
+    def from_json(cls, raw: object, phase: int, owner: str) -> Action:
+        """Return the action raw describes, whose id must be `<phase>.<k>`.
+
+        Raises:
+            FormatError: raw is not a well-formed action of phase; the message names the action and the field.
+        """
+        action = _object(raw, f"{owner} action", ACTION_FIELDS)
+        ident = action.get("id")
+        match = ACTION_ID.fullmatch(ident) if isinstance(ident, str) else None
+        if match is None or int(match["phase"]) != phase:
+            raise FormatError(f"{owner} has action id {ident!r}; it must be {phase}.<k>.")
+        named = f"{owner} action {ident}"
+        kind = action.get("kind")
+        if kind not in ACTION_KINDS:
+            raise FormatError(f"{named} has kind {kind!r}; it must be one of {', '.join(ACTION_KINDS)}.")
+        return cls(
+            id=str(ident),
+            kind=str(kind),
+            target=_text(action, "target", named),
+            do=_text(action, "do", named),
+            requirements=_texts(action, "requirements", named),
+        )
+
+
+def _decision_ids(raw: dict[str, object], owner: str) -> tuple[str, ...]:
+    """Return raw's decisions when it is a list of D-<n> ids.
+
+    Raises:
+        FormatError: decisions is missing or holds anything but D-<n> ids.
+    """
+    ids = _texts(raw, "decisions", owner)
+    wrong = [ident for ident in ids if not DECISION_ID.fullmatch(ident)]
+    if wrong:
+        raise FormatError(f"{owner} has decisions {', '.join(wrong)}; each must be a D-<n> id from plan.json.")
+    return ids
+
+
+def _twice(ids: list[str]) -> list[str]:
+    """Return the ids that appear more than once in ids, sorted."""
+    return sorted({ident for ident in ids if ids.count(ident) > 1})
+
+
+@dataclass(frozen=True)
+class Phase:
+    """One phase of a slice, as the code loop's agent for that phase reads it."""
+
+    slice: str
+    phase: int
+    title: str
+    depends_on: tuple[int, ...]
+    intent: str
+    requirements: tuple[Quote, ...]
+    decisions: tuple[str, ...]
+    traps: tuple[str, ...]
+    builds_on: tuple[BuildsOn, ...]
+    binding: tuple[str, ...]
+    departures: tuple[str, ...]
+    tests: tuple[str, ...]
+    owned_elsewhere: tuple[str, ...]
+    actions: tuple[Action, ...]
+    not_this_phase: tuple[str, ...]
+
+    @classmethod
+    def from_json(cls, raw: object, owner: str) -> Phase:
+        """Return the phase raw describes; owner (its file's name) names it in a refusal.
+
+        Raises:
+            FormatError: raw is not a well-formed phase; the message names the file and the field.
+        """
+        doc = _object(raw, owner, PHASE_FIELDS)
+        if doc.get("schema_version") != PHASE_SCHEMA_VERSION:
+            raise FormatError(f"{owner} has schema_version {doc.get('schema_version')!r}; it must be 1.")
+        number = doc.get("phase")
+        if not isinstance(number, int) or isinstance(number, bool) or number < 1:
+            raise FormatError(f"{owner} has phase {number!r}; it must be a phase number.")
+        phase = cls(
+            slice=_text(doc, "slice", owner),
+            phase=number,
+            title=_text(doc, "title", owner),
+            depends_on=_numbers(doc, "depends_on", owner),
+            intent=_text(doc, "intent", owner),
+            requirements=tuple(Quote.from_json(item, owner) for item in _objects(doc, "requirements", owner)),
+            decisions=_decision_ids(doc, owner),
+            traps=_texts(doc, "traps", owner),
+            builds_on=tuple(BuildsOn.from_json(item, owner) for item in _objects(doc, "builds_on", owner)),
+            binding=_texts(doc, "binding", owner),
+            departures=_texts(doc, "departures", owner),
+            tests=_texts(doc, "tests", owner),
+            owned_elsewhere=_texts(doc, "owned_elsewhere", owner),
+            actions=tuple(Action.from_json(item, number, owner) for item in _objects(doc, "actions", owner)),
+            not_this_phase=_texts(doc, "not_this_phase", owner),
+        )
+        phase.check_references(owner)
+        return phase
+
+    def check_references(self, owner: str) -> None:
+        """Refuse a phase with no action, an id listed twice, or an action citing a requirement the phase does not quote.
+
+        Raises:
+            FormatError: the phase's actions and quotes do not fit together; the message names the id.
+        """
+        if not self.actions:
+            raise FormatError(f"{owner} has no actions.")
+        quoted = [quote.id for quote in self.requirements]
+        for ids, what in ((quoted, "requirement"), ([action.id for action in self.actions], "action")):
+            if twice := _twice(ids):
+                raise FormatError(f"{owner} lists {what} {', '.join(twice)} twice.")
+        for action in self.actions:
+            if unquoted := [ident for ident in action.requirements if ident not in quoted]:
+                raise FormatError(f"{owner} action {action.id} cites {', '.join(unquoted)}, which it does not quote.")
+
+    def to_index(self, file: str) -> dict[str, object]:
+        """Return the phase's entry in index.json, naming file as where it lives."""
+        return {
+            "phase": self.phase,
+            "file": file,
+            "title": self.title,
+            "depends_on": list(self.depends_on),
+            "requirements": [quote.id for quote in self.requirements],
+            "decisions": list(self.decisions),
+            "targets": list(dict.fromkeys(action.target for action in self.actions)),
+        }
+
+
+def phase_index_json(slice_id: str, entries: list[dict[str, object]]) -> dict[str, object]:
+    """Return the index.json document listing a slice's phase entries, in the slice's phase order."""
+    return {"schema_version": INDEX_SCHEMA_VERSION, "slice": slice_id, "phases": entries}

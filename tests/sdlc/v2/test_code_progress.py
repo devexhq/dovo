@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
@@ -31,12 +32,22 @@ PROGRESS = _load_script()
 
 @pytest.fixture
 def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Return a working directory whose .agentic/plan.json gives slice S3 the phases 1, 2 and 3."""
+    """Return a working directory whose .agentic/plan.json gives slice S3 the phases 1, 2 and 3, each with a phase file in the index."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("DOVO_OUTPUT", raising=False)
-    (tmp_path / ".agentic").mkdir()
+    (tmp_path / ".agentic" / "phases").mkdir(parents=True)
     _write_plan(tmp_path, [1, 2, 3])
+    for phase in (1, 2, 3):
+        (tmp_path / ".agentic" / "phases" / f"phase-{phase}.json").write_text("{}", encoding="utf-8")
+    _write_index(tmp_path, [1, 2, 3])
     return tmp_path
+
+
+def _write_index(root: Path, phases: list[int]) -> None:
+    """Write an index.json for slice S3 listing phases, as a passing check-breakdown would."""
+    entries = [{"phase": phase, "file": f".agentic/phases/phase-{phase}.json"} for phase in phases]
+    index = {"schema_version": 1, "slice": "S3", "phases": entries}
+    (root / ".agentic" / "phases" / "index.json").write_text(json.dumps(index), encoding="utf-8")
 
 
 def _write_plan(root: Path, phases: list[int]) -> None:
@@ -63,13 +74,19 @@ def _main(monkeypatch: pytest.MonkeyPatch, *argv: str) -> int:
 
 class CodeProgressNextTests:
     @pytest.mark.parametrize(
-        ("done", "phase", "remaining"),
-        [([], "1", 2), ([1], "2", 1), ([1, 2], "3", 0), ([1, 2, 3], "done", 0)],
+        ("done", "phase", "phase_file", "remaining"),
+        [
+            ([], "1", ".agentic/phases/phase-1.json", 2),
+            ([1], "2", ".agentic/phases/phase-2.json", 1),
+            ([1, 2], "3", ".agentic/phases/phase-3.json", 0),
+            ([1, 2, 3], "done", "", 0),
+        ],
     )
-    def test_next_picks_the_first_phase_not_done(
+    def test_next_picks_the_first_phase_not_done_and_its_phase_file(
         self,
         done: list[int],
         phase: str,
+        phase_file: str,
         remaining: int,
         workspace: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -81,15 +98,68 @@ class CodeProgressNextTests:
 
         assert _main(monkeypatch, "next", "--slice", "S3") == 0
 
-        assert json.loads(capsys.readouterr().out) == {"phase": phase, "remaining": remaining}
-        assert output.read_text(encoding="utf-8") == f"phase={phase}\nremaining={remaining}\n"
+        assert json.loads(capsys.readouterr().out) == {"phase": phase, "phase_file": phase_file, "remaining": remaining}
+        assert output.read_text(encoding="utf-8") == f"phase={phase}\nphase_file={phase_file}\nremaining={remaining}\n"
 
     def test_next_treats_a_missing_progress_record_as_empty(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         assert _main(monkeypatch, "next", "--slice", "S3") == 0
 
-        assert json.loads(capsys.readouterr().out) == {"phase": "1", "remaining": 2}
+        assert json.loads(capsys.readouterr().out) == {
+            "phase": "1",
+            "phase_file": ".agentic/phases/phase-1.json",
+            "remaining": 2,
+        }
+
+    def test_next_refuses_a_phase_with_no_phase_file(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        output = workspace / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        _write_progress(workspace, json.dumps({"slice": "S3", "done": [1]}))
+        (workspace / ".agentic" / "phases" / "phase-2.json").unlink()
+
+        assert _main(monkeypatch, "next", "--slice", "S3") == 1
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err == (
+            "code_progress.py: .agentic/phases/phase-2.json is missing; check-breakdown must pass before phase 2 is coded.\n"
+        )
+        assert not output.exists()
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            pytest.param(lambda root: (root / ".agentic/phases/index.json").unlink(), id="no-index"),
+            pytest.param(lambda root: _write_index(root, [1, 3]), id="phase-not-indexed"),
+            pytest.param(
+                lambda root: (root / ".agentic/phases/index.json").write_text("not json", encoding="utf-8"),
+                id="index-not-json",
+            ),
+        ],
+    )
+    def test_next_refuses_a_phase_the_index_does_not_list(
+        self,
+        change: Callable[[Path], None],
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        output = workspace / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        _write_progress(workspace, json.dumps({"slice": "S3", "done": [1]}))
+        change(workspace)
+
+        assert _main(monkeypatch, "next", "--slice", "S3") == 1
+
+        assert capsys.readouterr() == (
+            "",
+            "code_progress.py: .agentic/phases/index.json does not list phase 2; "
+            "check-breakdown must pass before phase 2 is coded.\n",
+        )
+        assert not output.exists()
 
     def test_next_refuses_a_slice_with_no_phases(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -190,7 +260,11 @@ class CodeProgressRecordTests:
         assert _main(monkeypatch, "record", "--slice", "S3", "--phase", "2") == 0
 
         assert _progress(workspace) == {"slice": "S3", "done": [1, 2]}
-        assert sorted(path.name for path in (workspace / ".agentic").iterdir()) == ["code-progress.json", "plan.json"]
+        assert sorted(path.name for path in (workspace / ".agentic").iterdir()) == [
+            "code-progress.json",
+            "phases",
+            "plan.json",
+        ]
 
     def test_record_refuses_another_slice(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
