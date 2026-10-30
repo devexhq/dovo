@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import json
 import subprocess
@@ -381,31 +380,22 @@ class PlanBodyShaTests:
     @pytest.mark.parametrize(
         "body",
         [
-            pytest.param(DESCRIPTION + "\n## Work plan\n\n| S1 | merged |\n", id="work-plan-added"),
-            pytest.param(
-                DESCRIPTION.replace("## Scope", "## Feature contract\n\nTarget contract.\n\n## Scope"),
-                id="feature-contract-added",
-            ),
             pytest.param(DESCRIPTION.replace("\n", "\r\n") + "\r\n\r\n", id="crlf-and-trailing-newlines"),
             pytest.param(DESCRIPTION.replace("#925.", "#925.   "), id="trailing-spaces"),
-            pytest.param(
-                DESCRIPTION + "\n## Work plan\n\n```markdown\n## Scope\n```\n", id="fenced-heading-in-work-plan"
-            ),
         ],
     )
-    def test_body_sha_ignores_generated_sections_and_whitespace(self, body: str) -> None:
+    def test_body_sha_ignores_line_endings_and_trailing_whitespace(self, body: str) -> None:
         assert PLAN.body_sha(body) == DESCRIPTION_SHA
 
-    def test_body_sha_keeps_a_fenced_generated_heading(self) -> None:
-        fenced = "```markdown\n## Work plan\n```"
-        written = DESCRIPTION.replace("sessions.  \n", "sessions.\n")
-
-        assert (
-            PLAN.body_sha(f"{DESCRIPTION}\n{fenced}\n") == hashlib.sha256(f"{written}\n{fenced}".encode()).hexdigest()
-        )
-
-    def test_body_sha_changes_with_the_written_description(self) -> None:
-        assert PLAN.body_sha(DESCRIPTION.replace("Only", "Just")) != DESCRIPTION_SHA
+    @pytest.mark.parametrize(
+        "body",
+        [
+            pytest.param(DESCRIPTION.replace("Only", "Just"), id="edited"),
+            pytest.param(DESCRIPTION + "\n## Work plan\n\n| S1 | merged |\n", id="work-plan-section-added"),
+        ],
+    )
+    def test_body_sha_changes_with_any_change_to_the_description(self, body: str) -> None:
+        assert PLAN.body_sha(body) != DESCRIPTION_SHA
 
 
 class PlanDecisionsCommentTests:
@@ -577,7 +567,7 @@ class PlanPriorDecisionsTests:
             "Replaces D-2 (session blueprint_plan01)."
         )
         fake = FakeGh(
-            DESCRIPTION.replace("\n", "\r\n") + "\n## Work plan\n\n| S1 | merged |\n",
+            DESCRIPTION.replace("\n", "\r\n"),
             [
                 _comment(
                     "IC_given",
@@ -1555,3 +1545,96 @@ class PlanCheckBreakdownTests:
         assert _check_breakdown(monkeypatch) == 1
 
         assert _refusal(capsys) == f"plan.py: {message}\n"
+
+
+# --- check-slices ----------------------------------------------------------------
+
+THREE_OUTCOMES = {
+    **REQUIREMENTS,
+    "requirements": [*REQUIREMENTS["requirements"], {"id": "O-3", "kind": "outcome", "text": "Archived too."}],
+}
+
+
+def _check_slices(workspace: Path, monkeypatch: pytest.MonkeyPatch, *slices: dict[str, object]) -> int:
+    """Run plan.py check-slices on a plan.json of slices against THREE_OUTCOMES, both on the default paths."""
+    _write_json(workspace / ".agentic/plan.json", {"slices": list(slices)})
+    _write_json(workspace / ".agentic/requirements.json", THREE_OUTCOMES)
+    return _main(monkeypatch, "check-slices")
+
+
+class PlanCheckSlicesTests:
+    @pytest.mark.parametrize(
+        "slices",
+        [
+            pytest.param(
+                [{"id": "S1", "outcomes": ["O-1", "O-2"]}, {"id": "S2", "outcomes": ["O-3"]}], id="one-slice-each"
+            ),
+            pytest.param(
+                [{"id": "S1", "outcomes": ["O-1", "O-3 (reply)"]}, {"id": "S2", "outcomes": ["O-2", "O-3 (fixer)"]}],
+                id="split-outcome",
+            ),
+        ],
+    )
+    def test_check_slices_passes_when_each_outcome_belongs_to_one_slice_or_to_marked_parts(
+        self,
+        slices: list[dict[str, object]],
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        assert _check_slices(workspace, monkeypatch, *slices) == 0
+
+        assert capsys.readouterr() == ("", "")
+
+    @pytest.mark.parametrize(
+        ("slices", "problems"),
+        [
+            pytest.param(
+                [{"id": "S1", "outcomes": ["O-1"]}, {"id": "S2", "outcomes": ["O-3"]}],
+                "O-2 belongs to no slice.",
+                id="orphan-outcome",
+            ),
+            pytest.param(
+                [{"id": "S1", "outcomes": ["O-1", "O-2"]}, {"id": "S2", "outcomes": ["O-2 (reply)", "O-3"]}],
+                "O-2 belongs to S1, S2 without a split marker on each, as in O-2 (reply).",
+                id="outcome-in-two-slices",
+            ),
+            pytest.param(
+                [{"id": "S1", "outcomes": ["O-1"]}, {"id": "S2", "outcomes": []}],
+                "O-2 belongs to no slice. O-3 belongs to no slice.",
+                id="every-problem-named",
+            ),
+            pytest.param(
+                [{"id": "S1", "outcomes": ["O-1", "O-2", "O-9"]}, {"id": "S2", "outcomes": ["O-3", "O-9"]}],
+                "S1 lists O-9, which the issue does not have. S2 lists O-9, which the issue does not have.",
+                id="outcome-the-issue-does-not-have",
+            ),
+            pytest.param(
+                [{"id": "S1", "outcomes": ["O-1", "O-2 (reply)", "O-2 (fixer)"]}, {"id": "S2", "outcomes": ["O-3"]}],
+                "O-2 is split into parts, but only S1 lists it; list it whole.",
+                id="parts-in-one-slice",
+            ),
+        ],
+    )
+    def test_check_slices_refuses_naming_each_outcome_not_delivered_once(
+        self,
+        slices: list[dict[str, object]],
+        problems: str,
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        assert _check_slices(workspace, monkeypatch, *slices) == 1
+
+        assert _refusal(capsys) == (
+            f"plan.py: .agentic/plan.json's slices do not deliver each outcome of the issue once: {problems}\n"
+        )
+
+    def test_check_slices_refuses_an_outcome_entry_it_cannot_read(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        assert _check_slices(workspace, monkeypatch, {"id": "S1", "outcomes": ["O-1", "outcome 2"]}) == 1
+
+        assert _refusal(capsys) == (
+            "plan.py: .agentic/plan.json: slice S1 lists outcome 'outcome 2', which is not O-<n> or O-<n> (<part>).\n"
+        )

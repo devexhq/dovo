@@ -1,6 +1,6 @@
 # The in-development v2 of `issue-code.yml`, run on sdlc v2's prompts and
 # scripts (`.dovo/catalog/prompts/sdlc/v2/VERSION.json`). Never run it on an
-# issue a v1 run touches: both write the same work plan.
+# issue a v1 run touches: v2 keeps the work plan in a comment v1 never reads.
 #
 # Forked from `feature-dev.yml` and `ready-issue.yml` at `944de0ce`.
 # Temporary: an experimental copy for the slice flow, which replaces
@@ -37,9 +37,9 @@ steps:
   # them; once the person has merged or closed what they wait on and answers
   # (or continues a paused run with `dovo resume`), the loop picks again. It
   # still refuses, with its reason on stderr, when a slice is in progress, when
-  # an active slice's PR was closed unmerged, or when every slice is merged; the
-  # run stops there. The run's failure line shows only the exit code, so the
-  # reason is read with `dovo logs <session> --step next`.
+  # an active slice's PR was closed unmerged, or when every slice is merged or
+  # handed off; the run stops there. The run's failure line shows only the
+  # exit code, so the reason is read with `dovo logs <session> --step next`.
   - id: pick-loop
     name: Pick the next slice once nothing it waits on needs a person
     type: loop

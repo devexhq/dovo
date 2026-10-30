@@ -1,10 +1,11 @@
-"""Tier 1 contract: sdlc v2's workplan.py renders, picks, claims and lands an epic's slices on its issue body."""
+"""Tier 1 contract: sdlc v2's workplan.py renders, picks, claims and lands an issue's slices in its work plan comment."""
 
 from __future__ import annotations
 
 import hashlib
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -18,7 +19,14 @@ from tests.lint.astlib import REPO_ROOT
 EPIC = 925
 PLAN_SESSION = "blueprint_plan01"
 CODE_SESSION = "blueprint_code02"
-INTRO = "Intro paragraph the script must keep.\n"
+INTRO = "Intro paragraph a person wrote.\n"
+MARKER = "<!-- dovo:workplan schema_version=1 -->"
+BY_HAND = "<!-- dovo:workplan schema_version=1 maintained=by-hand -->\n**Work plan** (edited by hand)\n"
+V1_BODY = 'Intro.\n\n## Work plan\n<!-- dovo:workplan {"plan_session":"bp_v1","slices":[]} -->\n'
+V1_REFUSAL = (
+    f"workplan.py: #{EPIC} was planned with v1's description-based work plan: its description holds a "
+    "`<!-- dovo:workplan {` line, which v2 never reads; work it with the v1 blueprints\n"
+)
 
 
 def _load_script() -> ModuleType:
@@ -38,28 +46,32 @@ WORKPLAN = _load_script()
 
 
 class FakeGh:
-    """A `run` double answering the gh calls workplan.py makes, against in-memory issues and pull requests.
+    """A `run` double answering the gh calls workplan.py makes, against in-memory issues, comments and pull requests.
 
-    It has `run`'s signature, so it replaces it at the subprocess boundary. `race[(issue, n)]` is a body
-    another writer stores right after the n-th read of that issue, to exercise compare-and-set.
-    `failing_links` makes that many sub-issue POSTs fail, and `create_output` replaces what
-    `gh issue create` prints. `labels` holds each issue's labels, which `--label` on create and
-    `--add-label` on edit add to.
+    It has `run`'s signature, so it replaces it at the subprocess boundary. `workplans` gives each issue a
+    work plan comment; every issue's description is INTRO unless `bodies` says otherwise.
+    `race[(issue, n)]` is the text another writer stores in that issue's work plan comment right after
+    the n-th read of its comments, to exercise compare-and-set. `failing_links` makes that many
+    sub-issue POSTs fail, and `create_output` replaces what `gh issue create` prints. `labels` holds each
+    issue's labels, which `--label` on create adds to.
     """
 
-    def __init__(self, bodies: dict[int, str]) -> None:
-        self.bodies = dict(bodies)
+    def __init__(self, workplans: Mapping[int, str], bodies: Mapping[int, str] | None = None) -> None:
+        self.bodies: dict[int, str] = {EPIC: INTRO, **(bodies or {})}
+        self.comments: dict[int, list[dict[str, object]]] = {}
+        self.next_comment = 6_513_400_000
+        for issue, text in workplans.items():
+            self._comment(issue, text)
         self.labels: dict[int, list[str]] = {}
         self.closed: set[int] = set()
         self.pr_states: dict[int, str] = {}
         self.race: dict[tuple[int, int], str] = {}
         self.reads: dict[int, int] = {}
         self.edits: list[int] = []
-        self.comments: list[tuple[int, str]] = []
+        self.patched: list[int] = []
         self.created: list[tuple[str, str]] = []
         self.sub_issues: list[tuple[int, str]] = []
         self.removed_labels: list[tuple[int, str]] = []
-        self.added_labels: list[tuple[int, str]] = []
         self.failing_links = 0
         self.create_output: str | None = None
         self.next_number = 1300
@@ -72,7 +84,7 @@ class FakeGh:
         if args[:3] == ("gh", "issue", "edit"):
             return self._edit(int(args[3]), args[4], args[5])
         if args[:3] == ("gh", "issue", "comment"):
-            self.comments.append((int(args[3]), Path(args[5]).read_text(encoding="utf-8")))
+            self._comment(int(args[3]), Path(args[5]).read_text(encoding="utf-8"))
             return ""
         if args[:3] == ("gh", "issue", "create"):
             return self._create(args[4], Path(args[6]).read_text(encoding="utf-8"), args[7:])
@@ -81,24 +93,45 @@ class FakeGh:
         assert args[:2] == ("gh", "api"), f"ran {args}"
         return self._api(args)
 
+    def workplan(self, issue: int = EPIC) -> str:
+        """Return the text of issue's one work plan comment."""
+        texts = [str(item["body"]) for item in self.comments.get(issue, []) if str(item["body"]).startswith(MARKER)]
+        assert len(texts) == 1, texts
+        return texts[0]
+
+    def texts(self, issue: int) -> list[str]:
+        """Return the text of every comment on issue, oldest first."""
+        return [str(item["body"]) for item in self.comments.get(issue, [])]
+
+    def _comment(self, issue: int, text: str) -> None:
+        self.comments.setdefault(issue, []).append({"id": self.next_comment, "body": text})
+        self.next_comment += 1
+
     def _view(self, issue: int, fields: str) -> str:
-        self.reads[issue] = self.reads.get(issue, 0) + 1
-        if (issue, self.reads[issue]) in self.race:
-            self.bodies[issue] = self.race.pop((issue, self.reads[issue]))
+        if fields == "comments":
+            self.reads[issue] = self.reads.get(issue, 0) + 1
+            if (issue, self.reads[issue]) in self.race:
+                self._race(issue, self.race.pop((issue, self.reads[issue])))
+        comments = [
+            {"body": item["body"], "url": f"https://github.com/o/r/issues/{issue}#issuecomment-{item['id']}"}
+            for item in self.comments.get(issue, [])
+        ]
         view: dict[str, object] = {
             "body": self.bodies.get(issue, ""),
             "state": "CLOSED" if issue in self.closed else "OPEN",
+            "labels": [{"name": name} for name in self.labels.get(issue, [])],
+            "comments": comments,
         }
-        view["labels"] = [{"name": name} for name in self.labels.get(issue, [])]
         return json.dumps({field: view[field] for field in fields.split(",")})
+
+    def _race(self, issue: int, text: str) -> None:
+        for item in self.comments[issue]:
+            if str(item["body"]).startswith(MARKER):
+                item["body"] = text
 
     def _edit(self, issue: int, flag: str, value: str) -> str:
         if flag == "--remove-label":
             self.removed_labels.append((issue, value))
-            return ""
-        if flag == "--add-label":
-            self.added_labels.append((issue, value))
-            self.labels.setdefault(issue, []).append(value)
             return ""
         assert flag == "--body-file"
         self.bodies[issue] = Path(value).read_text(encoding="utf-8")
@@ -113,7 +146,20 @@ class FakeGh:
         self.created.append((title, body))
         return self.create_output or f"Creating issue in o/r\n\nhttps://github.com/o/r/issues/{number}"
 
+    def _patch(self, args: tuple[str, ...]) -> str:
+        comment_id = int(args[4].rsplit("/", 1)[-1])
+        assert args[4] == f"repos/{{owner}}/{{repo}}/issues/comments/{comment_id}", f"ran {args}"
+        assert args[5] == "-F", f"ran {args}"
+        text = Path(args[6].removeprefix("body=@")).read_text(encoding="utf-8")
+        for item in (item for items in self.comments.values() for item in items):
+            if item["id"] == comment_id:
+                item["body"] = text
+        self.patched.append(comment_id)
+        return "{}"
+
     def _api(self, args: tuple[str, ...]) -> str:
+        if args[2:4] == ("--method", "PATCH"):
+            return self._patch(args)
         endpoint = f"repos/o/r/issues/{EPIC}/sub_issues"
         if args[-2:] == ("--jq", ".id"):
             return str(90_000 + int(args[2].rsplit("/", 1)[-1]))
@@ -128,57 +174,56 @@ class FakeGh:
 
 
 def _slice(slice_id: str, **overrides: object) -> dict[str, object]:
-    """Return a plan.json slice with slice_id and overrides, whose child issue is still to be created."""
+    """Return a plan.json slice with slice_id and overrides, delivering O-1."""
     data: dict[str, object] = {
         "id": slice_id,
         "title": f"Title {slice_id}",
         "phases": [1],
         "depends_on": [],
         "blocked_by": [],
-        "child": None,
+        "outcomes": ["O-1"],
         "owns": [],
         "lint_gates": [],
         "pilot": False,
         "closing_docs": False,
         "estimate": {"src_docs": 100, "tests": 100, "basis": "x"},
         "size": "s",
-        "stub": f"Stub for {slice_id}.",
     }
     data.update(overrides)
     return data
 
 
 def _row(slice_id: str, **overrides: object) -> object:
-    """Return a stored work plan slice row with slice_id and overrides."""
+    """Return a stored work plan slice row with slice_id and overrides, delivering O-1."""
     defaults: dict[str, object] = {
         "id": slice_id,
         "title": f"Title {slice_id}",
         "depends_on": [],
         "blocked_by": [],
         "closing_docs": False,
-        "child": None,
-        "stub": None,
+        "outcomes": ["O-1"],
         "size": "s",
     }
     defaults.update(overrides)
     return WORKPLAN.Slice(**defaults)
 
 
-def _epic_body(*rows: object, landed: str = "") -> str:
-    """Return an epic body holding INTRO and a work plan of rows from PLAN_SESSION revision 3."""
-    return WORKPLAN.with_workplan(INTRO, WORKPLAN.WorkPlan(PLAN_SESSION, 3, list(rows)), landed)
+def _workplan(*rows: object, landed: str = "", head: str = "") -> str:
+    """Return a work plan comment holding head, then a work plan of rows from PLAN_SESSION revision 3."""
+    plan = WORKPLAN.WorkPlan(PLAN_SESSION, 3, list(rows))
+    return WORKPLAN.with_workplan(f"{MARKER}\n\n{head}" if head else f"{MARKER}\n", plan, landed)
 
 
-def _stored(body: str) -> dict[str, object]:
-    """Return the dovo:workplan JSON stored in body."""
-    match = WORKPLAN.WORKPLAN_COMMENT_RE.search(body)
+def _stored(text: str) -> dict[str, object]:
+    """Return the dovo:workplan JSON stored in text."""
+    match = WORKPLAN.WORKPLAN_COMMENT_RE.search(text)
     assert match is not None
     return json.loads(match.group(1))
 
 
-def _rows(body: str) -> list[dict[str, object]]:
-    """Return the slice rows of the dovo:workplan JSON stored in body."""
-    rows = _stored(body)["slices"]
+def _rows(text: str) -> list[dict[str, object]]:
+    """Return the slice rows of the dovo:workplan JSON stored in text."""
+    rows = _stored(text)["slices"]
     assert isinstance(rows, list)
     return [row for row in rows if isinstance(row, dict)]
 
@@ -301,55 +346,83 @@ At `944de0ce`.
 """
 
 
+def _render(monkeypatch: pytest.MonkeyPatch, fake: FakeGh, plan: str, revision: str = "1") -> int:
+    """Run render for EPIC from plan as PLAN_SESSION at revision."""
+    argv = ("render", "--issue", str(EPIC), "--plan", plan, "--session", PLAN_SESSION, "--revision", revision)
+    return _main(monkeypatch, fake, *argv)
+
+
 class RenderTests:
-    def test_plain_issue_renders_one_slice_whose_child_is_the_issue(
+    def test_creates_the_work_plan_comment_and_leaves_the_description_alone(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        fake = FakeGh({42: INTRO})
-        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1", stub=None)]})
+        fake = FakeGh({})
+        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
 
-        code = _main(
-            monkeypatch, fake, "render", "--issue", "42", "--plan", plan, "--session", "bp_1", "--revision", "2"
-        )
+        assert _render(monkeypatch, fake, plan, "2") == 0
 
-        assert code == 0
         stored = (
-            '{"plan_session":"bp_1","plan_revision":2,"slices":[{"id":"S1","title":"Title S1","depends_on":[],'
-            '"blocked_by":[],"closing_docs":false,"child":42,"stub":null,"status":"pending","pr":null,"session":null,"size":"s"}]}'
+            '{"plan_session":"blueprint_plan01","plan_revision":2,"slices":[{"id":"S1","title":"Title S1",'
+            '"depends_on":[],"blocked_by":[],"closing_docs":false,"outcomes":["O-1"],"status":"pending","pr":null,'
+            '"session":null,"size":"s","child":null}]}'
         )
-        assert fake.bodies[42] == (
-            f"{INTRO}\n"
-            "## Work plan\n"
-            "Plan Session ID: `bp_1` (plan revision 2)\n"
+        assert fake.texts(EPIC) == [
+            f"{MARKER}\n"
             "\n"
-            "| Slice | Scope | Child | Depends on | Status | PR | Code session |\n"
+            "## Work plan\n"
+            "Plan Session ID: `blueprint_plan01` (plan revision 2)\n"
+            "\n"
+            "| Slice | Scope | Outcomes | Depends on | Status | PR | Code session |\n"
             "|---|---|---|---|---|---|---|\n"
-            "| S1 | Title S1 | #42 | — | pending | — | — |\n"
+            "| S1 | Title S1 | O-1 | — | pending | — | — |\n"
             "\n"
             f"<!-- dovo:workplan {stored} -->\n"
-        )
+        ]
+        assert (fake.bodies[EPIC], fake.edits, fake.created) == (INTRO, [], [])
 
-    def test_epic_renders_contract_before_work_plan_and_rerenders_in_place(
+    def test_epic_renders_contract_before_work_plan_and_a_second_render_edits_the_same_comment(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         question = {"id": "OQ-1", "summary": "Drop v1? (assumed: yes)", "assumed": "Yes.", "blocks": ["S2"]}
-        slices = [_slice("S1", child=1131, pilot=True), _slice("S2", depends_on=["S1"], blocked_by=[1192])]
-        plan = {"contract": CONTRACT, "slices": slices, "open_questions": [question]}
-        plan_path = _write_json(tmp_path / "plan.json", plan)
-        fake = FakeGh({EPIC: f"{INTRO}\n## Notes\nKept.\n"})
-        argv = ("render", "--issue", str(EPIC), "--plan", plan_path, "--session", PLAN_SESSION, "--revision", "1")
+        slices = [_slice("S1", pilot=True), _slice("S2", depends_on=["S1"], blocked_by=[1192], outcomes=["O-2"])]
+        plan = _write_json(
+            tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices, "open_questions": [question]}
+        )
+        fake = FakeGh({})
 
-        assert _main(monkeypatch, fake, *argv) == 0
-        first = fake.bodies[EPIC]
-        assert _main(monkeypatch, fake, *argv) == 0
+        assert _render(monkeypatch, fake, plan, "1") == 0
+        first = fake.workplan()
+        assert _render(monkeypatch, fake, plan, "2") == 0
 
-        assert fake.bodies[EPIC] == first
-        assert first.startswith(f"{INTRO}\n## Notes\nKept.\n\n{CONTRACT_SECTION}\n## Work plan\n")
-        assert "| S2 | Title S2 | — | S1, #1192 | pending | — | — |" in first
-        assert [(row["id"], row["child"], row["stub"]) for row in _rows(first)] == [
-            ("S1", 1131, None),
-            ("S2", None, "Stub for S2."),
+        assert first.startswith(f"{MARKER}\n\n{CONTRACT_SECTION}\n## Work plan\n")
+        assert "| S2 | Title S2 | O-2 | S1, #1192 | pending | — | — |" in first
+        assert fake.texts(EPIC) == [
+            first.replace("(plan revision 1)", "(plan revision 2)").replace('"plan_revision":1', '"plan_revision":2')
         ]
+        assert fake.patched == [6_513_400_000]
+        assert (fake.bodies[EPIC], fake.edits) == (INTRO, [])
+
+    def test_never_touches_a_comment_maintained_by_hand(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = FakeGh({EPIC: BY_HAND})
+        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
+
+        assert _render(monkeypatch, fake, plan) == 0
+
+        assert fake.texts(EPIC)[0] == BY_HAND
+        assert [row["id"] for row in _rows(fake.workplan())] == ["S1"]
+        assert fake.patched == []
+
+    def test_refuses_an_issue_with_two_work_plan_comments(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1"))})
+        fake.comments[EPIC].append({"id": 1, "body": _workplan(_row("S1"))})
+        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
+
+        assert _render(monkeypatch, fake, plan) == 1
+
+        assert capsys.readouterr().err == f"workplan.py: #{EPIC} has 2 work plan comments; delete all but one\n"
+        assert fake.patched == []
 
     def test_short_contract_renders_only_its_sections(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         empty: dict[str, object] = {
@@ -371,16 +444,16 @@ class RenderTests:
             ],
             "ownership": [{"surface": "envelope", "aspect": "create", "owner": "S1", "extended_by": []}],
         }
-        plan = {"contract": contract, "slices": [_slice("S1", child=1131)], "open_questions": []}
-        fake = FakeGh({EPIC: ""})
-        path = _write_json(tmp_path / "plan.json", plan)
-
-        code = _main(
-            monkeypatch, fake, "render", "--issue", str(EPIC), "--plan", path, "--session", "s", "--revision", "1"
+        fake = FakeGh({})
+        plan = _write_json(
+            tmp_path / "plan.json", {"contract": contract, "slices": [_slice("S1")], "open_questions": []}
         )
 
-        assert code == 0
-        assert fake.bodies[EPIC].split("## Work plan\n")[0] == (
+        assert _render(monkeypatch, fake, plan) == 0
+
+        assert fake.workplan().split("## Work plan\n")[0] == (
+            f"{MARKER}\n"
+            "\n"
             "## Feature contract\n"
             "\n"
             "### Problem\n"
@@ -424,36 +497,97 @@ class RenderTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         contract = {"problem": "Output shapes disagree.\n## Notes"}
-        plan = {"contract": contract, "slices": [_slice("S1", child=1131)], "open_questions": []}
-        fake = FakeGh({EPIC: INTRO})
-        path = _write_json(tmp_path / "plan.json", plan)
-
-        code = _main(
-            monkeypatch, fake, "render", "--issue", str(EPIC), "--plan", path, "--session", "s", "--revision", "1"
+        fake = FakeGh({})
+        plan = _write_json(
+            tmp_path / "plan.json", {"contract": contract, "slices": [_slice("S1")], "open_questions": []}
         )
 
-        assert code == 1
+        assert _render(monkeypatch, fake, plan) == 1
+
         assert capsys.readouterr().err == (
             "workplan.py: the contract renders a `## ` heading outside a code fence, which would end its section\n"
         )
-        assert fake.edits == []
+        assert fake.texts(EPIC) == []
 
-    def test_rerender_keeps_slice_state_and_landed_reports(
+    def test_rerender_keeps_slice_state_children_and_landed_reports(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         landed = "### S1 as landed (#1215)\n- Departed."
-        body = _epic_body(_row("S1", child=1131, status="merged", pr=1215, session="bp_c"), landed=landed)
-        fake = FakeGh({EPIC: body})
-        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1", child=1131)]})
-
-        code = _main(
-            monkeypatch, fake, "render", "--issue", str(EPIC), "--plan", plan, "--session", "bp_2", "--revision", "4"
+        fake = FakeGh(
+            {EPIC: _workplan(_row("S1", status="merged", pr=1215, session="bp_c", child=1131), landed=landed)}
         )
+        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
 
-        assert code == 0
-        assert _stored(fake.bodies[EPIC])["plan_session"] == "bp_2"
-        assert _rows(fake.bodies[EPIC])[0]["status"] == "merged"
-        assert fake.bodies[EPIC].endswith(f"-->\n\n{landed}\n")
+        assert _render(monkeypatch, fake, plan, "4") == 0
+
+        text = fake.workplan()
+        assert _stored(text)["plan_revision"] == 4
+        assert [(row["status"], row["pr"], row["child"]) for row in _rows(text)] == [("merged", 1215, 1131)]
+        assert "| S1 (#1131) | Title S1 | O-1 | — | merged | #1215 | bp_c |" in text
+        assert text.endswith(f"-->\n\n{landed}\n")
+
+    def test_records_an_existing_sub_issue_the_plan_maps_to_a_slice(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = FakeGh({})
+        slices = [_slice("S1", child=1131), _slice("S2", outcomes=["O-2"])]
+        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices})
+
+        assert _render(monkeypatch, fake, plan) == 0
+
+        text = fake.workplan()
+        assert [(row["child"], row["status"]) for row in _rows(text)] == [(1131, "pending"), (None, "pending")]
+        assert "| S1 (#1131) | Title S1 | O-1 | — | pending | — | — |" in text
+        assert (fake.created, fake.sub_issues) == ([], [])
+
+    def test_refuses_an_issue_planned_with_v1(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({}, {EPIC: V1_BODY})
+        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
+
+        assert _render(monkeypatch, fake, plan) == 1
+
+        assert capsys.readouterr().err == V1_REFUSAL
+        assert (fake.texts(EPIC), fake.bodies[EPIC]) == ([], V1_BODY)
+
+    def test_a_comment_changed_twice_refuses(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1"))})
+        fake.race[(EPIC, 2)] = _workplan(_row("S1"), head="Once.\n")
+        fake.race[(EPIC, 4)] = _workplan(_row("S1"), head="Twice.\n")
+        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
+
+        assert _render(monkeypatch, fake, plan, "4") == 1
+
+        assert capsys.readouterr().err == (
+            f"workplan.py: #{EPIC}'s work plan comment kept changing while rendering it; run render again\n"
+        )
+        assert (fake.patched, fake.workplan()) == ([], _workplan(_row("S1"), head="Twice.\n"))
+
+    @pytest.mark.parametrize(
+        ("stored", "planned", "resolved"),
+        [
+            pytest.param(None, "m", "m", id="plan-sizes-an-unsized-row"),
+            pytest.param("s", "m", "m", id="plan-size-wins"),
+            pytest.param("l", None, "l", id="sizeless-plan-keeps-stored-size"),
+        ],
+    )
+    def test_rerender_resolves_the_size_from_the_plan_else_the_stored_row(
+        self,
+        stored: str | None,
+        planned: str | None,
+        resolved: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1", size=stored))})
+        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": [_slice("S1", size=planned)]})
+
+        assert _render(monkeypatch, fake, plan, "4") == 0
+
+        assert [row["size"] for row in _rows(fake.workplan())] == [resolved]
 
     @pytest.mark.parametrize(
         ("plan", "reason"),
@@ -463,11 +597,6 @@ class RenderTests:
                 {"contract": None, "slices": [_slice("S1"), _slice("S2")]},
                 "a plan without a contract must have one slice, not 2",
                 id="plain-with-two-slices",
-            ),
-            pytest.param(
-                {"contract": CONTRACT, "slices": [_slice("S1", stub=None)]},
-                "slice S1 has neither a child issue nor a stub to create one from",
-                id="no-stub",
             ),
             pytest.param(
                 {"contract": CONTRACT, "slices": [_slice("S1", depends_on=["S2"]), _slice("S2")]},
@@ -489,334 +618,162 @@ class RenderTests:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        fake = FakeGh({EPIC: INTRO})
-        path = _write_json(tmp_path / "plan.json", plan)
+        fake = FakeGh({})
 
-        code = _main(
-            monkeypatch, fake, "render", "--issue", str(EPIC), "--plan", path, "--session", "s", "--revision", "1"
-        )
+        assert _render(monkeypatch, fake, _write_json(tmp_path / "plan.json", plan)) == 1
 
-        assert code == 1
         assert capsys.readouterr().err == f"workplan.py: {reason}\n"
-        assert fake.edits == []
+        assert fake.texts(EPIC) == []
 
-    def test_aborts_when_body_changes_after_it_was_read(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+
+class WriteGuardTests:
+    def _claim(self, monkeypatch: pytest.MonkeyPatch, fake: FakeGh) -> int:
+        return _main(monkeypatch, fake, "claim", "--issue", str(EPIC), "--slice", "S1", "--session", CODE_SESSION)
+
+    def test_a_comment_changed_once_since_it_was_read_gets_the_change_applied_again(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        fake = FakeGh({42: INTRO})
-        fake.race[(42, 2)] = "Someone else's edit.\n"
-        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2"))})
+        fake.race[(EPIC, 2)] = _workplan(_row("S1"), _row("S2", title="Renamed by a person"))
 
-        code = _main(monkeypatch, fake, "render", "--issue", "42", "--plan", plan, "--session", "s", "--revision", "1")
+        assert self._claim(monkeypatch, fake) == 0
 
-        assert code == 1
-        assert (
-            capsys.readouterr().err == "workplan.py: #42's body changed since this run read it; run the command again\n"
-        )
-        assert fake.bodies[42] == "Someone else's edit.\n"
-        assert fake.edits == []
-
-
-# An epic body in the shape of #928's before the work plan script existed: a hand-written contract and a
-# hand-maintained `## Work plan` with prose, a table and no dovo:workplan comment, followed by another section.
-HAND_WORKPLAN = """\
-## Work plan
-
-Maintained by hand until `workplan.py` exists.
-
-| Slice | Scope | Child issue | Depends on | Blocked by | Status |
-|---|---|---|---|---|---|
-| A1 | `dovo init` to summaries; the code names (pilot) | #1112 | — | — | pending |
-| A2 | Config tier loading raises `ConfigError` | #1118 | A1 | #1192 | merged |
-| A7 | Closing docs review | created when next | A1, A2 | — | pending |
-
-A2 depends on A1 only for its conventions.
-- #925: S1 is blocked by A2.
-
-### A2 as landed (#1301)
-- Departed.
-"""
-HAND_TAIL = "\n## References\n\n- Kept.\n"
-
-
-def _hand_body(workplan: str = HAND_WORKPLAN) -> str:
-    """Return INTRO, a hand-written contract, workplan and HAND_TAIL, as one body."""
-    return f"{INTRO}\n## Feature contract\nHand-written contract.\n\n{workplan}{HAND_TAIL}"
-
-
-class AdoptTests:
-    def _render(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake: FakeGh, ids: tuple[str, ...]) -> int:
-        """Render a plan of slices with ids, each with a stub and no child, into EPIC's body."""
-        plan = {"contract": CONTRACT, "slices": [_slice(slice_id) for slice_id in ids], "open_questions": []}
-        path = _write_json(tmp_path / "plan.json", plan)
-        argv = ("render", "--issue", str(EPIC), "--plan", path, "--session", PLAN_SESSION, "--revision", "1")
-        return _main(monkeypatch, fake, *argv)
-
-    def test_replaces_the_hand_section_and_the_contract_and_nothing_else(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        fake = FakeGh({EPIC: _hand_body()})
-
-        assert self._render(tmp_path, monkeypatch, fake, ("A1", "A2", "A7")) == 0
-
-        body = fake.bodies[EPIC]
-        contract = WORKPLAN.render_contract(CONTRACT, "")
-        assert body.startswith(
-            f"{INTRO}\n{contract}\n## Work plan\nPlan Session ID: `{PLAN_SESSION}` (plan revision 1)\n"
-        )
-        assert body.endswith(
-            "-->\n\n"
-            "### Notes (carried over)\n"
-            "Maintained by hand until `workplan.py` exists.\n"
-            "\n"
-            "A2 depends on A1 only for its conventions.\n"
-            "- #925: S1 is blocked by A2.\n"
-            "\n"
-            "### A2 as landed (#1301)\n"
-            "- Departed.\n" + HAND_TAIL
-        )
-        assert "Hand-written contract." not in body
-        assert body.count("| A1 |") == 1
-
-    def test_a_later_render_keeps_the_carried_over_notes(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = FakeGh({EPIC: _hand_body()})
-        assert self._render(tmp_path, monkeypatch, fake, ("A1", "A2", "A7")) == 0
-        adopted = fake.bodies[EPIC]
-
-        assert self._render(tmp_path, monkeypatch, fake, ("A1", "A2", "A7")) == 0
-
-        assert fake.bodies[EPIC] == adopted
-        assert fake.bodies[EPIC].count("### Notes (carried over)") == 1
-
-    def test_carries_over_each_rows_child_and_status(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = FakeGh({EPIC: _hand_body()})
-
-        assert self._render(tmp_path, monkeypatch, fake, ("A1", "A2", "A3", "A7")) == 0
-
-        assert [(row["id"], row["child"], row["stub"], row["status"]) for row in _rows(fake.bodies[EPIC])] == [
-            ("A1", 1112, None, "pending"),
-            ("A2", 1118, None, "merged"),
-            ("A3", None, "Stub for A3.", "pending"),
-            ("A7", None, "Stub for A7.", "pending"),
+        rows = _rows(fake.workplan())
+        assert [(row["title"], row["status"]) for row in rows] == [
+            ("Title S1", "in_progress"),
+            ("Renamed by a person", "pending"),
         ]
+        assert fake.patched == [6_513_400_000]
 
-    @pytest.mark.parametrize(
-        ("workplan", "ids", "reason"),
-        [
-            pytest.param(
-                HAND_WORKPLAN,
-                ("S1", "S2", "S7"),
-                "the hand-maintained work plan's row A1, A2, A7 matches no plan.json slice; "
-                "give the slice that id or remove the row",
-                id="unmatched-row",
-            ),
-            pytest.param(
-                HAND_WORKPLAN.replace("| merged |", "| in progress |"),
-                ("A1", "A2", "A7"),
-                "the hand-maintained work plan's row A2 has status 'in progress', not pending or merged",
-                id="unsafe-status",
-            ),
-            pytest.param(
-                HAND_WORKPLAN.replace("| #1118 |", "| #1118, #1119 |"),
-                ("A1", "A2", "A7"),
-                "the hand-maintained work plan's row A2 has child '#1118, #1119', "
-                'which is not one `#n`, empty or "created when next"',
-                id="two-children",
-            ),
-            pytest.param(
-                HAND_WORKPLAN.replace("| #1118 |", "| 1118 |"),
-                ("A1", "A2", "A7"),
-                "the hand-maintained work plan's row A2 has child '1118', "
-                'which is not one `#n`, empty or "created when next"',
-                id="child-without-hash",
-            ),
-            pytest.param(
-                HAND_WORKPLAN.replace(" | #1118 | A1 | #1192 | merged |", " | #1118 |"),
-                ("A1", "A2", "A7"),
-                "the hand-maintained work plan's row A2 has 3 cells, fewer than the header's 6",
-                id="short-row",
-            ),
-            pytest.param(
-                HAND_WORKPLAN.replace("| A7 |", "| A1 |"),
-                ("A1", "A2", "A7"),
-                "the hand-maintained work plan's row A1 appears twice",
-                id="duplicate-id",
-            ),
-            pytest.param(
-                HAND_WORKPLAN.replace("| Child issue |", "| Issue |"),
-                ("A1", "A2", "A7"),
-                "the hand-maintained work plan's table has no `Child` or `Child issue` column",
-                id="no-child-column",
-            ),
-            pytest.param(
-                HAND_WORKPLAN.replace("| Status |", "| State |"),
-                ("A1", "A2", "A7"),
-                "the hand-maintained work plan's table has no `Status` column",
-                id="no-status-column",
-            ),
-        ],
-    )
-    def test_refuses_a_row_it_cannot_carry_over_safely(
-        self,
-        workplan: str,
-        ids: tuple[str, ...],
-        reason: str,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
+    def test_a_comment_changed_twice_refuses_naming_the_slice(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        fake = FakeGh({EPIC: _hand_body(workplan)})
+        fake = FakeGh({EPIC: _workplan(_row("S1"))})
+        fake.race[(EPIC, 2)] = _workplan(_row("S1", title="Once"))
+        fake.race[(EPIC, 4)] = _workplan(_row("S1", title="Twice"))
 
-        assert self._render(tmp_path, monkeypatch, fake, ids) == 1
+        assert self._claim(monkeypatch, fake) == 1
 
-        assert capsys.readouterr().err == f"workplan.py: {reason}\n"
-        assert fake.edits == []
-
-    @pytest.mark.parametrize(
-        ("body", "ids", "rows", "kept"),
-        [
-            pytest.param(
-                _hand_body("## Work plan\n\nSlices to come.\n"),
-                ("A1",),
-                [("A1", None, "pending")],
-                "-->\n\n### Notes (carried over)\nSlices to come.\n",
-                id="no-table",
-            ),
-            pytest.param(
-                _hand_body(
-                    "## Work plan\n\n| Slice | Child issue | Status |\n|---|---|---|\n| A1 | #1112 | pending |\n\n"
-                    "Legend:\n\n| Key | Meaning |\n|---|---|\n| M | medium |\n"
-                ),
-                ("A1",),
-                [("A1", 1112, "pending")],
-                "-->\n\n### Notes (carried over)\nLegend:\n\n| Key | Meaning |\n|---|---|\n| M | medium |\n",
-                id="second-table-kept-as-notes",
-            ),
-            pytest.param(
-                _hand_body(
-                    "## Work plan\n\n| Slice | Scope | Child | Size | Owner | Status |\n|---|---|---|---|---|---|\n"
-                    "| A1 | x | #1112 | M | me | merged |\n"
-                ),
-                ("A1",),
-                [("A1", 1112, "merged")],
-                "-->\n",
-                id="extra-columns",
-            ),
-            pytest.param(
-                _hand_body().replace("\n", "\r\n"),
-                ("A1", "A2", "A7"),
-                [("A1", 1112, "pending"), ("A2", 1118, "merged"), ("A7", None, "pending")],
-                "-->\n\n### Notes (carried over)\nMaintained by hand until `workplan.py` exists.\n\n"
-                "A2 depends on A1 only for its conventions.\n- #925: S1 is blocked by A2.\n\n"
-                "### A2 as landed (#1301)\n- Departed.\n",
-                id="crlf",
-            ),
-        ],
-    )
-    def test_adopts_other_table_shapes(
-        self,
-        body: str,
-        ids: tuple[str, ...],
-        rows: list[tuple[str, int | None, str]],
-        kept: str,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        fake = FakeGh({EPIC: body})
-
-        assert self._render(tmp_path, monkeypatch, fake, ids) == 0
-
-        new = fake.bodies[EPIC]
-        assert [(row["id"], row["child"], row["status"]) for row in _rows(new)] == rows
-        span = WORKPLAN.find_section(new, "## Work plan")
-        assert span is not None
-        assert new[span[0] : span[1]].endswith(kept + "\n")
+        assert capsys.readouterr().err == (
+            f"workplan.py: #{EPIC}'s work plan comment kept changing while claiming S1; run claim again\n"
+        )
+        assert fake.patched == []
+        assert _rows(fake.workplan())[0]["title"] == "Twice"
 
 
 class NextTests:
     @pytest.mark.parametrize(
-        ("rows", "picked", "closing"),
+        ("rows", "outputs"),
         [
             pytest.param(
-                [_row("S1", child=EPIC)],
-                f"slice=S1\nchild={EPIC}\n",
-                f"closing_lines=Fixes #{EPIC}\n",
-                id="plain-issue",
+                [_row("S1")],
+                f"slice=S1\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=0\nclosing_lines=Closes #{EPIC}\n",
+                id="only-slice",
             ),
             pytest.param(
-                [_row("S1", child=1131, status="merged", pr=1215), _row("S2", child=1132, depends_on=["S1"])],
-                "slice=S2\nchild=1132\n",
-                f"closing_lines<<WORKPLAN_EOF\nFixes #1132\nRefs #{EPIC}\nWORKPLAN_EOF\n",
+                [_row("S1", status="merged", pr=1215), _row("S2", depends_on=["S1"]), _row("S3")],
+                f"slice=S2\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=1\n"
+                f"closing_lines=Part of #{EPIC} (slice S2 of 3)\n",
                 id="middle-slice",
             ),
             pytest.param(
-                [_row("S1", child=1131, status="merged", pr=1215), _row("S2", child=1132, closing_docs=True)],
-                "slice=S2\nchild=1132\n",
-                f"closing_lines<<WORKPLAN_EOF\nFixes #1132\nFixes #{EPIC}\nWORKPLAN_EOF\n",
-                id="closing-docs-slice",
+                [_row("S1", status="merged", pr=1215), _row("S2", status="merged", pr=1216), _row("S3")],
+                f"slice=S3\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=0\nclosing_lines=Closes #{EPIC}\n",
+                id="last-slice",
+            ),
+            pytest.param(
+                [_row("S1", child=1131), _row("S2")],
+                f"slice=S1\nplan_session={PLAN_SESSION}\nplan_revision=3\nremaining=1\n"
+                f"closing_lines<<WORKPLAN_EOF\nCloses #1131\nPart of #{EPIC} (slice S1 of 2)\nWORKPLAN_EOF\n",
+                id="own-issue",
             ),
         ],
     )
-    def test_writes_outputs_for_the_picked_slice(
-        self,
-        rows: list[object],
-        picked: str,
-        closing: str,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
+    def test_writes_outputs_for_the_picked_slice_and_creates_no_issue(
+        self, rows: list[object], outputs: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         output = tmp_path / "output"
         monkeypatch.setenv("DOVO_OUTPUT", str(output))
-        fake = FakeGh({EPIC: _epic_body(*rows)})
+        fake = FakeGh({EPIC: _workplan(*rows)})
 
         assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
 
-        assert output.read_text(encoding="utf-8") == (
-            f"{picked}plan_session={PLAN_SESSION}\nplan_revision=3\n{closing}"
-        )
-        assert fake.edits == []
+        assert output.read_text(encoding="utf-8") == outputs
+        assert (fake.patched, fake.created, fake.sub_issues) == ([], [], [])
 
-    def test_marks_merged_pr_and_creates_the_child_as_a_sub_issue(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_marks_a_merged_pr_before_picking(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         output = tmp_path / "output"
         monkeypatch.setenv("DOVO_OUTPUT", str(output))
         rows = [
-            _row("S1", child=1131, status="in_review", pr=1215, session="bp_c"),
-            _row("S2", depends_on=["S1"], blocked_by=[1192], stub="Stub for S2."),
+            _row("S1", status="in_review", pr=1215, session="bp_c"),
+            _row("S2", depends_on=["S1"], blocked_by=[1192]),
         ]
-        fake = FakeGh({EPIC: _epic_body(*rows)})
+        fake = FakeGh({EPIC: _workplan(*rows)})
         fake.pr_states[1215] = "MERGED"
         fake.closed.add(1192)
 
         assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
 
-        assert fake.created == [("Title S2", "Stub for S2.")]
-        assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
-        stored = _rows(fake.bodies[EPIC])
-        assert [(row["id"], row["status"], row["child"], row["stub"]) for row in stored] == [
-            ("S1", "merged", 1131, None),
-            ("S2", "pending", 1300, None),
-        ]
-        assert output.read_text(encoding="utf-8").splitlines()[:2] == ["slice=S2", "child=1300"]
+        assert [(row["id"], row["status"]) for row in _rows(fake.workplan())] == [("S1", "merged"), ("S2", "pending")]
+        assert output.read_text(encoding="utf-8").splitlines()[0] == "slice=S2"
+        assert (fake.created, fake.sub_issues, fake.edits) == ([], [], [])
+
+    @pytest.mark.parametrize(
+        ("closed", "closing"),
+        [
+            pytest.param(False, f"remaining=1\nclosing_lines=Part of #{EPIC} (slice S2 of 2)\n", id="issue-open"),
+            pytest.param(True, f"remaining=0\nclosing_lines=Closes #{EPIC}\n", id="issue-closed"),
+        ],
+    )
+    def test_never_picks_a_handed_off_slice_and_counts_it_done_once_its_issue_closes(
+        self, closed: bool, closing: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1", status="handed_off", child=1300), _row("S2"))})
+        if closed:
+            fake.closed.add(1300)
+
+        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
+
+        assert output.read_text(encoding="utf-8") == (
+            f"slice=S2\nplan_session={PLAN_SESSION}\nplan_revision=3\n{closing}"
+        )
+
+    def test_refuses_an_issue_planned_with_v1(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1"))}, {EPIC: V1_BODY})
+
+        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 1
+
+        assert capsys.readouterr().err == V1_REFUSAL
+        assert (fake.patched, output.exists()) == ([], False)
 
     @pytest.mark.parametrize(
         ("rows", "reason"),
         [
             pytest.param(
-                [_row("S1", child=1131, status="in_review", pr=1215), _row("S2", child=1132)],
+                [_row("S1", status="in_review", pr=1215), _row("S2")],
                 "S1 is in_review (#1215); finish it before starting another slice",
                 id="active-slice",
             ),
             pytest.param(
-                [_row("S1", child=1131, depends_on=[], blocked_by=[1192]), _row("S2", child=1, depends_on=["S1"])],
+                [_row("S1", blocked_by=[1192]), _row("S2", depends_on=["S1"])],
                 "no slice is ready: S1 is blocked by open #1192; S2 waits on S1",
                 id="none-ready",
             ),
             pytest.param(
-                [_row("S1", child=1131, status="merged", pr=1215)],
-                "every slice is merged",
-                id="all-merged",
+                [_row("S1", status="handed_off", child=1300), _row("S2", depends_on=["S1"])],
+                "no slice is ready: S2 waits on S1",
+                id="waits-on-an-open-handed-off-slice",
+            ),
+            pytest.param(
+                [_row("S1", status="merged", pr=1215), _row("S2", status="handed_off", child=1300)],
+                "every slice is merged or handed off",
+                id="all-merged-or-handed-off",
             ),
         ],
     )
@@ -830,162 +787,25 @@ class NextTests:
     ) -> None:
         output = tmp_path / "output"
         monkeypatch.setenv("DOVO_OUTPUT", str(output))
-        fake = FakeGh({EPIC: _epic_body(*rows)})
+        fake = FakeGh({EPIC: _workplan(*rows)})
         fake.pr_states[1215] = "OPEN"
 
         assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 1
 
         assert capsys.readouterr().err == f"workplan.py: {reason}\n"
         assert not output.exists()
-        assert fake.created == []
 
-    def test_refuses_an_issue_without_a_work_plan(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    @pytest.mark.parametrize(
+        "comments", [pytest.param({}, id="no-comment"), pytest.param({EPIC: BY_HAND}, id="by-hand")]
+    )
+    def test_refuses_an_issue_without_a_work_plan_comment(
+        self, comments: dict[int, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        fake = FakeGh({EPIC: INTRO})
+        fake = FakeGh(comments)
 
         assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 1
 
         assert capsys.readouterr().err == "workplan.py: the issue has no work plan; run `workplan.py render` first\n"
-
-    def test_link_failure_records_the_child_and_a_rerun_links_it_without_creating(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        fake = FakeGh({EPIC: _epic_body(_row("S1", stub="Stub for S1."))})
-        fake.failing_links = 1
-
-        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 1
-        assert capsys.readouterr().err == (
-            f"workplan.py: linking #1300 failed (gh api --method POST repos/o/r/issues/{EPIC}/sub_issues "
-            "-F sub_issue_id=91300: HTTP 502); run next again to link it\n"
-        )
-        assert _rows(fake.bodies[EPIC])[0]["child"] == 1300
-        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
-
-        assert len(fake.created) == 1
-        assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
-
-    def test_an_already_linked_child_is_not_linked_again(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131))})
-        fake.sub_issues.append((EPIC, "sub_issue_id=91131"))
-
-        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
-
-        assert fake.sub_issues == [(EPIC, "sub_issue_id=91131")]
-        assert fake.created == []
-
-    def test_record_conflict_is_retried_on_the_new_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        body = _epic_body(_row("S1", stub="Stub for S1."))
-        fake = FakeGh({EPIC: body})
-        fake.race[(EPIC, 4)] = f"Edited meanwhile.\n{body}"
-
-        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
-
-        assert fake.bodies[EPIC].startswith("Edited meanwhile.\n")
-        assert _rows(fake.bodies[EPIC])[0]["child"] == 1300
-        assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
-
-    def test_record_conflict_twice_refuses_naming_the_created_child(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        body = _epic_body(_row("S1", stub="Stub for S1."))
-        fake = FakeGh({EPIC: body})
-        fake.race[(EPIC, 4)] = f"Edited once.\n{body}"
-        fake.race[(EPIC, 6)] = f"Edited twice.\n{body}"
-
-        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 1
-
-        assert capsys.readouterr().err == (
-            f"workplan.py: created #1300 but #{EPIC}'s body kept changing; record #1300 as S1's child\n"
-        )
-        assert fake.sub_issues == []
-
-    def test_unreadable_create_output_refuses_with_the_raw_output(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        fake = FakeGh({EPIC: _epic_body(_row("S1", stub="Stub for S1."))})
-        fake.create_output = "created, somewhere"
-
-        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 1
-
-        assert capsys.readouterr().err == (
-            "workplan.py: created a child issue for S1 but cannot read its number from gh's output "
-            "'created, somewhere'; record it as S1's child by hand\n"
-        )
-        assert fake.edits == []
-
-
-class NextSizeTests:
-    def test_a_created_child_carries_the_slices_size_label(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = FakeGh({EPIC: _epic_body(_row("S1", stub="Stub for S1.", size="m"))})
-
-        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
-
-        assert fake.labels[1300] == ["dovo-size-m"]
-        assert fake.added_labels == []
-
-    @pytest.mark.parametrize(
-        ("labels", "added"),
-        [
-            pytest.param([], [(1131, "dovo-size-l")], id="unsized"),
-            pytest.param(["bug"], [(1131, "dovo-size-l")], id="other-labels"),
-            pytest.param(["dovo-size-s"], [], id="already-sized"),
-        ],
-    )
-    def test_an_existing_child_gets_the_size_label_only_when_it_has_none(
-        self, labels: list[str], added: list[tuple[int, str]], monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131, size="l"))})
-        fake.labels[1131] = list(labels)
-
-        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
-
-        assert fake.added_labels == added
-
-    @pytest.mark.parametrize(
-        ("row", "child"),
-        [
-            pytest.param(_row("S1", stub="Stub for S1.", size=None), 1300, id="created"),
-            pytest.param(_row("S1", child=1131, size=None), 1131, id="existing"),
-        ],
-    )
-    def test_a_work_plan_without_sizes_labels_nothing_and_says_so(
-        self, row: object, child: int, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        fake = FakeGh({EPIC: _epic_body(row)})
-
-        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
-
-        assert fake.labels.get(child, []) == []
-        assert fake.added_labels == []
-        assert capsys.readouterr().err == (
-            f"workplan.py: S1 has no size in the work plan, so #{child} gets no dovo-size-* label; label it by hand\n"
-        )
-
-    @pytest.mark.parametrize(
-        ("stored", "planned", "resolved"),
-        [
-            pytest.param(None, "m", "m", id="plan-sizes-an-unsized-row"),
-            pytest.param("s", "m", "m", id="plan-size-wins"),
-            pytest.param("l", None, "l", id="sizeless-plan-keeps-stored-size"),
-        ],
-    )
-    def test_a_rerender_resolves_the_size_from_the_plan_else_the_stored_row(
-        self,
-        stored: str | None,
-        planned: str | None,
-        resolved: str,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131, size=stored))})
-        slices = [_slice("S1", size=planned)]
-        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices})
-        argv = ("render", "--issue", str(EPIC), "--plan", plan, "--session", PLAN_SESSION, "--revision", "4")
-
-        assert _main(monkeypatch, fake, *argv) == 0
-
-        assert [(row["id"], row["child"], row["size"]) for row in _rows(fake.bodies[EPIC])] == [("S1", 1131, resolved)]
 
 
 class NextHoldTests:
@@ -996,7 +816,7 @@ class NextHoldTests:
         ("rows", "holds", "reason"),
         [
             pytest.param(
-                [_row("S1", child=1131, blocked_by=[1192]), _row("S2", child=1132, depends_on=["S1"])],
+                [_row("S1", blocked_by=[1192]), _row("S2", depends_on=["S1"])],
                 [
                     {"id": "S1", "label": "S1 is blocked by open #1192"},
                     {"id": "S2", "label": "S2 waits on S1"},
@@ -1005,7 +825,7 @@ class NextHoldTests:
                 id="none-ready",
             ),
             pytest.param(
-                [_row("S1", child=1131, status="in_review", pr=1215), _row("S2", child=1132)],
+                [_row("S1", status="in_review", pr=1215), _row("S2")],
                 [{"id": "S1", "label": "S1 is in_review (#1215); finish it before starting another slice"}],
                 "S1 is in_review (#1215); finish it before starting another slice",
                 id="in-review",
@@ -1024,7 +844,7 @@ class NextHoldTests:
         output = tmp_path / "output"
         monkeypatch.setenv("DOVO_OUTPUT", str(output))
         hold = tmp_path / ".agentic" / "next-hold.json"
-        fake = FakeGh({EPIC: _epic_body(*rows)})
+        fake = FakeGh({EPIC: _workplan(*rows)})
         fake.pr_states[1215] = "OPEN"
 
         assert _main(monkeypatch, fake, *self._argv(hold)) == 0
@@ -1032,32 +852,29 @@ class NextHoldTests:
         assert json.loads(hold.read_text(encoding="utf-8")) == {"holds": holds}
         assert capsys.readouterr().err == f"workplan.py: holding: {reason}\n"
         assert not output.exists()
-        assert fake.created == []
 
     def test_writes_no_holds_when_a_slice_is_picked(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         output = tmp_path / "output"
         monkeypatch.setenv("DOVO_OUTPUT", str(output))
         hold = tmp_path / "next-hold.json"
-        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131, blocked_by=[1192]))})
+        fake = FakeGh({EPIC: _workplan(_row("S1", blocked_by=[1192]))})
         fake.closed.add(1192)
 
         assert _main(monkeypatch, fake, *self._argv(hold)) == 0
 
         assert json.loads(hold.read_text(encoding="utf-8")) == {"holds": []}
-        assert output.read_text(encoding="utf-8").splitlines()[:2] == ["slice=S1", "child=1131"]
+        assert output.read_text(encoding="utf-8").splitlines()[0] == "slice=S1"
 
     @pytest.mark.parametrize(
         ("rows", "reason"),
         [
             pytest.param(
-                [_row("S1", child=1131, status="in_progress", session=CODE_SESSION), _row("S2", child=1132)],
+                [_row("S1", status="in_progress", session=CODE_SESSION), _row("S2")],
                 "S1 is in_progress; finish it before starting another slice",
                 id="in-progress",
             ),
             pytest.param(
-                [_row("S1", child=1131, status="merged", pr=1215)],
-                "every slice is merged",
-                id="all-merged",
+                [_row("S1", status="merged", pr=1215)], "every slice is merged or handed off", id="all-merged"
             ),
         ],
     )
@@ -1070,7 +887,7 @@ class NextHoldTests:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         hold = tmp_path / "next-hold.json"
-        fake = FakeGh({EPIC: _epic_body(*rows)})
+        fake = FakeGh({EPIC: _workplan(*rows)})
 
         assert _main(monkeypatch, fake, *self._argv(hold)) == 1
 
@@ -1080,115 +897,207 @@ class NextHoldTests:
 
 class ClaimTests:
     def test_marks_the_slice_in_progress_with_the_session(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131))})
+        fake = FakeGh({EPIC: _workplan(_row("S1"))})
 
         code = _main(monkeypatch, fake, "claim", "--issue", str(EPIC), "--slice", "S1", "--session", CODE_SESSION)
 
         assert code == 0
-        row = _rows(fake.bodies[EPIC])[0]
+        row = _rows(fake.workplan())[0]
         assert (row["status"], row["session"]) == ("in_progress", CODE_SESSION)
-        assert f"| S1 | Title S1 | #1131 | — | in_progress | — | {CODE_SESSION} |" in fake.bodies[EPIC]
+        assert f"| S1 | Title S1 | O-1 | — | in_progress | — | {CODE_SESSION} |" in fake.workplan()
+        assert fake.edits == []
 
     @pytest.mark.parametrize(
         ("row", "reason"),
         [
             pytest.param(
-                _row("S1", child=1131, status="in_progress", session="bp_other"),
-                "S1 is in_progress, not pending",
-                id="taken",
+                _row("S1", status="in_progress", session="bp_other"), "S1 is in_progress, not pending", id="taken"
             ),
-            pytest.param(_row("S2", child=1132), "the work plan has no slice S1", id="unknown"),
+            pytest.param(_row("S2"), "the work plan has no slice S1", id="unknown"),
         ],
     )
     def test_refuses_a_slice_that_is_not_pending(
         self, row: object, reason: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        fake = FakeGh({EPIC: _epic_body(row)})
+        fake = FakeGh({EPIC: _workplan(row)})
 
         code = _main(monkeypatch, fake, "claim", "--issue", str(EPIC), "--slice", "S1", "--session", CODE_SESSION)
 
         assert code == 1
         assert capsys.readouterr().err == f"workplan.py: {reason}\n"
-        assert fake.edits == []
+        assert fake.patched == []
 
 
 class LandTests:
-    def _argv(self, tmp_path: Path, plan: Mapping[str, object], *extra: str) -> tuple[str, ...]:
+    def _argv(self, tmp_path: Path, plan: Mapping[str, object], *extra: str, report: str = "") -> tuple[str, ...]:
         """Return land's argv for S1 with PR 1215, a report, plan and an epic plan holding CONTRACT under tmp_path."""
-        report = tmp_path / "slice-report.md"
-        report.write_text("## Departures\n- Renamed a helper.\n", encoding="utf-8")
+        report_path = tmp_path / "slice-report.md"
+        report_path.write_text(report or "## Departures\n- Renamed a helper.\n", encoding="utf-8")
         plan_path = _write_json(tmp_path / "plan.json", plan)
         base_path = _write_json(tmp_path / "epic-plan.json", {"contract": CONTRACT, "slices": []})
         return (
             "land", "--issue", str(EPIC), "--slice", "S1", "--session", CODE_SESSION,
-            "--pr", "1215", "--report", str(report), "--plan", plan_path, "--base-plan", base_path, *extra,
+            "--pr", "1215", "--report", str(report_path), "--plan", plan_path, "--base-plan", base_path, *extra,
         )  # fmt: skip
 
-    def _contract_body(self) -> str:
-        """Return an epic body holding INTRO, CONTRACT_SECTION and a work plan whose S1 this code session claimed."""
-        rows = [_row("S1", child=1131, status="in_progress", session=CODE_SESSION), _row("S2", child=1132)]
-        return WORKPLAN.with_workplan(f"{INTRO}\n{CONTRACT_SECTION}", WORKPLAN.WorkPlan(PLAN_SESSION, 3, rows), "")
+    def _contract_workplan(self) -> str:
+        """Return a work plan comment holding CONTRACT_SECTION and a work plan whose S1 this code session claimed."""
+        rows = [_row("S1", status="in_progress", session=CODE_SESSION), _row("S2", outcomes=["O-2"])]
+        return _workplan(*rows, head=CONTRACT_SECTION)
+
+    def _slices(self, **s2: object) -> list[dict[str, object]]:
+        return [_slice("S1"), _slice("S2", outcomes=["O-2"], **s2)]
 
     def test_marks_in_review_and_appends_the_landed_report(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        fake = FakeGh({EPIC: self._contract_body()})
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: self._contract_workplan()})
         slice_question = {"id": "OQ-1", "summary": "Rename the helper? (assumed: no)", "assumed": "No."}
-        plan = {
-            "contract": CONTRACT,
-            "slices": [_slice("S1", child=1131, phases=[1, 2]), _slice("S2", child=1132, phases=[])],
-            "open_questions": [slice_question],
-        }
+        plan = {"contract": CONTRACT, "slices": self._slices(), "open_questions": [slice_question]}
 
         assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0
 
-        body = fake.bodies[EPIC]
-        stored = _stored(body)
+        text = fake.workplan()
+        stored = _stored(text)
         assert (stored["plan_session"], stored["plan_revision"]) == (PLAN_SESSION, 3)
-        assert (_rows(body)[0]["status"], _rows(body)[0]["pr"]) == ("in_review", 1215)
-        assert body.startswith(f"{INTRO}\n{CONTRACT_SECTION}\n## Work plan\n")
-        assert body.endswith("-->\n\n### S1 as landed (#1215)\n#### Departures\n- Renamed a helper.\n")
+        assert (_rows(text)[0]["status"], _rows(text)[0]["pr"]) == ("in_review", 1215)
+        assert text.startswith(f"{MARKER}\n\n{CONTRACT_SECTION}\n## Work plan\n")
+        assert text.endswith("-->\n\n### S1 as landed (#1215)\n#### Departures\n- Renamed a helper.\n")
+        assert output.read_text(encoding="utf-8") == f"remaining=1\nclosing_lines=Part of #{EPIC} (slice S1 of 2)\n"
+        assert (fake.bodies[EPIC], fake.edits) == (INTRO, [])
+
+    @pytest.mark.parametrize(
+        ("s1", "s2", "added", "outputs"),
+        [
+            pytest.param(
+                {}, {"status": "merged", "pr": 1214}, [], f"remaining=0\nclosing_lines=Closes #{EPIC}\n", id="last"
+            ),
+            pytest.param(
+                {"child": 1131},
+                {"status": "merged", "pr": 1214},
+                [],
+                f"remaining=0\nclosing_lines<<WORKPLAN_EOF\nCloses #1131\nCloses #{EPIC}\nWORKPLAN_EOF\n",
+                id="own-issue",
+            ),
+            pytest.param(
+                {},
+                {"status": "merged", "pr": 1214},
+                [_slice("S3", depends_on=["S1"])],
+                f"remaining=1\nclosing_lines=Part of #{EPIC} (slice S1 of 3)\n",
+                id="amended-plan-adds-a-slice",
+            ),
+            pytest.param(
+                {},
+                {"status": "handed_off", "child": 1301},
+                [],
+                f"remaining=0\nclosing_lines=Closes #{EPIC}\n",
+                id="handed-off-issue-closed",
+            ),
+            pytest.param(
+                {},
+                {"status": "handed_off", "child": 1302},
+                [],
+                f"remaining=1\nclosing_lines=Part of #{EPIC} (slice S1 of 2)\n",
+                id="handed-off-issue-open",
+            ),
+        ],
+    )
+    def test_writes_the_closing_lines_from_the_plan_as_landed(
+        self,
+        s1: dict[str, object],
+        s2: dict[str, object],
+        added: list[dict[str, object]],
+        outputs: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        rows = [_row("S1", status="in_progress", session=CODE_SESSION, **s1), _row("S2", **s2)]
+        fake = FakeGh({EPIC: _workplan(*rows, head=CONTRACT_SECTION)})
+        fake.closed.add(1301)
+        plan = {"contract": CONTRACT, "slices": [_slice("S1"), _slice("S2"), *added]}
+
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0
+
+        assert output.read_text(encoding="utf-8") == outputs
+
+    def test_a_comment_changed_twice_refuses_naming_the_slice(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        row = _row("S1", status="in_progress", session=CODE_SESSION)
+        fake = FakeGh({EPIC: _workplan(row)})
+        fake.race[(EPIC, 2)] = _workplan(row, head="Once.\n")
+        fake.race[(EPIC, 4)] = _workplan(row, head="Twice.\n")
+
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": None, "slices": [_slice("S1")]})) == 1
+
+        assert capsys.readouterr().err == (
+            f"workplan.py: #{EPIC}'s work plan comment kept changing while landing S1; run land again\n"
+        )
+        assert (fake.patched, fake.workplan()) == ([], _workplan(row, head="Twice.\n"))
+        assert not output.exists()
+
+    def test_refuses_a_comment_longer_than_github_allows(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: self._contract_workplan()})
+        before = fake.workplan()
+        plan = {"contract": CONTRACT, "slices": self._slices()}
+
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, plan, report="x" * 65_536)) == 1
+
+        error = capsys.readouterr().err
+        match = re.fullmatch(
+            r"workplan\.py: the work plan comment would be (?P<size>[\d,]+) characters, over GitHub's 65,536; "
+            r'shorten its "as landed" reports by hand and run the command again\n',
+            error,
+        )
+        assert match is not None, error
+        assert int(match["size"].replace(",", "")) > 65_536
+        assert (fake.workplan(), fake.patched) == (before, [])
 
     def test_amended_contract_is_rerendered_keeping_the_epic_questions_and_repoints(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        fake = FakeGh({EPIC: self._contract_body()})
+        fake = FakeGh({EPIC: self._contract_workplan()})
         amended = {**CONTRACT, "conventions": [{"rule": "Use ok() everywhere", "entry": None, "new_in": "S1"}]}
-        plan = {"contract": amended, "slices": [_slice("S1", child=1131), _slice("S2", child=1132)]}
 
-        assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": amended, "slices": self._slices()})) == 0
 
-        body = fake.bodies[EPIC]
+        text = fake.workplan()
         expected = CONTRACT_SECTION.replace("- Use ok (new;", "- Use ok() everywhere (new;")
-        assert body.startswith(f"{INTRO}\n{expected}\n## Work plan\n")
-        stored = _stored(body)
+        assert text.startswith(f"{MARKER}\n\n{expected}\n## Work plan\n")
+        stored = _stored(text)
         assert (stored["plan_session"], stored["plan_revision"]) == (CODE_SESSION, None)
 
     def test_a_contract_already_amended_is_left_alone(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         amended = {**CONTRACT, "conventions": [{"rule": "Use ok() everywhere", "entry": None, "new_in": "S1"}]}
-        body = self._contract_body().replace("- Use ok (new;", "- Use ok() everywhere (new;")
-        fake = FakeGh({EPIC: body})
-        plan = {"contract": amended, "slices": [_slice("S1", child=1131), _slice("S2", child=1132)]}
+        text = self._contract_workplan().replace("- Use ok (new;", "- Use ok() everywhere (new;")
+        fake = FakeGh({EPIC: text})
 
-        assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": amended, "slices": self._slices()})) == 0
 
-        assert fake.bodies[EPIC].split("## Work plan")[0] == body.split("## Work plan")[0]
-        assert _stored(fake.bodies[EPIC])["plan_session"] == PLAN_SESSION
+        assert fake.workplan().split("## Work plan")[0] == text.split("## Work plan")[0]
+        assert _stored(fake.workplan())["plan_session"] == PLAN_SESSION
 
     def test_refuses_a_contract_edited_during_the_run(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        fake = FakeGh({EPIC: self._contract_body().replace("Output shapes disagree.", "Edited on GitHub.")})
+        fake = FakeGh({EPIC: self._contract_workplan().replace("Output shapes disagree.", "Edited on GitHub.")})
         amended = {**CONTRACT, "conventions": [{"rule": "Use ok() everywhere", "entry": None, "new_in": "S1"}]}
-        plan = {"contract": amended, "slices": [_slice("S1", child=1131), _slice("S2", child=1132)]}
 
-        assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 1
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": amended, "slices": self._slices()})) == 1
 
         assert capsys.readouterr().err == (
             f"workplan.py: #{EPIC}'s Feature contract was edited during this run: it is neither the contract this "
             "run started from nor the amended one; reconcile it by hand and run land again\n"
         )
-        assert fake.edits == []
+        assert fake.patched == []
 
     def test_amends_a_contract_whose_override_replaces_a_whole_body(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1201,81 +1110,80 @@ class LandTests:
         }
         base = {**CONTRACT, "overrides": [override]}
         amended = {**base, "conventions": [{"rule": "Use ok() everywhere", "entry": None, "new_in": "S1"}]}
-        questions = WORKPLAN.body_questions(self._contract_body())
-        rows = [_row("S1", child=1131, status="in_progress", session=CODE_SESSION), _row("S2", child=1132)]
-        section = WORKPLAN.render_contract(base, questions)
-        fake = FakeGh(
-            {EPIC: WORKPLAN.with_workplan(f"{INTRO}\n{section}", WORKPLAN.WorkPlan(PLAN_SESSION, 3, rows), "")}
-        )
-        plan = {"contract": amended, "slices": [_slice("S1", child=1131), _slice("S2", child=1132)]}
-        argv = self._argv(tmp_path, plan)
+        questions = WORKPLAN.body_questions(self._contract_workplan())
+        rows = [_row("S1", status="in_progress", session=CODE_SESSION), _row("S2", outcomes=["O-2"])]
+        fake = FakeGh({EPIC: _workplan(*rows, head=WORKPLAN.render_contract(base, questions))})
+        argv = self._argv(tmp_path, {"contract": amended, "slices": self._slices()})
         _write_json(tmp_path / "epic-plan.json", {"contract": base, "slices": []})
 
         assert _main(monkeypatch, fake, *argv) == 0
 
         expected = WORKPLAN.render_contract(amended, questions)
-        assert fake.bodies[EPIC].startswith(f"{INTRO}\n{expected}\n## Work plan\n")
+        assert fake.workplan().startswith(f"{MARKER}\n\n{expected}\n## Work plan\n")
 
     def test_a_decision_with_an_open_questions_id_settles_it(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        fake = FakeGh({EPIC: self._contract_body()})
+        fake = FakeGh({EPIC: self._contract_workplan()})
         settled = {"id": "OQ-1", "decision": "Drop v1", "why": "S1 landed without it", "settled_by": None}
         decisions = CONTRACT["decisions"]
         assert isinstance(decisions, list)
         decided = {**CONTRACT, "decisions": [*decisions, settled]}
-        plan = {"contract": decided, "slices": [_slice("S1", child=1131), _slice("S2", child=1132)]}
 
-        assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": decided, "slices": self._slices()})) == 0
 
-        body = fake.bodies[EPIC]
-        assert "| OQ-1 | Drop v1 | S1 landed without it |" in body
-        assert "Open questions, each with a recommended answer" not in body
-        assert _stored(body)["plan_session"] == CODE_SESSION
+        text = fake.workplan()
+        assert "| OQ-1 | Drop v1 | S1 landed without it |" in text
+        assert "Open questions, each with a recommended answer" not in text
+        assert _stored(text)["plan_session"] == CODE_SESSION
 
-    def test_crlf_body_with_an_unchanged_contract_is_not_amended(
+    def test_crlf_comment_with_an_unchanged_contract_is_not_amended(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        body = self._contract_body().replace("\n", "\r\n")
-        fake = FakeGh({EPIC: body})
-        plan = {"contract": CONTRACT, "slices": [_slice("S1", child=1131), _slice("S2", child=1132)]}
+        fake = FakeGh({EPIC: self._contract_workplan().replace("\n", "\r\n")})
+
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": CONTRACT, "slices": self._slices()})) == 0
+
+        assert _stored(fake.workplan())["plan_session"] == PLAN_SESSION
+        assert WORKPLAN.lf(fake.workplan()).startswith(f"{MARKER}\n\n{CONTRACT_SECTION}\n## Work plan\n")
+
+    def test_amended_plan_repoints_the_plan_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = FakeGh({EPIC: self._contract_workplan()})
+        plan = {"contract": CONTRACT, "slices": self._slices(title="Narrower S2")}
 
         assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0
 
-        assert _stored(fake.bodies[EPIC])["plan_session"] == PLAN_SESSION
-        assert WORKPLAN.lf(fake.bodies[EPIC]).startswith(f"{INTRO}\n{CONTRACT_SECTION}\n## Work plan\n")
-
-    def test_amended_plan_repoints_the_plan_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = FakeGh({EPIC: self._contract_body()})
-        amended = [_slice("S1", child=1131), _slice("S2", child=1132, title="Narrower S2")]
-
-        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": CONTRACT, "slices": amended})) == 0
-
-        stored = _stored(fake.bodies[EPIC])
+        text = fake.workplan()
+        stored = _stored(text)
         assert (stored["plan_session"], stored["plan_revision"]) == (CODE_SESSION, None)
-        assert _rows(fake.bodies[EPIC])[1]["title"] == "Narrower S2"
-        assert f"Plan Session ID: `{CODE_SESSION}`\n" in fake.bodies[EPIC]
+        assert _rows(text)[1]["title"] == "Narrower S2"
+        assert f"Plan Session ID: `{CODE_SESSION}`\n" in text
 
+    @pytest.mark.parametrize(
+        "redefined",
+        [pytest.param({"title": "Rewritten S1"}, id="title"), pytest.param({"outcomes": ["O-2"]}, id="outcomes")],
+    )
     def test_refuses_a_plan_that_redefines_a_started_slice(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+        self,
+        redefined: dict[str, object],
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
-        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131, status="in_progress", session=CODE_SESSION))})
-        amended = [_slice("S1", child=1131, title="Rewritten S1")]
+        fake = FakeGh({EPIC: _workplan(_row("S1", status="in_progress", session=CODE_SESSION))})
+        plan = {"contract": None, "slices": [_slice("S1", **redefined)]}
 
-        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": None, "slices": amended})) == 1
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 1
 
         assert capsys.readouterr().err == "workplan.py: the plan changes S1, which already started\n"
-        assert fake.edits == []
+        assert fake.patched == []
 
     def test_applies_sweep_entries_and_skips_a_changed_body(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         fake = FakeGh(
-            {
-                EPIC: _epic_body(_row("S1", child=1131, status="in_progress", session=CODE_SESSION)),
-                1060: "Old 1060.\n",
-                1061: "Old 1061.\n",
-            }
+            {EPIC: _workplan(_row("S1", status="in_progress", session=CODE_SESSION))},
+            {1060: "Old 1060.\n", 1061: "Edited since the sweep was drafted.\n"},
         )
         fake.labels[1060] = ["dovo:ready", "bug"]
         sweep_dir = tmp_path / "sweep"
@@ -1292,9 +1200,8 @@ class LandTests:
                     "comment_file": f"sweep/{issue}.comment.md",
                 }
             )
-        fake.bodies[1061] = "Edited since the sweep was drafted.\n"
         sweep = _write_json(tmp_path / "sweep.json", entries)
-        plan = {"contract": None, "slices": [_slice("S1", child=1131)]}
+        plan = {"contract": None, "slices": [_slice("S1")]}
 
         assert _main(monkeypatch, fake, *self._argv(tmp_path, plan, "--sweep", sweep)) == 0
 
@@ -1302,30 +1209,155 @@ class LandTests:
             "workplan.py: sweep skipped #1061: its body changed since the sweep was drafted\n"
         )
         assert (fake.bodies[1060], fake.bodies[1061]) == ("New 1060.\n", "Edited since the sweep was drafted.\n")
-        assert fake.comments == [(1060, "Swept 1060.\n")]
+        assert (fake.texts(1060), fake.texts(1061)) == (["Swept 1060.\n"], [])
         assert fake.removed_labels == [(1060, "dovo:ready")]
 
     def test_accepts_an_empty_sweep(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131, status="in_progress", session=CODE_SESSION))})
+        fake = FakeGh({EPIC: _workplan(_row("S1", status="in_progress", session=CODE_SESSION))})
         sweep = _write_json(tmp_path / "sweep.json", [])
-        plan = {"contract": None, "slices": [_slice("S1", child=1131)]}
+        plan = {"contract": None, "slices": [_slice("S1")]}
 
         assert _main(monkeypatch, fake, *self._argv(tmp_path, plan, "--sweep", sweep)) == 0
 
-        assert (fake.edits, fake.comments) == ([EPIC], [])
+        assert (fake.patched, fake.edits) == ([6_513_400_000], [])
 
     def test_refuses_a_slice_this_session_did_not_claim(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        fake = FakeGh({EPIC: _epic_body(_row("S1", child=1131))})
-        plan = {"contract": None, "slices": [_slice("S1", child=1131)]}
+        fake = FakeGh({EPIC: _workplan(_row("S1"))})
+        plan = {"contract": None, "slices": [_slice("S1")]}
 
         assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 1
 
         assert capsys.readouterr().err == (
             f"workplan.py: S1 is pending for session None, not in_progress for {CODE_SESSION}\n"
         )
-        assert fake.edits == []
+        assert fake.patched == []
+
+
+class SplitOutTests:
+    def _split(self, monkeypatch: pytest.MonkeyPatch, fake: FakeGh) -> int:
+        return _main(monkeypatch, fake, "split-out", "--issue", str(EPIC), "--slice", "S2")
+
+    def test_creates_links_and_records_the_slices_own_issue(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2", outcomes=["O-2", "O-3"], size="m"))})
+
+        assert self._split(monkeypatch, fake) == 0
+
+        assert fake.created == [
+            (
+                "Title S2",
+                f"Slice S2 of #{EPIC} (2 slices), split out to its own issue.\n\n"
+                f"Delivers O-2, O-3 of #{EPIC}. The work plan comment on #{EPIC} tracks it.\n",
+            )
+        ]
+        assert fake.labels[1300] == ["dovo-size-m"]
+        assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
+        assert [row["child"] for row in _rows(fake.workplan())] == [None, 1300]
+        assert "| S2 (#1300) | Title S2 | O-2, O-3 | — | pending | — | — |" in fake.workplan()
+        assert output.read_text(encoding="utf-8") == "child=1300\n"
+
+    def test_a_link_failure_keeps_the_record_and_a_rerun_links_without_creating(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2"))})
+        fake.failing_links = 1
+
+        assert self._split(monkeypatch, fake) == 1
+        assert capsys.readouterr().err == (
+            f"workplan.py: linking #1300 failed (gh api --method POST repos/o/r/issues/{EPIC}/sub_issues "
+            "-F sub_issue_id=91300: HTTP 502); run split-out again to link it\n"
+        )
+        assert _rows(fake.workplan())[1]["child"] == 1300
+        assert self._split(monkeypatch, fake) == 0
+
+        assert len(fake.created) == 1
+        assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
+
+    def test_handed_off_creates_the_issue_and_marks_the_slice(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2"))})
+
+        assert _main(monkeypatch, fake, "split-out", "--issue", str(EPIC), "--slice", "S2", "--handed-off") == 0
+
+        assert [(row["child"], row["status"]) for row in _rows(fake.workplan())] == [
+            (None, "pending"),
+            (1300, "handed_off"),
+        ]
+        assert "| S2 (#1300) | Title S2 | O-1 | — | handed_off | — | — |" in fake.workplan()
+        assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
+        assert output.read_text(encoding="utf-8") == "child=1300\n"
+
+    def test_handed_off_keeps_the_slices_existing_issue(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2", child=1131))})
+
+        assert _main(monkeypatch, fake, "split-out", "--issue", str(EPIC), "--slice", "S2", "--handed-off") == 0
+
+        assert [(row["child"], row["status"]) for row in _rows(fake.workplan())][1] == (1131, "handed_off")
+        assert (fake.created, fake.sub_issues) == ([], [(EPIC, "sub_issue_id=91131")])
+        assert output.read_text(encoding="utf-8") == "child=1131\n"
+
+    def test_handed_off_refuses_a_slice_that_started(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2", status="in_progress", session=CODE_SESSION))})
+
+        assert _main(monkeypatch, fake, "split-out", "--issue", str(EPIC), "--slice", "S2", "--handed-off") == 1
+
+        assert capsys.readouterr().err == "workplan.py: S2 is in_progress; only a pending slice can be handed off\n"
+        assert (fake.created, fake.patched, fake.sub_issues) == ([], [], [])
+
+    @pytest.mark.parametrize(
+        ("extra", "hint"),
+        [
+            pytest.param((), "record #1300 as S2's child", id="split-out"),
+            pytest.param(
+                ("--handed-off",), "record #1300 as S2's child and mark the slice handed_off", id="handed-off"
+            ),
+        ],
+    )
+    def test_a_comment_changed_twice_refuses_naming_the_created_issue(
+        self,
+        extra: tuple[str, ...],
+        hint: str,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        rows = (_row("S1"), _row("S2"))
+        fake = FakeGh({EPIC: _workplan(*rows)})
+        fake.race[(EPIC, 3)] = _workplan(*rows, head="Once.\n")
+        fake.race[(EPIC, 5)] = _workplan(*rows, head="Twice.\n")
+
+        assert _main(monkeypatch, fake, "split-out", "--issue", str(EPIC), "--slice", "S2", *extra) == 1
+
+        assert capsys.readouterr().err == (
+            f"workplan.py: created #1300 but #{EPIC}'s work plan comment kept changing; {hint}\n"
+        )
+        assert (len(fake.created), fake.patched, fake.sub_issues) == (1, [], [])
+        assert _rows(fake.workplan())[1]["child"] is None
+
+    def test_unreadable_create_output_refuses_with_the_raw_output(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2"))})
+        fake.create_output = "created, somewhere"
+
+        assert self._split(monkeypatch, fake) == 1
+
+        assert capsys.readouterr().err == (
+            "workplan.py: created a child issue for S2 but cannot read its number from gh's output "
+            "'created, somewhere'; record it as S2's child by hand\n"
+        )
+        assert fake.patched == []
 
 
 @pytest.mark.parametrize(

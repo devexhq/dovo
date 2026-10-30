@@ -1,6 +1,6 @@
-# Feature contract template (epic body, part 1)
+# Feature contract template
 
-Copied from the slice-flow design at `944de0ce`; the design was revised 2026-10-28 after a dry run on the milestone 35 envelope group (#925). This is the template `issue-plan` fills when it runs on an epic, followed by the `plan.json` shape that carries it. Part 2, the work plan, is written from `plan.json` by the slice flow's work-plan script, not by `issue-plan`.
+Copied from the slice-flow design at `944de0ce`; the design was revised 2026-10-28 after a dry run on the milestone 35 envelope group (#925). This is the template `issue-plan` fills when it runs on an epic, followed by the `plan.json` shape that carries it. `workplan.py render` writes the contract into the issue's work plan comment, followed by the work plan, which it writes from `plan.json`; `issue-plan` writes neither.
 
 **Where it comes from:** #1214 (run by hand), #925's "Target contract" and "Order" sections, and the dry run, which found findings F1–F14 and conflicts C1–C12 between the issues. The same rules apply to every section:
 - **Every sentence has a stated truth.** It is true on `origin/main` at the named sha, true once a named prerequisite lands (`after #n`), or a target the slices deliver.
@@ -25,7 +25,7 @@ sorting each issue into container or work (see "Mapping existing issues" below).
 |---|---|---|
 | #n | epic | this issue |
 | #n | child | Sx |
-| #n | split | Sx (keeps the issue), Sy (new child when it comes up) |
+| #n | split | Sx (keeps the issue), Sy (a slice of the epic, with no issue of its own) |
 | #n | superseded container | closed once its decisions are copied here |
 | #n | prerequisite | blocks Sx; must close first |
 | #n | sibling epic | shares <surface>; coordinated, not absorbed |
@@ -97,11 +97,11 @@ slice comes up, to catch drift.>
 When `issue-plan` runs on an epic that already has issues (the usual case), it sorts each one before writing slices:
 - **Container or work.** A container (a parent or tracking issue) never becomes a PR. A work issue does.
 - **Exactly one container becomes the epic.** Prefer the one other issues and architecture entries already cite. Every other container is closed as superseded, after its decisions, non-goals and user stories are copied into the epic.
-- **A work issue maps to one slice, or is split.** When split, the first part keeps the issue, and later parts get new child issues when they come up.
+- **A work issue maps to one slice, or is split.** The slice that keeps the issue records it as its `child` in `plan.json`, and the work plan records it on the slice's row. The flow still works that slice, and its PR ends with `Closes #<child>` above the epic's closing line. When split, the first part keeps the issue, and later parts are slices of the epic with no issue of their own.
 - **A true duplicate of another work issue** is merged into the older one.
 - **Epics never nest.** An existing epic or container that belongs to another epic is never made a slice. Either it is closed as superseded, or it stays a sibling epic and its slice issues become prerequisites.
 - **An issue outside the group** that a slice needs is a prerequisite. One that shares a surface without being needed is a sibling epic.
-- **Reparent the sub-issues** when the epic is published. Re-ready each kept child when its slice comes up.
+- **No issue is created or reparented** when the epic is published. Re-ready each kept child when its slice comes up. A slice a person hands to someone outside the flow is marked with `workplan.py split-out --handed-off`, which gives it an issue when it has none. The flow never picks it, and the epic's last PR closes the epic only once that issue is closed.
 
 In the dry run this made #925 the epic, closed #926 and #924 as superseded containers, kept #1131, #1132 and #1058 as one slice each, and split #1135 and #1060 into two slices each.
 
@@ -156,7 +156,8 @@ The contract scales with how far the shared surfaces spread. An epic whose slice
 ```
 
 `slices[]` (its full shape is in `issue-plan.md` Step 5) carries:
-- `child`: the issue number, or null until it's created
+- `outcomes`: the issue's outcome ids (`O-n`) the slice delivers
+- `child`: the existing issue the slice keeps, only on a slice an existing issue maps to
 - `blocked_by`: prerequisite issue numbers, alongside `depends_on` for slice ids
 - `owns`: the surfaces and aspects the slice owns
 - `lint_gates`

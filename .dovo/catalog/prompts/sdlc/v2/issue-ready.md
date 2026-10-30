@@ -16,7 +16,7 @@ The check never edits the issue, its labels or its comments. It writes its verdi
 Each failure is a `gate` finding that only a person can settle, so the verdict is `not_ready`:
 
 - The issue is open.
-- It has no open sub-issues. An issue with sub-issues is planned as an epic, not readied as one slice; name the first open sub-issue whose blockers are all closed.
+- It has no open sub-issues, unless it is the issue `issue-plan-v2` is about to slice, which maps its sub-issues onto slices. Any other issue with sub-issues is planned as an epic, not readied as one slice; name the first open sub-issue whose blockers are all closed.
 - It has exactly one `dovo-size-*` label.
 
 ## 3. Checks
