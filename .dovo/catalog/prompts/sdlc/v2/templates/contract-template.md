@@ -164,7 +164,7 @@ The contract scales with how far the shared surfaces spread. An epic whose slice
 - `estimate`: `{ "src_docs": 350, "tests": 400, "basis": "inventory rows …" }`
 - `pilot: true` on one slice, and `closing_docs: true` on the last
 
-`issue-plan-review` checks these epic ready criteria mechanically from the fields. An optional section left out is never a failure on its own:
+An epic plan meets these ready criteria, which the planner checks from the fields before handing off: no review runs on an issue plan, and `plan.py check-slices` checks only each slice's outcomes. An optional section left out is never a failure on its own:
 - `problem`, `target` and `ownership` are non-empty
 - one owner per surface and aspect
 - an acyclic graph, with every `blocked_by` issue an open or closed issue

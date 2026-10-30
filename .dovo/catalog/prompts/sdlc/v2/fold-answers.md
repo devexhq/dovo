@@ -21,7 +21,7 @@ For every entry of `plan.json` `open_questions`, in order:
 
 Append one entry per question to `plan.json` `decisions`, keeping the entries already there (the planner's own departures). Each entry has the shape [issue-plan.md](issue-plan.md) Step 5 defines:
 
-- `id`: the next free `D-<n>`, continuing after the highest decision id in the issue the decisions are posted to (its Decisions, `gh issue view <n> --json body`), in `.agentic/prior-decisions.json` and in `decisions`.
+- `id`: the next free `D-<n>`, continuing after the highest decision id in the issue the decisions are posted to (its Decisions, `gh issue view <n> --json body`), in `.agentic/prior-decisions.json`, in `decisions` and, for a slice plan, in `.agentic/epic-plan.json` `decisions`, which a run that phases a plan's one slice has not posted yet.
 - `was`: the question's `OQ-<n>` id.
 - `decision`: one sentence stating the choice itself.
 - `rejected`: the answers not taken, one sentence each: the question's `alternatives`, minus the human's answer, plus the assumed answer when the human chose another. `[]` when there were none.
