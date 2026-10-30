@@ -403,6 +403,30 @@ class ReconcileStaleRunsTests:
         assert stored.status == SessionStatus.PAUSED
         assert result.diagnostic is None
 
+    def test_failed_process_walk_records_debug_event_and_still_pauses(
+        self, isolated_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Pause the crashed run, return no diagnostic and write one debug sessions.reconcile_scan event when the process walk raises psutil.Error."""
+        sessions = _seed_crashed(isolated_workspace, "session-walk-failed")
+
+        def _process_iter(*_args: object, **_kwargs: object) -> Generator[psutil.Process]:
+            raise psutil.Error()
+            yield
+
+        monkeypatch.setattr(psutil, "process_iter", _process_iter)
+
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+
+        stored = sessions.get("session-walk-failed")
+        assert stored is not None
+        assert stored.status == SessionStatus.PAUSED
+        assert result.paused == (stored,)
+        assert result.diagnostic is None
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "debug"
+        assert event["operation"] == "sessions.reconcile_scan"
+        assert event["exception_type"] == "Error"
+
     def test_paused_and_failed_rows_are_reported_together(self, isolated_workspace: Path) -> None:
         sessions = _seed_crashed(isolated_workspace, "session-resumable")
         sessions.create("session-stateless", "blueprint", "blueprint")
