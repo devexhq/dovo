@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks the plans and phase files the issue-plan-v2 and issue-code-v2 blueprints' planning steps write, keeps their decisions on the issue, and lists the issue's numbered items.
+"""Checks the plans and phase files the issue-plan-v2 and issue-code-v2 blueprints' planning steps write, keeps their decisions on the issue, lists the issue's numbered items, and applies a legacy issue's approved rewrite.
 
 `check-slices` runs after issue-plan-v2 slices an issue. It refuses, naming
 every problem it finds, a plan whose slices leave an outcome of the issue
@@ -79,9 +79,19 @@ issue's other items, its decisions included, bind every slice, and no phase has
 to cite them. A slice worked on its own issue, or the one slice of a plan,
 keeps every item, with no `part`.
 
-`body-sha` prints the `body_sha` of an issue's description, or of a file
-holding the description a trim would write, so the ready check can record the
-description it checked. `ready-comment` runs once a person approves the ready
+`issue-format` runs before the ready check. It prints `format=short` or
+`format=legacy`, the description's format as `requirements` reports it, and
+`body_sha=<sha>` of the description it read, one per line, so the blueprint
+rewrites a legacy issue to the short format first. `rewrite-apply` runs once a
+person approves that rewrite. Given the `body_sha` the rewrite was drafted
+against with `--body-sha`, it refuses, naming both shas, when the issue's
+description is no longer that one, and it refuses a draft with no
+`## Outcomes` section. Otherwise it posts the old description to the issue as
+a collapsed comment and only then replaces the description with the draft, so
+a failed edit loses nothing.
+
+`body-sha` prints the `body_sha` of an issue's description, so the ready
+check can record the description it checked. `ready-comment` runs once a person approves the ready
 check. Given that `body_sha` with `--body-sha`, it refuses, naming both shas,
 when the issue's description is no longer the one the check read; otherwise it
 posts the check's comment to the issue, headed by a
@@ -106,6 +116,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
+from datetime import date
 from pathlib import Path
 
 from plan_formats import (
@@ -153,6 +164,10 @@ READY_LABEL = "dovo:ready"
 READY_MARKER = "<!-- dovo:ready schema_version=1 body_sha={body_sha} -->"
 READY_MARKER_RE = re.compile(r"<!-- dovo:ready schema_version=1 body_sha=(?P<body_sha>[0-9a-f]{64}) -->")
 TRUSTED = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
+REWRITTEN = (
+    "Original description, replaced on {day} with the short issue format (why, outcomes, decisions, binding values). "
+    "Kept here so nothing is lost."
+)
 BULLET_RE = re.compile(r"- \*\*(?P<id>D-\d+)\*\* (?P<text>.+)")
 REPLACES_RE = re.compile(r"Replaces (?P<id>D-\d+) \(session (?P<session>[^\s()]+)\)\.$")
 OUTCOME_ENTRY = re.compile(r"(?P<id>O-\d+)(?: \((?P<part>[^()]+)\))?")
@@ -849,15 +864,13 @@ def _read_text(path: Path) -> str:
         raise PlanError(f"Cannot read {path}: {error}.") from error
 
 
-def described_sha(issue: int | None, path: Path | None) -> str:
-    """Return the body_sha of issue's description, or of the description in the file at path when issue is None.
+def description(issue: int) -> str:
+    """Return issue's description as it is now.
 
     Raises:
-        PlanError: The file cannot be read.
+        PlanError: gh printed something other than a JSON object.
     """
-    if issue is not None:
-        return body_sha(str(_view(issue, "body").get("body") or ""))
-    return body_sha(_read_text(path or Path()))
+    return str(_view(issue, "body").get("body") or "")
 
 
 def ready_comment(issue: int, path: Path, checked: str) -> None:
@@ -869,7 +882,7 @@ def ready_comment(issue: int, path: Path, checked: str) -> None:
     text = _read_text(path).strip()
     if not text:
         raise PlanError(f"{path} is empty; the ready check writes the comment.")
-    sha = body_sha(str(_view(issue, "body").get("body") or ""))
+    sha = body_sha(description(issue))
     if sha != checked:
         raise PlanError(
             f"Issue {issue}'s description has body_sha {sha}, not {checked}, the one the ready check read; "
@@ -913,6 +926,53 @@ def ready_state(issue: int) -> str:
         reason, ready = f"Issue {issue} is labelled {READY_LABEL} for its description as it is; not checking it.", True
     sys.stderr.write(f"plan.py: {reason}\n")
     return f"ready={'true' if ready else 'false'}"
+
+
+# --- the rewrite of a legacy issue ------------------------------------------------
+
+
+def issue_format(issue: int) -> str:
+    """Return the `format=<short|legacy>` and `body_sha=<sha>` lines of issue's description as it is now."""
+    body = description(issue)
+    found, _ = parse_requirements(body)
+    return f"format={found}\nbody_sha={body_sha(body)}"
+
+
+def original_comment(body: str, day: str) -> str:
+    """Return the comment keeping body, a description replaced on day, collapsed under a line saying why."""
+    lines = [
+        REWRITTEN.format(day=day),
+        "",
+        "<details>",
+        "<summary>Original description</summary>",
+        "",
+        body.strip("\r\n"),
+        "",
+        "</details>",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def rewrite_apply(issue: int, path: Path, drafted: str) -> None:
+    """Post issue's description as a collapsed comment, then replace it with the short-format draft at path.
+
+    Raises:
+        PlanError: The draft cannot be read or has no `## Outcomes` section, or issue's description is not the
+            one drafted names.
+    """
+    draft = _read_text(path)
+    if parse_requirements(draft)[0] != "short":
+        raise PlanError(f"{path} has no {OUTCOMES} section, so it is not in the short issue format.")
+    body = description(issue)
+    sha = body_sha(body)
+    if sha != drafted:
+        raise PlanError(
+            f"Issue {issue}'s description has body_sha {sha}, not {drafted}, the one the rewrite was drafted "
+            "against; draft it again."
+        )
+    comment = original_comment(body, date.today().isoformat())
+    _with_file(comment, lambda file: run("gh", "issue", "comment", str(issue), "--body-file", file))
+    run("gh", "issue", "edit", str(issue), "--body-file", str(path))
 
 
 # --- requirements.json -----------------------------------------------------------
@@ -1068,7 +1128,7 @@ def requirements(issue: int, out: Path, share: dict[str, str | None] | None = No
     Raises:
         PlanError: The description numbers one id twice.
     """
-    issue_format, found = parse_requirements(str(_view(issue, "body").get("body") or ""))
+    found_format, found = parse_requirements(description(issue))
     seen: set[str] = set()
     for requirement in found:
         if requirement.id in seen:
@@ -1077,11 +1137,11 @@ def requirements(issue: int, out: Path, share: dict[str, str | None] | None = No
     if share is not None:
         found = [replace(item, part=share[item.id]) for item in found if item.kind == "outcome" and item.id in share]
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(requirements_json(issue, issue_format, found), indent=2) + "\n", encoding="utf-8")
+    out.write_text(json.dumps(requirements_json(issue, found_format, found), indent=2) + "\n", encoding="utf-8")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser for the check-slices, check-questions, check-breakdown, decisions-comment, prior-decisions, requirements, body-sha, ready-comment and ready-state subcommands."""
+    """Return the parser for the check-slices, check-questions, check-breakdown, decisions-comment, prior-decisions, requirements, body-sha, ready-comment, ready-state, issue-format and rewrite-apply subcommands."""
     parser = argparse.ArgumentParser(description="Check the slice plan in .agentic/plan.json and keep its decisions.")
     commands = parser.add_subparsers(dest="command", required=True)
     slices = commands.add_parser("check-slices", help="Refuse slices that leave out an outcome or deliver it twice.")
@@ -1116,12 +1176,16 @@ def build_parser() -> argparse.ArgumentParser:
     posted.add_argument("--issue", type=int, required=True, help="The issue the check labelled dovo:ready.")
     posted.add_argument("--comment", type=Path, required=True, help="The ready check's comment file.")
     posted.add_argument("--body-sha", required=True, help="The body_sha of the description the ready check read.")
-    sha = commands.add_parser("body-sha", help="Print the body_sha of an issue's description or of a file.")
-    described = sha.add_mutually_exclusive_group(required=True)
-    described.add_argument("--issue", type=int, help="The issue whose description to hash.")
-    described.add_argument("--file", type=Path, help="A file holding the description to hash.")
+    sha = commands.add_parser("body-sha", help="Print the body_sha of an issue's description.")
+    sha.add_argument("--issue", type=int, required=True, help="The issue whose description to hash.")
     state = commands.add_parser("ready-state", help="Print ready=true when the label holds for the description.")
     state.add_argument("--issue", type=int, required=True, help="The issue to look at.")
+    shape = commands.add_parser("issue-format", help="Print the description's format and body_sha.")
+    shape.add_argument("--issue", type=int, required=True, help="The issue whose description to read.")
+    rewrite = commands.add_parser("rewrite-apply", help="Keep the old description in a comment, then replace it.")
+    rewrite.add_argument("--issue", type=int, required=True, help="The legacy issue to rewrite.")
+    rewrite.add_argument("--body-file", type=Path, required=True, help="The approved short-format description.")
+    rewrite.add_argument("--body-sha", required=True, help="The body_sha of the description the draft rewrites.")
     return parser
 
 
@@ -1132,7 +1196,18 @@ def _dispatch_ready(args: argparse.Namespace) -> bool:
     elif args.command == "ready-state":
         sys.stdout.write(ready_state(args.issue) + "\n")
     elif args.command == "body-sha":
-        sys.stdout.write(described_sha(args.issue, args.file) + "\n")
+        sys.stdout.write(body_sha(description(args.issue)) + "\n")
+    else:
+        return False
+    return True
+
+
+def _dispatch_rewrite(args: argparse.Namespace) -> bool:
+    """Run the issue-format or rewrite-apply subcommand args names; return False for any other."""
+    if args.command == "issue-format":
+        sys.stdout.write(issue_format(args.issue) + "\n")
+    elif args.command == "rewrite-apply":
+        rewrite_apply(args.issue, args.body_file, args.body_sha)
     else:
         return False
     return True
@@ -1140,7 +1215,7 @@ def _dispatch_ready(args: argparse.Namespace) -> bool:
 
 def dispatch(args: argparse.Namespace) -> None:
     """Run the subcommand args names."""
-    if _dispatch_ready(args):
+    if _dispatch_ready(args) or _dispatch_rewrite(args):
         return
     if args.command == "check-slices":
         check_slices(args.plan, args.requirements)

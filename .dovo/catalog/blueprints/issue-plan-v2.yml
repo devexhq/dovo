@@ -9,7 +9,7 @@
 version: 1
 name: issue-plan-v2
 id: issue-plan-v2
-description: Ready a GitHub issue (check it against main, holding for a person and re-checking it while it is not ready, and, once a person approves, apply a legacy issue's trim and label it dovo:ready), slice it into PRs with the sdlc v2 issue-plan prompt (the feature contract and the slice table, each slice with the outcomes it delivers, on an epic, one slice on a plain issue, and no phases), challenge the plan once and fold in every fold-routed challenge, settle every open question as a decision, check that each outcome belongs to one slice, and when the plan has one slice phase it in the same run (plan, review, answer and break down the slice, as issue-code-v2 would), walk the approver through it and ask for one approval, then post the plans' decisions to the issue and write the feature contract and the work plan into the issue's work plan comment, recording a one-slice plan as phased, creating no sub-issues, and label the issue type:epic when it has two or more slices, each of which its own issue-code-v2 run phases just in time
+description: Ready a GitHub issue (rewrite a legacy issue to the short format once a person approves the draft, keeping the old description in a comment, then check it against main, holding for a person and re-checking it while it is not ready, and, once a person approves, label it dovo:ready), slice it into PRs with the sdlc v2 issue-plan prompt (the feature contract and the slice table, each slice with the outcomes it delivers, on an epic, one slice on a plain issue, and no phases), challenge the plan once and fold in every fold-routed challenge, settle every open question as a decision, check that each outcome belongs to one slice, and when the plan has one slice phase it in the same run (plan, review, answer and break down the slice, as issue-code-v2 would), walk the approver through it and ask for one approval, then post the plans' decisions to the issue and write the feature contract and the work plan into the issue's work plan comment, recording a one-slice plan as phased, creating no sub-issues, and label the issue type:epic when it has two or more slices, each of which its own issue-code-v2 run phases just in time
 summary: Issue to an approved work plan comment on the ticket, with human gates
 
 inputs:
@@ -20,6 +20,96 @@ inputs:
     aliases: ["-i", "--issue"]
 
 steps:
+  # --- The rewrite of a legacy issue, one written before the short format
+  # (no `## Outcomes` section), the first time it is planned: a draft, a
+  # person's approval, then the old description kept in a comment and the
+  # description replaced, so only a short issue reaches the ready check. A step
+  # cannot be skipped, so on a short issue each passes straight through: the
+  # draft writes nothing, no prompt is shown and the apply changes nothing. ---
+
+  # Records the description the draft rewrites, so the apply refuses one a
+  # person edited meanwhile.
+  - id: rewrite-format
+    name: Check whether the issue is in the short format
+    run: |
+      set -eu
+      mkdir -p .agentic
+      rm -f .agentic/issue-rewrite*
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py issue-format --issue ${{ inputs.issue }} >> "$DOVO_OUTPUT"
+    timeout_seconds: 120
+
+  - id: rewrite-draft
+    name: Draft the legacy issue's rewrite
+    type: agent
+    prompt: |
+      Issue ${{ inputs.issue }}'s format: {{ steps.rewrite-format.outputs.format }}.
+
+      If it is short, write nothing and stop. Otherwise follow the rewrite mode of
+      .dovo/catalog/prompts/sdlc/v2/issue-write.md for issue ${{ inputs.issue }}: write the draft to
+      .agentic/issue-rewrite.md and its mapping to .agentic/issue-rewrite-notes.md. Do not edit the
+      issue, its labels or its comments.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+
+  # Shows the mapping above the draft in one file, the only kind a prompt
+  # shows, and offers the one option that approves the rewrite, or none on a
+  # short issue.
+  - id: rewrite-gate
+    name: List the rewrite for approval
+    run: |
+      set -eu
+      if [ "{{ steps.rewrite-format.outputs.format }}" = "short" ]; then
+        echo "Issue ${{ inputs.issue }} is in the short format; nothing to rewrite." | tee .agentic/issue-rewrite-review.md
+        printf '{"approve": []}\n' > .agentic/issue-rewrite-approve.json
+        exit 0
+      fi
+      for draft in .agentic/issue-rewrite.md .agentic/issue-rewrite-notes.md; do
+        [ -s "$draft" ] || { echo "Issue ${{ inputs.issue }} is legacy but $draft is missing or empty; not rewriting."; exit 1; }
+      done
+      { cat .agentic/issue-rewrite-notes.md; printf '\n## Proposed description\n\n'; cat .agentic/issue-rewrite.md; } > .agentic/issue-rewrite-review.md
+      printf '{"approve": [{"id": "approve", "label": "Keep the old description in a comment and replace it with the draft"}]}\n' > .agentic/issue-rewrite-approve.json
+    timeout_seconds: 120
+    artifacts:
+      - { name: issue-rewrite, path: .agentic/issue-rewrite-review.md }
+      - { name: issue-rewrite-approve, path: .agentic/issue-rewrite-approve.json }
+
+  # No prompt is shown on a short issue.
+  - id: rewrite-approve
+    name: Approve the legacy issue's rewrite
+    type: ask
+    interaction:
+      mode: multiselect
+      message: >-
+        Issue ${{ inputs.issue }} was written before the short issue format. The attached file maps
+        each item of its description onto the proposed one below it. Select approve to post the old
+        description as a collapsed comment and replace it with the draft; select nothing to stop the
+        run with the issue untouched.
+      artifact: issue-rewrite
+      options_from:
+        artifact: issue-rewrite-approve
+        file: .agentic/issue-rewrite-approve.json
+        items_path: approve
+        value_field: id
+        label_field: label
+
+  # A command step: the writes to GitHub run exactly as approved, with the
+  # host's gh credentials. rewrite-apply posts the old description before it
+  # replaces it, so a failed edit loses nothing.
+  - id: rewrite-apply
+    name: Replace the legacy issue's description with the rewrite
+    run: |
+      set -eu
+      if [ "{{ steps.rewrite-format.outputs.format }}" = "short" ]; then
+        echo "Issue ${{ inputs.issue }} is in the short format; nothing to rewrite."
+        exit 0
+      fi
+      case '{{ steps.rewrite-approve.outputs.selected }}' in
+        *'"approve"'*) ;;
+        *) echo "The rewrite was not approved; issue ${{ inputs.issue }} is left untouched."; exit 1 ;;
+      esac
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py rewrite-apply --issue ${{ inputs.issue }} --body-file .agentic/issue-rewrite.md --body-sha "{{ steps.rewrite-format.outputs.body_sha }}"
+    timeout_seconds: 300
+
   # --- ready-issue's steps, inlined: a blueprint cannot call another one. ---
 
   # A not_ready issue needs a person: a size label, a split, a decision or a
@@ -27,7 +117,7 @@ steps:
   # holds at a prompt that lists the findings, so the person settles them on
   # GitHub and answers (or leaves the run paused and continues it later with
   # `dovo resume`). The loop then re-runs the check, since the gate reads the
-  # verdict the check wrote, and ends once the verdict is ready or needs_edits.
+  # verdict the check wrote, and ends once the verdict is ready.
   - id: ready-loop
     name: Check the issue until no person needs to settle it
     type: loop
@@ -52,8 +142,7 @@ steps:
         type: agent
         prompt: |
           Follow .dovo/catalog/prompts/sdlc/v2/issue-ready.md for issue ${{ inputs.issue }}, the issue issue-plan-v2 is about to slice. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
-          .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md only when the
-          verdict is needs_edits, which only a legacy issue's trim gets. Do not edit the issue, its labels or its comments.
+          .agentic/issue-ready-comment.md. Do not edit the issue, its labels or its comments.
           Findings of the previous check a person says they settled, if any: {{ steps.hold.outputs.selected }}
           Their notes: {{ steps.hold.outputs.comment }}
         tools: { allow_all: true }
@@ -63,8 +152,8 @@ steps:
 
       # Any verdict but ready means the current body is stale, so a label left
       # from an earlier run is removed and never vouches for it; apply adds it
-      # back after the edits. Lists what a person must settle: every finding of a
-      # not_ready verdict, and nothing otherwise.
+      # back. Lists what a person must settle: every finding of a not_ready
+      # verdict, and nothing otherwise.
       - id: gate
         name: List what a person must settle
         run: |
@@ -121,14 +210,13 @@ steps:
         timeout_seconds: 60
         on_failure: continue
 
-  # Asked on every run, including one with nothing to edit, since a step cannot
-  # be skipped; denying stops the run with the issue untouched.
+  # Denying stops the run with the issue as the rewrite left it.
   - id: approve
-    name: Approve the edits and the label
+    name: Approve the label
     type: ask
     interaction:
       mode: confirm
-      message: Apply the proposed edits, if any, to issue ${{ inputs.issue }} and label it dovo:ready?
+      message: Label issue ${{ inputs.issue }} dovo:ready?
       artifact: issue-ready
 
   # A command step: the writes to GitHub run exactly as approved, with the
@@ -137,17 +225,12 @@ steps:
   # the description is no longer that one, so issue-code-v2 skips its ready
   # check only while the description it checked is unchanged.
   - id: apply
-    name: Apply the edits, label the issue and comment
+    name: Label the issue and comment
     run: |
       set -eu
       verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
       checked=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json")).get("body_sha", ""))')
-      if [ "$verdict" = "needs_edits" ]; then
-        for proposal in .agentic/issue-title .agentic/issue-body.md; do
-          [ -s "$proposal" ] || { echo "Verdict is needs_edits but $proposal is missing or empty; not labelling."; exit 1; }
-        done
-        gh issue edit ${{ inputs.issue }} --title "$(head -n 1 .agentic/issue-title)" --body-file .agentic/issue-body.md
-      elif [ "$verdict" != "ready" ]; then
+      if [ "$verdict" != "ready" ]; then
         echo "Unexpected verdict '$verdict'; not labelling."
         exit 1
       fi
@@ -294,7 +377,7 @@ steps:
     on_failure: prompt_user
 
   # The issue's numbered items with their exact text, read live once the plan
-  # is settled: the plan step resets .agentic/, and a legacy issue's trim
+  # is settled: the plan step resets .agentic/, and a legacy issue's rewrite
   # above renumbers them.
   - id: requirements
     name: List the issue's numbered items
