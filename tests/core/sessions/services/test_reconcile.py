@@ -27,9 +27,11 @@ from dovo.core.sessions.services.reconcile import (
 )
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.lock import raise_lock_timeout
+from tests.harness.sessions import seed_crashed_session
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 DEAD_PID = 4242
+ONE_PAUSED = "Paused 1 interrupted session; continue it with 'dovo resume <session_id>'."
 
 
 def _raise_db_unavailable(*_args: object, **_kwargs: object) -> None:
@@ -41,6 +43,30 @@ def _sessions_for(root: Path) -> SessionsRepository:
     """Build the SessionsRepository for the workspace rooted at root."""
     paths = initialized_workspace_paths(root)
     return SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
+
+
+def _seed_crashed(
+    root: Path,
+    session_id: str,
+    *,
+    use_worktree: bool = False,
+    worktree_id: str | None = None,
+    worktree_path: Path | None = None,
+) -> SessionsRepository:
+    """Seed a crashed one-step run session_id in the workspace at root and return its SessionsRepository."""
+    paths = initialized_workspace_paths(root)
+    sessions = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
+    seed_crashed_session(
+        paths,
+        sessions,
+        session_id=session_id,
+        steps=[{"id": "a", "type": "command", "command": "true"}],
+        interrupted_step_id="a",
+        use_worktree=use_worktree,
+        worktree_id=worktree_id,
+        worktree_path=worktree_path,
+    )
+    return sessions
 
 
 def _kill_reports_no_such_process(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -223,21 +249,35 @@ class IsRunStaleTests:
 
 
 class FormatReconciliationWarningTests:
-    def test_empty_list_returns_none(self) -> None:
-        assert format_reconciliation_warning([]) is None
-
     @pytest.mark.parametrize(
-        ("session_ids", "expected"),
+        ("paused_ids", "failed_ids", "expected"),
         [
-            pytest.param(["a"], "Reconciled 1 interrupted session (session_id: a).", id="single"),
-            pytest.param(["a", "b"], "Reconciled 2 interrupted sessions (a, b).", id="multiple"),
+            pytest.param([], [], None, id="none"),
+            pytest.param(["a"], [], ONE_PAUSED, id="one-paused"),
+            pytest.param(
+                ["a", "b"],
+                [],
+                "Paused 2 interrupted sessions (a, b); continue each with 'dovo resume <session_id>'.",
+                id="two-paused",
+            ),
+            pytest.param([], ["a"], "Marked 1 interrupted session failed (session_id: a).", id="one-failed"),
+            pytest.param([], ["a", "b"], "Marked 2 interrupted sessions failed (a, b).", id="two-failed"),
+            pytest.param(
+                ["a"],
+                ["b"],
+                f"{ONE_PAUSED} Marked 1 interrupted session failed (session_id: b).",
+                id="paused-and-failed",
+            ),
         ],
     )
-    def test_records_name_their_sessions(self, isolated_workspace: Path, session_ids: list[str], expected: str) -> None:
+    def test_sentences_name_their_sessions(
+        self, isolated_workspace: Path, paused_ids: list[str], failed_ids: list[str], expected: str | None
+    ) -> None:
         sessions = _sessions_for(isolated_workspace)
-        records = [sessions.create(session_id, "blueprint", "blueprint") for session_id in session_ids]
+        paused = [sessions.create(session_id, "blueprint", "blueprint") for session_id in paused_ids]
+        failed = [sessions.create(session_id, "blueprint", "blueprint") for session_id in failed_ids]
 
-        assert format_reconciliation_warning(records) == expected
+        assert format_reconciliation_warning(paused, failed) == expected
 
 
 class ReconcileStaleRunsTests:
@@ -255,8 +295,127 @@ class ReconcileStaleRunsTests:
         assert stored is not None
         assert stored.status == SessionStatus.FAILED
         assert stored.error_message == STALE_RUN_ERROR_MESSAGE
-        assert result.reconciled == (stored,)
-        assert result.warning == "Reconciled 1 interrupted session (session_id: session-dead)."
+        assert result.failed == (stored,)
+        assert result.paused == ()
+        assert result.warning == "Marked 1 interrupted session failed (session_id: session-dead)."
+
+    @pytest.mark.parametrize(
+        ("use_worktree", "worktree_id", "worktree_dir", "expected_status", "expected_error"),
+        [
+            pytest.param(False, None, None, SessionStatus.PAUSED, None, id="no-worktree"),
+            pytest.param(True, "wt-1", "present", SessionStatus.PAUSED, None, id="worktree-present"),
+            pytest.param(
+                True, "wt-1", "missing", SessionStatus.FAILED, STALE_RUN_ERROR_MESSAGE, id="worktree-dir-missing"
+            ),
+            pytest.param(True, None, None, SessionStatus.FAILED, STALE_RUN_ERROR_MESSAGE, id="no-worktree-id"),
+            pytest.param(True, "wt-1", None, SessionStatus.FAILED, STALE_RUN_ERROR_MESSAGE, id="no-worktree-row"),
+        ],
+    )
+    def test_crashed_run_is_paused_only_when_resumable(
+        self,
+        isolated_workspace: Path,
+        use_worktree: bool,
+        worktree_id: str | None,
+        worktree_dir: str | None,
+        expected_status: SessionStatus,
+        expected_error: str | None,
+    ) -> None:
+        worktree_path = None
+        if worktree_dir is not None:
+            worktree_path = isolated_workspace / ".dovo" / "worktrees" / "wt-1"
+            if worktree_dir == "present":
+                worktree_path.mkdir(parents=True)
+        sessions = _seed_crashed(
+            isolated_workspace,
+            "session-crashed",
+            use_worktree=use_worktree,
+            worktree_id=worktree_id,
+            worktree_path=worktree_path,
+        )
+
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+
+        stored = sessions.get("session-crashed")
+        assert stored is not None
+        assert stored.status == expected_status
+        assert stored.error_message == expected_error
+        if expected_status == SessionStatus.PAUSED:
+            assert result.warning == ONE_PAUSED
+        else:
+            assert result.warning == "Marked 1 interrupted session failed (session_id: session-crashed)."
+
+    def test_recorded_worktree_outside_the_reconciling_root_is_paused(
+        self, isolated_workspace: Path, tmp_path_factory: pytest.TempPathFactory
+    ) -> None:
+        worktree_path = tmp_path_factory.mktemp("elsewhere") / "wt-1"
+        worktree_path.mkdir()
+        sessions = _seed_crashed(
+            isolated_workspace, "session-elsewhere", use_worktree=True, worktree_id="wt-1", worktree_path=worktree_path
+        )
+
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+
+        stored = sessions.get("session-elsewhere")
+        assert stored is not None
+        assert stored.status == SessionStatus.PAUSED
+        assert result.paused == (stored,)
+
+    @pytest.mark.parametrize(
+        ("session_id", "child_session_id", "expected_status"),
+        [
+            pytest.param("crashed-same", "crashed-same", SessionStatus.FAILED, id="same-id"),
+            pytest.param("crashed-other", "other", SessionStatus.PAUSED, id="other-id"),
+        ],
+    )
+    def test_live_process_carrying_the_session_id_fails_the_run(
+        self, isolated_workspace: Path, session_id: str, child_session_id: str, expected_status: SessionStatus
+    ) -> None:
+        """Each case has its own run id, so a child left running by the other case never matches it."""
+        sessions = _seed_crashed(isolated_workspace, session_id)
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            env={**os.environ, "DOVO_SESSION_ID": child_session_id},
+        )
+        try:
+            reconcile_stale_sessions(sessions, path=isolated_workspace)
+        finally:
+            child.kill()
+            child.wait()
+
+        stored = sessions.get(session_id)
+        assert stored is not None
+        assert stored.status == expected_status
+
+    def test_unreadable_process_environment_is_not_counted(
+        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sessions = _seed_crashed(isolated_workspace, "session-unreadable")
+
+        def _environ(_process: psutil.Process) -> dict[str, str]:
+            raise psutil.AccessDenied()
+
+        monkeypatch.setattr(psutil.Process, "environ", _environ)
+
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+
+        stored = sessions.get("session-unreadable")
+        assert stored is not None
+        assert stored.status == SessionStatus.PAUSED
+        assert result.diagnostic is None
+
+    def test_paused_and_failed_rows_are_reported_together(self, isolated_workspace: Path) -> None:
+        sessions = _seed_crashed(isolated_workspace, "session-resumable")
+        sessions.create("session-stateless", "blueprint", "blueprint")
+
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+
+        paused = sessions.get("session-resumable")
+        failed = sessions.get("session-stateless")
+        assert paused is not None
+        assert failed is not None
+        assert result.paused == (paused,)
+        assert result.failed == (failed,)
+        assert result.warning == f"{ONE_PAUSED} Marked 1 interrupted session failed (session_id: session-stateless)."
 
     @pytest.mark.parametrize(
         ("offset_seconds", "expected_status", "expected_error"),

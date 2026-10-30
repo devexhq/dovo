@@ -384,7 +384,7 @@ class SessionResumeReconcileCliIntegrationTests:
 
         assert result.exit_code == 0, result.stdout
         assert _session_status(cli_workspace, "resumed") == SessionStatus.COMPLETED
-        assert "Reconciled" not in (cli_workspace / "status.out").read_text(encoding="utf-8")
+        assert "interrupted session" not in (cli_workspace / "status.out").read_text(encoding="utf-8")
 
 
 class SessionResumeCliDiagnosticsTests:

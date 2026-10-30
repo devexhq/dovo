@@ -124,7 +124,7 @@ class StatusReconciliationTests:
     """Tests for the stale-session reconciliation Status.collect() runs before its probes."""
 
     def test_collect_puts_reconciliation_warning_first(self, status_workspace: BuildStatusWorkspace) -> None:
-        """With branch "main" and a running row "session-stale" with no pid, mark it failed and return warnings ["Reconciled 1 interrupted session (session_id: session-stale).", "Active branch is 'main'. Automated workflows on primary branches are discouraged."]."""
+        """With branch "main" and a running row "session-stale" with no pid, mark it failed and return warnings ["Marked 1 interrupted session failed (session_id: session-stale).", "Active branch is 'main'. Automated workflows on primary branches are discouraged."]."""
         workspace = status_workspace(branch="main")
         sessions_db = initialized_workspace_db(workspace).sessions
         sessions_db.create("session-stale", "blueprint", "blueprint")
@@ -135,7 +135,7 @@ class StatusReconciliationTests:
         assert stored is not None
         assert stored.status is SessionStatus.FAILED
         assert result.warnings == [
-            "Reconciled 1 interrupted session (session_id: session-stale).",
+            "Marked 1 interrupted session failed (session_id: session-stale).",
             "Active branch is 'main'. Automated workflows on primary branches are discouraged.",
         ]
 

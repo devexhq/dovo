@@ -25,7 +25,7 @@ It shows:
 - **Catalog Items**: Total valid blueprints and inventory breakdown (`valid / total`).
 - **Warnings**: Configuration warnings and remediation steps.
 
-Before it reports, `dovo status` marks sessions left `running` by a `dovo` process that no longer exists as `failed`, and adds `Reconciled 1 interrupted session (session_id: <id>).` to its warnings. If another `dovo` process holds the workspace lock until the wait times out, `dovo status` stops with a workspace lock timeout error and exits 1.
+Before it reports, `dovo status` settles sessions left `running` by a `dovo` process that no longer exists: it marks one `paused` when it saved its progress, its worktree still exists if it used one, and none of its processes is still running, and marks every other one `failed`. It adds `Paused 1 interrupted session; continue it with 'dovo resume <session_id>'.`, `Marked 1 interrupted session failed (session_id: <id>).`, or both sentences, paused first, to its warnings. If another `dovo` process holds the workspace lock until the wait times out, `dovo status` stops with a workspace lock timeout error and exits 1.
 
 ## Examples
 

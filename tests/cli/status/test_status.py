@@ -89,7 +89,7 @@ class StatusCliIntegrationTests:
     def test_status_cli_json_reports_reconciled_stale_session(
         self, cli_runner: CliRunner, status_workspace: Path
     ) -> None:
-        """With a running row "session-stale" with no pid, exit 0, emit payload warnings[0] "Reconciled 1 interrupted session (session_id: session-stale)." and leave the row failed."""
+        """With a running row "session-stale" with no pid, exit 0, emit payload warnings[0] "Marked 1 interrupted session failed (session_id: session-stale)." and leave the row failed."""
         sessions_db = initialized_workspace_db(status_workspace).sessions
         sessions_db.create("session-stale", "blueprint", "blueprint")
 
@@ -97,7 +97,7 @@ class StatusCliIntegrationTests:
 
         assert result.exit_code == 0
         event = json.loads(result.stdout)
-        assert event["payload"]["warnings"][0] == "Reconciled 1 interrupted session (session_id: session-stale)."
+        assert event["payload"]["warnings"][0] == "Marked 1 interrupted session failed (session_id: session-stale)."
         stored = sessions_db.get("session-stale")
         assert stored is not None
         assert stored.status is SessionStatus.FAILED
