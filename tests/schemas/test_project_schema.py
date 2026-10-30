@@ -15,7 +15,7 @@ class ProjectSchemaTests:
     ) -> None:
         monkeypatch.delattr(socket, "create_connection")
 
-        result = PROJECT_VALIDATOR.validate(
+        errors = PROJECT_VALIDATOR.validate(
             {
                 "id": "project-623",
                 "display_name": "Dovo CLI",
@@ -23,7 +23,7 @@ class ProjectSchemaTests:
             }
         )
 
-        assert result.errors == []
+        assert errors == []
 
     @pytest.mark.parametrize(
         "payload",
@@ -65,6 +65,6 @@ class ProjectSchemaTests:
         ],
     )
     def test_project_validator_rejects_invalid_payloads(self, payload: dict[str, object]) -> None:
-        result = PROJECT_VALIDATOR.validate(payload)
+        errors = PROJECT_VALIDATOR.validate(payload)
 
-        assert result.errors
+        assert errors

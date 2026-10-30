@@ -18,7 +18,6 @@ from pydantic import (
 
 from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
 from dovo.common.mcp_servers import McpServerDefinition, validate_mcp_server_name
-from dovo.common.models import BaseResult
 from dovo.common.tool_policy import ToolPolicy, coerce_tool_policy
 from dovo.core.agents.models import AgentEnvMode, EnvPassthroughEntry
 
@@ -200,27 +199,3 @@ class ConfigTierEntry(BaseModel):
     tier: ConfigTier
     path: Path | None
     data: dict[str, Any]
-
-
-class TieredConfigLoadStatus(StrEnum):
-    """Classified outcomes for resolving and merging the DovoConfig tiers."""
-
-    OK = "ok"
-    UNREADABLE = "unreadable"
-    MALFORMED_JSON = "malformed_json"
-    ROOT_NOT_OBJECT = "root_not_object"
-    VALIDATION_FAILED = "validation_failed"
-
-
-class TieredConfigLoadResult(BaseResult):
-    """Non-raising result of resolving and merging the Packaged, Global, User, and Repo config tiers."""
-
-    status: TieredConfigLoadStatus
-    tier: ConfigTier | None = None
-    path: Path | None = None
-    config: DovoConfig | None = None
-
-    @property
-    def ok(self) -> bool:
-        """Return True when every tier read and validated successfully."""
-        return self.status == TieredConfigLoadStatus.OK

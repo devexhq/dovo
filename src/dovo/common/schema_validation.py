@@ -11,17 +11,6 @@ from typing import Any
 from jsonschema import Draft202012Validator, ValidationError
 from pydantic import ValidationError as ModelValidationError
 
-from dovo.common.models import BaseResult
-
-
-class ValidationResult(BaseResult):
-    """Outcome of validating a document against a JSON schema."""
-
-    @property
-    def ok(self) -> bool:
-        """Return True if validation succeeded without errors."""
-        return not self.errors
-
 
 def format_error_path(path: Iterable[str | int]) -> str:
     """Render an error path with dots between keys and ``[i]`` for list indexes; an empty path renders "(root)"."""
@@ -54,8 +43,8 @@ class SchemaValidator:
         self.schema_path = schema_path
         self.hide_pattern_instances = hide_pattern_instances
 
-    def validate(self, document: dict[str, Any]) -> ValidationResult:
-        """Validate ``document`` against the configured schema."""
+    def validate(self, document: dict[str, Any]) -> list[str]:
+        """Return one "<path>: <message>" per schema violation in ``document``; an empty list means it is valid."""
         with self.schema_path.open(encoding="utf-8") as handle:
             schema = json.load(handle)
 
@@ -67,7 +56,7 @@ class SchemaValidator:
         for error in sorted(validator.iter_errors(document), key=lambda e: e.path):
             message = _error_message(error) if self.hide_pattern_instances else error.message
             messages.append(f"{format_error_path(error.path)}: {message}")
-        return ValidationResult(errors=messages)
+        return messages
 
 
 def _config_schema_path() -> Traversable:

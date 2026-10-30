@@ -11,6 +11,7 @@ from dovo.cli.ui.formatters.config import (
     ConfigValidateFormatter,
     ConfigValidationView,
 )
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.config.models import DovoConfig, ProjectConfig
 from dovo.core.config.validate import (
@@ -113,11 +114,34 @@ INVALID_WITHOUT_WARNINGS_CASE = FormatterCase(
     render_expectations=["semantic failure (CONFIG_ERROR).", "Fix the reported configuration error"],
 )
 
+NOT_FOUND_ERROR = f"Configuration file not found at '{CONFIG_PATH}'."
+NOT_FOUND_REMEDIATION = Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")
+
+NOT_FOUND_CASE = FormatterCase(
+    data=ConfigValidationResult(
+        status=ConfigValidationStatus.NOT_FOUND,
+        config_path=CONFIG_PATH,
+        error_code=ErrorCode.CONFIG_NOT_FOUND,
+        errors=[NOT_FOUND_ERROR],
+        remediations=[NOT_FOUND_REMEDIATION],
+    ),
+    view=ConfigValidationView(
+        status=ConfigValidationStatus.NOT_FOUND,
+        config_path=CONFIG_PATH,
+        status_label="invalid",
+        error_code="CONFIG_NOT_FOUND",
+        errors=[NOT_FOUND_ERROR],
+        remediations=[NOT_FOUND_REMEDIATION],
+    ),
+    render_expectations=[NOT_FOUND_ERROR, "Run 'dovo init' to create '.dovo/config.json'"],
+)
+
 VALIDATION_CASES = [
     pytest.param(VALID_CASE, id="valid_config"),
     pytest.param(VALID_WITH_WARNINGS_CASE, id="valid_with_warnings"),
     pytest.param(INVALID_CASE, id="invalid_with_warnings"),
     pytest.param(INVALID_WITHOUT_WARNINGS_CASE, id="invalid_without_warnings"),
+    pytest.param(NOT_FOUND_CASE, id="not_found"),
 ]
 
 VALIDATION_PAYLOAD_CASES = [
@@ -158,6 +182,7 @@ VALIDATION_PAYLOAD_CASES = [
                 "concurrency": {"lock_timeout_seconds": 30.0},
                 "environment": {"sensitive_variables": []},
             },
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],
@@ -173,12 +198,29 @@ VALIDATION_PAYLOAD_CASES = [
             "status_label": "invalid",
             "raw": None,
             "config": None,
+            "error_code": None,
             "errors": ["semantic failure (CONFIG_ERROR)."],
             "warnings": ["warning message (CONFIG_WARN)."],
             "remediations": [{"message": "Fix the reported configuration error", "command": None}],
             "diagnostics": [],
         },
         id="invalid_payload",
+    ),
+    pytest.param(
+        NOT_FOUND_CASE,
+        {
+            "status": "not_found",
+            "config_path": "/workspace/.dovo/config.json",
+            "status_label": "invalid",
+            "raw": None,
+            "config": None,
+            "error_code": "CONFIG_NOT_FOUND",
+            "errors": [NOT_FOUND_ERROR],
+            "warnings": [],
+            "remediations": [{"message": "Run 'dovo init' to create '.dovo/config.json'", "command": "dovo init"}],
+            "diagnostics": [],
+        },
+        id="not_found_payload",
     ),
 ]
 

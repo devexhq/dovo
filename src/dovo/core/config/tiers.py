@@ -10,17 +10,12 @@ from typing import Any, Final
 
 from pydantic import ValidationError
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.schema_validation import format_validation_error
-from dovo.core.config.exceptions import ConfigTierValidationError
+from dovo.core.config.exceptions import ConfigError, ConfigTierSource
 from dovo.core.config.generator import CANONICAL_V1_DEFAULTS
-from dovo.core.config.models import (
-    ConfigTier,
-    ConfigTierEntry,
-    DovoConfig,
-    TieredConfigLoadResult,
-    TieredConfigLoadStatus,
-)
+from dovo.core.config.models import ConfigTier, ConfigTierEntry, DovoConfig
 
 
 def _packaged_defaults() -> dict[str, Any]:
@@ -30,6 +25,13 @@ def _packaged_defaults() -> dict[str, Any]:
     return defaults
 
 
+def _tier_error(code: ErrorCode, tier: ConfigTier, path: Path, details: str) -> ConfigError:
+    """Build the tier-attributed ConfigError for one tier file, carrying its path as ConfigTierSource."""
+    return ConfigError(
+        code, f"Invalid configuration in {tier} tier ({path}): {details}", data=ConfigTierSource(path=path)
+    )
+
+
 def _read_tier_file(tier: ConfigTier, path: Path) -> dict[str, Any] | None:
     """Read and parse one tier's config.json, returning None when the file is absent."""
     try:
@@ -37,8 +39,11 @@ def _read_tier_file(tier: ConfigTier, path: Path) -> dict[str, Any] | None:
     except FileNotFoundError:
         return None
     except OSError as exc:
-        raise ConfigTierValidationError(
-            tier, path, f"unable to read file: {exc}. Check file permissions and that the path is readable."
+        raise _tier_error(
+            ErrorCode.CONFIG_TIER_UNREADABLE,
+            tier,
+            path,
+            f"unable to read file: {exc}. Check file permissions and that the path is readable.",
         ) from exc
 
     try:
@@ -47,10 +52,10 @@ def _read_tier_file(tier: ConfigTier, path: Path) -> dict[str, Any] | None:
         detail = f"line {exc.lineno} column {exc.colno} (char {exc.pos})"
         if exc.msg:
             detail = f"{exc.msg} at {detail}"
-        raise ConfigTierValidationError(tier, path, detail) from exc
+        raise _tier_error(ErrorCode.CONFIG_TIER_JSON_INVALID, tier, path, detail) from None
 
     if not isinstance(data, dict):
-        raise ConfigTierValidationError(tier, path, "root must be a JSON object")
+        raise _tier_error(ErrorCode.CONFIG_TIER_ROOT_INVALID, tier, path, "root must be a JSON object")
 
     return data
 
@@ -88,7 +93,7 @@ def _validate_merged_tier(tier: ConfigTier, path: Path, merged: dict[str, Any]) 
     try:
         DovoConfig.model_validate(merged)
     except ValidationError as exc:
-        raise ConfigTierValidationError(tier, path, format_validation_error(exc)) from exc
+        raise _tier_error(ErrorCode.CONFIG_TIER_SCHEMA_INVALID, tier, path, format_validation_error(exc)) from None
 
 
 def resolve_config_tiers(paths: WorkspacePaths) -> list[ConfigTierEntry]:
@@ -108,37 +113,21 @@ def resolve_config_tiers(paths: WorkspacePaths) -> list[ConfigTierEntry]:
     return entries
 
 
-def _classify_tier_error(details: str) -> TieredConfigLoadStatus:
-    """Map a ConfigTierValidationError's details text to a load-result status."""
-    if "Check file permissions and that the path is readable" in details:
-        return TieredConfigLoadStatus.UNREADABLE
-    if details == "root must be a JSON object":
-        return TieredConfigLoadStatus.ROOT_NOT_OBJECT
-    if "line" in details and "column" in details:
-        return TieredConfigLoadStatus.MALFORMED_JSON
-    return TieredConfigLoadStatus.VALIDATION_FAILED
+def load_tiered_config(paths: WorkspacePaths) -> DovoConfig:
+    """Merge Packaged, Global, User, and Repo config tiers into one validated DovoConfig.
 
+    Raises:
+        ConfigError: A CONFIG_TIER_* code when a tier file is unreadable, is not valid JSON, has a non-object root,
+            or the merged tiers fail DovoConfig validation; data is ConfigTierSource.
+    """
+    entries = resolve_config_tiers(paths)
 
-def load_tiered_config(paths: WorkspacePaths) -> TieredConfigLoadResult:
-    """Merge Packaged, Global, User, and Repo config tiers into one validated DovoConfig, without raising."""
-    try:
-        entries = resolve_config_tiers(paths)
+    merged = _deep_merge({}, entries[0].data)
+    for entry in entries[1:]:
+        merged = _deep_merge(merged, entry.data)
+        if entry.path is None:
+            continue
+        _validate_merged_tier(entry.tier, entry.path, merged)
 
-        merged = _deep_merge({}, entries[0].data)
-        for entry in entries[1:]:
-            merged = _deep_merge(merged, entry.data)
-            if entry.path is None:
-                continue
-            _validate_merged_tier(entry.tier, entry.path, merged)
-
-        merged["environment"]["sensitive_variables"] = _union_sensitive_variables(entries)
-        config = DovoConfig.model_validate(merged)
-    except ConfigTierValidationError as exc:
-        return TieredConfigLoadResult(
-            status=_classify_tier_error(exc.details),
-            tier=exc.tier,
-            path=exc.path,
-            errors=[str(exc)],
-        )
-
-    return TieredConfigLoadResult(status=TieredConfigLoadStatus.OK, config=config)
+    merged["environment"]["sensitive_variables"] = _union_sensitive_variables(entries)
+    return DovoConfig.model_validate(merged)

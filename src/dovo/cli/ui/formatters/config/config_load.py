@@ -6,7 +6,7 @@ from rich.console import RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
-from dovo.cli.ui.formatters.common import build_error_panel
+from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.core.config.loader import ConfigLoadResult
 from dovo.core.config.serialize import as_json
 
@@ -21,4 +21,5 @@ class ConfigLoadFormatter(ComponentFormatter[ConfigLoadResult]):
             return Text(payload)
 
         fallback = f"Configuration failed to load ({data.status.value.upper()})."
-        return build_error_panel("Config Error", data.errors, fallback, remediations=data.remediations)
+        panel = build_error_panel("Config Error", data.errors, fallback, remediations=data.remediations)
+        return with_diagnostics(panel, data.diagnostics)

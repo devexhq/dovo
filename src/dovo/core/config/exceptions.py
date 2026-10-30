@@ -2,32 +2,26 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
-from dovo.common.exceptions import DomainError
-from dovo.core.config.loader import ConfigLoadResult
-from dovo.core.config.models import ConfigTier
+from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.exceptions import DomainError, FailureData
 
 
 class ConfigError(DomainError):
-    """Business failure generating or repairing `.dovo/config.json`."""
+    """Business failure generating, loading or repairing the configuration."""
 
 
-class ConfigLoadError(RuntimeError):
-    """Raised by Config accessor properties when config.json cannot be loaded."""
+@dataclass(frozen=True, slots=True)
+class ConfigTierSource(FailureData):
+    """The tier file a tier-loading failure names."""
 
-    def __init__(self, message: str, result: ConfigLoadResult) -> None:
-        """Retain the structured, status-attributed load result alongside the formatted message."""
-        super().__init__(message)
-        self.result = result
+    path: Path
 
 
-class ConfigTierValidationError(Exception):
-    """Raised when a config tier file is unreadable, malformed, or fails DovoConfig validation."""
+@dataclass(frozen=True, slots=True)
+class ConfigLoadDiagnostics(FailureData):
+    """The diagnostic records the failed config load wrote, carried to the caller that reports it."""
 
-    def __init__(self, tier: ConfigTier, path: Path, details: str) -> None:
-        """Format a tier-attributed validation message and retain its parts for callers."""
-        super().__init__(f"Invalid configuration in {tier} tier ({path}): {details}")
-        self.tier = tier
-        self.path = path
-        self.details = details
+    records: tuple[DiagnosticRecord, ...]

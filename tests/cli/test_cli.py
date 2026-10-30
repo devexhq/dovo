@@ -20,11 +20,14 @@ from dovo.cli import app
 from dovo.cli.context import CliContext
 from dovo.cli.ui import ErrorPanelEvent
 from dovo.common.clock import utc_now
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.common.models import Remediation
 from dovo.common.session_id import new_session_id
-from dovo.core.config import ConfigLoadError
+from dovo.core.config import ConfigError, ConfigLoadDiagnostics
 from dovo.core.config.generator import build_default_config
-from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
+from dovo.core.config.loader import ConfigLoadResult
 from dovo.core.config.models import DovoConfig
 from dovo.core.config.mutate import ConfigSetResult, ConfigSetStatus
 from dovo.core.config.validate import ConfigValidationResult
@@ -34,6 +37,10 @@ from dovo.core.status.models import DovoStatusResult
 from tests.harness.builders import WorkspaceBuilder
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID, diagnostic_hint, read_single_event
 from tests.harness.lock import raise_lock_timeout
+
+_CONFIG_ERROR = ConfigError(
+    ErrorCode.CONFIG_NOT_FOUND, "Failed to load config at '/r': missing", [Remediation(message="Run 'dovo init'")]
+)
 
 
 class CliSmokeTests:
@@ -266,22 +273,60 @@ class RunCliCrashProtectionTests:
         assert event["exception_message"] == "missing record.id"
         assert "RuntimeError: missing record.id" in str(event["formatted_traceback"])
 
-    def test_run_cli_config_load_error_dispatches_its_result_and_exits_one(
+    def test_run_cli_config_error_renders_invalid_configuration_panel_and_exits_one(
         self, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
     ) -> None:
-        """Dispatch the ConfigLoadError's result as the only event and exit 1."""
-        load_result = ConfigLoadResult(status=ConfigLoadStatus.MALFORMED_JSON, config_path=Path("config.json"))
+        """Dispatch an Invalid Configuration panel with the error's message and Fix: block, and exit 1."""
 
-        def _raise_config_load_error() -> None:
-            raise ConfigLoadError("malformed config.json", load_result)
+        def _raise_config_error() -> None:
+            raise _CONFIG_ERROR
 
-        monkeypatch.setattr(cli_module, "app", _raise_config_load_error)
+        monkeypatch.setattr(cli_module, "app", _raise_config_error)
 
         with pytest.raises(SystemExit) as exc_info:
             cli_module.run_cli()
 
         assert exc_info.value.code == 1
-        assert dispatch_spy == [load_result]
+        assert dispatch_spy == [
+            ErrorPanelEvent(
+                title="Invalid Configuration",
+                message="Failed to load config at '/r': missing\nFix:\n- Run 'dovo init'",
+                border_style="red",
+            )
+        ]
+
+    def test_run_cli_config_error_lists_carried_diagnostic_records(
+        self, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
+    ) -> None:
+        """Append a Details logged: line for the record the ConfigError carries."""
+        record = DiagnosticRecord(
+            event_id=FROZEN_EVENT_ID, log_path=Path("/logs/2026-10-19/event.json"), level=DiagnosticLevel.ERROR
+        )
+
+        def _raise_config_error() -> None:
+            raise ConfigError(
+                _CONFIG_ERROR.error_code,
+                _CONFIG_ERROR.message,
+                _CONFIG_ERROR.remediations,
+                data=ConfigLoadDiagnostics((record,)),
+            )
+
+        monkeypatch.setattr(cli_module, "app", _raise_config_error)
+
+        with pytest.raises(SystemExit) as exc_info:
+            cli_module.run_cli()
+
+        assert exc_info.value.code == 1
+        assert dispatch_spy == [
+            ErrorPanelEvent(
+                title="Invalid Configuration",
+                message=(
+                    "Failed to load config at '/r': missing\nFix:\n- Run 'dovo init'"
+                    f"\nDetails logged: /logs/2026-10-19/event.json (event {FROZEN_EVENT_ID})"
+                ),
+                border_style="red",
+            )
+        ]
 
     @pytest.mark.parametrize(
         ("case", "expected"),
@@ -491,7 +536,7 @@ class ConfigTolerantCommandsPostInitTests:
         assert [item.status for item in set_results] == [ConfigSetStatus.NOT_FOUND]
 
     def test_strict_command_with_broken_config_still_fails_with_the_config_panel(
-        self, cli_runner: CliRunner, tmp_path: Path
+        self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[object]
     ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").without_config().build()
         (workspace / ".dovo" / "config.json").write_text("{not valid json", encoding="utf-8")
@@ -499,8 +544,11 @@ class ConfigTolerantCommandsPostInitTests:
         result = cli_runner.invoke(app, ["-p", str(workspace), "worktree", "list"])
 
         assert result.exit_code == 1
-        assert "Config Error" in result.stdout
+        assert "Invalid Configuration" in result.stdout
+        assert "Malformed config.json at" in result.stdout
+        assert "Fix:" in result.stdout
         assert GUARD_MESSAGE_HEAD not in result.stdout
+        assert not any(isinstance(item, ConfigLoadResult) for item in dispatch_spy)
 
 
 class SessionCliTests:

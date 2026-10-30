@@ -22,6 +22,7 @@ class ConfigValidationView(BaseModel):
     status_label: str
     raw: dict[str, Any] | None = None
     config: DovoConfig | None = None
+    error_code: str | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
@@ -39,6 +40,7 @@ class ConfigSetView(BaseModel):
     value: Any
     value_str: str
     value_type: str
+    error_code: str | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)

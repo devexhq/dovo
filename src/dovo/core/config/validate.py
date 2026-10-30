@@ -8,7 +8,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 from dovo.common.models import BaseResult, Remediation
-from dovo.core.agents.registry import PROVIDERS, unsupported_provider_message
+from dovo.core.agents.exceptions import AgentError
+from dovo.core.agents.registry import PROVIDERS, require_provider
 from dovo.core.config.agent_settings import agent_settings
 from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.config.models import DovoConfig
@@ -62,6 +63,9 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
 
     Returns:
         Classified ``ConfigValidationResult`` with absolute ``config_path``.
+
+    Raises:
+        RuntimeError: When a successful load carries no parsed config, a broken invariant.
     """
     from dovo.core.config.loader import load_config_at
 
@@ -74,29 +78,26 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
             config_path=loaded.config_path,
             raw=loaded.raw,
             config=None,
+            error_code=loaded.error_code,
             errors=list(loaded.errors),
             warnings=[],
             remediations=list(loaded.remediations),
+            diagnostics=list(loaded.diagnostics),
         )
 
     if loaded.config is None:
-        return ConfigValidationResult(
-            status=ConfigValidationStatus.INVALID,
-            config_path=loaded.config_path,
-            raw=loaded.raw,
-            config=None,
-            errors=[f"Configuration loaded from '{loaded.config_path}' but the parsed config is missing."],
-            warnings=[],
-        )
+        raise RuntimeError(f"Configuration loaded from '{loaded.config_path}' but the parsed config is missing.")
 
-    provider_error = _unregistered_provider_error(loaded.config)
-    if provider_error is not None:
+    try:
+        require_provider(loaded.config.default_agent)
+    except AgentError as exc:
         return ConfigValidationResult(
             status=ConfigValidationStatus.INVALID,
             config_path=loaded.config_path,
             raw=loaded.raw,
             config=None,
-            errors=[provider_error],
+            error_code=exc.error_code,
+            errors=[f"default_agent: {exc.message}"],
             warnings=[],
             remediations=[
                 Remediation(message="Set 'default_agent' to one of the supported providers named in the error")
@@ -114,13 +115,6 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
         warnings=warnings,
         remediations=warning_remediations,
     )
-
-
-def _unregistered_provider_error(config: DovoConfig) -> str | None:
-    """Return the unsupported-provider message for an unregistered default_agent."""
-    if config.default_agent in PROVIDERS:
-        return None
-    return f"default_agent: {unsupported_provider_message(config.default_agent)}"
 
 
 def _provider_requires_model(provider: str) -> bool:

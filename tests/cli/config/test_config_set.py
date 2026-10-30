@@ -114,6 +114,20 @@ class ConfigSetCliIntegrationTests:
         assert "Config Error" in res.stdout
         assert "Config schema validation failed" in res.stdout
 
+    def test_config_set_cli_missing_config_json_reports_config_not_found(
+        self, cli_runner: CliRunner, isolated_workspace: Path
+    ) -> None:
+        """Exit 1 with status not_found and error_code CONFIG_NOT_FOUND."""
+        res = cli_runner.invoke(
+            app,
+            ["-p", str(isolated_workspace), "config", "set", "agents.copilot.model", "m", "--format", "json"],
+        )
+
+        assert res.exit_code == 1
+        payload = json.loads(res.stdout)["payload"]
+        assert payload["status"] == "not_found"
+        assert payload["error_code"] == "CONFIG_NOT_FOUND"
+
     def test_config_set_cli_format_json_emits_event(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
@@ -143,6 +157,7 @@ class ConfigSetCliIntegrationTests:
                 "value": "qwen2.5-coder",
                 "value_str": "qwen2.5-coder",
                 "value_type": "str",
+                "error_code": None,
                 "errors": [],
                 "warnings": [],
                 "remediations": [],

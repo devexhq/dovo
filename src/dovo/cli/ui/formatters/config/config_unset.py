@@ -6,7 +6,7 @@ from rich.console import RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
-from dovo.cli.ui.formatters.common import build_error_panel
+from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.core.config.mutate import ConfigUnsetResult, ConfigUnsetStatus
 
 
@@ -18,9 +18,10 @@ class ConfigUnsetFormatter(ComponentFormatter[ConfigUnsetResult]):
         if data.status == ConfigUnsetStatus.OK:
             return Text.from_markup(f"[bold green]✔  Config unset: {data.key}[/bold green]")
 
-        return build_error_panel(
+        panel = build_error_panel(
             "Config Error",
             data.errors,
             "Failed to update configuration.",
             remediations=data.remediations,
         )
+        return with_diagnostics(panel, data.diagnostics)
