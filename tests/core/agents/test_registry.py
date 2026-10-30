@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.agents import (
     AgentResponseStatus,
     BaseAgentProvider,
@@ -20,7 +21,8 @@ from dovo.core.agents import (
 )
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.cli_mutation import CliDirectMutationAdapter, CliMutationOutcome, CliMutationRunRequest
-from dovo.core.agents.registry import PROVIDERS
+from dovo.core.agents.exceptions import AgentError
+from dovo.core.agents.registry import PROVIDERS, require_provider, unsupported_provider_message
 from tests.harness import PROVIDER_FINISHED_STREAMS, AgentRequestBuilder, EditingAgentRunner, FakeAgentRunner
 
 
@@ -74,6 +76,17 @@ class ProviderRegistryContractTests:
 
     def test_unregistered_token_returns_none(self) -> None:
         assert get_agent_adapter("unregistered") is None
+
+    @pytest.mark.parametrize("token", [pytest.param(token, id=token) for token in PROVIDERS])
+    def test_require_provider_returns_registered_spec(self, token: str) -> None:
+        assert require_provider(token) is PROVIDERS[token]
+
+    def test_require_provider_raises_agent_provider_unsupported(self) -> None:
+        with pytest.raises(AgentError) as caught:
+            require_provider("nope")
+
+        assert caught.value.error_code == ErrorCode.AGENT_PROVIDER_UNSUPPORTED
+        assert caught.value.message == unsupported_provider_message("nope")
 
 
 class ResolvedAgentSettingsTests:

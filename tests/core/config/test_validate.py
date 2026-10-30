@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
 from dovo.common.models import Remediation
 from dovo.common.schema_validation import CONFIG_VALIDATOR
@@ -225,6 +226,7 @@ class ConfigProviderRegistryValidationTests:
 
         assert result.status == ConfigValidationStatus.INVALID
         assert result.ok is False
+        assert result.error_code == ErrorCode.AGENT_PROVIDER_UNSUPPORTED
         assert result.errors == ["default_agent: Unsupported agent provider 'copilot'. Supported: claude, fake."]
         assert result.remediations == [
             Remediation(message="Set 'default_agent' to one of the supported providers named in the error")

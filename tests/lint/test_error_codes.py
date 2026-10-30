@@ -83,6 +83,7 @@ STATES: Final[tuple[str, ...]] = (
     "DISALLOWED",
     "UNSAFE",
     "UNWRITABLE",
+    "UNSUPPORTED",
 )
 
 _FOREIGN_RAISE_FIXTURE: Final[str] = """

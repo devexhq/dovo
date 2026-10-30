@@ -113,6 +113,6 @@ Checks `.dovo/config.json` against the schema:
 dovo config validate
 ```
 
-On failure it lists the missing fields or invalid values. A `default_agent` value or `agents` key other than `copilot` or `claude`, and the legacy top-level `agent` key, are reported as schema validation errors, and the command exits with code 1; with `--format json`, `status` is `invalid` and `errors` lists them. The file is never modified.
+On failure it lists the missing fields or invalid values. A `default_agent` value or `agents` key other than `copilot` or `claude`, and the legacy top-level `agent` key, are reported as schema validation errors, and the command exits with code 1; with `--format json`, `status` is `invalid` and `errors` lists them. A `default_agent` that passes schema validation but names no supported provider is reported as `default_agent: Unsupported agent provider '<name>'. Supported: <providers>.`, with `error_code` `AGENT_PROVIDER_UNSUPPORTED`. The file is never modified.
 
 When `.dovo/config.json` cannot be loaded, `dovo config validate` exits with code 1 and reports the same `error_code`, `errors` and remediations as [`dovo config show`](#dovo-config-show), including the `Details logged:` line and `diagnostics` entry when the file cannot be read; a missing file reports `status` `not_found` and `error_code` `CONFIG_NOT_FOUND`. A file that fails schema validation reports `status` `invalid` and `error_code` `CONFIG_SCHEMA_INVALID`. A valid file reports `error_code` `null`.

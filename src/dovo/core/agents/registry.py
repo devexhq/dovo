@@ -5,9 +5,11 @@
 
 from __future__ import annotations
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.claude import CLAUDE_PROVIDER_SPEC
 from dovo.core.agents.copilot import COPILOT_PROVIDER_SPEC
+from dovo.core.agents.exceptions import AgentError
 
 PROVIDERS: dict[str, ProviderSpec] = {spec.token: spec for spec in (CLAUDE_PROVIDER_SPEC, COPILOT_PROVIDER_SPEC)}
 
@@ -15,3 +17,15 @@ PROVIDERS: dict[str, ProviderSpec] = {spec.token: spec for spec in (CLAUDE_PROVI
 def unsupported_provider_message(token: str) -> str:
     """Return the unsupported-provider message naming token and the sorted registered tokens."""
     return f"Unsupported agent provider '{token}'. Supported: {', '.join(sorted(PROVIDERS))}."
+
+
+def require_provider(token: str) -> ProviderSpec:
+    """Return the registered descriptor for token.
+
+    Raises:
+        AgentError: AGENT_PROVIDER_UNSUPPORTED, with unsupported_provider_message(token), when token is not registered.
+    """
+    spec = PROVIDERS.get(token)
+    if spec is None:
+        raise AgentError(ErrorCode.AGENT_PROVIDER_UNSUPPORTED, unsupported_provider_message(token))
+    return spec
