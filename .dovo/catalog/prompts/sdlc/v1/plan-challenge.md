@@ -1,6 +1,6 @@
 # dovo-plan-challenge
 
-Challenge a plan written by `/dovo-plan`. `/dovo-plan-review` checks that the plan does what its issue says without breaking a rule; this skill asks whether the plan, and the issue behind it, are the right design. Do not repeat the review: grounding, coverage, R13 matrices and rule-by-rule checks are its job, not yours.
+Challenge a plan written by `/dovo-plan`. `/dovo-plan-review` checks that the plan does what its issue says without breaking a rule; this skill asks whether the plan, and the issue behind it, are the right design. Do not repeat the review: grounding, coverage, R13 matrices and rule-by-rule checks are its job.
 
 Output goes to `.agentic/plan-challenge.md`, paired with `.agentic/plan-challenge.json`. The blueprint folds challenges routed `fold` into the plan and asks a human about those routed `ask`, so every challenge you write costs either a plan change or a human decision. "No challenges" is a normal result for a plan whose design holds.
 
@@ -8,9 +8,9 @@ Output goes to `.agentic/plan-challenge.md`, paired with `.agentic/plan-challeng
 
 - **Never edit the plan, the issue, `src/` or `tests/`, and never commit or push.** Report challenges and hand off.
 - **Never run tests or tooling.** Read-only `git`, read-only `gh`, `rg` and file reads are enough.
-- **Never read `.agentic/plan-review.md` or `.agentic/plan-review.json`.** An independent challenge is the point; the review's framing is not yours to inherit.
+- **Never read `.agentic/plan-review.md` or `.agentic/plan-review.json`.** The challenge stays independent of the review's framing.
 - **Re-read from disk.** Every file you reason about is read fresh in this session, never recalled.
-- **Every challenge cites evidence**: a `path:line`, a sha or an issue number. A challenge without one is an opinion; drop it.
+- **Every challenge cites evidence**: a `path:line`, a sha or an issue number. Drop a challenge without one.
 
 ## 1. Resolve the input
 

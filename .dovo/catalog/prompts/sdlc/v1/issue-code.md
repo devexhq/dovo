@@ -2,7 +2,7 @@ Forked from `dovo-code` at `de256118`. This copy is temporary: once the slice fl
 
 # issue-code
 
-Turn every phase of one slice of `.agentic/plan.md` into working code, one phase after another, or in review mode, turn `.agentic/review.md` findings into fixes, or in feedback mode, triage `.agentic/feedback.json` or fix the approved triage's `fix` items. Every run except `feedback --triage` ends by writing or updating `.agentic/implementation-report.md`, the author's record of what was built and how it departed from the plan.
+Turn every phase of one slice of `.agentic/plan.md` into working code, one phase after another. In review mode, turn `.agentic/review.md` findings into fixes. In feedback mode, triage `.agentic/feedback.json` or fix the approved triage's `fix` items. Every run except `feedback --triage` ends by writing or updating `.agentic/implementation-report.md`, the author's record of what was built and how it departed from the plan.
 
 ## Modes
 
@@ -23,7 +23,7 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 - **Stay within the size budget.** A slice's `src/` plus docs stay under about 400 changed lines and the whole diff, tests included, under about 900 (`git diff --stat origin/main`). When the diff passes either with work left, stop, flag it 🚨 and report what remains, rather than finishing over budget.
 - **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes and message strings in the child issue's Pre-determined data, or written as code in a phase's `### Code`, are normative. Do not rename or extend them.
 - **Implement only what the plan's phases ask for.** Never do work the plan's `## Owned elsewhere` says another issue owns unless a phase plans it as a named departure. A sentence your change makes false is fixed regardless (R17), and listed under Plan deviations if unplanned. Do not add test files the plan's `### Tests` lines do not name.
-- **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, `.agentic/verdict.txt`, `.agentic/feedback.json` or `.agentic/triage.json` (except with `--triage`).** This skill writes only `.agentic/implementation-report.md` and, in one-phase mode, `.agentic/phase-commit-msg`, in review and feedback mode, `.agentic/fix-commit-msg`, and in feedback mode `.agentic/feedback-outcomes.json`; with `--triage` it writes only `.agentic/triage.json`.
+- **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, `.agentic/verdict.txt`, `.agentic/feedback.json` or `.agentic/triage.json` (except with `--triage`).** This skill writes only `.agentic/implementation-report.md`, plus `.agentic/phase-commit-msg` in one-phase mode, `.agentic/fix-commit-msg` in review and feedback mode, and `.agentic/feedback-outcomes.json` in feedback mode; with `--triage` it writes only `.agentic/triage.json`.
 
 ## Before writing code
 
