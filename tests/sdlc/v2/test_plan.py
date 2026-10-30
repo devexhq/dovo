@@ -6,6 +6,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
@@ -746,3 +747,327 @@ class PlanRequirementsTests:
 
         assert capsys.readouterr() == ("", "plan.py: command failed: gh issue view 1300 --json body: HTTP 502\n")
         assert not (workspace / ".agentic" / "requirements.json").exists()
+
+
+# --- check-breakdown -------------------------------------------------------------
+
+O_1 = "`dovo session list` hides discarded sessions."
+O_2 = "`dovo session list --all` shows them with a discarded status."
+ISSUE_D_1 = "Discarded is a status, not a separate list."
+REQUIREMENTS = {
+    "schema_version": 1,
+    "issue": 1300,
+    "format": "short",
+    "requirements": [
+        {"id": "O-1", "kind": "outcome", "text": O_1},
+        {"id": "O-2", "kind": "outcome", "text": O_2},
+        {"id": "D-1", "kind": "decision", "text": ISSUE_D_1},
+    ],
+}
+PHASE_1 = {
+    "schema_version": 1,
+    "slice": "S3",
+    "phase": 1,
+    "title": "Hide discarded sessions",
+    "depends_on": [],
+    "intent": "The list filters on the session's status before it renders.",
+    "requirements": [{"id": "O-1", "text": O_1}, {"id": "D-1", "text": ISSUE_D_1}],
+    "decisions": ["D-4"],
+    "traps": ["The JSON output filters too."],
+    "builds_on": [{"symbol": "SessionStatus", "path": "src/dovo/core/sessions/models.py"}],
+    "actions": [
+        {
+            "id": "1.1",
+            "kind": "code",
+            "target": "src/dovo/core/sessions/sessions.py::Sessions.list",
+            "do": "Leave out discarded sessions.",
+            "requirements": ["O-1", "D-1"],
+        },
+        {
+            "id": "1.2",
+            "kind": "test",
+            "target": "tests/cli/session/test_list.py",
+            "do": "A discarded session is not listed.",
+            "requirements": ["O-1"],
+        },
+    ],
+    "not_this_phase": ["Phase 2: the --all flag."],
+}
+PHASE_2 = {
+    **PHASE_1,
+    "phase": 2,
+    "title": "Show them with --all",
+    "depends_on": [1],
+    "requirements": [{"id": "O-2", "text": O_2}],
+    "decisions": ["D-5"],
+    "builds_on": [],
+    "actions": [
+        {
+            "id": "2.1",
+            "kind": "code",
+            "target": "src/dovo/cli/session/commands/list.py",
+            "do": "Bind --all.",
+            "requirements": ["O-2"],
+        },
+        {"id": "2.2", "kind": "doc", "target": "docs/cli/session.md", "do": "Document --all.", "requirements": []},
+    ],
+    "not_this_phase": [],
+}
+PHASE_3 = {**PHASE_2, "phase": 3, "decisions": [], "actions": [{**PHASE_2["actions"][1], "id": "3.1"}]}
+BREAKDOWN_DECISIONS = [{**ASSUMED, "phases": [1]}, {**PLANNER, "phases": [2]}]
+
+
+@pytest.fixture
+def breakdown(workspace: Path) -> Path:
+    """Return a workspace whose slice S3 has phases 1 and 2, each broken down into a well-formed phase file."""
+    slices = [{"id": "S2", "phases": []}, {"id": "S3", "phases": [1, 2]}]
+    _write_json(
+        workspace / ".agentic/plan.json", {"open_questions": [], "decisions": BREAKDOWN_DECISIONS, "slices": slices}
+    )
+    _write_json(workspace / ".agentic/requirements.json", REQUIREMENTS)
+    (workspace / ".agentic/phases").mkdir()
+    _write_phase(workspace, 1, PHASE_1)
+    _write_phase(workspace, 2, PHASE_2)
+    return workspace
+
+
+def _write_json(path: Path, document: object) -> None:
+    """Write document as JSON to path."""
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+
+def _write_phase(root: Path, n: int, document: object) -> None:
+    """Write document as .agentic/phases/phase-<n>.json."""
+    _write_json(root / f".agentic/phases/phase-{n}.json", document)
+
+
+def _check_breakdown(monkeypatch: pytest.MonkeyPatch) -> int:
+    """Run plan.py check-breakdown for slice S3 on the default paths."""
+    return _main(monkeypatch, "check-breakdown", "--slice", "S3")
+
+
+def _refusal(capsys: pytest.CaptureFixture[str]) -> str:
+    """Return the one stderr line of a refusal, asserting nothing went to stdout."""
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    return captured.err
+
+
+class PlanCheckBreakdownTests:
+    def test_check_breakdown_passes_and_writes_the_index(
+        self, breakdown: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        assert _check_breakdown(monkeypatch) == 0
+
+        assert capsys.readouterr() == ("", "")
+        assert json.loads((breakdown / ".agentic/phases/index.json").read_text(encoding="utf-8")) == {
+            "schema_version": 1,
+            "slice": "S3",
+            "phases": [
+                {
+                    "phase": 1,
+                    "file": ".agentic/phases/phase-1.json",
+                    "title": "Hide discarded sessions",
+                    "depends_on": [],
+                    "requirements": ["O-1", "D-1"],
+                    "decisions": ["D-4"],
+                    "targets": ["src/dovo/core/sessions/sessions.py::Sessions.list", "tests/cli/session/test_list.py"],
+                },
+                {
+                    "phase": 2,
+                    "file": ".agentic/phases/phase-2.json",
+                    "title": "Show them with --all",
+                    "depends_on": [1],
+                    "requirements": ["O-2"],
+                    "decisions": ["D-5"],
+                    "targets": ["src/dovo/cli/session/commands/list.py", "docs/cli/session.md"],
+                },
+            ],
+        }
+
+    @pytest.mark.parametrize(
+        ("phase", "message"),
+        [
+            pytest.param(
+                {**PHASE_1, "data": [".agentic/pre_determined_data/codes.py"]},
+                "phase-1.json has unknown field data.",
+                id="unknown-field",
+            ),
+            pytest.param(
+                {**PHASE_1, "actions": [{**PHASE_1["actions"][0], "sketch": "```python\n```"}]},
+                "phase-1.json action has unknown field sketch.",
+                id="action-sketch",
+            ),
+            pytest.param(
+                {**PHASE_1, "schema_version": 2}, "phase-1.json has schema_version 2; it must be 1.", id="schema"
+            ),
+            pytest.param({**PHASE_1, "intent": ""}, "phase-1.json has no intent.", id="no-intent"),
+            pytest.param({**PHASE_1, "actions": []}, "phase-1.json has no actions.", id="no-actions"),
+            pytest.param(
+                {**PHASE_1, "actions": [{**PHASE_1["actions"][0], "kind": "refactor"}]},
+                "phase-1.json action 1.1 has kind 'refactor'; it must be one of code, test, delete, doc.",
+                id="kind",
+            ),
+            pytest.param(
+                {**PHASE_1, "actions": [{**PHASE_1["actions"][0], "id": "2.1"}]},
+                "phase-1.json has action id '2.1'; it must be 1.<k>.",
+                id="action-id",
+            ),
+            pytest.param(
+                {**PHASE_1, "actions": [{**PHASE_1["actions"][0], "requirements": ["O-2"]}]},
+                "phase-1.json action 1.1 cites O-2, which it does not quote.",
+                id="unquoted",
+            ),
+            pytest.param(
+                {**PHASE_1, "decisions": ["OQ-4"]},
+                "phase-1.json has decisions OQ-4; each must be a D-<n> id from plan.json.",
+                id="decision-id",
+            ),
+            pytest.param(
+                PHASE_2,
+                "phase-1.json holds phase 2 of slice S3; it must hold phase 1 of slice S3.",
+                id="wrong-phase",
+            ),
+            pytest.param(
+                {**PHASE_1, "slice": "S2"},
+                "phase-1.json holds phase 1 of slice S2; it must hold phase 1 of slice S3.",
+                id="wrong-slice",
+            ),
+        ],
+    )
+    def test_check_breakdown_refuses_a_malformed_phase_file(
+        self,
+        phase: dict[str, object],
+        message: str,
+        breakdown: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _write_phase(breakdown, 1, phase)
+
+        assert _check_breakdown(monkeypatch) == 1
+
+        assert _refusal(capsys) == f"plan.py: .agentic/phases has malformed phase files: {message}\n"
+        assert not (breakdown / ".agentic/phases/index.json").exists()
+
+    def test_check_breakdown_refuses_a_file_named_for_no_phase(
+        self, breakdown: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (breakdown / ".agentic/phases/phase-one.json").write_text("not json", encoding="utf-8")
+
+        assert _check_breakdown(monkeypatch) == 1
+
+        assert _refusal(capsys) == (
+            "plan.py: .agentic/phases has malformed phase files: "
+            "phase-one.json has no phase number in its name; name it phase-<n>.json.\n"
+        )
+
+    @pytest.mark.parametrize(
+        ("change", "problem"),
+        [
+            pytest.param(
+                lambda root: (root / ".agentic/phases/phase-2.json").unlink(),
+                "Phase 2 has no phase-2.json. No action covers O-2.",
+                id="phase-without-file",
+            ),
+            pytest.param(
+                lambda root: _write_phase(root, 3, PHASE_3),
+                "phase-3.json is not a phase of slice S3, whose phases are 1, 2.",
+                id="file-without-phase",
+            ),
+        ],
+    )
+    def test_check_breakdown_refuses_files_that_do_not_match_the_slices_phases(
+        self,
+        change: Callable[[Path], None],
+        problem: str,
+        breakdown: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        change(breakdown)
+
+        assert _check_breakdown(monkeypatch) == 1
+
+        assert _refusal(capsys) == f"plan.py: .agentic/phases does not break down slice S3: {problem}\n"
+
+    @pytest.mark.parametrize(
+        ("phase_2", "problem"),
+        [
+            pytest.param(
+                {
+                    **PHASE_2,
+                    "requirements": [{"id": "O-9", "text": O_2}],
+                    "actions": [{**PHASE_2["actions"][0], "requirements": ["O-9"]}],
+                },
+                "phase-2.json quotes O-9, which requirements.json does not list. No action covers O-2.",
+                id="unknown-requirement",
+            ),
+            pytest.param(
+                {**PHASE_2, "requirements": [{"id": "O-2", "text": "`--all` shows discarded sessions."}]},
+                "phase-2.json quotes O-2 in words that differ from requirements.json.",
+                id="misquoted",
+            ),
+            pytest.param(
+                {**PHASE_2, "actions": [{**PHASE_2["actions"][0], "requirements": []}]},
+                "No action covers O-2.",
+                id="uncovered",
+            ),
+            pytest.param(
+                {**PHASE_2, "decisions": []},
+                "phase-2.json lacks D-5, whose phases in plan.json include 2.",
+                id="decision-missing",
+            ),
+            pytest.param(
+                {**PHASE_2, "decisions": ["D-4", "D-5"]},
+                "phase-2.json lists D-4, whose phases in plan.json do not include 2.",
+                id="decision-not-for-the-phase",
+            ),
+        ],
+    )
+    def test_check_breakdown_refuses_a_phase_that_drops_or_misquotes(
+        self,
+        phase_2: dict[str, object],
+        problem: str,
+        breakdown: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _write_phase(breakdown, 2, phase_2)
+
+        assert _check_breakdown(monkeypatch) == 1
+
+        assert _refusal(capsys) == f"plan.py: .agentic/phases does not break down slice S3: {problem}\n"
+        assert not (breakdown / ".agentic/phases/index.json").exists()
+
+    @pytest.mark.parametrize(
+        ("path", "document", "message"),
+        [
+            pytest.param(
+                ".agentic/plan.json",
+                {"open_questions": [], "decisions": [], "slices": [{"id": "S3", "phases": []}]},
+                ".agentic/plan.json lists no phases for slice S3.",
+                id="slice-unphased",
+            ),
+            pytest.param(
+                ".agentic/requirements.json",
+                {"requirements": [{"id": "O-1", "kind": "outcome"}]},
+                ".agentic/requirements.json: Requirement 1 has no text.",
+                id="requirement-malformed",
+            ),
+        ],
+    )
+    def test_check_breakdown_refuses_a_malformed_input(
+        self,
+        path: str,
+        document: object,
+        message: str,
+        breakdown: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _write_json(breakdown / path, document)
+
+        assert _check_breakdown(monkeypatch) == 1
+
+        assert _refusal(capsys) == f"plan.py: {message}\n"

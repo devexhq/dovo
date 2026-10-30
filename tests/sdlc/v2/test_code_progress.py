@@ -63,13 +63,19 @@ def _main(monkeypatch: pytest.MonkeyPatch, *argv: str) -> int:
 
 class CodeProgressNextTests:
     @pytest.mark.parametrize(
-        ("done", "phase", "remaining"),
-        [([], "1", 2), ([1], "2", 1), ([1, 2], "3", 0), ([1, 2, 3], "done", 0)],
+        ("done", "phase", "phase_file", "remaining"),
+        [
+            ([], "1", ".agentic/phases/phase-1.json", 2),
+            ([1], "2", ".agentic/phases/phase-2.json", 1),
+            ([1, 2], "3", ".agentic/phases/phase-3.json", 0),
+            ([1, 2, 3], "done", "", 0),
+        ],
     )
-    def test_next_picks_the_first_phase_not_done(
+    def test_next_picks_the_first_phase_not_done_and_its_phase_file(
         self,
         done: list[int],
         phase: str,
+        phase_file: str,
         remaining: int,
         workspace: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -81,15 +87,19 @@ class CodeProgressNextTests:
 
         assert _main(monkeypatch, "next", "--slice", "S3") == 0
 
-        assert json.loads(capsys.readouterr().out) == {"phase": phase, "remaining": remaining}
-        assert output.read_text(encoding="utf-8") == f"phase={phase}\nremaining={remaining}\n"
+        assert json.loads(capsys.readouterr().out) == {"phase": phase, "phase_file": phase_file, "remaining": remaining}
+        assert output.read_text(encoding="utf-8") == f"phase={phase}\nphase_file={phase_file}\nremaining={remaining}\n"
 
     def test_next_treats_a_missing_progress_record_as_empty(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         assert _main(monkeypatch, "next", "--slice", "S3") == 0
 
-        assert json.loads(capsys.readouterr().out) == {"phase": "1", "remaining": 2}
+        assert json.loads(capsys.readouterr().out) == {
+            "phase": "1",
+            "phase_file": ".agentic/phases/phase-1.json",
+            "remaining": 2,
+        }
 
     def test_next_refuses_a_slice_with_no_phases(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

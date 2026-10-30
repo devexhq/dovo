@@ -1,11 +1,22 @@
 #!/usr/bin/env python3
-"""Checks the slice plan the issue-code-v2 blueprint's planning steps write, keeps its decisions on the issue, and lists the issue's numbered items.
+"""Checks the slice plan and phase files the issue-code-v2 blueprint's planning steps write, keeps its decisions on the issue, and lists the issue's numbered items.
 
 `check-questions` runs after `fold-answers`, which settles every open question
 as a decision. It refuses a plan whose `open_questions` is not `[]`, or whose
 `decisions` holds an entry that is not a well-formed decision (the shape is
 `Decision` in plan_formats.py) or reuses another's id. A plan that passes
 prints nothing and exits 0.
+
+`check-breakdown` runs after `breakdown`, which writes one phase file per
+phase of the slice to .agentic/phases/ (the shape is `Phase` in
+plan_formats.py). It refuses, naming every problem it finds: a file that is
+not a well-formed phase, or not `phase-<n>.json` for phase n of the slice; a
+phase of the slice (plan.json `slices[].phases`) with no file, or a file for
+no phase of it; a quoted requirement requirements.json does not list, or whose
+text differs from it; a requirement of requirements.json no action cites; and
+a phase missing a plan.json decision whose `phases` include it, or listing one
+whose `phases` do not. A breakdown that passes prints nothing, exits 0 and
+has .agentic/phases/index.json written from it.
 
 `decisions-comment` runs once the plan is approved. It posts one comment
 listing the plan's decisions to the issue, headed by a
@@ -54,13 +65,17 @@ from plan_formats import (
     SESSION_ID,
     Decision,
     FormatError,
+    Phase,
     PriorDecision,
     Requirement,
+    phase_index_json,
     prior_decisions_json,
     requirements_json,
 )
 
 PLAN_JSON = Path(".agentic/plan.json")
+PHASES_DIR = Path(".agentic/phases")
+PHASE_NAME = re.compile(r"phase-(?P<phase>\d+)\.json")
 PRIOR_JSON = Path(".agentic/prior-decisions.json")
 REQUIREMENTS_JSON = Path(".agentic/requirements.json")
 OUTCOMES = "## Outcomes"
@@ -186,6 +201,144 @@ def check_questions(path: Path) -> None:
         named = ", ".join(_question_id(item, position) for position, item in enumerate(questions, start=1))
         raise PlanError(f"{path} still lists open questions {named}; fold-answers must settle each one as a decision.")
     load_decisions(plan, path)
+
+
+# --- the phase breakdown ---------------------------------------------------------
+
+
+def slice_phases(plan: dict[str, object], slice_id: str, path: Path) -> list[int]:
+    """Return the phase numbers plan.json's slices entry for slice_id lists, in order.
+
+    Raises:
+        PlanError: slices is missing, the slice is not in it, or the slice has no phases.
+    """
+    rows = [row for row in _list(plan, "slices", path) if isinstance(row, dict) and row.get("id") == slice_id]
+    phases = rows[0].get("phases") if rows else None
+    numbers = [number for number in phases if isinstance(number, int)] if isinstance(phases, list) else []
+    if not numbers:
+        raise PlanError(f"{path} lists no phases for slice {slice_id}.")
+    return numbers
+
+
+def load_requirements(path: Path) -> list[Requirement]:
+    """Return the requirements requirements.json at path lists.
+
+    Raises:
+        PlanError: The file cannot be read, or has no requirements list of well-formed entries.
+    """
+    document = load_plan(path)
+    try:
+        return [Requirement.from_json(raw, n) for n, raw in enumerate(_list(document, "requirements", path), start=1)]
+    except FormatError as error:
+        raise PlanError(f"{path}: {error}") from error
+
+
+def _read_phase(path: Path, slice_id: str) -> Phase:
+    """Return the phase in the file at path, which must be phase-<n>.json for phase n of slice_id.
+
+    Raises:
+        FormatError: The file is not valid JSON, is no well-formed phase, or names another phase or slice.
+    """
+    named = PHASE_NAME.fullmatch(path.name)
+    if named is None:
+        raise FormatError(f"{path.name} has no phase number in its name; name it phase-<n>.json.")
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as error:
+        raise FormatError(f"{path.name} is not valid JSON: {error}.") from error
+    phase = Phase.from_json(raw, path.name)
+    if phase.phase != int(named["phase"]) or phase.slice != slice_id:
+        expected = f"phase {named['phase']} of slice {slice_id}"
+        raise FormatError(f"{path.name} holds phase {phase.phase} of slice {phase.slice}; it must hold {expected}.")
+    return phase
+
+
+def load_phases(folder: Path, slice_id: str) -> dict[int, Phase]:
+    """Return the phases of slice_id in folder's phase-*.json files, by phase number.
+
+    Raises:
+        PlanError: A file is not a well-formed phase of the slice; the message names every such file.
+    """
+    phases: dict[int, Phase] = {}
+    problems: list[str] = []
+    for path in sorted(folder.glob("phase-*.json")):
+        try:
+            phase = _read_phase(path, slice_id)
+        except FormatError as error:
+            problems.append(str(error))
+        else:
+            phases[phase.phase] = phase
+    if problems:
+        raise PlanError(f"{folder} has malformed phase files: {' '.join(problems)}")
+    return phases
+
+
+def _file_problems(numbers: list[int], phases: dict[int, Phase], slice_id: str) -> list[str]:
+    """Return a line for each phase of the slice with no file, and each file of no phase of the slice."""
+    missing = [f"Phase {n} has no phase-{n}.json." for n in numbers if n not in phases]
+    listed = ", ".join(str(n) for n in numbers)
+    extra = [
+        f"phase-{n}.json is not a phase of slice {slice_id}, whose phases are {listed}."
+        for n in phases
+        if n not in numbers
+    ]
+    return [*missing, *extra]
+
+
+def _quote_problems(phases: dict[int, Phase], required: list[Requirement]) -> list[str]:
+    """Return a line for each quoted requirement requirements.json does not list or words differently."""
+    texts = {requirement.id: requirement.text for requirement in required}
+    problems: list[str] = []
+    for n, phase in phases.items():
+        for quote in phase.requirements:
+            if quote.id not in texts:
+                problems.append(f"phase-{n}.json quotes {quote.id}, which requirements.json does not list.")
+            elif quote.text != texts[quote.id]:
+                problems.append(f"phase-{n}.json quotes {quote.id} in words that differ from requirements.json.")
+    return problems
+
+
+def _coverage_problems(phases: dict[int, Phase], required: list[Requirement]) -> list[str]:
+    """Return a line naming every requirement of requirements.json that no action of any phase cites."""
+    cited = {ident for phase in phases.values() for action in phase.actions for ident in action.requirements}
+    uncovered = [requirement.id for requirement in required if requirement.id not in cited]
+    return [f"No action covers {', '.join(uncovered)}."] if uncovered else []
+
+
+def _decision_problems(phases: dict[int, Phase], decisions: list[Decision]) -> list[str]:
+    """Return a line for each phase missing a decision whose phases include it, or listing one whose phases do not."""
+    problems: list[str] = []
+    for n, phase in phases.items():
+        expected = [decision.id for decision in decisions if n in decision.phases]
+        if missing := [ident for ident in expected if ident not in phase.decisions]:
+            problems.append(f"phase-{n}.json lacks {', '.join(missing)}, whose phases in plan.json include {n}.")
+        if extra := [ident for ident in phase.decisions if ident not in expected]:
+            problems.append(f"phase-{n}.json lists {', '.join(extra)}, whose phases in plan.json do not include {n}.")
+    return problems
+
+
+def check_breakdown(plan_path: Path, requirements_path: Path, folder: Path, slice_id: str) -> None:
+    """Refuse a phase breakdown that drops or misquotes anything, else write folder's index.json.
+
+    Raises:
+        PlanError: An input is unreadable or malformed, or the phase files do not break down the slice.
+    """
+    plan = load_plan(plan_path)
+    numbers = slice_phases(plan, slice_id, plan_path)
+    decisions = load_decisions(plan, plan_path)
+    required = load_requirements(requirements_path)
+    phases = load_phases(folder, slice_id)
+    problems = [
+        *_file_problems(numbers, phases, slice_id),
+        *_quote_problems(phases, required),
+        *_coverage_problems(phases, required),
+        *_decision_problems(phases, decisions),
+    ]
+    if problems:
+        raise PlanError(f"{folder} does not break down slice {slice_id}: {' '.join(problems)}")
+    entries = [phases[n].to_index(str(folder / f"phase-{n}.json")) for n in numbers]
+    index = json.dumps(phase_index_json(slice_id, entries), indent=2) + "\n"
+    (folder / "index.json").write_text(index, encoding="utf-8")
 
 
 # --- the dovo:decisions comment ------------------------------------------------
@@ -470,11 +623,16 @@ def requirements(issue: int, out: Path) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser for the check-questions, decisions-comment, prior-decisions and requirements subcommands."""
+    """Return the parser for the check-questions, check-breakdown, decisions-comment, prior-decisions and requirements subcommands."""
     parser = argparse.ArgumentParser(description="Check the slice plan in .agentic/plan.json and keep its decisions.")
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check-questions", help="Refuse a plan with an open question or a malformed decision.")
     check.add_argument("--plan", type=Path, default=PLAN_JSON, help="The plan.json to check.")
+    breakdown = commands.add_parser("check-breakdown", help="Refuse phase files that drop or misquote anything.")
+    breakdown.add_argument("--slice", required=True, help="The slice the phase files break down.")
+    breakdown.add_argument("--plan", type=Path, default=PLAN_JSON, help="The plan.json listing the slice's phases.")
+    breakdown.add_argument("--requirements", type=Path, default=REQUIREMENTS_JSON, help="The requirements.json.")
+    breakdown.add_argument("--phases", type=Path, default=PHASES_DIR, help="The folder holding the phase files.")
     comment = commands.add_parser("decisions-comment", help="Post the approved plan's decisions to the issue.")
     comment.add_argument("--plan", type=Path, default=PLAN_JSON, help="The approved plan.json.")
     comment.add_argument("--issue", type=int, required=True, help="The issue to post the comment on.")
@@ -493,6 +651,8 @@ def dispatch(args: argparse.Namespace) -> None:
     """Run the subcommand args names."""
     if args.command == "check-questions":
         check_questions(args.plan)
+    elif args.command == "check-breakdown":
+        check_breakdown(args.plan, args.requirements, args.phases, args.slice)
     elif args.command == "decisions-comment":
         decisions_comment(args.plan, args.issue, args.slice, args.session)
     elif args.command == "prior-decisions":
