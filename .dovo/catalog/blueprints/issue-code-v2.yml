@@ -260,7 +260,8 @@ steps:
 
   # Asked on every run, including one where the issue is already labelled for
   # its description, since a step cannot be skipped; denying stops the run with
-  # the issue untouched.
+  # the issue as size-label left it: relabelled with the slice's size, and
+  # otherwise untouched.
   - id: approve
     name: Approve the edits and the label
     type: ask
@@ -273,14 +274,17 @@ steps:
       artifact: issue-ready
 
   # A command step: the writes to GitHub run exactly as approved, with the
-  # host's gh credentials. The comment records the description's body_sha
-  # after the edits, so a later run skips the check only while it is unchanged.
+  # host's gh credentials. The comment records the body_sha of the description
+  # the check read, and ready-comment refuses, before the label is added, when
+  # the description is no longer that one, so a later run skips the check only
+  # while the description it checked is unchanged.
   - id: apply
     name: Apply the edits, label the slice's issue and comment
     run: |
       set -eu
       [ "{{ steps.ready-state.outputs.ready }}" = "true" ] && { echo "Already labelled dovo:ready for its description; nothing to apply."; exit 0; }
       verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
+      checked=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json")).get("body_sha", ""))')
       if [ "$verdict" = "needs_edits" ]; then
         for proposal in .agentic/issue-title .agentic/issue-body.md; do
           [ -s "$proposal" ] || { echo "Verdict is needs_edits but $proposal is missing or empty; not labelling."; exit 1; }
@@ -290,9 +294,9 @@ steps:
         echo "Unexpected verdict '$verdict'; not labelling."
         exit 1
       fi
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py ready-comment --issue {{ steps.next.outputs.issue }} --comment .agentic/issue-ready-comment.md --body-sha "$checked"
       gh label create dovo:ready --color 0e8a16 --description "Re-grounded against main and ready to plan" --force
       gh issue edit {{ steps.next.outputs.issue }} --add-label dovo:ready
-      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py ready-comment --issue {{ steps.next.outputs.issue }} --comment .agentic/issue-ready-comment.md
     timeout_seconds: 300
 
   # --- issue-plan.yml's planning half (feature-dev's), scoped to the slice:
@@ -893,7 +897,9 @@ steps:
 
   # A command step: the issue bodies are written by the script alone, with the
   # host's gh credentials. Pauses on failure so a GitHub error can be retried;
-  # the PR is already open.
+  # the PR is already open. The sweep never writes the issue or the slice's own
+  # issue, whose descriptions only a person writes: land skips such an entry
+  # and names it.
   - id: land
     name: Record the slice as landed and apply the sweep
     run: >-
@@ -909,6 +915,9 @@ steps:
   # that added a slice, or a slice handed off and closed meanwhile, changes them
   # from the ones `next` gave pr-describe. The PR description is edited only
   # when its closing lines differ, so a "Closes" line is never missing or wrong.
+  # A closing line for the issue or the slice's own issue under any GitHub
+  # closing keyword is replaced; one inside a code block or naming another
+  # issue is kept.
   - id: pr-links
     name: Correct the PR's closing lines to the plan as landed
     run: >-

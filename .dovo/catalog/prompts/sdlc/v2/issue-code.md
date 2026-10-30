@@ -9,7 +9,7 @@ Turn every phase of one slice of `.agentic/plan.md` into working code, one phase
 | Invocation | Input | Job |
 |---|---|---|
 | `/issue-code --slice <id>` | `.agentic/plan.md`, `.agentic/plan.json` | Implement every phase the slice lists in `plan.json` `slices[].phases`, in the plan's `## Phases` table order, and no other phase. Start at the first of those phases whose artifacts are not yet in the tree, so an interrupted run resumes where it stopped; say which phases you skipped as already present. Without `--slice`, implement the plan's only slice; when it has several, stop and name them. An id not in `slices` stops the run before any edit and names the valid ids, and a slice whose `phases` is `[]` has not been phased yet: stop before any edit and say `/issue-plan --slice <id>` runs first. |
-| `/issue-code --slice <id> --phase <n>` | `.agentic/phases/phase-<n>.json`, `.agentic/plan.json` | **One-phase mode**, which the `issue-code` blueprint's code loop runs once per phase: implement only phase `<n>` of the slice, as [One-phase mode](#one-phase-mode) says. |
+| `/issue-code --slice <id> --phase <n>` | `.agentic/phases/phase-<n>.json`, `.agentic/plan.json` | **One-phase mode**, which the `issue-code-v2` blueprint's code loop runs once per phase: implement only phase `<n>` of the slice, as [One-phase mode](#one-phase-mode) says. |
 | `/issue-code review [--tiers <tiers> \| --fix <ids>]` | `.agentic/review.md`, `.agentic/review.json` | Fix review findings by tier or by id |
 | `/issue-code feedback --triage` | `.agentic/feedback.json` | Draft fix, dismiss or defer for every pull request feedback item |
 | `/issue-code feedback` | `.agentic/feedback.json`, `.agentic/triage.json` | Fix the approved triage's `fix` items |
@@ -64,7 +64,7 @@ If a contract cannot be implemented as written, or a cited symbol has moved or d
 
 ## One-phase mode
 
-The `issue-code` blueprint's `code-loop` runs this mode once per phase, each in a fresh session, on the phase its `phase` step picks. After the gate passes, its `checkpoint` step commits the phase and records it in `.agentic/code-progress.json`; earlier phases are already committed when a run starts.
+The `issue-code-v2` blueprint's `code-loop` runs this mode once per phase, each in a fresh session, on the phase its `phase` step picks. After the gate passes, its `checkpoint` step commits the phase and records it in `.agentic/code-progress.json`; earlier phases are already committed when a run starts.
 
 1. Given `--phase done`, change nothing and report that every phase of the slice is done.
 2. Otherwise, before any edit, run `uv run python .dovo/catalog/scripts/sdlc/v2/code_progress.py check --slice <id> --phase <n>`. When it refuses (`Phase 5 is not a phase of slice S3; its phases are 1, 2, 3.`), stop and report its message.

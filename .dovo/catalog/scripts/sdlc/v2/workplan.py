@@ -27,10 +27,14 @@ other slices not yet done, and `closing_lines`, the lines the slice's pull
 request ends with; `land` computes both from the plan as landed. `next` also
 writes `issue`, the issue the slice is worked on: its `child` when it has one,
 otherwise the issue whose work plan holds it. `size-label` labels that issue
-with the slice's `dovo-size-*` label and removes any other one. `pr-links`
-replaces the closing lines a pull request's description ends with when they
-differ from the ones given, so a slice whose plan changed while it was in
-review still closes the right issues. With `--hold`,
+with the slice's `dovo-size-*` label and removes any other one. `land`'s
+`--sweep` corrects other issues' descriptions, and skips an entry for the issue
+or the slice's own issue, naming it on stderr. `pr-links` replaces the closing
+lines in a pull request's description that name the issues the given lines
+name, when they differ from the ones given, so a slice whose plan changed while
+it was in review still closes the right issues. It reads every GitHub closing
+keyword, never a line inside a fenced code block, and leaves a closing line
+naming another issue alone. With `--hold`,
 `next` also writes the holds file a blueprint's `ask` step lists:
 `{"holds": []}` once a slice is picked, or one hold per slice that waits on a
 person (an open blocker, an unmerged slice, a pull request in review), in which
@@ -66,7 +70,11 @@ HEREDOC_DELIMITER = "WORKPLAN_EOF"
 NONE_CELL = "—"
 SIZES = ("s", "m", "l")
 SIZE_LABEL_PREFIX = "dovo-size-"
-CLOSING_LINE_RE = re.compile(r"Closes #\d+|Part of #\d+ \(slice \S+ of \d+\)")
+WRITTEN_LINE_RE = re.compile(r"Closes #\d+|Part of #\d+ \(slice \S+ of \d+\)")
+CLOSING_LINE_RE = re.compile(
+    r"(?i:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?[ \t]+#(?P<closed>\d+)|Part of #(?P<part_of>\d+) \(slice \S+ of \d+\)"
+)
+FENCE_OPEN = re.compile(r" {0,3}(?P<fence>`{3,}|~{3,})")
 
 
 class WorkplanError(RuntimeError):
@@ -1097,17 +1105,25 @@ def apply_sweep_entry(entry: dict[str, object], base: Path) -> None:
         run("gh", "issue", "edit", str(issue), "--remove-label", READY_LABEL)
 
 
-def apply_sweep(path: Path) -> int:
+def apply_sweep(path: Path, worked_on: set[int]) -> int:
     """Apply every entry of sweep.json and return how many failed; `[]` is an empty sweep.
 
-    An entry whose issue body changed since the sweep was drafted is skipped and
-    reported on stderr without counting as a failure. An entry that fails for any
-    other reason is reported and counted. Either way the rest are still applied.
-    File paths in an entry are relative to the directory holding sweep.json.
+    An entry for one of worked_on, the issues the slice is worked on, whose
+    descriptions only a person writes, is skipped and reported on stderr. So is
+    an entry whose issue body changed since the sweep was drafted. Neither
+    counts as a failure. An entry that fails for any other reason is reported
+    and counted. Either way the rest are still applied. File paths in an entry
+    are relative to the directory holding sweep.json.
     """
     failures = 0
     for raw in _list(_load_json(str(path))):
         entry = _object(raw, "each sweep.json entry")
+        if str(entry.get("issue")) in {str(issue) for issue in worked_on}:
+            sys.stderr.write(
+                f"workplan.py: sweep skipped #{entry.get('issue')}: the slice is worked on it, "
+                "and only a person writes its description\n"
+            )
+            continue
         try:
             apply_sweep_entry(entry, path.parent)
         except WorkplanError as error:
@@ -1293,7 +1309,8 @@ def _landed(issue: int, text: str, args: argparse.Namespace, report: str) -> str
 def cmd_land(issue: int, args: argparse.Namespace) -> int:
     """Mark the slice in_review with its PR, record its report, follow an amended plan or contract and apply the sweep.
 
-    Writes `remaining` and `closing_lines` to `$DOVO_OUTPUT`, computed from the plan as landed.
+    Writes `remaining` and `closing_lines` to `$DOVO_OUTPUT`, computed from the plan as landed. The sweep
+    never writes issue or the slice's own issue.
     """
     try:
         report = Path(args.report).read_text(encoding="utf-8")
@@ -1302,10 +1319,11 @@ def cmd_land(issue: int, args: argparse.Namespace) -> int:
     refusal = f"#{issue}'s work plan comment kept changing while landing {args.slice}; run land again"
     text = update_workplan(issue, lambda current: _landed(issue, current, args, report), refusal)
     plan, _ = split_workplan(text)
-    write_outputs(closing_outputs(issue, plan, find_slice(plan, args.slice), issue_closed))
+    row = find_slice(plan, args.slice)
+    write_outputs(closing_outputs(issue, plan, row, issue_closed))
     if args.sweep is None:
         return 0
-    failures = apply_sweep(Path(args.sweep))
+    failures = apply_sweep(Path(args.sweep), {issue} if row.child is None else {issue, row.child})
     if failures:
         raise WorkplanError(f"{failures} sweep entries failed; see above")
     return 0
@@ -1359,34 +1377,77 @@ def cmd_size_label(issue: int, slice_id: str) -> None:
     run("gh", "issue", "edit", str(target), "--add-label", wanted, *removals)
 
 
-def ending_lines(body: str) -> list[str]:
-    """Return the closing lines in a pull request description, in order: each line `closing_lines` writes."""
-    return [line.strip() for line in lf(body).split("\n") if CLOSING_LINE_RE.fullmatch(line.strip())]
+def closed_issue(line: str) -> int | None:
+    """Return the issue a closing line names, or None when line is not one.
+
+    A closing line is, alone on its line, a GitHub closing keyword in any case
+    (close, closes, closed, fix, fixes, fixed, resolve, resolves, resolved),
+    with or without a colon, and `#<n>`; or `Part of #<n> (slice <id> of <count>)`.
+    """
+    match = CLOSING_LINE_RE.fullmatch(line.strip())
+    return None if match is None else int(match["closed"] or match["part_of"])
 
 
-def with_closing_lines(body: str, lines: list[str]) -> str:
-    """Return body with every closing line taken out and lines appended after one blank line."""
-    kept = "\n".join(line for line in lf(body).split("\n") if not CLOSING_LINE_RE.fullmatch(line.strip())).rstrip()
+def prose_lines(body: str) -> list[tuple[str, bool]]:
+    """Return body's lines, each with whether it is prose: outside a fenced code block and not a fence itself.
+
+    Fences follow CommonMark, as plan.py reads them: a block opens on a line
+    indented at most 3 spaces that starts with 3 or more backticks or tildes,
+    and closes only on a line of the same character, at least as long, indented
+    at most 3 spaces and with nothing after it but whitespace. A block left open
+    runs to the end of body.
+    """
+    closing: re.Pattern[str] | None = None
+    marked: list[tuple[str, bool]] = []
+    for line in lf(body).split("\n"):
+        if closing is not None:
+            closing = None if closing.fullmatch(line) else closing
+            marked.append((line, False))
+            continue
+        opening = FENCE_OPEN.match(line)
+        if opening is not None:
+            fence = opening["fence"]
+            closing = re.compile(rf" {{0,3}}{re.escape(fence[0])}{{{len(fence)},}}[ \t]*")
+        marked.append((line, opening is None))
+    return marked
+
+
+def ending_lines(body: str, issues: set[int]) -> list[str]:
+    """Return, in order, the closing lines in body's prose that name one of issues."""
+    return [line.strip() for line, prose in prose_lines(body) if prose and closed_issue(line) in issues]
+
+
+def with_closing_lines(body: str, lines: list[str], issues: set[int]) -> str:
+    """Return body without the closing lines in its prose that name one of issues, and lines after one blank line."""
+    kept = "\n".join(line for line, prose in prose_lines(body) if not (prose and closed_issue(line) in issues)).rstrip()
     return "\n".join([kept, "", *lines]) + "\n" if kept else "\n".join(lines) + "\n"
 
 
 def cmd_pr_links(pr: int, closing: str) -> None:
     """End pull request pr's description with closing, one closing line per line, when it ends with others.
 
+    The issues closing names are the plan's issue and the slice's own issue,
+    when it has one. Every closing line in the description's prose that names
+    one of them is replaced; a closing line naming any other issue, and any line
+    inside a fenced code block, is left where it is.
+
     Raises:
-        WorkplanError: When closing is empty or holds a line that is not a closing line.
+        WorkplanError: When closing is empty or holds a line other than the `Closes #<n>` and
+            `Part of #<n> (slice <id> of <count>)` lines `land` writes.
     """
     lines = [line.strip() for line in lf(closing).split("\n") if line.strip()]
-    wrong = [line for line in lines if not CLOSING_LINE_RE.fullmatch(line)]
+    issues = {named for line in lines if (named := closed_issue(line)) is not None}
+    wrong = [line for line in lines if not WRITTEN_LINE_RE.fullmatch(line)]
     if not lines or wrong:
         raise WorkplanError(
             f"--closing-lines must be lines such as `Closes #925` or `Part of #925 (slice S2 of 4)`, not {closing!r}"
         )
     body = str(_object(json.loads(run("gh", "pr", "view", str(pr), "--json", "body")), "gh pr view")["body"])
-    if ending_lines(body) == lines:
+    if ending_lines(body, issues) == lines:
         sys.stdout.write(f"#{pr}'s description already ends with its closing lines.\n")
         return
-    _with_file(with_closing_lines(body, lines), lambda path: run("gh", "pr", "edit", str(pr), "--body-file", path))
+    replaced = with_closing_lines(body, lines, issues)
+    _with_file(replaced, lambda path: run("gh", "pr", "edit", str(pr), "--body-file", path))
     sys.stdout.write(f"#{pr}'s description now ends with: {'; '.join(lines)}.\n")
 
 

@@ -73,18 +73,24 @@ block is never read as an item. A description that numbers one id twice is
 refused; one with no numbered items writes an empty list. With `--slice`, it
 lists only that slice's share: when the issue is the `--plan`'s `issue` and the
 plan has two or more slices, only the outcomes the slice's `outcomes` name are
-kept, whole when it names a part (`O-7 (reply)` keeps O-7). The issue's other
-items, its decisions included, bind every slice, and no phase has to cite them.
-A slice worked on its own issue, or the one slice of a plan, keeps every item.
+kept, with the part an entry names as the outcome's `part` (`O-7 (reply)` keeps
+O-7 with `part` `reply`; two parts in one slice are joined by `, `). The
+issue's other items, its decisions included, bind every slice, and no phase has
+to cite them. A slice worked on its own issue, or the one slice of a plan,
+keeps every item, with no `part`.
 
-`ready-comment` runs once a person approves the ready check. It posts the
-check's comment to the issue, headed by a
-`<!-- dovo:ready schema_version=1 body_sha=<sha> -->` marker naming the
-description's `body_sha` as it is then, after any approved trim. `ready-state`
-prints `ready=true` when the issue is labelled `dovo:ready` and the latest of
-those comments that is not hidden names the description's `body_sha` now, and
-`ready=false` otherwise, with the reason on stderr, so a check is skipped only
-for the description it checked.
+`body-sha` prints the `body_sha` of an issue's description, or of a file
+holding the description a trim would write, so the ready check can record the
+description it checked. `ready-comment` runs once a person approves the ready
+check. Given that `body_sha` with `--body-sha`, it refuses, naming both shas,
+when the issue's description is no longer the one the check read; otherwise it
+posts the check's comment to the issue, headed by a
+`<!-- dovo:ready schema_version=1 body_sha=<sha> -->` marker naming it.
+`ready-state` prints `ready=true` when the issue is labelled `dovo:ready` and
+the latest of those comments that is not hidden, and whose author is the
+repository's owner, a member or a collaborator, names the description's
+`body_sha` now, and `ready=false` otherwise, with the reason on stderr, so a
+check is skipped only for the description it checked.
 
 Every refusal is one line on stderr and exit code 1.
 """
@@ -99,7 +105,7 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from plan_formats import (
@@ -146,9 +152,10 @@ BODY_SHA = re.compile(r"[0-9a-f]{64}")
 READY_LABEL = "dovo:ready"
 READY_MARKER = "<!-- dovo:ready schema_version=1 body_sha={body_sha} -->"
 READY_MARKER_RE = re.compile(r"<!-- dovo:ready schema_version=1 body_sha=(?P<body_sha>[0-9a-f]{64}) -->")
+TRUSTED = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 BULLET_RE = re.compile(r"- \*\*(?P<id>D-\d+)\*\* (?P<text>.+)")
 REPLACES_RE = re.compile(r"Replaces (?P<id>D-\d+) \(session (?P<session>[^\s()]+)\)\.$")
-OUTCOME_ENTRY = re.compile(r"(?P<id>O-\d+)(?P<part> \([^()]+\))?")
+OUTCOME_ENTRY = re.compile(r"(?P<id>O-\d+)(?: \((?P<part>[^()]+)\))?")
 SETTLED_LABELS = {"assumed_accepted": "Assumed answer, accepted", "planner": "Planner, approved with the plan"}
 MINIMIZE = "mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { clientMutationId } }"
 
@@ -272,8 +279,8 @@ def check_questions(path: Path, slice_id: str | None) -> None:
 # --- the slices ----------------------------------------------------------------
 
 
-def _slice_entries(raw: object, position: int, path: Path) -> list[tuple[str, str, bool]]:
-    """Return a plan.json slice's outcomes as (outcome id, slice id, whether the entry names a part).
+def _slice_entries(raw: object, position: int, path: Path) -> list[tuple[str, str, str | None]]:
+    """Return a plan.json slice's outcomes as (outcome id, slice id, the part the entry names or None).
 
     Raises:
         PlanError: The slice is not a JSON object, or an entry is neither `O-<n>` nor `O-<n> (<part>)`.
@@ -282,18 +289,18 @@ def _slice_entries(raw: object, position: int, path: Path) -> list[tuple[str, st
         raise PlanError(f"{path}: slice {position} is not a JSON object.")
     slice_id = str(raw.get("id") or position)
     outcomes = raw.get("outcomes")
-    entries: list[tuple[str, str, bool]] = []
+    entries: list[tuple[str, str, str | None]] = []
     for entry in outcomes if isinstance(outcomes, list) else []:
         match = OUTCOME_ENTRY.fullmatch(str(entry))
         if match is None:
             raise PlanError(f"{path}: slice {slice_id} lists outcome {entry!r}, which is not O-<n> or O-<n> (<part>).")
-        entries.append((match["id"], slice_id, match["part"] is not None))
+        entries.append((match["id"], slice_id, match["part"]))
     return entries
 
 
-def _outcome_problem(outcome: str, entries: list[tuple[str, str, bool]]) -> str | None:
+def _outcome_problem(outcome: str, entries: list[tuple[str, str, str | None]]) -> str | None:
     """Return why outcome is not delivered once: no slice lists it, two lack split markers, or one lists its parts."""
-    owners = [(slice_id, split) for ident, slice_id, split in entries if ident == outcome]
+    owners = [(slice_id, part is not None) for ident, slice_id, part in entries if ident == outcome]
     if not owners:
         return f"{outcome} belongs to no slice."
     listed = list(dict.fromkeys(slice_id for slice_id, _ in owners))
@@ -304,7 +311,7 @@ def _outcome_problem(outcome: str, entries: list[tuple[str, str, bool]]) -> str 
     return None
 
 
-def _outcome_problems(outcomes: list[str], entries: list[tuple[str, str, bool]]) -> list[str]:
+def _outcome_problems(outcomes: list[str], entries: list[tuple[str, str, str | None]]) -> list[str]:
     """Return one sentence per outcome the slices do not deliver once, then one per outcome the issue does not have."""
     problems = [problem for outcome in outcomes if (problem := _outcome_problem(outcome, entries)) is not None]
     unknown = dict.fromkeys((ident, slice_id) for ident, slice_id, _ in entries if ident not in outcomes)
@@ -830,28 +837,56 @@ def prior_decisions(issue: int, out: Path) -> None:
 # --- the dovo:ready comment ------------------------------------------------------
 
 
-def ready_comment(issue: int, path: Path) -> None:
-    """Post the ready check's comment at path to issue, headed by a marker naming the description's body_sha now.
+def _read_text(path: Path) -> str:
+    """Return the text of the file at path.
 
     Raises:
-        PlanError: The comment file cannot be read or is empty.
+        PlanError: The file cannot be read.
     """
     try:
-        text = path.read_text(encoding="utf-8").strip()
+        return path.read_text(encoding="utf-8")
     except OSError as error:
         raise PlanError(f"Cannot read {path}: {error}.") from error
+
+
+def described_sha(issue: int | None, path: Path | None) -> str:
+    """Return the body_sha of issue's description, or of the description in the file at path when issue is None.
+
+    Raises:
+        PlanError: The file cannot be read.
+    """
+    if issue is not None:
+        return body_sha(str(_view(issue, "body").get("body") or ""))
+    return body_sha(_read_text(path or Path()))
+
+
+def ready_comment(issue: int, path: Path, checked: str) -> None:
+    """Post the ready check's comment at path to issue, headed by a marker naming checked, the description it read.
+
+    Raises:
+        PlanError: The comment file cannot be read or is empty, or issue's description is not the one checked names.
+    """
+    text = _read_text(path).strip()
     if not text:
         raise PlanError(f"{path} is empty; the ready check writes the comment.")
     sha = body_sha(str(_view(issue, "body").get("body") or ""))
+    if sha != checked:
+        raise PlanError(
+            f"Issue {issue}'s description has body_sha {sha}, not {checked}, the one the ready check read; "
+            "check it again."
+        )
     comment = f"{READY_MARKER.format(body_sha=sha)}\n{text}\n"
     _with_file(comment, lambda file: run("gh", "issue", "comment", str(issue), "--body-file", file))
 
 
 def _checked_sha(comments: object) -> str | None:
-    """Return the body_sha the latest dovo:ready comment that is not hidden names, or None when there is none."""
+    """Return the body_sha the latest trusted dovo:ready comment that is not hidden names, or None when there is none.
+
+    A comment is trusted when its author is the repository's owner, a member or a collaborator.
+    """
     found: str | None = None
     for raw in comments if isinstance(comments, list) else []:
-        if not isinstance(raw, dict) or raw.get("isMinimized"):
+        if not isinstance(raw, dict) or raw.get("isMinimized") or raw.get("authorAssociation") not in TRUSTED:
             continue
         marker = READY_MARKER_RE.match(str(raw.get("body") or ""))
         if marker is not None:
@@ -995,8 +1030,18 @@ def parse_requirements(body: str) -> tuple[str, list[Requirement]]:
     return "legacy", _legacy_requirements(sections)
 
 
-def slice_outcomes(path: Path, slice_id: str, issue: int) -> set[str] | None:
-    """Return the outcome ids slice_id delivers of issue, or None when every item of issue is the slice's.
+def _share(entries: list[tuple[str, str, str | None]]) -> dict[str, str | None]:
+    """Return each outcome a slice's entries list with the parts they name, joined by `, `, or None for a whole one."""
+    parts: dict[str, list[str | None]] = {}
+    for ident, _, part in entries:
+        parts.setdefault(ident, []).append(part)
+    return {ident: None if None in named else ", ".join(map(str, named)) for ident, named in parts.items()}
+
+
+def slice_outcomes(path: Path, slice_id: str, issue: int) -> dict[str, str | None] | None:
+    """Return the outcomes slice_id delivers of issue, each with the part it delivers or None for the whole outcome.
+
+    None in place of the outcomes means every item of issue is the slice's.
 
     Every item is the slice's when issue is not the plan's `issue` (it is the slice's own issue) or the plan
     has one slice.
@@ -1011,14 +1056,14 @@ def slice_outcomes(path: Path, slice_id: str, issue: int) -> set[str] | None:
     for position, raw in enumerate(raw_slices, start=1):
         entries = _slice_entries(raw, position, path)
         if isinstance(raw, dict) and raw.get("id") == slice_id:
-            return {ident for ident, _, _ in entries}
+            return _share(entries)
     raise PlanError(f"{path} has no slice {slice_id}.")
 
 
-def requirements(issue: int, out: Path, share: set[str] | None = None) -> None:
+def requirements(issue: int, out: Path, share: dict[str, str | None] | None = None) -> None:
     """Write to out the numbered items of issue's description, each with its exact text.
 
-    With share, only the outcomes whose ids it holds are written.
+    With share, only the outcomes it holds are written, each with the part share gives it.
 
     Raises:
         PlanError: The description numbers one id twice.
@@ -1030,13 +1075,13 @@ def requirements(issue: int, out: Path, share: set[str] | None = None) -> None:
             raise PlanError(f"Issue {issue} numbers {requirement.id} twice; give each item its own id.")
         seen.add(requirement.id)
     if share is not None:
-        found = [item for item in found if item.kind == "outcome" and item.id in share]
+        found = [replace(item, part=share[item.id]) for item in found if item.kind == "outcome" and item.id in share]
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(requirements_json(issue, issue_format, found), indent=2) + "\n", encoding="utf-8")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser for the check-slices, check-questions, check-breakdown, decisions-comment, prior-decisions, requirements, ready-comment and ready-state subcommands."""
+    """Return the parser for the check-slices, check-questions, check-breakdown, decisions-comment, prior-decisions, requirements, body-sha, ready-comment and ready-state subcommands."""
     parser = argparse.ArgumentParser(description="Check the slice plan in .agentic/plan.json and keep its decisions.")
     commands = parser.add_subparsers(dest="command", required=True)
     slices = commands.add_parser("check-slices", help="Refuse slices that leave out an outcome or deliver it twice.")
@@ -1070,13 +1115,33 @@ def build_parser() -> argparse.ArgumentParser:
     posted = commands.add_parser("ready-comment", help="Post the ready check's comment, naming the description.")
     posted.add_argument("--issue", type=int, required=True, help="The issue the check labelled dovo:ready.")
     posted.add_argument("--comment", type=Path, required=True, help="The ready check's comment file.")
+    posted.add_argument("--body-sha", required=True, help="The body_sha of the description the ready check read.")
+    sha = commands.add_parser("body-sha", help="Print the body_sha of an issue's description or of a file.")
+    described = sha.add_mutually_exclusive_group(required=True)
+    described.add_argument("--issue", type=int, help="The issue whose description to hash.")
+    described.add_argument("--file", type=Path, help="A file holding the description to hash.")
     state = commands.add_parser("ready-state", help="Print ready=true when the label holds for the description.")
     state.add_argument("--issue", type=int, required=True, help="The issue to look at.")
     return parser
 
 
+def _dispatch_ready(args: argparse.Namespace) -> bool:
+    """Run the body-sha, ready-comment or ready-state subcommand args names; return False for any other."""
+    if args.command == "ready-comment":
+        ready_comment(args.issue, args.comment, args.body_sha)
+    elif args.command == "ready-state":
+        sys.stdout.write(ready_state(args.issue) + "\n")
+    elif args.command == "body-sha":
+        sys.stdout.write(described_sha(args.issue, args.file) + "\n")
+    else:
+        return False
+    return True
+
+
 def dispatch(args: argparse.Namespace) -> None:
     """Run the subcommand args names."""
+    if _dispatch_ready(args):
+        return
     if args.command == "check-slices":
         check_slices(args.plan, args.requirements)
     elif args.command == "check-questions":
@@ -1087,10 +1152,6 @@ def dispatch(args: argparse.Namespace) -> None:
         decisions_comment(args.plan, args.prior, args.issue, args.slice, args.session)
     elif args.command == "prior-decisions":
         prior_decisions(args.issue, args.out)
-    elif args.command == "ready-comment":
-        ready_comment(args.issue, args.comment)
-    elif args.command == "ready-state":
-        sys.stdout.write(ready_state(args.issue) + "\n")
     else:
         share = None if args.slice is None else slice_outcomes(args.plan, args.slice, args.issue)
         requirements(args.issue, args.out, share)

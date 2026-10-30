@@ -912,18 +912,37 @@ class PlanRequirementsTests:
         assert capsys.readouterr() == ("", "plan.py: command failed: gh issue view 1300 --json body: HTTP 502\n")
         assert not (workspace / ".agentic" / "requirements.json").exists()
 
-    def test_requirements_for_a_slice_of_the_plans_issue_lists_only_the_outcomes_it_delivers(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    @pytest.mark.parametrize(
+        ("slice_id", "listed"),
+        [
+            pytest.param(
+                "S1",
+                [{"id": "O-1", "kind": "outcome"}, {"id": "O-2", "kind": "outcome", "part": "create, list"}],
+                id="whole-and-two-parts",
+            ),
+            pytest.param("S2", [{"id": "O-2", "kind": "outcome", "part": "delete"}], id="one-part"),
+        ],
+    )
+    def test_requirements_for_a_slice_of_the_plans_issue_lists_only_the_outcomes_it_delivers_with_their_parts(
+        self,
+        slice_id: str,
+        listed: list[dict[str, str]],
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
-        slices = [{"id": "S1", "outcomes": ["O-1", "O-2 (create)"]}, {"id": "S2", "outcomes": ["O-2 (delete)"]}]
+        slices = [
+            {"id": "S1", "outcomes": ["O-1", "O-2 (create)", "O-2 (list)"]},
+            {"id": "S2", "outcomes": ["O-2 (delete)"]},
+        ]
         _write_json(workspace / ".agentic/epic-plan.json", {"issue": 1300, "slices": slices})
 
-        assert (
-            _requirements(monkeypatch, FakeGh(SHORT_BODY, []), "--slice", "S2", "--plan", ".agentic/epic-plan.json")
-            == 0
-        )
+        argv = ("--slice", slice_id, "--plan", ".agentic/epic-plan.json")
+        assert _requirements(monkeypatch, FakeGh(SHORT_BODY, []), *argv) == 0
 
-        assert [item["id"] for item in _requirement_items(workspace)] == ["O-2"]
+        assert [
+            {key: value for key, value in item.items() if key != "text"} for item in _requirement_items(workspace)
+        ] == (listed)
         assert capsys.readouterr() == ("", "")
 
     @pytest.mark.parametrize(
@@ -940,6 +959,7 @@ class PlanRequirementsTests:
 
         assert _requirements(monkeypatch, FakeGh(SHORT_BODY, []), "--slice", "S2") == 0
 
+        assert [sorted(item) for item in _requirement_items(workspace)] == [["id", "kind", "text"]] * 3
         assert [item["id"] for item in _requirement_items(workspace)] == ["O-1", "O-2", "D-1"]
 
     def test_requirements_refuses_a_slice_the_plan_does_not_have(
@@ -966,9 +986,13 @@ def _requirement_items(workspace: Path) -> list[dict[str, object]]:
 READY_TEXT = "Ready to plan at 630086c0 (2026-10-30).\nNo changes needed.\n"
 
 
-def _ready(sha: str, *, hidden: bool = False) -> dict[str, object]:
-    """Return a dovo:ready comment naming sha, hidden when asked."""
-    return {"body": f"<!-- dovo:ready schema_version=1 body_sha={sha} -->\n{READY_TEXT}", "isMinimized": hidden}
+def _ready(sha: str, *, hidden: bool = False, author: str = "OWNER") -> dict[str, object]:
+    """Return a dovo:ready comment naming sha by an author of association author, hidden when asked."""
+    body = f"<!-- dovo:ready schema_version=1 body_sha={sha} -->\n{READY_TEXT}"
+    return {"body": body, "isMinimized": hidden, "authorAssociation": author}
+
+
+READY_COMMENT = ("ready-comment", "--issue", "1300", "--comment", ".agentic/issue-ready-comment.md")
 
 
 class PlanReadyTests:
@@ -978,8 +1002,7 @@ class PlanReadyTests:
         (workspace / ".agentic/issue-ready-comment.md").write_text(READY_TEXT, encoding="utf-8")
         fake = FakeGh(DESCRIPTION, [])
 
-        argv = ("ready-comment", "--issue", "1300", "--comment", ".agentic/issue-ready-comment.md")
-        assert _run(monkeypatch, fake, *argv) == 0
+        assert _run(monkeypatch, fake, *READY_COMMENT, "--body-sha", DESCRIPTION_SHA) == 0
 
         assert fake.calls == [
             ("gh", "issue", "view", "1300", "--json", "body"),
@@ -987,14 +1010,47 @@ class PlanReadyTests:
         ]
         assert capsys.readouterr() == ("", "")
 
+    def test_ready_comment_refuses_a_description_other_than_the_one_checked(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (workspace / ".agentic/issue-ready-comment.md").write_text(READY_TEXT, encoding="utf-8")
+        fake = FakeGh(DESCRIPTION, [])
+
+        assert _run(monkeypatch, fake, *READY_COMMENT, "--body-sha", STALE_SHA) == 1
+
+        assert capsys.readouterr() == (
+            "",
+            f"plan.py: Issue 1300's description has body_sha {DESCRIPTION_SHA}, not {STALE_SHA}, "
+            "the one the ready check read; check it again.\n",
+        )
+        assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body")]
+
+    def test_body_sha_prints_the_sha_of_an_issues_description_or_a_file(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (workspace / ".agentic/issue-body.md").write_text(DESCRIPTION.replace("\n", "\r\n"), encoding="utf-8")
+        fake = FakeGh(DESCRIPTION.replace("Only", "Just"), [])
+
+        assert _run(monkeypatch, fake, "body-sha", "--file", ".agentic/issue-body.md") == 0
+        assert capsys.readouterr() == (f"{DESCRIPTION_SHA}\n", "")
+        assert _run(monkeypatch, fake, "body-sha", "--issue", "1300") == 0
+        assert capsys.readouterr() == (f"{PLAN.body_sha(DESCRIPTION.replace('Only', 'Just'))}\n", "")
+        assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body")]
+
+    def test_body_sha_refuses_a_file_it_cannot_read(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        assert _run(monkeypatch, FakeGh(DESCRIPTION, []), "body-sha", "--file", ".agentic/issue-body.md") == 1
+
+        assert capsys.readouterr().err.startswith("plan.py: Cannot read .agentic/issue-body.md: ")
+
     def test_ready_comment_refuses_an_empty_comment(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         (workspace / ".agentic/issue-ready-comment.md").write_text("\n", encoding="utf-8")
         fake = FakeGh(DESCRIPTION, [])
 
-        argv = ("ready-comment", "--issue", "1300", "--comment", ".agentic/issue-ready-comment.md")
-        assert _run(monkeypatch, fake, *argv) == 1
+        assert _run(monkeypatch, fake, *READY_COMMENT, "--body-sha", DESCRIPTION_SHA) == 1
 
         assert capsys.readouterr() == (
             "",
@@ -1018,6 +1074,21 @@ class PlanReadyTests:
                 ("dovo:ready",), [_ready(DESCRIPTION_SHA), _ready(STALE_SHA)], "ready=false",
                 "Issue 1300's description changed since the check that labelled it; checking it.",
                 id="description-changed",
+            ),
+            pytest.param(
+                ("dovo:ready",), [_ready(STALE_SHA), _ready(DESCRIPTION_SHA, author="CONTRIBUTOR")], "ready=false",
+                "Issue 1300's description changed since the check that labelled it; checking it.",
+                id="untrusted-author-ignored",
+            ),
+            pytest.param(
+                ("dovo:ready",), [_ready(DESCRIPTION_SHA, author="NONE")], "ready=false",
+                "No ready comment on issue 1300 names the description it checked; checking it.",
+                id="only-untrusted-author",
+            ),
+            pytest.param(
+                ("dovo:ready",), [_ready(DESCRIPTION_SHA, author="MEMBER"), _ready(STALE_SHA, author="NONE")],
+                "ready=true", "Issue 1300 is labelled dovo:ready for its description as it is; not checking it.",
+                id="member-trusted",
             ),
             pytest.param(
                 ("dovo-size-s", "dovo:ready"), [_ready(STALE_SHA), _ready(DESCRIPTION_SHA), _ready(STALE_SHA, hidden=True)],
@@ -1222,6 +1293,32 @@ class PlanCheckBreakdownTests:
                 },
             ],
         }
+
+    def test_check_breakdown_passes_a_quote_of_an_outcome_the_slice_delivers_part_of(
+        self, breakdown: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        listed = REQUIREMENTS["requirements"]
+        assert isinstance(listed, list)
+        parted = {**REQUIREMENTS, "requirements": [listed[0], {**listed[1], "part": "--all"}, listed[2]]}
+        _write_json(breakdown / ".agentic/requirements.json", parted)
+
+        assert _check_breakdown(monkeypatch) == 0
+
+        assert capsys.readouterr() == ("", "")
+
+    def test_check_breakdown_refuses_a_requirement_whose_part_is_no_text(
+        self, breakdown: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        listed = REQUIREMENTS["requirements"]
+        assert isinstance(listed, list)
+        _write_json(
+            breakdown / ".agentic/requirements.json",
+            {**REQUIREMENTS, "requirements": [listed[0], {**listed[1], "part": ""}, listed[2]]},
+        )
+
+        assert _check_breakdown(monkeypatch) == 1
+
+        assert _refusal(capsys) == "plan.py: .agentic/requirements.json: Requirement 2 has no part.\n"
 
     @pytest.mark.parametrize(
         ("phase", "message"),

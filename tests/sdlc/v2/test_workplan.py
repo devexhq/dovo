@@ -1226,6 +1226,37 @@ class LandTests:
         assert (fake.texts(1060), fake.texts(1061)) == (["Swept 1060.\n"], [])
         assert fake.removed_labels == [(1060, "dovo:ready")]
 
+    def test_sweep_skips_the_issue_and_the_slices_own_issue(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        row = _row("S1", status="in_progress", session=CODE_SESSION, child=1131)
+        fake = FakeGh({EPIC: _workplan(row)}, {1131: "Old 1131.\n", 1060: "Old 1060.\n"})
+        sweep_dir = tmp_path / "sweep"
+        sweep_dir.mkdir()
+        entries = []
+        for issue, old in ((EPIC, INTRO), (1131, "Old 1131.\n"), (1060, "Old 1060.\n")):
+            (sweep_dir / f"{issue}.md").write_text(f"New {issue}.\n", encoding="utf-8")
+            (sweep_dir / f"{issue}.comment.md").write_text(f"Swept {issue}.\n", encoding="utf-8")
+            entries.append(
+                {
+                    "issue": issue,
+                    "expected_body_sha256": hashlib.sha256(old.encode()).hexdigest(),
+                    "body_file": f"sweep/{issue}.md",
+                    "comment_file": f"sweep/{issue}.comment.md",
+                }
+            )
+        sweep = _write_json(tmp_path / "sweep.json", entries)
+        plan = {"contract": None, "slices": [_slice("S1", child=1131)]}
+
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, plan, "--sweep", sweep)) == 0
+
+        skipped = "the slice is worked on it, and only a person writes its description"
+        assert capsys.readouterr().err == (
+            f"workplan.py: sweep skipped #{EPIC}: {skipped}\nworkplan.py: sweep skipped #1131: {skipped}\n"
+        )
+        assert (fake.bodies[EPIC], fake.bodies[1131], fake.bodies[1060]) == (INTRO, "Old 1131.\n", "New 1060.\n")
+        assert (fake.texts(1131), fake.texts(1060), fake.edits) == ([], ["Swept 1060.\n"], [1060])
+
     def test_accepts_an_empty_sweep(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fake = FakeGh({EPIC: _workplan(_row("S1", status="in_progress", session=CODE_SESSION))})
         sweep = _write_json(tmp_path / "sweep.json", [])
@@ -1446,6 +1477,30 @@ class PrLinksTests:
                 "## Why\nSlices need links.\n\nCloses #925\n",
                 id="missing",
             ),
+            pytest.param(
+                "## Why\nSlices need links.\n\nFixes #925\n",
+                "Closes #925",
+                "## Why\nSlices need links.\n\nCloses #925\n",
+                id="fixes",
+            ),
+            pytest.param(
+                "## Why\nSlices need links.\n\n  closes #925\n",
+                "Part of #925 (slice S2 of 3)",
+                "## Why\nSlices need links.\n\nPart of #925 (slice S2 of 3)\n",
+                id="lowercase-closes",
+            ),
+            pytest.param(
+                "## Why\nSlices need links.\n\nResolves: #1131\nPart of #925 (slice S2 of 3)\n",
+                "Closes #1131\nPart of #925 (slice S2 of 3)",
+                "## Why\nSlices need links.\n\nCloses #1131\nPart of #925 (slice S2 of 3)\n",
+                id="resolves-with-colon",
+            ),
+            pytest.param(
+                "## Why\nFixes #1000\n\n```text\nCloses #925\n```\n\nPart of #925 (slice S2 of 3)\n",
+                "Closes #925",
+                "## Why\nFixes #1000\n\n```text\nCloses #925\n```\n\nCloses #925\n",
+                id="other-issue-and-code-block-kept",
+            ),
         ],
     )
     def test_replaces_closing_lines_that_differ(
@@ -1469,6 +1524,21 @@ class PrLinksTests:
         assert self._links(monkeypatch, fake, "Part of #925 (slice S2 of 3)\n") == 0
 
         assert (fake.pr_bodies[1216], fake.pr_edits) == (self.DESCRIPTION, [])
+        assert capsys.readouterr() == ("#1216's description already ends with its closing lines.\n", "")
+
+    def test_reads_no_closing_line_in_a_code_block_or_naming_another_issue(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        body = (
+            "## Why\nFixes #1000\n\n~~~~markdown\nCloses #925\n~~~\nPart of #925 (slice S1 of 3)\n~~~~\n\n"
+            "Part of #925 (slice S2 of 3)\n"
+        )
+        fake = FakeGh({})
+        fake.pr_bodies[1216] = body
+
+        assert self._links(monkeypatch, fake, "Part of #925 (slice S2 of 3)") == 0
+
+        assert (fake.pr_bodies[1216], fake.pr_edits) == (body, [])
         assert capsys.readouterr() == ("#1216's description already ends with its closing lines.\n", "")
 
     @pytest.mark.parametrize("closing", [pytest.param("", id="empty"), pytest.param("Fixes #925", id="not-closing")])
