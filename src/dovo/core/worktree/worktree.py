@@ -10,7 +10,7 @@ from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
 from dovo.common.session_id import SessionIdFactory
-from dovo.core.config import Config
+from dovo.core.config import Config, ConfigLoadDiagnostics
 from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.exceptions import WorktreeApplyConflict
@@ -129,17 +129,20 @@ class Worktree:
 
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
-            ConfigLoadError: If config.json cannot be loaded.
         """
-        with WorkspaceLock(self.paths.lock_file):
+        with (
+            WorkspaceLock(self.paths.lock_file),
+            catch_failure("worktree.create", worktree_id=session_id, path=str(self.path)) as caught,
+        ):
             worktree_cfg = Config(self.paths).worktree
-            with catch_failure("worktree.create", worktree_id=session_id, path=str(self.path)) as caught:
-                created = self.lifecycle.create(
-                    worktree_cfg, session_id=session_id, include_wip=include_wip, name=name, base_ref=base_ref
-                )
+            created = self.lifecycle.create(
+                worktree_cfg, session_id=session_id, include_wip=include_wip, name=name, base_ref=base_ref
+            )
         if caught.failure is not None:
+            data = caught.failure.data
+            records = data.records if isinstance(data, ConfigLoadDiagnostics) else ()
             return WorktreeCreateResult(
-                **caught.failure.result_fields(),
+                **caught.failure.result_fields(prior_diagnostics=records),
             )
         return WorktreeCreateResult(
             session=created.session, warnings=list(created.warnings), diagnostics=list(created.diagnostics)

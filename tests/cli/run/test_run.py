@@ -381,13 +381,13 @@ class RunCliIntegrationTests:
         assert "missing-blueprint" in result.stdout
         assert "not found" in result.stdout
 
-    def test_run_cli_malformed_user_tier_exits_one_with_config_error_panel(
+    def test_run_cli_malformed_user_tier_exits_one_with_invalid_configuration_panel(
         self,
         cli_runner: CliRunner,
         cli_workspace: Path,
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
     ) -> None:
-        """Exit 1 with a tier-attributed Config Error panel when the User tier config.json is malformed.
+        """Exit 1 with a tier-attributed Invalid Configuration panel when the User tier config.json is malformed.
 
         The top-level callback resolves config before the run handler runs,
         so no blueprint is resolved and no session row is inserted.
@@ -398,7 +398,8 @@ class RunCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "unresolved-task", "--no-worktree"])
 
         assert result.exit_code == 1
-        assert "Config Error" in result.stdout
+        assert "Invalid Configuration" in result.stdout
+        assert "Config Error" not in result.stdout
         assert "Invalid configuration in user tier" in result.stdout
 
     def test_run_cli_config_show_and_run_observe_identical_merged_config(

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
-from dovo.common.formatters import format_remediations
-from dovo.core.config.exceptions import ConfigLoadError, ConfigTierSource
+from dovo.core.config.exceptions import ConfigError, ConfigLoadDiagnostics, ConfigTierSource
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus, load_config
 from dovo.core.config.models import (
     ConcurrencyConfig,
@@ -34,14 +34,17 @@ from dovo.core.config.validate import (
 
 
 def _require_config(result: ConfigLoadResult, root_dir: Path) -> DovoConfig:
-    """Return result.config or raise ConfigLoadError with its errors and Fix: block formatted into the message."""
-    if not result.ok or result.config is None:
-        parts = list(result.errors)
-        if result.remediations:
-            parts.append(format_remediations(result.remediations))
-        errors = "; ".join(parts) if parts else "unknown error"
-        raise ConfigLoadError(f"Failed to load config at '{root_dir}': {errors}", result)
-    return result.config
+    """Return result.config, or raise ConfigError with the failed load's code, errors, remediations and records."""
+    if result.ok and result.config is not None:
+        return result.config
+    if result.error_code is None:
+        raise RuntimeError(f"Config load at '{root_dir}' failed without an error_code")
+    raise ConfigError(
+        ErrorCode(result.error_code),
+        f"Failed to load config at '{root_dir}': {'; '.join(result.errors)}",
+        result.remediations,
+        data=ConfigLoadDiagnostics(tuple(result.diagnostics)),
+    )
 
 
 class Config:
@@ -54,7 +57,11 @@ class Config:
 
     @classmethod
     def load_required(cls, paths: WorkspacePaths) -> DovoConfig:
-        """Load and validate the effective config for paths, raising ConfigLoadError on failure."""
+        """Load and validate the effective config for paths.
+
+        Raises:
+            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+        """
         return _require_config(cls(paths).load(), paths.root_dir)
 
     def load(self) -> ConfigLoadResult:
@@ -106,52 +113,92 @@ class Config:
 
     @property
     def _loaded_config(self) -> DovoConfig:
-        """Load and cache the DovoConfig, raising ConfigLoadError on failure."""
+        """Load and cache the DovoConfig.
+
+        Raises:
+            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+        """
         if self._cached_config is None:
             self._cached_config = _require_config(self.load(), self._paths.root_dir)
         return self._cached_config
 
     @property
     def version(self) -> int:
-        """Return the config schema version."""
+        """Return the config schema version.
+
+        Raises:
+            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+        """
         return self._loaded_config.version
 
     @property
     def project(self) -> ProjectConfig:
-        """Return the project identity section of the loaded config."""
+        """Return the project identity section of the loaded config.
+
+        Raises:
+            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+        """
         return self._loaded_config.project
 
     @property
     def worktree(self) -> WorktreeConfig:
-        """Return the worktree lifecycle section of the loaded config."""
+        """Return the worktree lifecycle section of the loaded config.
+
+        Raises:
+            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+        """
         return self._loaded_config.worktree
 
     @property
     def history(self) -> HistoryConfig:
-        """Return the session history retention section of the loaded config."""
+        """Return the session history retention section of the loaded config.
+
+        Raises:
+            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+        """
         return self._loaded_config.history
 
     @property
     def doctor(self) -> DoctorConfig:
-        """Return the doctor check toggles section of the loaded config."""
+        """Return the doctor check toggles section of the loaded config.
+
+        Raises:
+            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+        """
         return self._loaded_config.doctor
 
     @property
     def prune(self) -> PruneConfig:
-        """Return the prune cleanup toggles section of the loaded config."""
+        """Return the prune cleanup toggles section of the loaded config.
+
+        Raises:
+            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+        """
         return self._loaded_config.prune
 
     @property
     def telemetry(self) -> TelemetryConfig:
-        """Return the optional telemetry section of the loaded config."""
+        """Return the optional telemetry section of the loaded config.
+
+        Raises:
+            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+        """
         return self._loaded_config.telemetry
 
     @property
     def concurrency(self) -> ConcurrencyConfig:
-        """Return the concurrency and locking section of the loaded config."""
+        """Return the concurrency and locking section of the loaded config.
+
+        Raises:
+            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+        """
         return self._loaded_config.concurrency
 
     @property
     def environment(self) -> EnvironmentConfig:
-        """Return the environment section of the loaded config."""
+        """Return the environment section of the loaded config.
+
+        Raises:
+            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+        """
         return self._loaded_config.environment

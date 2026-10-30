@@ -2,7 +2,7 @@
 
 `dovo config` shows, changes and validates configuration.
 
-Every `dovo config` subcommand requires `dovo init` first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. Once initialized, the subcommands still run when `config.json` is missing or broken so they can report on it.
+Every `dovo config` subcommand requires `dovo init` first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. Once initialized, the subcommands still run when `config.json` is missing or broken so they can report on it. Other commands, except `dovo doctor`, `dovo init` and `dovo status`, stop when the configuration fails to load: they exit `1` with an `Invalid Configuration` panel showing the failure and its `Fix:` lines, plus a `Details logged:` line when a file could not be read.
 
 ## Subcommands
 

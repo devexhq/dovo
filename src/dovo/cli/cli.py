@@ -24,10 +24,11 @@ from dovo.common.diagnostic_log import (
     reset_cli_command,
 )
 from dovo.common.filesystem import Filesystem, WorkspaceNotInitializedError
+from dovo.common.formatters import format_remediations
 from dovo.common.interrupt import install_interrupt_handlers, reraise_interrupt_signal
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.version import get_version
-from dovo.core.config import ConfigLoadError
+from dovo.core.config import ConfigError, ConfigLoadDiagnostics
 
 # Package Metadata matching our PyPI footprint
 __version__ = get_version()
@@ -209,14 +210,25 @@ def main(
             ctx.obj["context"] = CliContext.build(
                 path=path, load_config=ctx.invoked_subcommand not in NON_STRICT_CONFIG_COMMANDS
             )
-        except ConfigLoadError as exc:
-            ui_dispatcher.dispatch(exc.result)
+        except ConfigError as exc:
+            ui_dispatcher.dispatch(_config_error_panel(exc))
             raise typer.Exit(code=1) from exc
         except WorkspaceNotInitializedError as exc:
             ui_dispatcher.dispatch(
                 ErrorPanelEvent(title="Workspace Not Initialized", message=str(exc), border_style="red")
             )
             raise typer.Exit(code=1) from exc
+
+
+def _config_error_panel(exc: ConfigError) -> ErrorPanelEvent:
+    """Return the Invalid Configuration panel: the message, its Fix: block, then a hint per carried diagnostic record."""
+    message = exc.message
+    if exc.remediations:
+        message += "\n" + format_remediations(exc.remediations)
+    records = exc.data.records if isinstance(exc.data, ConfigLoadDiagnostics) else ()
+    for record in records:
+        message = append_diagnostic_hint(message, record)
+    return ErrorPanelEvent(title="Invalid Configuration", message=message, border_style="red")
 
 
 def _exception_details(exc: BaseException) -> str:
@@ -246,8 +258,8 @@ def _run_app() -> None:
             )
         )
         sys.exit(1)
-    except ConfigLoadError as exc:
-        ui_dispatcher.dispatch(exc.result)
+    except ConfigError as exc:
+        ui_dispatcher.dispatch(_config_error_panel(exc))
         sys.exit(1)
     except Exception as exc:
         # Global Catch-All for unexpected bugs (e.g., missing record.id)

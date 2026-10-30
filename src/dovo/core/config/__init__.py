@@ -2,7 +2,7 @@
 
 from dovo.core.config.agent_settings import agent_settings
 from dovo.core.config.config import Config
-from dovo.core.config.exceptions import ConfigError, ConfigLoadError
+from dovo.core.config.exceptions import ConfigError, ConfigLoadDiagnostics
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from dovo.core.config.models import (
     ConfigGenerationSummary,
@@ -25,7 +25,7 @@ __all__ = [
     "Config",
     "ConfigError",
     "ConfigGenerationSummary",
-    "ConfigLoadError",
+    "ConfigLoadDiagnostics",
     "ConfigLoadResult",
     "ConfigLoadStatus",
     "ConfigSetResult",

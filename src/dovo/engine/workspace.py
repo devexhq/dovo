@@ -15,7 +15,6 @@ from dovo.common.redact import SecretRedactor
 from dovo.common.utils import display_path
 from dovo.core.artifacts.artifacts import Artifacts
 from dovo.core.artifacts.store import ArtifactStore
-from dovo.core.config import ConfigLoadError
 from dovo.core.db import SessionStatus, WorktreesRepository
 from dovo.core.git.exceptions import GitError
 from dovo.core.git.tree_diff import diff_work_tree
@@ -114,10 +113,7 @@ class Workspace:
             new_id=self.context.new_id,
             db=WorktreesRepository(db_path=self.context.paths.database_file, project_id=self.context.paths.project_id),
         )
-        try:
-            create_result = manager.create(session_id=self.context.session_id)
-        except ConfigLoadError as exc:
-            return self.context.cwd.resolve(), None, None, f"Git worktree creation failed: {exc}"
+        create_result = manager.create(session_id=self.context.session_id)
         diagnostics.extend(create_result.diagnostics)
         if not create_result.ok or create_result.session is None:
             return self.context.cwd.resolve(), None, None, _creation_failure_message(create_result)

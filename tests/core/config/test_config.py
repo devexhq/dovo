@@ -10,8 +10,9 @@ from pydantic import ValidationError
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.mcp_servers import McpServerDefinition
+from dovo.common.models import Remediation
 from dovo.core.config.config import Config
-from dovo.core.config.exceptions import ConfigLoadError
+from dovo.core.config.exceptions import ConfigError, ConfigLoadDiagnostics
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.loader import ConfigLoadStatus, load_config
 from dovo.core.config.models import AgentSettings, ConfigTier, DovoConfig
@@ -179,15 +180,71 @@ class ConfigLoadTests:
 
 
 class ConfigLoadRequiredTests:
-    def test_load_required_raises_config_load_error_on_missing_config(
-        self, workspace_paths_no_config: WorkspacePaths
+    @pytest.mark.parametrize("case", ["missing", "user_tier"])
+    def test_load_required_raises_config_error_with_load_code(
+        self, workspace_paths: WorkspacePaths, write_tier_config: WriteTierConfig, case: str
     ) -> None:
-        with pytest.raises(ConfigLoadError, match="Configuration file not found at"):
-            Config.load_required(workspace_paths_no_config)
+        """Raise ConfigError with the load's code, its errors in the message and its remediations, and no records."""
+        if case == "missing":
+            expected_code = ErrorCode.CONFIG_NOT_FOUND
+            expected_errors = f"Configuration file not found at '{workspace_paths.config_file}'."
+            expected_remediations = [
+                Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")
+            ]
+        else:
+            Filesystem.atomic_write_json(workspace_paths.config_file, build_default_config("demo-workspace"))
+            tier_config_path = write_tier_config(ConfigTier.USER, "{not valid json")
+            expected_code = ErrorCode.CONFIG_TIER_JSON_INVALID
+            expected_errors = (
+                f"Invalid configuration in user tier ({tier_config_path}): "
+                "Expecting property name enclosed in double quotes at line 1 column 2 (char 1)"
+            )
+            expected_remediations = []
+
+        with pytest.raises(ConfigError) as exc_info:
+            Config.load_required(workspace_paths)
+
+        error = exc_info.value
+        assert error.error_code == expected_code
+        assert error.message == f"Failed to load config at '{workspace_paths.root_dir}': {expected_errors}"
+        assert list(error.remediations) == expected_remediations
+        assert "Fix:" not in error.message
+        assert "Details logged:" not in error.message
+        assert error.data == ConfigLoadDiagnostics(records=())
+
+    def test_load_required_unreadable_config_carries_the_load_record(
+        self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Raise ConfigError with CONFIG_UNREADABLE and data carrying the read failure's one record."""
+        config_path = workspace_paths.config_file
+        Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
+        real_read_text = Path.read_text
+
+        def _denied_read(
+            self: Path, encoding: str | None = None, errors: str | None = None, newline: str | None = None
+        ) -> str:
+            if self == config_path:
+                raise PermissionError("denied")
+            return real_read_text(self, encoding=encoding, errors=errors, newline=newline)
+
+        monkeypatch.setattr(Path, "read_text", _denied_read)
+
+        with pytest.raises(ConfigError) as exc_info:
+            Config.load_required(workspace_paths)
+
+        error = exc_info.value
+        assert error.error_code == ErrorCode.CONFIG_UNREADABLE
+        assert error.message == (
+            f"Failed to load config at '{workspace_paths.root_dir}': "
+            f"Unable to read config.json at '{config_path}': denied."
+        )
+        assert list(error.remediations) == [Remediation(message="Check file permissions and that the path is readable")]
+        assert error.data == ConfigLoadDiagnostics(records=(diagnostic_record(frozen_diagnostic_clock),))
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "config.read"
 
 
 class ConfigAccessorTests:
-    def test_accessor_raises_config_load_error_with_failed_result(
+    def test_accessor_raises_config_error_with_load_code(
         self,
         isolated_workspace: Path,
         write_tier_config: WriteTierConfig,
@@ -197,23 +254,10 @@ class ConfigAccessorTests:
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("demo-workspace"))
 
-        with pytest.raises(ConfigLoadError, match="Invalid configuration in user tier") as exc_info:
+        with pytest.raises(ConfigError, match="Invalid configuration in user tier") as exc_info:
             _ = Config(paths).worktree
 
-        assert exc_info.value.result.status == ConfigLoadStatus.TIER_INVALID
-
-    def test_accessor_raises_with_path_errors_and_fix_bullets_for_missing_config(
-        self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
-    ) -> None:
-        paths = workspace_paths_factory(isolated_workspace, None)
-
-        with pytest.raises(ConfigLoadError) as exc_info:
-            _ = Config(paths).worktree
-
-        message = str(exc_info.value)
-        assert str(paths.root_dir) in message
-        assert "Configuration file not found at" in message
-        assert "Fix:\n- Run 'dovo init' to create '.dovo/config.json'" in message
+        assert exc_info.value.error_code == ErrorCode.CONFIG_TIER_JSON_INVALID
 
 
 class ConfigAccessorPropertyTests:
@@ -249,7 +293,7 @@ class ConfigAccessorPropertyTests:
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         paths = workspace_paths_factory(isolated_workspace, None)
-        with pytest.raises(ConfigLoadError):
+        with pytest.raises(ConfigError):
             _ = Config(paths).environment
         payload = build_default_config("prop-project")
         payload["environment"] = {"sensitive_variables": ["DB_PIN"]}
@@ -259,12 +303,12 @@ class ConfigAccessorPropertyTests:
 
         assert environment.sensitive_variables == ["DB_PIN"]
 
-    def test_accessor_property_raises_config_load_error_when_config_missing(
+    def test_accessor_property_raises_config_error_when_config_missing(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         paths = workspace_paths_factory(isolated_workspace, None)
 
-        with pytest.raises(ConfigLoadError):
+        with pytest.raises(ConfigError):
             _ = Config(paths).history
 
 

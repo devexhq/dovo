@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.exceptions import DomainError, FailureData
-from dovo.core.config.loader import ConfigLoadResult
 
 
 class ConfigError(DomainError):
@@ -20,10 +20,8 @@ class ConfigTierSource(FailureData):
     path: Path
 
 
-class ConfigLoadError(RuntimeError):
-    """Raised by Config accessor properties when config.json cannot be loaded."""
+@dataclass(frozen=True, slots=True)
+class ConfigLoadDiagnostics(FailureData):
+    """The diagnostic records the failed config load wrote, carried to the caller that reports it."""
 
-    def __init__(self, message: str, result: ConfigLoadResult) -> None:
-        """Retain the structured, status-attributed load result alongside the formatted message."""
-        super().__init__(message)
-        self.result = result
+    records: tuple[DiagnosticRecord, ...]

@@ -18,8 +18,6 @@ from dovo.common.models import Remediation
 from dovo.common.utils import display_path
 from dovo.core.agents import AgentInvocationContext, allocate_invocation_paths, new_invocation_id
 from dovo.core.artifacts.models import ArtifactProvenance
-from dovo.core.config import ConfigLoadError
-from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from dovo.core.db import SessionStatus, WorktreesRepository, WorktreeStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.git.runner import GitRunner
@@ -45,11 +43,6 @@ from tests.harness.workspace_paths import initialized_workspace_paths
 
 def _create_returns_git_failure(self: Worktree, *args: object, **kwargs: object) -> WorktreeCreateResult:
     return WorktreeCreateResult(error_code="GIT_FAILED", errors=["git worktree add failed"])
-
-
-def _create_raises_config_load_error(self: Worktree, *args: object, **kwargs: object) -> WorktreeCreateResult:
-    load_result = ConfigLoadResult(status=ConfigLoadStatus.MALFORMED_JSON, config_path=Path("config.json"))
-    raise ConfigLoadError("malformed config.json", load_result)
 
 
 def _record(tmp_path: Path) -> DiagnosticRecord:
@@ -189,11 +182,6 @@ class WorkspaceSetupTests:
                 _create_returns_git_failure,
                 "Git worktree creation failed: git worktree add failed",
                 id="git-failed",
-            ),
-            pytest.param(
-                _create_raises_config_load_error,
-                "Git worktree creation failed: malformed config.json",
-                id="config-load-error",
             ),
         ],
     )

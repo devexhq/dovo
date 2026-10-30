@@ -16,7 +16,6 @@ from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
-from dovo.core.config import ConfigLoadError
 from dovo.core.db import WorktreeRecord, WorktreesRepository
 from dovo.core.git.exceptions import git_command_error
 from dovo.core.git.runner import GitRunner
@@ -150,15 +149,54 @@ class WorktreeCreateEntrypointTests:
         assert result.errors == ["Unexpected error during worktree.create: boom"]
         assert result.diagnostics == []
 
-    def test_create_config_load_error_propagates(self, worktree_workspace_paths: WorkspacePaths) -> None:
-        """Raise ConfigLoadError from Worktree.create() when config.json holds malformed JSON, writing no event file."""
-        worktree_workspace_paths.config_file.write_text("{not json", encoding="utf-8")
-        worktree = Worktree(worktree_workspace_paths, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
+    @pytest.mark.parametrize("case", ["malformed", "unreadable"])
+    def test_create_config_failure_returns_failed_result(
+        self,
+        worktree_workspace_paths: WorkspacePaths,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+        case: str,
+    ) -> None:
+        """Return the config load's code, message and remediations, creating no worktree; only an unreadable file records."""
+        paths = worktree_workspace_paths
+        config_path = paths.config_file
+        if case == "malformed":
+            config_path.write_text("{not json", encoding="utf-8")
+            expected_code = ErrorCode.CONFIG_JSON_INVALID
+            expected_error = (
+                f"Malformed config.json at '{config_path}': "
+                "Expecting property name enclosed in double quotes at line 1 column 2 (char 1)."
+            )
+            expected_remediations = [Remediation(message="Repair JSON syntax, or restore from backup")]
+        else:
+            real_read_text = Path.read_text
 
-        with pytest.raises(ConfigLoadError):
-            worktree.create(session_id="dovo_badconfig")
+            def _denied_read(
+                self: Path, encoding: str | None = None, errors: str | None = None, newline: str | None = None
+            ) -> str:
+                if self == config_path:
+                    raise PermissionError("denied")
+                return real_read_text(self, encoding=encoding, errors=errors, newline=newline)
 
-        assert not resolve_global_paths().logs_dir.exists()
+            monkeypatch.setattr(Path, "read_text", _denied_read)
+            expected_code = ErrorCode.CONFIG_UNREADABLE
+            expected_error = f"Unable to read config.json at '{config_path}': denied."
+            expected_remediations = [Remediation(message="Check file permissions and that the path is readable")]
+        worktree = Worktree(paths, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
+
+        result = worktree.create(session_id="dovo_badconfig")
+
+        assert result.error_code == expected_code
+        assert result.errors == [f"Failed to load config at '{paths.root_dir}': {expected_error}"]
+        assert result.remediations == expected_remediations
+        assert result.session is None
+        assert not (paths.worktrees_dir / "dovo_badconfig").exists()
+        if case == "malformed":
+            assert result.diagnostics == []
+            assert not frozen_diagnostic_clock.exists()
+        else:
+            assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+            assert read_single_event(frozen_diagnostic_clock)["operation"] == "config.read"
 
     def test_create_lock_timeout_propagates(
         self, worktree_workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
