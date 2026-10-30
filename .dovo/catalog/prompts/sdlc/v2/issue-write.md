@@ -22,7 +22,7 @@ Write the title and body to the template, its sections in order:
 
 - **Why** in the person's terms.
 - One **Outcome** per observable behaviour, numbered from `O-1`.
-- One **Decision** per trade-off the person settled, numbered from `D-1`, with its cost. Never invent one: when the description leaves a trade-off open, ask the person, and when they leave it open, leave it out for planning to raise as an open question.
+- One **Decision** per trade-off the person settled, numbered from `D-1`, with its cost. Never invent one. When the description leaves a trade-off open, ask the person, and when they leave it open, leave it out for planning to raise as an open question.
 - **Binding values** only for literals the person chose.
 - **Done when** naming the outcomes by id, plus any check beyond them.
 

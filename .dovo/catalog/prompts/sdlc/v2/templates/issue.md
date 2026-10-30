@@ -1,6 +1,6 @@
 # Issue template
 
-An issue records what a person decided; the plan records what the code says. Planning grounds the issue in the code just in time, so anything the code can tell goes stale in the issue and is left out: no paths, symbols, revision numbers, column lists, test names or counts.
+An issue records what a person decided; the plan records what the code says. Planning grounds the issue in the code just in time, and anything the code can tell would go stale in the issue, so leave it out: no paths, symbols, revision numbers, column lists, test names or counts.
 
 Use the sections below in this order. Why, Outcomes and Done when are required; write every other section only when it has something to say, and leave it out otherwise, never filled with "none". Add no other section. A slice's child issue opens with one line before Why, `Slice <id> of #<epic>.`, and a seeded issue keeps its marker comment as its last line; nothing else goes outside the sections.
 
