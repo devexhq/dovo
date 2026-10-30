@@ -101,7 +101,7 @@ When `issue-plan` runs on an epic that already has issues (the usual case), it s
 - **A true duplicate of another work issue** is merged into the older one.
 - **Epics never nest.** An existing epic or container that belongs to another epic is never made a slice. Either it is closed as superseded, or it stays a sibling epic and its slice issues become prerequisites.
 - **An issue outside the group** that a slice needs is a prerequisite. One that shares a surface without being needed is a sibling epic.
-- **No issue is created or reparented** when the epic is published. Re-ready each kept child when its slice comes up. A slice a person hands to someone outside the flow is marked with `workplan.py split-out --handed-off`, which gives it an issue when it has none: the flow never picks it, and the epic's last PR closes the epic only once that issue is closed.
+- **No issue is created or reparented** when the epic is published. Re-ready each kept child when its slice comes up. A slice a person hands to someone outside the flow is marked with `workplan.py split-out --handed-off`, which gives it an issue when it has none. The flow never picks it, and the epic's last PR closes the epic only once that issue is closed.
 
 In the dry run this made #925 the epic, closed #926 and #924 as superseded containers, kept #1131, #1132 and #1058 as one slice each, and split #1135 and #1060 into two slices each.
 
