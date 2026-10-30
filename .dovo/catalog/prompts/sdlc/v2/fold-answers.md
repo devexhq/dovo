@@ -14,7 +14,7 @@ The blueprint gives you the ticked question ids, the human's answers (one commen
 
 For every entry of `plan.json` `open_questions`, in order:
 
-- **Ticked:** rewrite the plan against the human's answer, as if it had been the plan's answer from the start: every phase, test line and trap it changes. The decision is the answer as planned, with `settled_by` `"human"` and `answer` holding the human's words for that question, unedited. If the comment gives no answer for a ticked question, settle nothing in either file and report which question has no answer: `check-questions` then stops the run with that question still open.
+- **Ticked:** rewrite the plan against the human's answer, as if it had been the plan's answer from the start: every phase, test line and trap it changes. The decision is the answer as planned, with `settled_by` `"human"` and `answer` holding the human's words for that question, unedited. If the comment gives no answer for a ticked question, settle nothing in either file and report which question has no answer. `check-questions` then stops the run with that question still open.
 - **Not ticked:** the plan already holds the assumed answer; remove its "Reply '…' for …" text. The decision is the question's `assumed` answer, with `settled_by` `"assumed_accepted"` and no `answer`.
 
 ## 2. Record the decisions
