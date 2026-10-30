@@ -17,6 +17,7 @@ from dovo.engine.state_models import (
     ExecutionLeafNode,
     ExecutionLoopNode,
     NodeState,
+    SessionJsonPayload,
     StepAttemptRecord,
 )
 from dovo.engine.writer import snapshot_blueprint_path
@@ -60,15 +61,30 @@ def _seed(
 
 def _break_state(paths: WorkspacePaths, sessions: SessionsRepository, fault: str) -> None:
     """Corrupt the seeded paused run's state document in the way fault names."""
+    assert fault == "paused-leaf-without-result"
     store = SessionStateStore(sessions, paths, "paused-1")
     state = store.load([])
-    if fault == "paused-leaf-without-result":
-        paused = state.nodes[1]
-        assert isinstance(paused, ExecutionLeafNode)
-        paused.attempts[-1] = paused.attempts[-1].model_copy(update={"result": None})
+    paused = state.nodes[1]
+    assert isinstance(paused, ExecutionLeafNode)
+    paused.attempts[-1] = paused.attempts[-1].model_copy(update={"result": None})
+    store.save(state, [])
+
+
+def _seed_ended(paths: WorkspacePaths, sessions: SessionsRepository, case: str) -> None:
+    """Seed a paused run whose every top-level node is terminal with one failed: a failed step or an exhausted loop."""
+    if case == "failed-step":
+        _seed(paths, sessions)
+        store = SessionStateStore(sessions, paths, "paused-1")
+        state = store.load([])
+        state.nodes[1].state = NodeState.FAILED
     else:
-        for node in state.nodes:
-            node.state = NodeState.COMPLETED
+        store = _seed_paused_loop(paths, sessions)
+        state = store.load([])
+        loop = state.nodes[0]
+        assert isinstance(loop, ExecutionLoopNode)
+        loop.iterations[0].steps[1].state = NodeState.COMPLETED
+        loop.iterations[0].state = NodeState.COMPLETED
+        loop.state = NodeState.FAILED
     store.save(state, [])
 
 
@@ -187,12 +203,6 @@ class EngineLoaderTests:
                 "Cannot resume session 'paused-1': paused step 'b' has no recorded attempt result.",
                 id="paused-leaf-no-result",
             ),
-            pytest.param(
-                "all-nodes-terminal",
-                ErrorCode.SESSION_STATE_CORRUPT,
-                "Cannot resume session 'paused-1': execution state has no step left to run.",
-                id="nothing-runnable",
-            ),
         ],
     )
     def test_invalid_run_raises_engine_resume_error_with_code_and_message(
@@ -218,6 +228,29 @@ class EngineLoaderTests:
             assert exc_info.value.message.startswith(message)
         else:
             assert exc_info.value.message == message.format(snapshot=snapshot)
+
+    @pytest.mark.parametrize("case", ["failed-step", "exhausted-loop"])
+    def test_state_with_a_failed_node_and_no_step_left_finalizes_the_row_and_raises(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, case: str
+    ) -> None:
+        """Write the row failed with the stale-run message, matching session.json, then raise SESSION_STATE_CORRUPT."""
+        _seed_ended(engine_paths, sessions_repo, case)
+
+        with pytest.raises(EngineError) as exc_info:
+            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+
+        assert exc_info.value.error_code is ErrorCode.SESSION_STATE_CORRUPT
+        assert exc_info.value.message == "Cannot resume session 'paused-1': execution state has no step left to run."
+        row = sessions_repo.get("paused-1")
+        assert row is not None
+        assert row.status is SessionStatus.FAILED
+        assert row.error_message == "Session interrupted by abnormal process termination"
+        assert row.completed_at is not None
+        projection = SessionJsonPayload.model_validate_json(
+            (engine_paths.session_dir("paused-1") / "session.json").read_text(encoding="utf-8")
+        )
+        assert projection.lifecycle.status is SessionStatus.FAILED
+        assert projection.lifecycle.error_message == "Session interrupted by abnormal process termination"
 
     def test_worktree_run_with_existing_directory_loads(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository

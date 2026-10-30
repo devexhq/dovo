@@ -9,8 +9,9 @@ from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.interaction import HeadlessAnswerInput, Interaction, InteractionAnswer
+from dovo.core.sessions import STALE_RUN_ERROR_MESSAGE
 from dovo.engine.exceptions import EngineError
-from dovo.engine.models import DefinitionsManifest
+from dovo.engine.models import DefinitionsManifest, LifecycleUpdate
 from dovo.engine.projection import iter_leaves
 from dovo.engine.state_models import (
     TERMINAL_NODE_STATES,
@@ -20,6 +21,8 @@ from dovo.engine.state_models import (
 from dovo.engine.state_store import SessionStateStore
 from dovo.engine.state_validation import validate_loop_structure
 from dovo.engine.writer import get_session_dir, load_blueprint_from_snapshot
+
+_FINISHED_NODE_STATES = frozenset({NodeState.COMPLETED, NodeState.IGNORED})
 
 
 class EngineLoader:
@@ -32,7 +35,12 @@ class EngineLoader:
         paths: WorkspacePaths,
         session_id: str,
     ) -> tuple[SessionRecord, ExecutionStateTree, DefinitionsManifest]:
-        """Return the paused run's row, state tree, and manifest, or raise EngineError with the failure's ErrorCode."""
+        """Return the paused run's row, state tree, and manifest, or raise EngineError with the failure's ErrorCode.
+
+        The caller holds the workspace lock. A run whose every top-level node is completed or ignored loads like
+        any other, so the coordinator ends it completed. A run whose every top-level node is terminal with one not
+        completed or ignored has no step left: its row is written failed before SESSION_STATE_CORRUPT is raised.
+        """
         row = sessions.get(session_id)
         if row is None:
             raise EngineError(ErrorCode.SESSION_NOT_FOUND, f"Session '{session_id}' not found.")
@@ -50,6 +58,13 @@ class EngineLoader:
             raise EngineError(
                 error.error_code, f"Cannot resume session '{session_id}': {error.message}"
             ) from error.__cause__
+
+        if cls._ended_unfinished(state):
+            cls._finalize_finished_run(sessions, paths, session_id, state)
+            raise EngineError(
+                ErrorCode.SESSION_STATE_CORRUPT,
+                f"Cannot resume session '{session_id}': execution state has no step left to run.",
+            )
 
         cls._validate_paused_leaves(session_id, state)
         cls._check_retained_worktree(session_id, paths, row)
@@ -84,14 +99,31 @@ class EngineLoader:
         return answers
 
     @classmethod
-    def _validate_paused_leaves(cls, session_id: str, state: ExecutionStateTree) -> None:
-        """Raise SESSION_STATE_CORRUPT unless a non-terminal node exists and every PAUSED leaf has a pending_ask or a recorded last-attempt result."""
-        if all(node.state in TERMINAL_NODE_STATES for node in state.nodes):
-            raise EngineError(
-                ErrorCode.SESSION_STATE_CORRUPT,
-                f"Cannot resume session '{session_id}': execution state has no step left to run.",
-            )
+    def _ended_unfinished(cls, state: ExecutionStateTree) -> bool:
+        """Return whether every top-level node is terminal and one of them is neither completed nor ignored."""
+        return all(node.state in TERMINAL_NODE_STATES for node in state.nodes) and any(
+            node.state not in _FINISHED_NODE_STATES for node in state.nodes
+        )
 
+    @classmethod
+    def _finalize_finished_run(
+        cls, sessions: SessionsRepository, paths: WorkspacePaths, session_id: str, state: ExecutionStateTree
+    ) -> None:
+        """Write the row failed with the stale-run message through the state store, so the row and session.json agree."""
+        # The loader raises next, so the save's projection warning has no result to reach.
+        SessionStateStore(sessions, paths, session_id).save(
+            state,
+            [],
+            LifecycleUpdate(run_status=SessionStatus.FAILED, error_message=STALE_RUN_ERROR_MESSAGE),
+        )
+
+    @classmethod
+    def _validate_paused_leaves(cls, session_id: str, state: ExecutionStateTree) -> None:
+        """Raise SESSION_STATE_CORRUPT when a PAUSED leaf has neither a pending_ask nor a recorded last-attempt result.
+
+        The caller holds the workspace lock and has already settled a run with no step left; a run whose every
+        top-level node is completed or ignored passes.
+        """
         for leaf in iter_leaves(state):
             has_result = bool(leaf.attempts) and leaf.attempts[-1].result is not None
             if leaf.state is NodeState.PAUSED and leaf.pending_ask is None and not has_result:

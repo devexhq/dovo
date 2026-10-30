@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shlex
+import shutil
 import sqlite3
 import sys
 from pathlib import Path
@@ -21,7 +22,7 @@ from tests.harness import FakeAgentRunner
 from tests.harness.catalog import write_runnable_step
 from tests.harness.diagnostic_log import details_line, diagnostic_record, unwrapped
 from tests.harness.fakes import fixed_clock, fixed_new_id
-from tests.harness.sessions import seed_paused_ask_session, seed_paused_session
+from tests.harness.sessions import seed_crashed_session, seed_paused_ask_session, seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -385,6 +386,112 @@ class SessionResumeReconcileCliIntegrationTests:
         assert result.exit_code == 0, result.stdout
         assert _session_status(cli_workspace, "resumed") == SessionStatus.COMPLETED
         assert "interrupted session" not in (cli_workspace / "status.out").read_text(encoding="utf-8")
+
+
+_PAUSED_SENTENCE = "Paused 1 interrupted session; continue it with 'dovo resume <session_id>'."
+_RERUN_WARNING = (
+    "Step 'mark' was interrupted before it recorded a result and was run again as attempt 1; "
+    "check for side effects its interrupted attempt already made."
+)
+
+
+def _seed_crashed(workspace: Path) -> None:
+    """Seed `crashed`, a RUNNING run left by a dead process whose step `mark` writes crashed.marker."""
+    paths = initialized_workspace_paths(workspace)
+    db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
+    seed_crashed_session(
+        paths,
+        db.sessions,
+        session_id="crashed",
+        steps=[{"id": "mark", "type": "command", "command": "touch crashed.marker"}],
+        interrupted_step_id="mark",
+    )
+
+
+class SessionResumeCrashedRunCliIntegrationTests:
+    """Typer runner tests for resuming a run whose process died, with no reconciling command run first."""
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            pytest.param(["resume", "crashed"], id="resume"),
+            pytest.param(["session", "resume", "crashed"], id="session-resume"),
+            pytest.param(["resume"], id="latest-paused"),
+        ],
+    )
+    def test_crashed_run_resumes_and_reruns_the_step(
+        self, cli_runner: CliRunner, cli_workspace: Path, args: list[str]
+    ) -> None:
+        """Exit 0, rerun the interrupted step and print the paused sentence and the rerun warning."""
+        _seed_paused_session(
+            cli_workspace, session_id="older", steps=[{"id": "s1", "run": "true"}], paused_step_id="s1"
+        )
+        _seed_crashed(cli_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), *args])
+
+        assert result.exit_code == 0, result.stdout
+        assert (cli_workspace / "crashed.marker").exists()
+        stdout = unwrapped(result.stdout)
+        assert unwrapped(_PAUSED_SENTENCE) in stdout
+        assert unwrapped(_RERUN_WARNING) in stdout
+        if args == ["resume"]:
+            assert "crashed" in stdout
+            assert "older" not in stdout
+
+    def test_crashed_run_json_carries_both_warnings(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        """With --format json, exit 0 and emit the paused sentence then the rerun warning."""
+        _seed_crashed(cli_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "resume", "crashed", "--format", "json"])
+
+        assert result.exit_code == 0, result.stdout
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        warnings = [event["payload"]["message"] for event in events if event["event_type"] == "WarningEvent"]
+        assert warnings == [_PAUSED_SENTENCE, _RERUN_WARNING]
+
+    def test_resumed_crashed_run_shows_no_error_message(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        """After the resume, `dovo session show crashed --format json` reports completed with a null error message."""
+        _seed_crashed(cli_workspace)
+        assert cli_runner.invoke(app, ["-p", str(cli_workspace), "resume", "crashed"]).exit_code == 0
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", "crashed", "--format", "json"])
+
+        assert result.exit_code == 0, result.stdout
+        payload = json.loads(result.stdout.splitlines()[-1])["payload"]
+        assert payload["session"]["status"] == "completed"
+        assert payload["session"]["error_message"] is None
+
+    @pytest.mark.parametrize(
+        ("fault", "message"),
+        [
+            pytest.param("corrupt-state", "Execution state for session 'crashed' is corrupt.", id="corrupt-state"),
+            pytest.param("missing-snapshot", "Definition snapshot file missing:", id="missing-snapshot"),
+        ],
+    )
+    def test_unresumable_crashed_run_exits_one_and_stays_paused(
+        self, cli_runner: CliRunner, cli_workspace: Path, fault: str, message: str
+    ) -> None:
+        """Exit 1 with the error resume reports for the fault, and leave the reconciled row paused."""
+        _seed_crashed(cli_workspace)
+        paths = initialized_workspace_paths(cli_workspace)
+        if fault == "corrupt-state":
+            connection = sqlite3.connect(paths.database_file)
+            try:
+                connection.execute(
+                    "UPDATE sessions SET execution_state_json = '{not json' WHERE session_id = ?", ("crashed",)
+                )
+                connection.commit()
+            finally:
+                connection.close()
+        else:
+            shutil.rmtree(paths.session_dir("crashed") / "definitions")
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "resume", "crashed"])
+
+        assert result.exit_code == 1
+        assert unwrapped(message) in unwrapped(result.stdout)
+        assert _session_status(cli_workspace, "crashed") == SessionStatus.PAUSED
 
 
 class SessionResumeCliDiagnosticsTests:

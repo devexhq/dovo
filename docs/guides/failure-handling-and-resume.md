@@ -122,6 +122,22 @@ dovo resume blueprint_a1b2c3d4
 
 Dovo reopens the kept worktree and shows the failure prompt for the paused step again. It does not re-run the failed command or any completed step. Retry starts the next attempt; continue and abort finish the step as ignored or failed.
 
+### Resuming a run whose process died
+
+When the `dovo` process running a blueprint dies (it is killed, or the machine restarts), its session is left `running`. `dovo resume` and `dovo session resume` settle such sessions first: a session that saved its progress, whose worktree still exists if it used one, and none of whose processes is still running is paused, and every other one is marked `failed`. The resume prints `Paused 1 interrupted session; continue it with 'dovo resume <session_id>'.` and then resumes the session you named, or, with no session ID, the latest paused session, which can be the one just paused.
+
+The step that was running when the process died has no recorded result, so it runs again from its start as a fresh attempt with the same attempt number, and the resume prints:
+
+```text
+Step '<step_id>' was interrupted before it recorded a result and was run again as attempt <n>; check for side effects its interrupted attempt already made.
+```
+
+The interrupted attempt may already have written files, pushed a branch or called an external service before it died; check for those side effects before relying on the step's new result. Steps that had finished do not run again.
+
+Resume a crashed run from the checkout that created it: from another checkout, its worktree is not found and the resume exits `1`.
+
+If every step had finished before the process died, the resume runs no step: the run ends `completed`, and a run started with `--auto-apply` applies its changes to your checkout. If every step had finished but one of them failed, the run is marked `failed` with `Session interrupted by abnormal process termination` and the resume exits `1`.
+
 ### Resuming a paused loop
 
 The paused loop, its current iteration and the paused body step are all saved. `dovo resume` shows the paused step's prompt again, then runs only the remaining body steps of the current iteration. Finished steps and earlier iterations are not re-run. The `until` conditions consider every body step of that iteration, including those that finished before the pause. Extra iterations you granted are saved, so a resumed loop keeps its raised limit.
