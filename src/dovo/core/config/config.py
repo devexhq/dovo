@@ -70,7 +70,7 @@ class Config:
         if not repo_result.ok:
             return repo_result
 
-        with catch_failure("config.load", path=str(self._paths.config_file)) as caught:
+        with catch_failure("config.load", root=str(self._paths.root_dir)) as caught:
             config = load_tiered_config(self._paths)
         if caught.failure is not None:
             source = caught.failure.data

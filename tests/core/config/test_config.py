@@ -156,7 +156,7 @@ class ConfigLoadTests:
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["operation"] == "config.load"
-        assert event["context"] == {"path": str(workspace_paths.config_file)}
+        assert event["context"] == {"root": str(workspace_paths.root_dir)}
         assert event["exception_type"] == "PermissionError"
 
     def test_unexpected_tier_error_reports_internal_error(

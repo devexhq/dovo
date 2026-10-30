@@ -261,23 +261,30 @@ class AgentsMergeTests:
 
 class TieredConfigErrorTests:
     @pytest.mark.parametrize(
-        ("content", "unreadable", "code", "details"),
+        ("content", "unreadable", "code", "details", "expected_cause"),
         [
             pytest.param(
                 "{not valid json",
                 False,
                 ErrorCode.CONFIG_TIER_JSON_INVALID,
                 "Expecting property name enclosed in double quotes at line 1 column 2 (char 1)",
+                type(None),
                 id="malformed_json",
             ),
             pytest.param(
-                "[]", False, ErrorCode.CONFIG_TIER_ROOT_INVALID, "root must be a JSON object", id="root_array"
+                "[]",
+                False,
+                ErrorCode.CONFIG_TIER_ROOT_INVALID,
+                "root must be a JSON object",
+                type(None),
+                id="root_array",
             ),
             pytest.param(
                 '{"worktree": {"max_active_worktrees": "many"}}',
                 False,
                 ErrorCode.CONFIG_TIER_SCHEMA_INVALID,
                 "worktree.max_active_worktrees: Input should be a valid integer",
+                type(None),
                 id="type_mismatch",
             ),
             pytest.param(
@@ -286,6 +293,7 @@ class TieredConfigErrorTests:
                 ErrorCode.CONFIG_TIER_UNREADABLE,
                 "unable to read file: [Errno 13] Permission denied: '{path}'. "
                 "Check file permissions and that the path is readable.",
+                PermissionError,
                 id="unreadable",
             ),
         ],
@@ -299,6 +307,7 @@ class TieredConfigErrorTests:
         unreadable: bool,
         code: ErrorCode,
         details: str,
+        expected_cause: type[BaseException] | type[None],
     ) -> None:
         global_root = tmp_path / "global_home"
         tier_config_path = _tier_config_path(ConfigTier.USER, isolated_workspace, global_root)
@@ -320,10 +329,7 @@ class TieredConfigErrorTests:
             f"Invalid configuration in user tier ({tier_config_path}): {details.format(path=tier_config_path)}"
         )
         assert error.data == ConfigTierSource(path=tier_config_path)
-        if unreadable:
-            assert isinstance(error.__cause__, PermissionError)
-        else:
-            assert error.__cause__ is None
+        assert isinstance(error.__cause__, expected_cause)
 
     def test_tier_with_bad_sensitive_variable_fails_without_echoing_entry(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory

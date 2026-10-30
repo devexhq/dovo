@@ -15,6 +15,7 @@ from dovo.common.models import Remediation
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.mutate import (
     ConfigSetStatus,
+    ConfigUnsetResult,
     ConfigUnsetStatus,
     set_config_value_result,
     unset_config_value_result,
@@ -616,22 +617,24 @@ class ConfigUnsetMutationTests:
         remediations: list[Remediation],
         existed: bool,
     ) -> None:
-        """Report the row's status, error_code, errors, remediations and existed, record nothing, and leave the path unchanged."""
+        """Report the row's status, error_code, errors, remediations, existed and previous value, record nothing, and leave the path unchanged."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         write(config_path)
         before = _snapshot(config_path)
+        previous_value = json.loads(config_path.read_text(encoding="utf-8"))[key] if existed else None
 
         result = unset_config_value_result(key, config_path=config_path)
 
-        assert result.status == status
-        assert result.error_code == error_code
-        assert result.config_path == config_path
-        assert result.key == key
-        assert result.existed is existed
-        assert result.errors == [error.format(path=config_path)]
-        assert result.warnings == []
-        assert result.remediations == remediations
-        assert result.diagnostics == []
+        assert result == ConfigUnsetResult(
+            status=status,
+            error_code=error_code,
+            config_path=config_path,
+            key=key,
+            existed=existed,
+            previous_value=previous_value,
+            errors=[error.format(path=config_path)],
+            remediations=remediations,
+        )
         assert _snapshot(config_path) == before
 
     def test_unset_unreadable_config_copies_code_and_record(
