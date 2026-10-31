@@ -34,8 +34,7 @@ body_sha of the description it was phased against; a pending row rendered
 again without it drops both. `phased` writes `phased_session` again, empty
 unless that phased plan still holds: the slice has no issue of its own, no
 landed slice has amended the plan since, and the description's body_sha is
-unchanged. `size-label` labels that issue
-with the slice's `dovo-size-*` label and removes any other one. `land`'s
+unchanged. `land`'s
 `--sweep` corrects other issues' descriptions, and skips an entry for the issue
 or the slice's own issue, naming it on stderr. `pr-links` replaces the closing
 lines in a pull request's description that name the issues the given lines
@@ -77,7 +76,6 @@ V1_WORKPLAN = "<!-- dovo:workplan {"
 HEREDOC_DELIMITER = "WORKPLAN_EOF"
 NONE_CELL = "—"
 SIZES = ("s", "m", "l")
-SIZE_LABEL_PREFIX = "dovo-size-"
 WRITTEN_LINE_RE = re.compile(r"Closes #\d+|Part of #\d+ \(slice \S+ of \d+\)")
 CLOSING_LINE_RE = re.compile(
     r"(?i:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?[ \t]+#(?P<closed>\d+)|Part of #(?P<part_of>\d+) \(slice \S+ of \d+\)"
@@ -1015,14 +1013,6 @@ def update_workplan(issue: int, change: Callable[[str], str], refusal: str) -> s
     raise WorkplanError(refusal)
 
 
-def _no_size_note(row: Slice, child: int) -> None:
-    """Say on stderr that child gets no size label because row's work plan predates slice sizes."""
-    sys.stderr.write(
-        f"workplan.py: {row.id} has no size in the work plan, so #{child} gets no {SIZE_LABEL_PREFIX}* label; "
-        "label it by hand\n"
-    )
-
-
 def child_body(issue: int, plan: WorkPlan, row: Slice) -> str:
     """Return the description of row's own issue: the slice it tracks and the outcomes it delivers."""
     outcomes = ", ".join(row.outcomes) or "none listed"
@@ -1033,15 +1023,12 @@ def child_body(issue: int, plan: WorkPlan, row: Slice) -> str:
 
 
 def create_child(row: Slice, body: str) -> int:
-    """Create row's own issue with body, labelled with the slice's size, and return its number.
+    """Create row's own issue with body, without a label, and return its number.
 
     Raises:
         WorkplanError: When the issue was created but its number cannot be read from gh's output.
     """
-    label = () if row.size is None else ("--label", f"{SIZE_LABEL_PREFIX}{row.size}")
-    output = _with_file(
-        body, lambda path: run("gh", "issue", "create", "--title", row.title, "--body-file", path, *label)
-    )
+    output = _with_file(body, lambda path: run("gh", "issue", "create", "--title", row.title, "--body-file", path))
     try:
         return int(output.splitlines()[-1].rstrip("/").rsplit("/", 1)[-1])
     except (ValueError, IndexError) as error:
@@ -1389,7 +1376,7 @@ def cmd_split_out(issue: int, slice_id: str, *, handed_off: bool) -> dict[str, s
     A slice that already has its own issue keeps it. The created issue is
     recorded on the slice's row before it is linked, so a run that fails after
     creating it resumes by linking that issue, never by creating another. It
-    carries the slice's `dovo-size-*` label. With handed_off, the slice is also
+    carries no label. With handed_off, the slice is also
     marked `handed_off`, which only a pending slice can be.
     """
     plan, _ = split_workplan(read_workplan(issue).text)
@@ -1399,8 +1386,6 @@ def cmd_split_out(issue: int, slice_id: str, *, handed_off: bool) -> dict[str, s
     child = row.child
     if child is None:
         created = create_child(row, child_body(issue, plan, row))
-        if row.size is None:
-            _no_size_note(row, created)
         hint = record_hint(row.id, created, handed_off)
         _after_creating(created, "recording", hint, lambda: record_child(issue, row.id, created, handed_off=handed_off))
         child = created
@@ -1409,26 +1394,6 @@ def cmd_split_out(issue: int, slice_id: str, *, handed_off: bool) -> dict[str, s
     linked = child
     _after_creating(linked, "linking", "run split-out again to link it", lambda: link_child(issue, linked))
     return {"child": str(linked)}
-
-
-def cmd_size_label(issue: int, slice_id: str) -> None:
-    """Label the issue the slice is worked on with the slice's `dovo-size-*` label, removing any other one.
-
-    That issue is the slice's own issue when it has one, otherwise issue. A
-    slice without a size leaves the labels alone and says so on stderr.
-    """
-    row = find_slice(split_workplan(read_workplan(issue).text)[0], slice_id)
-    target = issue if row.child is None else row.child
-    if row.size is None:
-        _no_size_note(row, target)
-        return
-    wanted = f"{SIZE_LABEL_PREFIX}{row.size}"
-    labels = [str(_object(raw, "a label").get("name")) for raw in _list(view_issue(target, "labels").get("labels"))]
-    others = [name for name in labels if name.startswith(SIZE_LABEL_PREFIX) and name != wanted]
-    if wanted in labels and not others:
-        return
-    removals = [flag for name in others for flag in ("--remove-label", name)]
-    run("gh", "issue", "edit", str(target), "--add-label", wanted, *removals)
 
 
 def phased_plan(plan: WorkPlan, row: Slice, body_sha: str) -> tuple[str, str]:
@@ -1548,7 +1513,7 @@ def write_outputs(outputs: dict[str, str]) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser for the render, next, claim, land, split-out, size-label, phased and pr-links subcommands."""
+    """Return the parser for the render, next, claim, land, split-out, phased and pr-links subcommands."""
     parser = argparse.ArgumentParser(description="Keep an issue's feature contract and work plan comment current.")
     commands = parser.add_subparsers(dest="command", required=True)
     render = commands.add_parser("render", help="Write the contract and work plan from plan.json.")
@@ -1556,12 +1521,11 @@ def build_parser() -> argparse.ArgumentParser:
     claim = commands.add_parser("claim", help="Mark a slice in_progress with this code session.")
     land = commands.add_parser("land", help="Mark a slice in_review, record its report and apply the sweep.")
     split = commands.add_parser("split-out", help="Give one slice its own issue, linked as a sub-issue.")
-    size = commands.add_parser("size-label", help="Label the issue a slice is worked on with the slice's size.")
     phased = commands.add_parser("phased", help="Write the session whose phased plan still holds for the slice.")
     links = commands.add_parser("pr-links", help="Make a pull request's description end with the closing lines.")
     links.add_argument("--pr", type=int, required=True, help="The slice's pull request number.")
     links.add_argument("--closing-lines", required=True, help="The closing lines, one per line, as land writes them.")
-    for sub in (render, nxt, claim, land, split, size, phased):
+    for sub in (render, nxt, claim, land, split, phased):
         sub.add_argument("--issue", type=int, required=True, help="The issue whose work plan holds the slices.")
     render.add_argument("--plan", required=True, help="Path to plan.json.")
     render.add_argument("--revision", type=int, required=True, help="The plan artifact's revision.")
@@ -1575,7 +1539,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Write the slices waiting on a person here and exit 0 without outputs, instead of refusing.",
     )
-    for sub in (claim, land, split, size, phased):
+    for sub in (claim, land, split, phased):
         sub.add_argument("--slice", required=True, help="The slice id, such as S2.")
     split.add_argument(
         "--handed-off",
@@ -1600,9 +1564,7 @@ def dispatch(args: argparse.Namespace) -> int:
         cmd_pr_links(args.pr, args.closing_lines)
         return 0
     issue: int = args.issue
-    if args.command == "size-label":
-        cmd_size_label(issue, args.slice)
-    elif args.command == "phased":
+    if args.command == "phased":
         write_outputs(cmd_phased(issue, args.slice, args.body_sha))
     elif args.command == "render":
         cmd_render(issue, args.plan, args.session, args.revision, phased_body_sha=args.phased_body_sha)

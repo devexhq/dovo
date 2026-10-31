@@ -2,9 +2,8 @@
 """Checks the plans and phase files the issue-plan-v2 and issue-code-v2 blueprints' planning steps write, keeps their decisions on the issue, lists the issue's numbered items, and applies a legacy issue's approved rewrite.
 
 `check-slices` runs after issue-plan-v2 slices an issue. It refuses a plan
-with a slice whose `size` is not `s`, `m` or `l`, naming each, since that
-slice's issue would then get no `dovo-size-*` label and its ready check would
-hold. It refuses, naming every problem it finds, a plan whose slices leave an outcome of the issue
+with a slice whose `size` is not `s`, `m` or `l`, naming each, since the
+work plan shows each slice's review size. It refuses, naming every problem it finds, a plan whose slices leave an outcome of the issue
 (an `outcome` of requirements.json) to no slice, or list it in two slices
 when not every entry for it carries a split marker naming its part, as in
 `O-7 (reply)`. It also refuses an outcome only one slice lists with a split
@@ -365,8 +364,8 @@ def check_slices(path: Path, requirements_path: Path) -> None:
     if unsized := _unsized(raw_slices):
         sizes = ", ".join(SIZES)
         raise PlanError(
-            f"{path}: slice {', '.join(unsized)} has no size ({sizes}); its issue then gets no dovo-size-* label "
-            "and its ready check holds."
+            f"{path}: slice {', '.join(unsized)} has no size ({sizes}); the work plan shows it "
+            "as the slice's review size."
         )
     entries = [
         entry for position, raw in enumerate(raw_slices, start=1) for entry in _slice_entries(raw, position, path)
