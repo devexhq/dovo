@@ -17,6 +17,10 @@ from tests.lint.astlib import REPO_ROOT
 HEAD = "a" * 40
 SESSION = "blueprint_abba01ee"
 PR_URL = "https://github.com/o/r/pull/7"
+ISSUE_12_URL = "https://github.com/o/r/issues/12"
+ISSUE_13_URL = "https://github.com/o/other/issues/13"
+ISSUE_12 = {"title": "Add X", "body": "Why X.", "author": {"login": "alice"}, "url": ISSUE_12_URL}
+ISSUE_13 = {"title": "Add Y", "body": "Why Y.", "author": {"login": "bob"}, "url": ISSUE_13_URL}
 HEADER = f"<!-- dovo-review -->\nReviewed commit: `{HEAD}`\nVerdict: APPROVE · Action: none · Round: 2\n"
 
 
@@ -611,10 +615,42 @@ class PrFeedbackTests:
         }
 
     @pytest.mark.parametrize(
-        "pr_view",
+        ("issues", "expected"),
         [
             pytest.param(
-                subprocess.CalledProcessError(1, ["gh", "pr", "view"], stderr="no pull requests"), id="nonexistent"
+                [
+                    {"title": "Add X", "body": "Why X.\n", "author": {"login": "alice"}, "url": ISSUE_12_URL},
+                    {"title": "Add Y", "body": "Why Y.", "author": {"login": "bob"}, "url": ISSUE_13_URL},
+                ],
+                "# Context for pull request #7\n\n"
+                f"## Issue: Add X\nAuthor: alice · {ISSUE_12_URL}\n\nWhy X.\n\n"
+                f"## Issue: Add Y\nAuthor: bob · {ISSUE_13_URL}\n\nWhy Y.\n",
+                id="closing-issues",
+            ),
+            pytest.param(
+                [],
+                f"# Context for pull request #7\n\n## Pull request: Fix the bug\nAuthor: carol · {PR_URL}\n\nPR body.\n",
+                id="description",
+            ),
+            pytest.param(
+                [{"title": "Add X", "body": None, "author": {"login": "alice"}, "url": ISSUE_12_URL}],
+                f"# Context for pull request #7\n\n## Issue: Add X\nAuthor: alice · {ISSUE_12_URL}\n",
+                id="empty-body",
+            ),
+        ],
+    )
+    def test_pr_context(self, issues: list[dict[str, object]], expected: str) -> None:
+        view = {"number": 7, "title": "Fix the bug", "body": "PR body.", "author": {"login": "carol"}, "url": PR_URL}
+
+        assert FEEDBACK.pr_context(view, issues) == expected
+
+    @pytest.mark.parametrize(
+        ("pr_view", "message"),
+        [
+            pytest.param(
+                subprocess.CalledProcessError(1, ["gh", "pr", "view"], stderr="no pull requests"),
+                "pull request #7 is not open",
+                id="nonexistent",
             ),
             pytest.param(
                 json.dumps(
@@ -626,12 +662,32 @@ class PrFeedbackTests:
                         "url": "https://github.com/o/r/pull/7",
                     }
                 ),
+                "pull request #7 is not open",
                 id="closed",
+            ),
+            pytest.param(
+                json.dumps(
+                    {
+                        "number": 7,
+                        "state": "OPEN",
+                        "headRefName": "b",
+                        "headRefOid": HEAD,
+                        "url": "https://github.com/o/r/pull/7",
+                        "isCrossRepository": True,
+                    }
+                ),
+                "pull request #7 comes from another repository; pr-fix pushes only to origin",
+                id="cross-repository",
             ),
         ],
     )
     def test_main_reports_pr_not_open(
-        self, pr_view: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+        self,
+        pr_view: object,
+        message: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         def fake_run(*args: str) -> str:
             assert args[:3] == ("gh", "pr", "view"), f"ran {args}"
@@ -644,7 +700,11 @@ class PrFeedbackTests:
         monkeypatch.setattr(FEEDBACK, "run", fake_run)
 
         assert FEEDBACK.main() == 1
-        assert capsys.readouterr().err == "pr_feedback.py: pull request #7 is not open\n"
+        assert capsys.readouterr().err == f"pr_feedback.py: {message}\n"
+        agentic = tmp_path / ".agentic"
+        assert not (agentic / "pr-fix").exists()
+        assert not (agentic / "pr-context.md").exists()
+        assert not (agentic / "feedback.json").exists()
 
     def test_main_collects(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -678,6 +738,75 @@ class PrFeedbackTests:
         assert (agentic / "pr-url").read_text(encoding="utf-8") == f"{PR_URL}\n"
         assert ("git", "switch", "-q", "--detach", HEAD) in ran
         assert not [args for args in ran if args[:4] == ("uv", "run", "dovo", "artifacts")]
+
+    @pytest.mark.parametrize(
+        ("closing", "expected"),
+        [
+            pytest.param(
+                ((ISSUE_12_URL, ISSUE_12), (ISSUE_13_URL, ISSUE_13)),
+                "# Context for pull request #7\n\n"
+                f"## Issue: Add X\nAuthor: alice · {ISSUE_12_URL}\n\nWhy X.\n\n"
+                f"## Issue: Add Y\nAuthor: bob · {ISSUE_13_URL}\n\nWhy Y.\n",
+                id="readable",
+            ),
+            pytest.param(
+                ((ISSUE_12_URL, None), (ISSUE_13_URL, ISSUE_13)),
+                f"# Context for pull request #7\n\n## Issue: Add Y\nAuthor: bob · {ISSUE_13_URL}\n\nWhy Y.\n",
+                id="one-unreadable",
+            ),
+            pytest.param(
+                ((ISSUE_12_URL, None), (ISSUE_13_URL, None)),
+                f"# Context for pull request #7\n\n## Pull request: Fix the bug\nAuthor: carol · {PR_URL}\n\nPR body.\n",
+                id="none-readable",
+            ),
+        ],
+    )
+    def test_main_writes_pr_context(
+        self,
+        closing: tuple[tuple[str, dict[str, object] | None], ...],
+        expected: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ran: list[tuple[str, ...]] = []
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
+        fake_run = _fake_run(ran, closing=closing)
+        monkeypatch.setattr(FEEDBACK, "run", fake_run)
+        monkeypatch.setattr(PUBLISH, "run", fake_run)
+
+        assert FEEDBACK.main() == 0
+
+        assert (tmp_path / ".agentic" / "pr-context.md").read_text(encoding="utf-8") == expected
+        assert [args for args in ran if args[:3] == ("gh", "issue", "view")] == [
+            ("gh", "issue", "view", url, "--json", "title,body,author,url") for url, _ in closing
+        ]
+
+    def test_main_copies_base_before_switch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        copies: dict[str, bytes] = {}
+        pr_fix = tmp_path / ".agentic" / "pr-fix"
+        pr_fix.mkdir(parents=True)
+        (pr_fix / "stale.py").write_text("stale\n", encoding="utf-8")
+        collect_run = _fake_run([])
+
+        def fake_run(*args: str) -> str:
+            if args[:2] == ("git", "switch"):
+                copies.update({path.name: path.read_bytes() for path in pr_fix.iterdir()})
+            return collect_run(*args)
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
+        monkeypatch.setattr(FEEDBACK, "run", fake_run)
+        monkeypatch.setattr(PUBLISH, "run", fake_run)
+
+        assert FEEDBACK.main() == 0
+
+        assert copies == {
+            "pr_feedback.py": (REPO_ROOT / "scripts" / "pr_feedback.py").read_bytes(),
+            "reply_threads.py": (REPO_ROOT / "scripts" / "reply_threads.py").read_bytes(),
+            "publish_review.py": (REPO_ROOT / "scripts" / "publish_review.py").read_bytes(),
+            "dovo-code.md": (REPO_ROOT / ".agents" / "skills" / "dovo-code" / "SKILL.md").read_bytes(),
+        }
 
     def test_main_collects_without_dovo_review_comment(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -784,19 +913,25 @@ def _fake_run(
     own_comment: dict[str, object] | None = OWN_COMMENT,
     pr_head: str = HEAD,
     failing_checks: bool = False,
+    closing: tuple[tuple[str, dict[str, object] | None], ...] = (),
 ) -> Callable[..., str]:
     """Return a `run` double answering the gh and git calls of one collect of PR #7, recording each in ran.
 
     The pull request's comments are own_comment, the viewer's dovo-review comment, unless None, then
-    OTHER_COMMENT. The pull request's head is pr_head. The GraphQL call answers one thread for `reviewThreads` and the reviews nodes for `reviews`; the check-runs call on
-    pr_head answers a failed `Tests` and a passed `Prek` run, or raises CalledProcessError when failing_checks is set.
+    OTHER_COMMENT. The pull request's head is pr_head; it is carol's "Fix the bug", and closes the issue at
+    each URL in closing, whose `gh issue view` answers its issue or, for None, raises CalledProcessError.
+    The GraphQL call answers one thread for `reviewThreads` and the reviews nodes for `reviews`; the
+    check-runs call on pr_head answers a failed `Tests` and a passed `Prek` run, or raises
+    CalledProcessError when failing_checks is set.
     """
+    issues = dict(closing)
 
     def fake_run(*args: str) -> str:
         ran.append(args)
         if args[:3] == ("gh", "pr", "view"):
-            view = {"number": 7, "state": "OPEN", "headRefName": "alice/fix", "headRefOid": pr_head}
-            return json.dumps({**view, "url": PR_URL, "isCrossRepository": False})
+            return _pr_view(pr_head, tuple(issues))
+        if args[:3] == ("gh", "issue", "view"):
+            return _issue_view(args, issues)
         if args[:2] == ("gh", "api"):
             comments = (OTHER_COMMENT,) if own_comment is None else (own_comment, OTHER_COMMENT)
             return _gh_api(args, reviews, comments, pr_head, failing_checks)
@@ -804,6 +939,22 @@ def _fake_run(
         return ""
 
     return fake_run
+
+
+def _pr_view(pr_head: str, closing_urls: tuple[str, ...]) -> str:
+    """Answer `gh pr view` for carol's open PR #7 "Fix the bug" at pr_head, closing the issue at each of closing_urls."""
+    view = {"number": 7, "state": "OPEN", "headRefName": "alice/fix", "headRefOid": pr_head}
+    pr = {"title": "Fix the bug", "body": "PR body.", "author": {"login": "carol"}}
+    references = [{"number": int(url.rsplit("/", 1)[1]), "url": url} for url in closing_urls]
+    return json.dumps({**view, **pr, "url": PR_URL, "isCrossRepository": False, "closingIssuesReferences": references})
+
+
+def _issue_view(args: tuple[str, ...], issues: dict[str, dict[str, object] | None]) -> str:
+    """Answer `gh issue view <url>` with the issue at url, or raise CalledProcessError when it is None."""
+    issue = issues[args[3]]
+    if issue is None:
+        raise subprocess.CalledProcessError(1, list(args), stderr="Could not resolve to an Issue")
+    return json.dumps(issue)
 
 
 def _gh_api(

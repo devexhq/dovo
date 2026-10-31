@@ -2,9 +2,11 @@
 """Collects a pull request's open feedback from GitHub.
 
 Needs no dovo session and downloads nothing: the pull request need not carry a
-dovo-review comment. Checks out the pull request's head commit, records its head
-branch in .agentic/pr-branch and its URL in .agentic/pr-url, and writes
-.agentic/feedback.json: every unresolved review thread, with its thread id;
+dovo-review comment. Copies this checkout's pr-fix scripts and dovo-code rules
+into .agentic/pr-fix/, checks out the pull request's head commit, records its
+head branch in .agentic/pr-branch and its URL in .agentic/pr-url, writes the
+title and body of each issue it closes, or its own when it closes none, to
+.agentic/pr-context.md, and writes .agentic/feedback.json: every unresolved review thread, with its thread id;
 every finding in the body of the authenticated `gh` user's latest submitted
 `🤖 **Agentic Review**`, on any commit; every comment and review summary by
 someone else; and every failed check on the head commit. Items for dovo
@@ -19,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -43,6 +46,14 @@ FEEDBACK_JSON = AGENTIC_DIR / "feedback.json"
 TRIAGE_JSON = AGENTIC_DIR / "triage.json"
 PR_BRANCH = AGENTIC_DIR / "pr-branch"
 PR_URL = AGENTIC_DIR / "pr-url"
+PR_CONTEXT = AGENTIC_DIR / "pr-context.md"
+PR_FIX_DIR = AGENTIC_DIR / "pr-fix"
+BASE_COPIES = {  # source, relative to the repository root this script is in -> name in PR_FIX_DIR
+    "scripts/pr_feedback.py": "pr_feedback.py",
+    "scripts/reply_threads.py": "reply_threads.py",
+    "scripts/publish_review.py": "publish_review.py",
+    ".agents/skills/dovo-code/SKILL.md": "dovo-code.md",
+}
 SUMMARY_CHARS = 200
 NO_AUTHOR_LABELS = {"review_finding": "dovo-review", "check": "ci"}
 FAILED_CONCLUSIONS = ("failure", "cancelled", "timed_out")
@@ -358,13 +369,16 @@ def list_checks(host: str, repository: str, head: str) -> list[dict[str, object]
 
 
 def open_pull_request(pr: int) -> dict[str, object]:
-    """Return pr's number, state, head branch, head commit, URL and whether its head is in another repository.
+    """Return pr's `gh pr view` fields: its state, head, URL, title, body, author and closing issue references.
+
+    The fields are number, state, headRefName, headRefOid, url, isCrossRepository, title, body,
+    author and closingIssuesReferences.
 
     Raises:
         PrFeedbackError: With error 2 when the pull request does not exist or is not open, or
             when its head is in another repository.
     """
-    fields = "number,state,headRefName,headRefOid,url,isCrossRepository"
+    fields = "number,state,headRefName,headRefOid,url,isCrossRepository,title,body,author,closingIssuesReferences"
     try:
         view = json.loads(run("gh", "pr", "view", str(pr), "--json", fields))
     except subprocess.CalledProcessError as error:
@@ -388,18 +402,58 @@ def check_out_head(number: int, head_branch: str, head: str, url: str) -> None:
     PR_URL.write_text(f"{url}\n", encoding="utf-8")
 
 
+def copy_base() -> None:
+    """Replace PR_FIX_DIR with a copy of each BASE_COPIES source, taken from this script's checkout."""
+    root = Path(__file__).resolve().parent.parent
+    shutil.rmtree(PR_FIX_DIR, ignore_errors=True)
+    PR_FIX_DIR.mkdir(parents=True)
+    for source, name in BASE_COPIES.items():
+        shutil.copyfile(root / source, PR_FIX_DIR / name)
+
+
+def _context_part(kind: str, entry: dict[str, object]) -> str:
+    """Return one pr-context.md part: the `## <kind>: <title>` heading, its author and URL, and its body when it has one."""
+    part = f"## {kind}: {entry.get('title')}\nAuthor: {_author_login(entry.get('author'))} · {entry.get('url')}\n"
+    body = str(entry.get("body") or "").strip()
+    return f"{part}\n{body}\n" if body else part
+
+
+def pr_context(view: dict[str, object], issues: list[dict[str, object]]) -> str:
+    """Return pr-context.md: one part per closing issue in issues, or the pull request's own part when there is none."""
+    parts = [_context_part("Issue", issue) for issue in issues] or [_context_part("Pull request", view)]
+    return f"# Context for pull request #{view.get('number')}\n\n" + "\n".join(parts)
+
+
+def write_pr_context(view: dict[str, object]) -> None:
+    """Write PR_CONTEXT from each closing issue `gh issue view` can read, skipping one it cannot."""
+    references = view.get("closingIssuesReferences")
+    issues: list[dict[str, object]] = []
+    for reference in references if isinstance(references, list) else []:
+        try:
+            issues.append(
+                json.loads(run("gh", "issue", "view", str(reference["url"]), "--json", "title,body,author,url"))
+            )
+        except subprocess.CalledProcessError:
+            continue
+    PR_CONTEXT.write_text(pr_context(view, issues), encoding="utf-8")
+
+
 def collect(pr: int) -> str:
-    """Check out pr's head and write feedback.json; return the line to report.
+    """Copy the base's pr-fix files, check out pr's head and write pr-context.md and feedback.json; return the line to report.
 
     An earlier attempt's triage.json is removed first, so render-triage never shows its decisions for approval.
+    The copies are taken after the pull request check and before `git switch`, so a refused pull request
+    leaves no .agentic/pr-fix/ and the copies come from the run's base, not the head.
     The `R#` items come from the viewer's latest Agentic Review on any commit, whatever the dovo-review comment says.
 
     Raises:
         PrFeedbackError: For error 2 of issue #1124.
-        subprocess.CalledProcessError: When a gh request fails, including reading the head commit's checks.
+        subprocess.CalledProcessError: When a gh request other than reading a closing issue fails, including
+            reading the head commit's checks.
     """
     TRIAGE_JSON.unlink(missing_ok=True)
     view = open_pull_request(pr)
+    copy_base()
     number = int(str(view["number"]))
     head = str(view["headRefOid"])
     url = str(view["url"])
@@ -407,6 +461,7 @@ def collect(pr: int) -> str:
     viewer = run("gh", "api", "--hostname", host, "user", "--jq", ".login")
     comments = list_comments(host, repository, number)
     check_out_head(number, str(view["headRefName"]), head, url)
+    write_pr_context(view)
     reviews = list_pr_nodes(host, repository, number, REVIEWS_QUERY, "reviews")
     items = (
         thread_items(list_pr_nodes(host, repository, number, THREADS_QUERY, "reviewThreads"), viewer)
