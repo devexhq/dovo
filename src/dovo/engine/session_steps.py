@@ -40,7 +40,7 @@ def summarize_session_steps(record: SessionRecord, redactor: SecretRedactor) -> 
     for node in state.nodes:
         if isinstance(node, ExecutionLoopNode):
             steps.extend(_loop_rows(node, redactor))
-        else:
+        elif isinstance(node, ExecutionLeafNode):
             steps.append(_leaf_summary(node, redactor))
 
     return steps

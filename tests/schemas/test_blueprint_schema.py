@@ -28,3 +28,17 @@ class BlueprintSchemaWhenTests:
         assert defs["standard_step"]["properties"]["when"] == {"$ref": "#/$defs/conditions"}
         assert defs["loop_step"]["properties"]["when"] == {"$ref": "#/$defs/conditions"}
         assert defs["conditions"] == {"type": "array", "minItems": 1, "items": {"type": "string"}}
+
+
+class BlueprintSchemaIfTests:
+    """A steps entry may be an `if` block whose branches hold only standard steps."""
+
+    def test_if_step_lists_the_block_keys_and_branches_hold_only_steps(self) -> None:
+        defs = json.loads((files("dovo.schemas.v1") / "blueprint.json").read_text(encoding="utf-8"))["$defs"]
+        if_step = defs["if_step"]
+
+        assert {"$ref": "#/$defs/if_step"} in defs["step"]["oneOf"]
+        assert set(if_step["properties"]) == {"id", "type", "name", "condition", "then", "else"}
+        assert if_step["additionalProperties"] is False
+        assert if_step["properties"]["then"]["items"] == {"$ref": "#/$defs/standard_step"}
+        assert if_step["properties"]["else"]["items"] == {"$ref": "#/$defs/standard_step"}

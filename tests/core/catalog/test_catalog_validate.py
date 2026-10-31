@@ -692,6 +692,40 @@ class CatalogValidateWhenTests:
         assert result.remediations == [Remediation(message=f"Resolve: {message}")]
 
 
+class CatalogValidateIfBlockTests:
+    """Branch steps take part in the duplicate-id and script_path audits."""
+
+    def test_branch_step_id_repeating_another_step_id_reports_duplicate(self, isolated_workspace: Path) -> None:
+        block = {
+            "id": "route",
+            "type": "if",
+            "condition": ["steps.check.exit_code == 0"],
+            "then": [{"id": "ship", "run": "a"}],
+            "else": [{"id": "check", "run": "b"}],
+        }
+        _write_yaml(isolated_workspace / "dup.yml", {"name": "dup", "steps": [{"id": "check", "run": "c"}, block]})
+
+        result = _validate("dup.yml", path=isolated_workspace)
+
+        assert (result.error_code, result.errors) == (
+            ErrorCode.CATALOG_SCHEMA_INVALID,
+            ["Step id 'check' is used by more than one step."],
+        )
+
+    def test_branch_step_script_path_is_audited(self, isolated_workspace: Path) -> None:
+        block = {
+            "id": "route",
+            "type": "if",
+            "condition": ["steps.check.exit_code == 0"],
+            "then": [{"id": "fix", "type": "script", "script_path": "../escape.sh"}],
+        }
+        _write_yaml(isolated_workspace / "bad.yml", {"name": "bad", "steps": [{"id": "check", "run": "c"}, block]})
+
+        result = _validate("bad.yml", path=isolated_workspace)
+
+        assert result.errors == ["Step 'fix' script_path '../escape.sh' is not a safe relative path."]
+
+
 class _ExplodingBlueprintDefinition(BlueprintDefinition):
     """BlueprintDefinition whose document loading fails with an unexpected RuntimeError."""
 

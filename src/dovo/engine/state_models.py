@@ -12,7 +12,7 @@ from dovo.common.timing import TimeSpan
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import InteractionRequest
 from dovo.engine.executors.models import StepResult
-from dovo.engine.models import DefinitionsManifest, SkipCause
+from dovo.engine.models import DefinitionsManifest, IfBranch, SkipCause
 
 
 class NodeState(StrEnum):
@@ -99,7 +99,20 @@ class ExecutionLoopNode(BaseModel):
         return self.max_iterations + self.granted_iterations
 
 
-ExecutionPlanNode = Annotated[ExecutionLeafNode | ExecutionLoopNode, Field(discriminator="kind")]
+class ExecutionIfNode(BaseModel):
+    """An `if` block in the execution plan: the branch chosen when it started and that branch's steps."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    kind: Literal["if"] = "if"
+    id: str
+    name: str | None = None
+    state: NodeState = NodeState.PENDING
+    branch: IfBranch | None = None  # None until the block starts
+    steps: list[ExecutionLeafNode] = Field(default_factory=list)  # The chosen branch's steps, set when it starts
+
+
+ExecutionPlanNode = Annotated[ExecutionLeafNode | ExecutionLoopNode | ExecutionIfNode, Field(discriminator="kind")]
 
 
 class ExecutionStateTree(BaseModel):

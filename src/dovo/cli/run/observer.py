@@ -23,7 +23,7 @@ from dovo.cli.ui.events import (
 )
 from dovo.common.models import DisplayFormatOptions, OutputFormatOptions, Remediation
 from dovo.common.utils import display_path
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition, StepType
+from dovo.core.catalog.definitions import BlueprintStep, LoopStepBlock, StepDefinition, StepType
 from dovo.engine import RunObserver, RunOutcome
 from dovo.engine.executors.models import AgentProgressUpdate, AgentStepSummary, ConditionEvaluationResult, StepResult
 from dovo.engine.models import StepSkipNotice
@@ -241,7 +241,7 @@ class DispatcherRunObserver(RunObserver):
             )
         )
 
-    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+    def on_run_started(self, steps: Sequence[BlueprintStep]) -> None:
         """Remember the name of each loop that sets one, so its progress lines show the name instead of the id."""
         self._loop_names = {step.id: step.name for step in steps if isinstance(step, LoopStepBlock) and step.name}
 

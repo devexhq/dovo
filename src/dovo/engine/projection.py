@@ -21,13 +21,15 @@ _TERMINAL_LEAF_STATES = TERMINAL_NODE_STATES - {NodeState.CANCELLED}
 
 
 def iter_leaves(state: ExecutionStateTree) -> Iterator[ExecutionLeafNode]:
-    """Yield every leaf in tree order, descending through loop iterations."""
+    """Yield every leaf in tree order, descending through loop iterations and the branch an if block chose."""
     for node in state.nodes:
         if node.kind == "step":
             yield node
-            continue
-        for iteration in node.iterations:
-            yield from iteration.steps
+        elif node.kind == "if":
+            yield from node.steps
+        else:
+            for iteration in node.iterations:
+                yield from iteration.steps
 
 
 def terminal_result(leaf: ExecutionLeafNode) -> StepResult | None:

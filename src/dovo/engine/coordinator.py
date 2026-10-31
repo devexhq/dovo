@@ -15,7 +15,7 @@ from dovo.common.process import process_registry
 from dovo.common.timing import TimeSpan
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.catalog.blueprint import Blueprint
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition, StepType
+from dovo.core.catalog.definitions import BlueprintStep, LoopStepBlock, StepDefinition, StepType
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
@@ -68,6 +68,7 @@ from dovo.engine.state_models import (
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,
+    ExecutionPlanNode,
     ExecutionStateTree,
     NodeState,
     StepAttemptRecord,
@@ -126,7 +127,7 @@ class RunCoordinator:
         self._diagnostics: list[DiagnosticRecord] = []
         self._loaded: _LoadedRun | None = None
         self._load_ok: bool | None = None
-        self._in_flight: ExecutionLeafNode | ExecutionLoopNode | None = None
+        self._in_flight: ExecutionPlanNode | None = None
 
     @property
     def _run(self) -> _LoadedRun:
@@ -141,7 +142,7 @@ class RunCoordinator:
         return not self._context.no_tty and self._prompter is not None
 
     @property
-    def steps(self) -> list[StepDefinition | LoopStepBlock]:
+    def steps(self) -> list[BlueprintStep]:
         """Return the loaded blueprint's top-level definitions; raise RuntimeError before a successful load()."""
         return self._run.blueprint.steps
 
@@ -557,14 +558,14 @@ class RunCoordinator:
 
         return self._commit("while recovering interrupted attempts") if recovered else True
 
-    def _next_node(self) -> tuple[int, ExecutionLeafNode | ExecutionLoopNode] | None:
+    def _next_node(self) -> tuple[int, ExecutionPlanNode] | None:
         """Return the top-level position and node of the first node not in a terminal state, or None."""
         for position, node in enumerate(self._run.state.nodes):
             if node.state not in TERMINAL_NODE_STATES:
                 return position, node
         return None
 
-    def _dispatch(self, position: int, node: ExecutionLeafNode | ExecutionLoopNode) -> NodeTransitionKind:
+    def _dispatch(self, position: int, node: ExecutionPlanNode) -> NodeTransitionKind:
         """Route the leaf at position to _advance_leaf or a loop to _advance_loop using the snapshot definition with the node's id."""
         definition = next((step for step in self._run.blueprint.steps if step.id == node.id), None)
         if isinstance(node, ExecutionLeafNode) and isinstance(definition, StepDefinition):

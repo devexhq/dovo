@@ -17,7 +17,7 @@ from dovo.common.models import BaseResult, Remediation
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.artifacts.store import ArtifactStore
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import BlueprintStep, LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import InteractionAnswer, InteractionRequest
@@ -119,6 +119,14 @@ class SkipCause(StrEnum):
 
     WHEN_FALSE = "when_false"
     WHEN_UNRESOLVED = "when_unresolved"
+
+
+class IfBranch(StrEnum):
+    """Branch an `if` block chose: `then`, `else`, or `none` when its condition failed and it has no `else`."""
+
+    THEN = "then"
+    ELSE = "else"
+    NONE = "none"
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,7 +323,7 @@ class RunObserver(Protocol):
         """Called after worktree cleanup/keep decision is applied; worktree_id, branch and remediations are set when a run's worktree is kept for inspection."""
         ...
 
-    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+    def on_run_started(self, steps: Sequence[BlueprintStep]) -> None:
         """Called once per drive_run invocation, after definitions load and before the first step."""
         ...
 

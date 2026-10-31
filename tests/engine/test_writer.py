@@ -16,7 +16,7 @@ from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.redact import SecretRedactor
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
-from dovo.core.catalog.definitions import StepDefinition, StepType
+from dovo.core.catalog.definitions import IfStepBlock, StepDefinition, StepType
 from dovo.core.catalog.models import CatalogScan
 from dovo.core.db import SessionStatus
 from dovo.core.project.models import ProjectIdentity
@@ -187,6 +187,28 @@ class LoadBlueprintFromSnapshotTests:
         step = rebuilt.steps[0]
         assert isinstance(step, StepDefinition)
         assert (step.id, step.type, step.command) == ("s1", StepType.COMMAND, "echo lint")
+
+    def test_uses_step_inside_an_if_branch_is_snapshotted_and_resolved(self, tmp_path: Path) -> None:
+        workspace = tmp_path / "workspace"
+        write_runnable_step(workspace, key="lint-check", definition={"id": "lint-check", "run": "echo lint"})
+        block: dict[str, object] = {
+            "id": "route",
+            "type": "if",
+            "condition": ["steps.check.exit_code == 0"],
+            "then": [{"id": "lint", "uses": "lint-check"}],
+        }
+        write_runnable_blueprint(workspace, key="branched", steps=[{"id": "check", "run": "true"}, block])
+        catalog = Catalog(initialized_workspace_paths(workspace))
+        session_dir = tmp_path / "session"
+        manifest = snapshot_definitions(catalog, Blueprint.load("branched", catalog=catalog), session_dir, [], [])
+        assert manifest is not None
+
+        rebuilt = load_blueprint_from_snapshot(session_dir, manifest)
+
+        route = rebuilt.steps[1]
+        assert isinstance(route, IfStepBlock)
+        assert [ref.ref for ref in manifest.steps] == ["repo:step:lint-check"]
+        assert [(step.id, step.type, step.command) for step in route.then] == [("lint", StepType.COMMAND, "echo lint")]
 
     def test_missing_blueprint_snapshot_raises_snapshot_missing(self, tmp_path: Path) -> None:
         """Raise EngineError SESSION_SNAPSHOT_MISSING "Snapshot definition file is missing: '<path>'." when the blueprint file is gone."""

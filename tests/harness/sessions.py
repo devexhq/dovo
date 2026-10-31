@@ -15,7 +15,7 @@ from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import BlueprintStep, IfStepBlock, LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.git.runner import GitRunner
@@ -115,7 +115,7 @@ class NoOpRunObserver(RunObserver):
     ) -> None:
         pass
 
-    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+    def on_run_started(self, steps: Sequence[BlueprintStep]) -> None:
         pass
 
     def on_run_completed(self, outcome: RunOutcome) -> None:
@@ -124,7 +124,7 @@ class NoOpRunObserver(RunObserver):
 
 def _recorded(value: object) -> object:
     """Reduce a hook argument to what observer tests compare: ids for steps and loops, statuses, passed flags."""
-    if isinstance(value, StepDefinition | LoopStepBlock):
+    if isinstance(value, StepDefinition | LoopStepBlock | IfStepBlock):
         return value.id
     if isinstance(value, StepResult):
         return value.status
@@ -205,7 +205,7 @@ class RecordingRunObserver(NoOpRunObserver):
     ) -> None:
         self._record("worktree_cleanup", kept, path, worktree_id, branch, list(remediations))
 
-    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+    def on_run_started(self, steps: Sequence[BlueprintStep]) -> None:
         self._record("run_started", steps)
 
     def on_run_completed(self, outcome: RunOutcome) -> None:
