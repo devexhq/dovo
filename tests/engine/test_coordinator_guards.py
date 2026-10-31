@@ -12,10 +12,11 @@ from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import InteractionAnswer, InteractionRequest
 from dovo.engine import EngineLoader, RunCoordinator, SessionStateStore
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
 from dovo.engine.models import (
     FailurePromptDecision,
     IfBranch,
+    IfBranchNotice,
     InteractionPrompter,
     RunContext,
     RunOutcome,
@@ -536,6 +537,45 @@ class IfBlockTests:
 
         starts = [(call[1], call[2], call[3]) for call in observer.calls if call[0] == "step_start"]
         assert starts == [(1, 3, "check"), (2, 3, "ship"), (2, 3, "tag"), (3, 3, "done")]
+
+    def test_branch_choice_notifies_the_observer_once_and_not_again_on_resume(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
+    ) -> None:
+        first, second = RecordingRunObserver(), RecordingRunObserver()
+        otherwise: list[dict[str, object]] = [{"id": "gate", "run": "test -f allow", "on_failure": "prompt_user"}]
+        steps: list[dict[str, object]] = [{"id": "check", "run": "true"}, _route(name="Route", **{"else": otherwise})]
+        _run(
+            engine_paths, sessions_repo, steps, observer=first, prompter=ScriptedFailurePrompter([KeyboardInterrupt()])
+        )
+        (engine_workspace / "allow").touch()
+
+        _coordinator(
+            engine_paths,
+            sessions_repo,
+            observer=second,
+            prompter=ScriptedFailurePrompter([FailurePromptDecision.RETRY]),
+        ).execute()
+
+        notice = IfBranchNotice(
+            "route",
+            "Route",
+            IfBranch.ELSE,
+            (
+                ConditionEvaluationResult(
+                    expression=_FAILED_CHECK,
+                    passed=False,
+                    actual="completed",
+                    expected="ignored",
+                    detail="FALSE (was 'completed')",
+                ),
+            ),
+        )
+        assert [call for call in first.calls if call[0] in ("if_branch", "step_start")] == [
+            ("step_start", 1, 2, "check"),
+            ("if_branch", 2, 2, notice),
+            ("step_start", 2, 2, "gate"),
+        ]
+        assert [call for call in second.calls if call[0] == "if_branch"] == []
 
     def test_cancel_inside_a_branch_marks_the_step_and_the_block_cancelled(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository

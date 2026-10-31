@@ -1062,3 +1062,78 @@ class RunGuardCliIntegrationTests:
             "cause": "when_false",
             "expression": _PICKED,
         }
+
+
+def _routed_blueprint(workspace: Path) -> None:
+    """Write `routed`: a check reporting `not_ready`, then an if block whose `else` branch asks before it fixes."""
+    write_runnable_blueprint(
+        workspace,
+        key="routed",
+        steps=[
+            {"id": "check", "run": 'echo \'{"verdict": "not_ready"}\''},
+            {
+                "id": "route",
+                "type": "if",
+                "condition": ['steps.check.outputs.verdict == "ready"'],
+                "then": [{"id": "ship", "run": "touch ship.marker"}],
+                "else": [
+                    {"id": "approve", "type": "ask", "interaction": {"mode": "confirm", "message": "Fix it first?"}},
+                    {"id": "fix", "run": "touch fix.marker"},
+                ],
+            },
+        ],
+    )
+
+
+class RunIfBlockCliIntegrationTests:
+    """Typer runner tests for `if` blocks across a pause at an ask and `dovo resume --answer`."""
+
+    def test_no_tty_else_branch_pauses_at_its_ask_and_resumes_without_the_then_steps(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        _routed_blueprint(cli_workspace)
+        paused = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "routed", "--no-tty", "--no-worktree"])
+        session_id = _latest_session_id(cli_workspace)
+
+        resumed = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "resume", session_id, "--no-tty", "--answer", "approve=approve"]
+        )
+        shown = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", session_id, "--format", "json"])
+
+        steps = json.loads(shown.stdout.splitlines()[-1])["payload"]["steps"]
+        assert (paused.exit_code, resumed.exit_code) == (0, 0)
+        assert unwrapped('[2/2] route — else (if: steps.check.outputs.verdict == "ready" → FALSE)') in unwrapped(
+            paused.stdout
+        )
+        assert "route — else" not in resumed.stdout
+        assert "Blueprint Run Completed:" in resumed.stdout
+        assert [(step["step_id"], step["state"], step["branch"], step["if_id"]) for step in steps] == [
+            ("check", "completed", None, None),
+            ("route", "completed", "else", None),
+            ("approve", "completed", None, "route"),
+            ("fix", "completed", None, "route"),
+        ]
+        assert (cli_workspace / "fix.marker").exists()
+        assert not (cli_workspace / "ship.marker").exists()
+
+    def test_json_format_emits_the_if_branch_event(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        _routed_blueprint(cli_workspace)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "run", "routed", "--no-tty", "--no-worktree", "--format", "json"]
+        )
+
+        envelopes = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+        branches = [envelope["payload"] for envelope in envelopes if envelope["event_type"] == "IfBranchEvent"]
+        assert branches == [
+            {
+                "idx": 2,
+                "total": 2,
+                "block_id": "route",
+                "name": None,
+                "branch": "else",
+                "conditions": [
+                    {"expression": 'steps.check.outputs.verdict == "ready"', "passed": False, "resolved": True}
+                ],
+            }
+        ]

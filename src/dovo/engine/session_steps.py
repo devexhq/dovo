@@ -10,6 +10,7 @@ from dovo.core.db import SessionRecord
 from dovo.core.sessions import StepRunSummary
 from dovo.engine.exceptions import EngineError
 from dovo.engine.state_models import (
+    ExecutionIfNode,
     ExecutionLeafNode,
     ExecutionLoopNode,
     ExecutionStateTree,
@@ -40,10 +41,24 @@ def summarize_session_steps(record: SessionRecord, redactor: SecretRedactor) -> 
     for node in state.nodes:
         if isinstance(node, ExecutionLoopNode):
             steps.extend(_loop_rows(node, redactor))
-        elif isinstance(node, ExecutionLeafNode):
+        elif isinstance(node, ExecutionIfNode):
+            steps.extend(_if_rows(node, redactor))
+        else:
             steps.append(_leaf_summary(node, redactor))
 
     return steps
+
+
+def _if_rows(block: ExecutionIfNode, redactor: SecretRedactor) -> list[StepRunSummary]:
+    """Build the if-block row, with the branch it took, followed by one row per step of that branch, in order."""
+    row = StepRunSummary(
+        kind="if",
+        step_id=block.id,
+        name=block.name,
+        state=block.state.value,
+        branch=None if block.branch is None else block.branch.value,
+    )
+    return [row, *(_leaf_summary(leaf, redactor, if_id=block.id) for leaf in block.steps)]
 
 
 def _loop_rows(loop: ExecutionLoopNode, redactor: SecretRedactor) -> list[StepRunSummary]:
@@ -60,7 +75,12 @@ def _loop_rows(loop: ExecutionLoopNode, redactor: SecretRedactor) -> list[StepRu
 
 
 def _leaf_summary(
-    leaf: ExecutionLeafNode, redactor: SecretRedactor, *, loop_id: str | None = None, iteration: int | None = None
+    leaf: ExecutionLeafNode,
+    redactor: SecretRedactor,
+    *,
+    loop_id: str | None = None,
+    iteration: int | None = None,
+    if_id: str | None = None,
 ) -> StepRunSummary:
     """Build the kind="step" row for one leaf node."""
     results = [attempt.result for attempt in leaf.attempts if attempt.result is not None]
@@ -78,6 +98,7 @@ def _leaf_summary(
         loop_id=loop_id,
         iteration=iteration,
         skip_cause=None if leaf.skip is None else leaf.skip.cause.value,
+        if_id=if_id,
     )
 
 

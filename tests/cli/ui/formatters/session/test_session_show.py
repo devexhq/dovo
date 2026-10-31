@@ -168,13 +168,17 @@ RUN_WITH_STEPS = FormatterCase(
 
 _GUARDED_STEPS = [
     StepRunSummary(kind="step", step_id="fold", state="skipped", attempts=0, skip_cause="when_false"),
+    StepRunSummary(kind="if", step_id="route", state="completed", branch="else"),
+    StepRunSummary(
+        kind="step", step_id="ship", state="completed", attempts=1, exit_code=0, duration_seconds=1.0, if_id="route"
+    ),
 ]
 RUN_WITH_GUARDED_STEPS = FormatterCase(
     data=HistoryShowResult(
         status=HistoryShowStatus.OK, session_id="sess-12345678", session=session_record(), steps=_GUARDED_STEPS
     ),
     view=_make_session_show_view(steps=_GUARDED_STEPS),
-    render_expectations=["fold", "skipped (when_false)"],
+    render_expectations=["fold", "skipped (when_false)", "route", "completed (else)", "ship"],
 )
 
 _NO_STEP_DATA_WARNING = "No step data recorded for this session."
@@ -270,6 +274,8 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                     "iteration": None,
                     "iterations": None,
                     "skip_cause": None,
+                    "branch": None,
+                    "if_id": None,
                 },
                 {
                     "kind": "step",
@@ -285,6 +291,8 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                     "iteration": None,
                     "iterations": None,
                     "skip_cause": None,
+                    "branch": None,
+                    "if_id": None,
                 },
                 {
                     "kind": "loop",
@@ -300,6 +308,8 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                     "iteration": None,
                     "iterations": 1,
                     "skip_cause": None,
+                    "branch": None,
+                    "if_id": None,
                 },
                 {
                     "kind": "step",
@@ -315,6 +325,8 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                     "iteration": 1,
                     "iterations": None,
                     "skip_cause": None,
+                    "branch": None,
+                    "if_id": None,
                 },
                 {
                     "kind": "step",
@@ -330,6 +342,8 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                     "iteration": 1,
                     "iterations": None,
                     "skip_cause": None,
+                    "branch": None,
+                    "if_id": None,
                 },
             ],
             "worktree_kept": None,
@@ -373,6 +387,42 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                     "iteration": None,
                     "iterations": None,
                     "skip_cause": "when_false",
+                    "branch": None,
+                    "if_id": None,
+                },
+                {
+                    "kind": "if",
+                    "step_id": "route",
+                    "name": None,
+                    "state": "completed",
+                    "attempts": None,
+                    "exit_code": None,
+                    "duration_seconds": None,
+                    "error_message": None,
+                    "rejected_patch_path": None,
+                    "loop_id": None,
+                    "iteration": None,
+                    "iterations": None,
+                    "skip_cause": None,
+                    "branch": "else",
+                    "if_id": None,
+                },
+                {
+                    "kind": "step",
+                    "step_id": "ship",
+                    "name": None,
+                    "state": "completed",
+                    "attempts": 1,
+                    "exit_code": 0,
+                    "duration_seconds": 1.0,
+                    "error_message": None,
+                    "rejected_patch_path": None,
+                    "loop_id": None,
+                    "iteration": None,
+                    "iterations": None,
+                    "skip_cause": None,
+                    "branch": None,
+                    "if_id": "route",
                 },
             ],
             "worktree_kept": None,

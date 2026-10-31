@@ -199,6 +199,39 @@ A skipped step runs nothing and counts as successful. `dovo session show` lists 
 
 A `when` list may reference earlier steps only. Inside a loop's `do`, it may also reference earlier steps of the same iteration and `iteration.index`, and it is evaluated again on every iteration. See [`when` Guards](../reference/step-schema.md#when-guards) for the full rules.
 
+## Choose Between Two Paths (`type: if`)
+
+An `if` block runs its `then` steps when every condition is true and its `else` steps otherwise:
+
+```yaml
+steps:
+  - id: check
+    run: ./scripts/readiness.sh   # prints {"verdict": "ready"} or {"verdict": "not_ready"}
+
+  - id: route
+    type: if
+    condition:
+      - steps.check.outputs.verdict == "not_ready"
+    then:
+      - id: fix
+        type: agent
+        prompt: "Fix what scripts/readiness.sh reported."
+    else:
+      - id: ship
+        run: ./scripts/release.sh
+```
+
+The run prints the branch it took and the conditions it evaluated:
+
+```text
+[2/2] route — else (if: steps.check.outputs.verdict == "not_ready" → FALSE)
+```
+
+The branch is chosen once, when the block starts; a run paused inside a branch resumes in it. `dovo session show` lists the block as `completed (else)` with the steps that ran under it. Without an `else`, a false condition runs nothing.
+
+!!! warning
+    An `if` block sits only at the top level. Its branches hold steps only: a loop or another `if` block inside `then` or `else` fails validation, and so does an `if` block inside a loop's `do`.
+
 ## Runtime Execution Metadata & Environment Variables
 
 Dovo exposes run metadata to steps as `DOVO_*` environment variables and as template placeholders (`{{ ... }}` or `${{ ... }}`).

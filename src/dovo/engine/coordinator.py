@@ -45,6 +45,7 @@ from dovo.engine.loop_events import LoopEventEmitter
 from dovo.engine.loop_policy import LoopDecision, LoopPolicy, LoopTransitionKind
 from dovo.engine.models import (
     FailurePrompter,
+    IfBranchNotice,
     LifecycleUpdate,
     LoopPromptDecision,
     RunContext,
@@ -613,12 +614,12 @@ class RunCoordinator:
 
         Each branch step reports the block's position, so its counter matches the block's.
         """
-        if node.state is NodeState.PENDING and not self._choose_branch(node, block):
+        idx, total = position + 1, len(self._run.state.nodes)
+        if node.state is NodeState.PENDING and not self._choose_branch(node, block, idx=idx, total=total):
             return NodeTransitionKind.FAILED
 
         steps = block.branch(node.branch.value) if node.branch is not None else []
         node.state = NodeState.RUNNING
-        idx, total = position + 1, len(self._run.state.nodes)
         for leaf, step_def in zip(node.steps, steps, strict=True):
             transition = self._finish_branch_step(leaf, step_def, idx=idx, total=total)
             if transition is NodeTransitionKind.PAUSED:
@@ -640,14 +641,18 @@ class RunCoordinator:
                 return transition
         return transition
 
-    def _choose_branch(self, node: ExecutionIfNode, block: IfStepBlock) -> bool:
-        """Evaluate the block's condition and save the chosen branch with its PENDING steps in one commit."""
+    def _choose_branch(self, node: ExecutionIfNode, block: IfStepBlock, *, idx: int, total: int) -> bool:
+        """Evaluate the block's condition, save the chosen branch with its PENDING steps in one commit, and notify the observer."""
         conditions = evaluate_guard(block.condition, scope_results(self._run.state))
         branch = choose_branch(conditions, has_else=block.else_ is not None)
         node.branch = branch
         node.steps = [ExecutionLeafNode(id=step.id, name=step.name) for step in block.branch(branch.value)]
         node.state = NodeState.RUNNING
-        return self._commit(f"after if block '{node.id}' chose its branch")
+        if not self._commit(f"after if block '{node.id}' chose its branch"):
+            return False
+        notice = IfBranchNotice(block_id=node.id, name=node.name, branch=branch, conditions=tuple(conditions))
+        safe_notify(self._observer, "on_if_branch", idx, total, notice)
+        return True
 
     def _settle_if(self, node: ExecutionIfNode, state: NodeState, transition: NodeTransitionKind) -> NodeTransitionKind:
         """Give the block state, the outcome of its branch, and commit it; return transition, or FAILED when the commit fails."""

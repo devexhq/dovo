@@ -1,6 +1,6 @@
 # Step Schema Reference
 
-YAML schema for steps and loop blocks.
+YAML schema for steps, loop blocks and `if` blocks.
 
 ---
 
@@ -150,7 +150,7 @@ A `when` list holds condition expressions written exactly as loop `until` condit
 `dovo blueprint validate`, `dovo run` and `dovo resume` reject a blueprint, naming the step or loop, when:
 
 - a `when` list is empty or holds an invalid expression;
-- an expression references a step that is not an earlier step in the same or an enclosing scope. A top-level step sees the top-level steps before it. A step inside `do` also sees the steps before it in the same `do`. A loop's own id cannot be referenced, and the steps inside its `do` are not visible after the loop;
+- an expression references a step that is not an earlier step in the same or an enclosing scope. A top-level step sees the top-level steps before it. A step inside `do` also sees the steps before it in the same `do`. A step after an `if` block also sees the steps of either branch, and a step inside a branch sees the steps before the block and the steps before it in the same branch. A loop's or `if` block's own id cannot be referenced, and the steps inside a loop's `do` are not visible after the loop;
 - an expression uses `iteration.index` outside a loop's `do`.
 
 The list is evaluated just before the step or loop would start. A `when` inside `do` is evaluated again on every iteration, against the steps of the current iteration. When every expression is true the step runs normally. Otherwise it is skipped: it runs nothing and has no attempt, outputs, artifacts or step logs, a skipped `ask` shows no prompt and does not pause, and a skipped loop runs no iteration. A skip counts as successful, so a run whose remaining steps are all skipped ends `completed`. A step skipped before a run paused stays skipped when the run resumes.
@@ -167,6 +167,25 @@ The skip records the first failing expression, in the order written, and its cau
 
 !!! warning
     A step catalog file cannot set `when`: its step references can only be checked in the blueprint that uses it. Set `when` on the blueprint step that `uses` the catalog step instead.
+
+## `if` Block
+
+Runs its `then` steps when every `condition` is true, and its `else` steps otherwise. An `if` block sits only at the top level of `steps`.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `id` | `string` | No | Derived | Unique identifier for the block. Derived like a top-level step id when omitted. |
+| `type` | `string` | **Yes** | - | Must be `if`. |
+| `name` | `string` | No | `null` | Display name shown when the block chooses its branch. |
+| `condition` | `list[string]` | **Yes** | - | Conditions evaluated once, when the block starts, written as for `when`. At least one. |
+| `then` | `list[step]` | **Yes** | - | Steps run in order when every condition is true. At least one. |
+| `else` | `list[step]` | No | `null` | Steps run in order when a condition is false. At least one when set. |
+
+The steps in `then` and `else` get the same shorthands as top-level steps, with derived ids `<block id>-then-step-<n>` and `<block id>-else-step-<n>`, and may carry `when`. `dovo blueprint validate`, `dovo run` and `dovo resume` reject a block, naming it, when `condition` or `then` is empty, `else` is set but empty, a branch holds a loop or another `if` block, a branch step id repeats any other step id, or `condition` references anything but the steps before the block. An `if` block inside a loop's `do` is rejected too.
+
+The branch is chosen and saved when the block starts: `then`, `else`, or `none` when a condition is false and there is no `else`. A condition that cannot be resolved counts as false. A run paused inside a branch resumes in that branch without evaluating the condition again. The block ends `completed` when every step of its branch completed, was ignored or was skipped, and otherwise takes the state of the first branch step that failed, paused or was cancelled. A block that ran nothing is `completed`.
+
+A later step may reference the steps of either branch. A step of the branch that did not run resolves as a step that never ran: a condition on it is unresolved and a placeholder for it interpolates to an empty string.
 
 ## Agent step outcomes
 

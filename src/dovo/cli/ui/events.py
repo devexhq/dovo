@@ -115,6 +115,29 @@ class StepSkippedEvent(BaseModel):
     expression: str
 
 
+class ConditionOutcomeView(BaseModel):
+    """Presentation view of one evaluated `if` condition: whether it passed and whether its operands resolved."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    expression: str
+    passed: bool
+    resolved: bool
+
+
+class IfBranchEvent(BaseModel):
+    """UI event representing the branch an `if` block chose and every condition it evaluated."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    idx: int
+    total: int
+    block_id: str
+    name: str | None = None
+    branch: str
+    conditions: list[ConditionOutcomeView] = []
+
+
 class AgentSummaryView(BaseModel):
     """Presentation view of the JSON summary an agent step prints when it finishes."""
 

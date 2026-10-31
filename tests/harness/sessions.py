@@ -24,6 +24,7 @@ from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluatio
 from dovo.engine.models import (
     FailurePromptDecision,
     FailurePrompter,
+    IfBranchNotice,
     LifecycleUpdate,
     LoopPromptDecision,
     RunContext,
@@ -85,6 +86,9 @@ class NoOpRunObserver(RunObserver):
         pass
 
     def on_step_skipped(self, idx: int, total: int, step: StepSkipNotice) -> None:
+        pass
+
+    def on_if_branch(self, idx: int, total: int, block: IfBranchNotice) -> None:
         pass
 
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
@@ -176,6 +180,9 @@ class RecordingRunObserver(NoOpRunObserver):
 
     def on_step_skipped(self, idx: int, total: int, step: StepSkipNotice) -> None:
         self._record("step_skipped", idx, total, step)
+
+    def on_if_branch(self, idx: int, total: int, block: IfBranchNotice) -> None:
+        self._record("if_branch", idx, total, block)
 
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
         self._record("loop_start", loop_id, max_iterations)

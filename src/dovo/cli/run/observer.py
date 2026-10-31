@@ -12,6 +12,8 @@ from dovo.cli.ui.dispatcher import UiDispatcher
 from dovo.cli.ui.events import (
     AgentProgressEvent,
     AgentSummaryView,
+    ConditionOutcomeView,
+    IfBranchEvent,
     LoopConditionView,
     LoopLifecycleEvent,
     StepDoneEvent,
@@ -26,7 +28,7 @@ from dovo.common.utils import display_path
 from dovo.core.catalog.definitions import BlueprintStep, LoopStepBlock, StepDefinition, StepType
 from dovo.engine import RunObserver, RunOutcome
 from dovo.engine.executors.models import AgentProgressUpdate, AgentStepSummary, ConditionEvaluationResult, StepResult
-from dovo.engine.models import StepSkipNotice
+from dovo.engine.models import IfBranchNotice, StepSkipNotice
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -158,6 +160,22 @@ class DispatcherRunObserver(RunObserver):
                 name=step.name,
                 cause=step.cause.value,
                 expression=step.expression,
+            )
+        )
+
+    def on_if_branch(self, idx: int, total: int, block: IfBranchNotice) -> None:
+        """Dispatch the branch an `if` block chose with every condition it evaluated."""
+        self._dispatcher.dispatch(
+            IfBranchEvent(
+                idx=idx,
+                total=total,
+                block_id=block.block_id,
+                name=block.name,
+                branch=block.branch.value,
+                conditions=[
+                    ConditionOutcomeView(expression=result.expression, passed=result.passed, resolved=result.resolved)
+                    for result in block.conditions
+                ],
             )
         )
 

@@ -13,9 +13,10 @@ from dovo.core.db import SessionRecord, SessionsRepository
 from dovo.core.sessions import StepRunSummary
 from dovo.engine.exceptions import EngineError
 from dovo.engine.executors.models import StepResult
-from dovo.engine.models import DefinitionRef, DefinitionsManifest, SkipCause
+from dovo.engine.models import DefinitionRef, DefinitionsManifest, IfBranch, SkipCause
 from dovo.engine.session_steps import NO_STEP_DATA_WARNING, summarize_session_steps
 from dovo.engine.state_models import (
+    ExecutionIfNode,
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,
@@ -173,6 +174,29 @@ class SummarizeSessionStepsTests:
         assert steps == [
             StepRunSummary(kind="step", step_id="b", state="skipped", attempts=0, skip_cause="when_false"),
             StepRunSummary(kind="loop", step_id="repair", state="skipped", iterations=0, skip_cause="when_unresolved"),
+        ]
+
+    def test_if_block_reports_its_branch_followed_by_the_steps_of_that_branch(self) -> None:
+        ship = ExecutionLeafNode(
+            id="ship", state=NodeState.COMPLETED, attempts=[_attempt(1, exit_code=0, duration_seconds=2.0)]
+        )
+        block = ExecutionIfNode(id="route", name="Route", state=NodeState.COMPLETED, branch=IfBranch.ELSE, steps=[ship])
+        pending = ExecutionIfNode(id="later")
+
+        steps = summarize_session_steps(_record([block, pending]), _REDACTOR)
+
+        assert steps == [
+            StepRunSummary(kind="if", step_id="route", name="Route", state="completed", branch="else"),
+            StepRunSummary(
+                kind="step",
+                step_id="ship",
+                state="completed",
+                attempts=1,
+                exit_code=0,
+                duration_seconds=2.0,
+                if_id="route",
+            ),
+            StepRunSummary(kind="if", step_id="later", state="pending"),
         ]
 
     def test_error_message_is_redacted_and_streams_are_dropped(self) -> None:

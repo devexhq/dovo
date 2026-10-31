@@ -1,10 +1,10 @@
-"""ComponentFormatter for StepSkippedEvent."""
+"""ComponentFormatters for StepSkippedEvent and IfBranchEvent."""
 
 from __future__ import annotations
 
 from rich.text import Text
 
-from dovo.cli.ui.events import StepSkippedEvent
+from dovo.cli.ui.events import ConditionOutcomeView, IfBranchEvent, StepSkippedEvent
 from dovo.cli.ui.formatters.base import ComponentFormatter
 
 
@@ -13,6 +13,11 @@ def _outcome_word(passed: bool, resolved: bool) -> str:
     if passed:
         return "TRUE"
     return "FALSE" if resolved else "UNRESOLVED"
+
+
+def _condition_text(condition: ConditionOutcomeView) -> str:
+    """Return '<expression> → <outcome>' for one evaluated condition."""
+    return f"{condition.expression} → {_outcome_word(condition.passed, condition.resolved)}"
 
 
 class StepSkippedFormatter(ComponentFormatter[StepSkippedEvent]):
@@ -25,3 +30,12 @@ class StepSkippedFormatter(ComponentFormatter[StepSkippedEvent]):
             f"[{data.idx}/{data.total}] {data.name or data.step_id} — skipped (when: {data.expression} → {outcome})",
             style="dim",
         )
+
+
+class IfBranchFormatter(ComponentFormatter[IfBranchEvent]):
+    """Formatter for the one line an `if` block prints when it chooses its branch."""
+
+    def to_rich(self, data: IfBranchEvent) -> Text:
+        """Render '[idx/total] <label> — <branch> (if: <expression> → <outcome>; ...)'."""
+        conditions = "; ".join(_condition_text(condition) for condition in data.conditions)
+        return Text(f"[{data.idx}/{data.total}] {data.name or data.block_id} — {data.branch} (if: {conditions})")

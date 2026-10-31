@@ -139,6 +139,16 @@ class StepSkipNotice:
     expression: str
 
 
+@dataclass(frozen=True, slots=True)
+class IfBranchNotice:
+    """An `if` block that started, the branch it chose and every condition it evaluated, in the order written."""
+
+    block_id: str
+    name: str | None
+    branch: IfBranch
+    conditions: tuple[ConditionEvaluationResult, ...]
+
+
 class StepAction(StrEnum):
     """Orchestration action chosen after a terminal step failure; distinct from user prompt decisions and persisted node transitions."""
 
@@ -288,6 +298,10 @@ class RunObserver(Protocol):
 
     def on_step_skipped(self, idx: int, total: int, step: StepSkipNotice) -> None:
         """Called when a `when` guard skips a step or loop, instead of on_step_start and on_step_done."""
+        ...
+
+    def on_if_branch(self, idx: int, total: int, block: IfBranchNotice) -> None:
+        """Called once when an `if` block starts, with the branch it chose and every evaluated condition."""
         ...
 
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:

@@ -6,7 +6,7 @@ from .agent_progress import AgentProgressFormatter
 from .blueprint_invalid import BlueprintInvalidFormatter
 from .diagnostics import DiagnosticsFormatter
 from .error_panel import ErrorPanelFormatter
-from .guard import StepSkippedFormatter
+from .guard import IfBranchFormatter, StepSkippedFormatter
 from .lock_wait import LockWaitFormatter
 from .loop import LoopLifecycleFormatter
 from .message import MessageFormatter
@@ -23,6 +23,7 @@ __all__ = [
     "BlueprintInvalidFormatter",
     "DiagnosticsFormatter",
     "ErrorPanelFormatter",
+    "IfBranchFormatter",
     "LockWaitFormatter",
     "LoopLifecycleFormatter",
     "MessageFormatter",

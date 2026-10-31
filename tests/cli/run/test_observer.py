@@ -11,6 +11,8 @@ from dovo.cli.ui.dispatcher import UiDispatcher
 from dovo.cli.ui.events import (
     AgentProgressEvent,
     AgentSummaryView,
+    ConditionOutcomeView,
+    IfBranchEvent,
     LoopLifecycleEvent,
     StepOutputEvent,
     StepSkippedEvent,
@@ -19,8 +21,8 @@ from dovo.cli.ui.events import (
 from dovo.common.models import Remediation
 from dovo.core.agents import AgentProgressKind
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
-from dovo.engine.executors.models import AgentProgressUpdate
-from dovo.engine.models import SkipCause, StepSkipNotice
+from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult
+from dovo.engine.models import IfBranch, IfBranchNotice, SkipCause, StepSkipNotice
 from tests.harness.builders import StepBuilder
 
 
@@ -172,6 +174,30 @@ class DispatcherRunObserverGuardTests:
         assert dispatcher.events == [
             StepSkippedEvent(
                 idx=5, total=13, step_id="fold", name="Fold", cause="when_unresolved", expression=expression
+            )
+        ]
+
+    def test_chosen_branch_is_dispatched_as_an_if_branch_event(self) -> None:
+        dispatcher = _RecordingDispatcher()
+        conditions = (
+            ConditionEvaluationResult(expression="steps.a.exit_code == 0", passed=False, resolved=False),
+            ConditionEvaluationResult(expression="steps.b.exit_code == 0", passed=True),
+        )
+        notice = IfBranchNotice(block_id="route", name="Route", branch=IfBranch.ELSE, conditions=conditions)
+
+        DispatcherRunObserver(dispatcher).on_if_branch(3, 4, notice)
+
+        assert dispatcher.events == [
+            IfBranchEvent(
+                idx=3,
+                total=4,
+                block_id="route",
+                name="Route",
+                branch="else",
+                conditions=[
+                    ConditionOutcomeView(expression="steps.a.exit_code == 0", passed=False, resolved=False),
+                    ConditionOutcomeView(expression="steps.b.exit_code == 0", passed=True, resolved=True),
+                ],
             )
         ]
 

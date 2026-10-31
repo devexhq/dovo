@@ -49,7 +49,7 @@ dovo blueprint delete <sha_or_name> [--force] [--format terminal|json]
 
 ### `dovo blueprint validate`
 
-Validates a blueprint definition (YAML syntax, schema, and semantic invariants such as duplicate step IDs, undeclared input placeholders, unsafe `script_path` values and unknown loop keys) without executing it. A schema error in a step reports only the error for the kind of entry it declares, a step or a `type: loop` block, located by its position, as in `steps.0: …`. [`dovo run`](run.md) and [`dovo resume`](session.md#dovo-session-resume) apply the same checks before any step runs.
+Validates a blueprint definition (YAML syntax, schema, and semantic invariants such as duplicate step IDs, undeclared input placeholders, unsafe `script_path` values, unknown loop keys, and `when` and `if` conditions that reference steps out of scope) without executing it. A schema error in a step reports only the error for the kind of entry it declares, a step, a `type: loop` block or a `type: if` block, located by its position, as in `steps.0: …`. [`dovo run`](run.md) and [`dovo resume`](session.md#dovo-session-resume) apply the same checks before any step runs.
 
 ```bash
 dovo blueprint validate <target> [--format terminal|json]
