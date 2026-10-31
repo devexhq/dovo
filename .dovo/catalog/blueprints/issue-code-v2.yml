@@ -159,16 +159,6 @@ steps:
       ' "{{ steps.next.outputs.slice }}" "{{ steps.next.outputs.issue }}"
     timeout_seconds: 120
 
-  # Before the ready check, whose gate wants exactly one dovo-size-* label: the
-  # issue the slice is worked on carries the slice's size, replacing the size
-  # it had for an earlier slice.
-  - id: size-label
-    name: Label the slice's issue with the slice's size
-    run: >-
-      uv run python .dovo/catalog/scripts/sdlc/v2/workplan.py size-label --issue ${{ inputs.issue }}
-      --slice {{ steps.next.outputs.slice }}
-    timeout_seconds: 120
-
   # --- The rewrite of a legacy issue, one written before the short format
   # (no `## Outcomes` section), run on the issue the slice is worked on, which
   # may be the slice's own legacy issue: a draft, a person's approval, then the
@@ -386,8 +376,8 @@ steps:
 
   # Asked on every run, including one where the issue is already labelled for
   # its description, since a step cannot be skipped; denying stops the run with
-  # the issue as size-label and the rewrite left it: relabelled with the
-  # slice's size, rewritten when it was legacy, and otherwise untouched.
+  # the issue as the rewrite left it: rewritten when it was legacy, and
+  # otherwise untouched.
   - id: approve
     name: Approve the label
     type: ask

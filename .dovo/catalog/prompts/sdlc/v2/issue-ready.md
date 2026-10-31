@@ -18,7 +18,6 @@ Each failure is a `gate` finding that only a person can settle, so the verdict i
 
 - The issue is open.
 - It has no open sub-issues, unless it is the issue `issue-plan-v2` is about to slice, which maps its sub-issues onto slices, or the issue `issue-code-v2` works one of its slices on, whose work plan already maps them. Any other issue with sub-issues is planned as an epic, not readied as one slice; name the first open sub-issue whose blockers are all closed.
-- It has exactly one `dovo-size-*` label.
 
 ## 3. Checks
 

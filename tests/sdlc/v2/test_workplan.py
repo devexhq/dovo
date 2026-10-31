@@ -1391,7 +1391,7 @@ class SplitOutTests:
                 f"Delivers O-2, O-3 of #{EPIC}. The work plan comment on #{EPIC} tracks it.\n",
             )
         ]
-        assert fake.labels[1300] == ["dovo-size-m"]
+        assert fake.labels[1300] == []
         assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
         assert [row["child"] for row in _rows(fake.workplan())] == [None, 1300]
         assert "| S2 (#1300) | Title S2 | O-2, O-3 | — | pending | — | — |" in fake.workplan()
@@ -1552,54 +1552,6 @@ class PhasedTests:
         assert output.read_text(encoding="utf-8") == f"phased_session={session}\n"
         assert capsys.readouterr() == (f"{reason}\n", "")
         assert fake.patched == []
-
-
-class SizeLabelTests:
-    @pytest.mark.parametrize(
-        ("row", "labels", "issue", "after", "removed"),
-        [
-            pytest.param(
-                _row("S2", size="m"),
-                ["type:epic", "dovo-size-l"],
-                EPIC,
-                ["type:epic", "dovo-size-m"],
-                [(EPIC, "dovo-size-l")],
-                id="worked-on-the-issue",
-            ),
-            pytest.param(_row("S2", size="s", child=1300), [], 1300, ["dovo-size-s"], [], id="own-issue"),
-            pytest.param(_row("S2", size="m"), ["dovo-size-m"], EPIC, ["dovo-size-m"], [], id="already-labelled"),
-        ],
-    )
-    def test_labels_the_issue_the_slice_is_worked_on_with_its_size_alone(
-        self,
-        row: object,
-        labels: list[str],
-        issue: int,
-        after: list[str],
-        removed: list[tuple[int, str]],
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        fake = FakeGh({EPIC: _workplan(_row("S1"), row)})
-        fake.labels[issue] = labels
-
-        assert _main(monkeypatch, fake, "size-label", "--issue", str(EPIC), "--slice", "S2") == 0
-
-        assert (fake.labels[issue], fake.removed_labels) == (after, removed)
-        assert capsys.readouterr() == ("", "")
-
-    def test_a_slice_without_a_size_leaves_the_labels_and_says_so(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        fake = FakeGh({EPIC: _workplan(_row("S1", size=None))})
-        fake.labels[EPIC] = ["dovo-size-l"]
-
-        assert _main(monkeypatch, fake, "size-label", "--issue", str(EPIC), "--slice", "S1") == 0
-
-        assert fake.labels[EPIC] == ["dovo-size-l"]
-        assert capsys.readouterr().err == (
-            f"workplan.py: S1 has no size in the work plan, so #{EPIC} gets no dovo-size-* label; label it by hand\n"
-        )
 
 
 class PrLinksTests:

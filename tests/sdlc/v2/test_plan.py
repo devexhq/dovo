@@ -1116,7 +1116,7 @@ class PlanReadyTests:
                 id="member-trusted",
             ),
             pytest.param(
-                ("dovo-size-s", "dovo:ready"), [_ready(STALE_SHA), _ready(DESCRIPTION_SHA), _ready(STALE_SHA, hidden=True)],
+                ("type:bug", "dovo:ready"), [_ready(STALE_SHA), _ready(DESCRIPTION_SHA), _ready(STALE_SHA, hidden=True)],
                 "ready=true", "Issue 1300 is labelled dovo:ready for its description as it is; not checking it.",
                 id="unchanged",
             ),
@@ -2011,7 +2011,7 @@ class PlanCheckSlicesTests:
 
         assert _refusal(capsys) == (
             "plan.py: .agentic/plan.json: slice S1, S2 has no size (s, m, l); "
-            "its issue then gets no dovo-size-* label and its ready check holds.\n"
+            "the work plan shows it as the slice's review size.\n"
         )
 
     def test_check_slices_refuses_an_outcome_entry_it_cannot_read(

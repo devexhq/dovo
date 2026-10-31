@@ -35,7 +35,7 @@ No hard line wraps: each paragraph and list item is one line, and every issue re
 
 ## 4. Check
 
-Run the template's checklist over every sentence and over the whole issue. Then show the person the title and body, and publish only when they ask: `gh issue create --title "<title>" --body-file <file> --label dovo-size-<s|m|l>`, choosing the size by the descriptions of the repository's `dovo-size-*` labels, plus `--label type:bug` for a bug. Add `--blocked-by <n>` for each **Depends on** issue that must merge first.
+Run the template's checklist over every sentence and over the whole issue. Then show the person the title and body, and publish only when they ask: `gh issue create --title "<title>" --body-file <file>`. A bug adds `--label type:bug --label priority:<p0-critical|p1-high|p2-medium|p3-low>`, choosing the one priority label by the descriptions of the repository's `priority:*` labels (`gh label list`); any other issue gets no priority label. Add `--blocked-by <n>` for each **Depends on** issue that must merge first.
 
 ## Rewrite a legacy issue
 
