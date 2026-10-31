@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 from importlib.resources import files
 
-from dovo.core.catalog.definitions import LoopStepBlock
+import pytest
+
+from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock
+from dovo.core.catalog.exceptions import BlueprintValidationError
 
 
 class BlueprintSchemaLoopParityTests:
@@ -42,3 +45,42 @@ class BlueprintSchemaIfTests:
         assert if_step["additionalProperties"] is False
         assert if_step["properties"]["then"]["items"] == {"$ref": "#/$defs/standard_step"}
         assert if_step["properties"]["else"]["items"] == {"$ref": "#/$defs/standard_step"}
+
+
+_BLOCK_ENTRIES: dict[str, dict[str, object]] = {
+    "loop_step": {
+        "id": "fix",
+        "type": "loop",
+        "until": ["steps.edit.exit_code == 0"],
+        "do": [{"id": "edit", "run": "true"}],
+    },
+    "if_step": {
+        "id": "route",
+        "type": "if",
+        "condition": ["steps.check.exit_code == 0"],
+        "then": [{"id": "ship", "run": "true"}],
+    },
+}
+
+
+def _loads_without(entry: dict[str, object], key: str) -> bool:
+    """Return whether a blueprint holding a `check` step and entry without key passes the blueprint model."""
+    trimmed = {name: value for name, value in entry.items() if name != key}
+    try:
+        BlueprintDefinition.from_document({"steps": [{"id": "check", "run": "true"}, trimmed]}, key="bp")
+    except BlueprintValidationError:
+        return False
+    return True
+
+
+class BlueprintSchemaRequiredParityTests:
+    """A block definition requires exactly the keys whose omission the blueprint loader rejects."""
+
+    @pytest.mark.parametrize("definition", sorted(_BLOCK_ENTRIES))
+    def test_required_keys_match_the_keys_the_loader_rejects_without(self, definition: str) -> None:
+        defs = json.loads((files("dovo.schemas.v1") / "blueprint.json").read_text(encoding="utf-8"))["$defs"]
+        entry = _BLOCK_ENTRIES[definition]
+
+        rejected_without = {key for key in entry if not _loads_without(entry, key)}
+
+        assert set(defs[definition]["required"]) == rejected_without

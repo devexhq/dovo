@@ -213,7 +213,7 @@
     "if_step": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "type", "condition", "then"],
+      "required": ["type", "condition", "then"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "type": { "type": "string", "const": "if" },
@@ -234,7 +234,7 @@
     "loop_step": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "type", "until", "do"],
+      "required": ["type", "until", "do"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "type": { "type": "string", "const": "loop" },
