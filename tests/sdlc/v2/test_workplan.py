@@ -331,7 +331,7 @@ Output shapes disagree.
 | D1 | One envelope | Agreement | user 2026-10-28 |
 
 Open questions, each with a recommended answer until the user settles it:
-- **OQ-1** (blocks S2): Drop v1? (assumed: yes) **Recommended:** Yes.
+- **OQ-1** (blocks S2): Drop v1? **Recommended:** Yes.
 
 ### Code inventory
 At `944de0ce`.
@@ -357,6 +357,20 @@ At `944de0ce`.
 - After the pilot (S1).
 - Baseline: before S2, across every landed slice and any open slice PR.
 """
+
+
+QUESTION = {
+    "id": "OQ-1",
+    "summary": "Drop v1?",
+    "assumed": "Yes.",
+    "details": ["No consumer reads v1."],
+    "challenged": False,
+    "challenge_details": [],
+    "recommendation": "assumed",
+    "alternatives": ["Keep v1 one more release."],
+    "phases": [],
+    "blocks": ["S2"],
+}
 
 
 def _render(monkeypatch: pytest.MonkeyPatch, fake: FakeGh, plan: str, revision: str = "1", *extra: str) -> int:
@@ -396,10 +410,9 @@ class RenderTests:
     def test_epic_renders_contract_before_work_plan_and_a_second_render_edits_the_same_comment(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        question = {"id": "OQ-1", "summary": "Drop v1? (assumed: yes)", "assumed": "Yes.", "blocks": ["S2"]}
         slices = [_slice("S1", pilot=True), _slice("S2", depends_on=["S1"], blocked_by=[1192], outcomes=["O-2"])]
         plan = _write_json(
-            tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices, "open_questions": [question]}
+            tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices, "open_questions": [QUESTION]}
         )
         fake = FakeGh({})
 
@@ -414,6 +427,25 @@ class RenderTests:
         ]
         assert fake.patched == [6_513_400_000]
         assert (fake.bodies[EPIC], fake.edits) == (INTRO, [])
+
+    def test_a_question_recommending_the_challenge_lists_the_challenges_answer(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        question = {
+            **QUESTION,
+            "challenged": True,
+            "challenge_details": ["A plugin reads v1."],
+            "recommendation": "challenge",
+        }
+        slices = [_slice("S1", pilot=True), _slice("S2", depends_on=["S1"], blocked_by=[1192], outcomes=["O-2"])]
+        plan = _write_json(
+            tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices, "open_questions": [question]}
+        )
+        fake = FakeGh({})
+
+        assert _render(monkeypatch, fake, plan) == 0
+
+        assert "- **OQ-1** (blocks S2): Drop v1? **Recommended:** Keep v1 one more release.\n" in fake.workplan()
 
     def test_never_touches_a_comment_maintained_by_hand(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fake = FakeGh({EPIC: BY_HAND})
@@ -1046,7 +1078,7 @@ class LandTests:
         output = tmp_path / "output"
         monkeypatch.setenv("DOVO_OUTPUT", str(output))
         fake = FakeGh({EPIC: self._contract_workplan()})
-        slice_question = {"id": "OQ-1", "summary": "Rename the helper? (assumed: no)", "assumed": "No."}
+        slice_question = {**QUESTION, "summary": "Rename the helper?", "assumed": "No.", "blocks": []}
         plan = {"contract": CONTRACT, "slices": self._slices(), "open_questions": [slice_question]}
 
         assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0

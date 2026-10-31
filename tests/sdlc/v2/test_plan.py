@@ -285,6 +285,241 @@ class PlanCheckQuestionsTests:
         assert capsys.readouterr().err.startswith("plan.py: .agentic/plan.json cannot be read: ")
 
 
+QUESTION = {
+    "id": "OQ-1",
+    "summary": "Should `dovo session list` include discarded sessions by default?",
+    "assumed": "No: discarded sessions are hidden unless `--all` is passed.",
+    "details": ["`dovo worktree list` hides removed worktrees (worktree_list.py:41)."],
+    "challenged": False,
+    "challenge_details": [],
+    "recommendation": "assumed",
+    "alternatives": ["Show them with a `discarded` status column."],
+    "phases": [1],
+    "blocks": [],
+}
+CHALLENGED = {
+    **QUESTION,
+    "id": "OQ-2",
+    "summary": "Who owns | the filter?",
+    "challenged": True,
+    "challenge_details": ["JSON output skips the formatter (session_list.py:12).", "C1 cites it."],
+    "recommendation": "challenge",
+    "alternatives": ["Filter in Sessions.list.", "Filter in the formatter."],
+    "replaces": {"id": "D-1", "session": "blueprint_plan01"},
+}
+
+
+def _questions(monkeypatch: pytest.MonkeyPatch, *argv: str) -> int:
+    """Run plan.py questions on .agentic/plan.json with argv."""
+    return _main(monkeypatch, "questions", "--plan", ".agentic/plan.json", *argv)
+
+
+class PlanQuestionsTests:
+    def test_questions_passes_well_formed_open_questions(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write_plan(workspace, [QUESTION, CHALLENGED], [PLANNER])
+
+        assert _questions(monkeypatch) == 0
+
+        assert capsys.readouterr() == ("", "")
+        assert sorted(path.name for path in (workspace / ".agentic").iterdir()) == ["plan.json"]
+
+    def test_questions_writes_the_summary_of_questions_and_decisions(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write_plan(workspace, [QUESTION, CHALLENGED], [HUMAN, PLANNER])
+
+        assert _questions(monkeypatch, "--summary", ".agentic/plan-summary.md") == 0
+
+        assert capsys.readouterr() == ("", "")
+        assert (workspace / ".agentic/plan-summary.md").read_text(encoding="utf-8") == (
+            "# Plan summary for #914\n"
+            "\n"
+            "## Open questions\n"
+            "\n"
+            "A question you do not tick settles to its assumed answer.\n"
+            "\n"
+            "| ID | Question | Assumed answer | Challenged | Recommended |\n"
+            "|---|---|---|---|---|\n"
+            "| OQ-1 | Should `dovo session list` include discarded sessions by default? "
+            "| No: discarded sessions are hidden unless `--all` is passed. | no | assumed |\n"
+            "| OQ-2 | Who owns \\| the filter? | No: discarded sessions are hidden unless `--all` is passed. "
+            "| yes | challenge: Filter in Sessions.list. |\n"
+            "\n"
+            "### OQ-1\n"
+            "\n"
+            "- `dovo worktree list` hides removed worktrees (worktree_list.py:41).\n"
+            "- Other answers: Show them with a `discarded` status column.\n"
+            "\n"
+            "### OQ-2\n"
+            "\n"
+            "- `dovo worktree list` hides removed worktrees (worktree_list.py:41).\n"
+            "- Challenge: JSON output skips the formatter (session_list.py:12).\n"
+            "- Challenge: C1 cites it.\n"
+            "- Other answers: Filter in Sessions.list.; Filter in the formatter.\n"
+            "\n"
+            "## Decisions\n"
+            "\n"
+            "- **D-3** Required config's ConfigError carries the load's diagnostic records. "
+            "*Answered: accept challenge.*\n"
+            "- **D-5** The list reuses worktree_list's empty-state line. *Planner, approved with the plan.*\n"
+        )
+
+    def test_questions_summarises_a_plan_with_nothing_open_or_decided(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_plan(workspace, [], [])
+
+        assert _questions(monkeypatch, "--summary", ".agentic/plan-summary.md") == 0
+
+        assert (workspace / ".agentic/plan-summary.md").read_text(encoding="utf-8") == (
+            "# Plan summary for #914\n\n## Open questions\n\nNone.\n\n## Decisions\n\nNone.\n"
+        )
+
+    @pytest.mark.parametrize(
+        ("question", "message"),
+        [
+            pytest.param("OQ-1", "Open question 1 has id None; it must be OQ-<n>.", id="not-an-object"),
+            pytest.param({**QUESTION, "id": "Q1"}, "Open question 1 has id 'Q1'; it must be OQ-<n>.", id="bad-id"),
+            pytest.param({**QUESTION, "why": "x"}, "Open question OQ-1 has unknown field why.", id="old-why-field"),
+            pytest.param(
+                {key: value for key, value in QUESTION.items() if key not in ("details", "blocks")},
+                "Open question OQ-1 has no blocks, details.",
+                id="missing-fields",
+            ),
+            pytest.param(
+                {**QUESTION, "summary": "x" * 121},
+                "Open question OQ-1 summary is 121 characters long; at most 120.",
+                id="summary-too-long",
+            ),
+            pytest.param(
+                {**QUESTION, "summary": "Hide them?\nOr not?"},
+                "Open question OQ-1 summary spans more than one line.",
+                id="summary-two-lines",
+            ),
+            pytest.param({**QUESTION, "summary": " "}, "Open question OQ-1 has no summary.", id="empty-summary"),
+            pytest.param(
+                {**QUESTION, "assumed": "x" * 201},
+                "Open question OQ-1 assumed is 201 characters long; at most 200.",
+                id="assumed-too-long",
+            ),
+            pytest.param(
+                {**QUESTION, "details": "One paragraph of prose."},
+                "Open question OQ-1 has no details list of strings.",
+                id="details-prose",
+            ),
+            pytest.param(
+                {**QUESTION, "details": ["a", "b", "c", "d", "e", "f"]},
+                "Open question OQ-1 has 6 details items; at most 5.",
+                id="too-many-details",
+            ),
+            pytest.param(
+                {**QUESTION, "details": ["x" * 141]},
+                "Open question OQ-1 details item is 141 characters long; at most 140.",
+                id="detail-too-long",
+            ),
+            pytest.param(
+                {**CHALLENGED, "challenge_details": ["x" * 141]},
+                "Open question OQ-2 challenge_details item is 141 characters long; at most 140.",
+                id="challenge-detail-too-long",
+            ),
+            pytest.param(
+                {**QUESTION, "challenged": "no"},
+                "Open question OQ-1 has challenged 'no'; it must be true or false.",
+                id="challenged-not-bool",
+            ),
+            pytest.param(
+                {**QUESTION, "recommendation": "challenged"},
+                "Open question OQ-1 has recommendation 'challenged'; it must be assumed or challenge.",
+                id="unknown-recommendation",
+            ),
+            pytest.param(
+                {**QUESTION, "challenge_details": ["A plugin reads it."]},
+                "Open question OQ-1 has challenge_details but challenged is false.",
+                id="details-without-challenge",
+            ),
+            pytest.param(
+                {**QUESTION, "recommendation": "challenge"},
+                "Open question OQ-1 recommends the challenge but challenged is false.",
+                id="recommends-no-challenge",
+            ),
+            pytest.param(
+                {**CHALLENGED, "challenge_details": []},
+                "Open question OQ-2 is challenged but has no challenge_details.",
+                id="challenge-without-details",
+            ),
+            pytest.param(
+                {**CHALLENGED, "alternatives": []},
+                "Open question OQ-2 is challenged but has no alternatives; the first holds the challenge's answer.",
+                id="challenge-without-answer",
+            ),
+            pytest.param(
+                {**QUESTION, "alternatives": ["Show them\nin a column."]},
+                "Open question OQ-1 alternatives item spans more than one line.",
+                id="alternative-two-lines",
+            ),
+            pytest.param(
+                {**QUESTION, "phases": ["1"]},
+                "Open question OQ-1 has no phases list of phase numbers.",
+                id="phases-not-numbers",
+            ),
+            pytest.param(
+                {**QUESTION, "blocks": [2]}, "Open question OQ-1 has no blocks list of strings.", id="blocks-not-ids"
+            ),
+            pytest.param(
+                {**QUESTION, "replaces": {"id": "OQ-3", "session": "s"}},
+                "Open question OQ-1 has replaces {'id': 'OQ-3', 'session': 's'}; its id must be D-<n>.",
+                id="replaces-not-a-decision",
+            ),
+        ],
+    )
+    def test_questions_refuses_a_malformed_question_naming_it_and_the_field(
+        self,
+        question: object,
+        message: str,
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _write_plan(workspace, [question], [])
+
+        assert _questions(monkeypatch, "--summary", ".agentic/plan-summary.md") == 1
+
+        assert capsys.readouterr() == ("", f"plan.py: .agentic/plan.json: {message}\n")
+        assert not (workspace / ".agentic/plan-summary.md").exists()
+
+    def test_questions_refuses_a_question_id_used_twice(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write_plan(workspace, [QUESTION, {**CHALLENGED, "id": "OQ-1"}], [])
+
+        assert _questions(monkeypatch) == 1
+
+        assert capsys.readouterr().err == "plan.py: .agentic/plan.json: Open question OQ-1 appears twice.\n"
+
+    def test_questions_refuses_a_malformed_decision(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write_plan(workspace, [QUESTION], [{**PLANNER, "settled_by": "reviewer"}])
+
+        assert _questions(monkeypatch) == 1
+
+        assert capsys.readouterr().err == (
+            "plan.py: .agentic/plan.json: Decision D-5 has settled_by 'reviewer'; "
+            "it must be one of human, assumed_accepted, planner.\n"
+        )
+
+    def test_questions_refuses_a_plan_without_open_questions(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (workspace / ".agentic/plan.json").write_text('{"decisions": []}', encoding="utf-8")
+
+        assert _questions(monkeypatch) == 1
+
+        assert capsys.readouterr() == ("", "plan.py: .agentic/plan.json has no open_questions list.\n")
+
+
 SLICE = "S2"
 SESSION = "blueprint_code02"
 DESCRIPTION = (
