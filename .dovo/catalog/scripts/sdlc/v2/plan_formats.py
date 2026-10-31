@@ -38,11 +38,8 @@ against.
 
 A requirement is one entry of `requirements` in .agentic/requirements.json,
 which `plan.py requirements` writes from an issue's description: a numbered
-item and its exact text. The document's `format` is `short` when the
-description has an `## Outcomes` section, whose items are outcomes (`O-<n>`)
-and whose `## Decisions` items are decisions (`D-<n>`), and `legacy` otherwise,
-whose items are functional and non-functional requirements (`FR-<n>`,
-`NFR-<n>`) and numbered error cases (`EC-<n>`). An outcome a slice delivers
+item and its exact text: an outcome (`O-<n>`) under `## Outcomes` or a
+decision (`D-<n>`) under `## Decisions`. An outcome a slice delivers
 only part of carries `part`, the part its slice's `outcomes` entry names in
 parentheses (`"part": "reply"` for `O-7 (reply)`); the outcome's other parts
 belong to other slices. An entry without `part` is the whole item.
@@ -474,12 +471,11 @@ class Requirement:
         return cls(_text(raw, "id", owner), _text(raw, "kind", owner), _text(raw, "text", owner), part)
 
 
-def requirements_json(issue: int, issue_format: str, requirements: list[Requirement]) -> dict[str, object]:
+def requirements_json(issue: int, requirements: list[Requirement]) -> dict[str, object]:
     """Return the requirements.json document listing issue's numbered items, in the description's order."""
     return {
         "schema_version": REQUIREMENTS_SCHEMA_VERSION,
         "issue": issue,
-        "format": issue_format,
         "requirements": [requirement.to_json() for requirement in requirements],
     }
 

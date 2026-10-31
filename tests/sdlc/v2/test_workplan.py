@@ -1266,7 +1266,9 @@ class StartTests:
         assert len(fake.created) == 1
         assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
 
-    def test_a_legacy_issue_still_gets_a_short_sub_issue(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_an_issue_without_why_or_outcomes_still_gets_a_short_sub_issue(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2", outcomes=[]))})
 
         assert self._start(tmp_path, monkeypatch, fake) == 0

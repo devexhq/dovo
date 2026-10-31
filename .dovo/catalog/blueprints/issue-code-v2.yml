@@ -173,99 +173,6 @@ steps:
       ' "{{ steps.next.outputs.slice }}" "{{ steps.start.outputs.issue }}"
     timeout_seconds: 120
 
-  # --- The rewrite of a legacy issue, one written before the short format
-  # (no `## Outcomes` section), run on the issue the slice is worked on, which
-  # may be the slice's own legacy issue: a draft, a person's approval, then the
-  # description replaced (GitHub keeps the old one in its edit history), so only
-  # a short issue reaches the ready check. Before ready-state, which then reads
-  # the rewritten description. A step cannot be skipped, so on a short issue
-  # each passes straight through: the draft writes nothing, no prompt is shown
-  # and the apply changes nothing. ---
-
-  # Records the description the draft rewrites, so the apply refuses one a
-  # person edited meanwhile.
-  - id: rewrite-format
-    name: Check whether the slice's issue is in the short format
-    run: |
-      set -eu
-      mkdir -p .agentic
-      rm -f .agentic/issue-rewrite*
-      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py issue-format --issue {{ steps.start.outputs.issue }} >> "$DOVO_OUTPUT"
-    timeout_seconds: 120
-
-  - id: rewrite-draft
-    name: Draft the legacy issue's rewrite
-    type: agent
-    prompt: |
-      Issue {{ steps.start.outputs.issue }}'s format: {{ steps.rewrite-format.outputs.format }}.
-
-      If it is short, write nothing and stop. Otherwise follow the rewrite mode of
-      .dovo/catalog/prompts/sdlc/v2/issue-write.md for issue {{ steps.start.outputs.issue }}, the issue
-      issue-code-v2 works slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }} on: write the
-      draft to .agentic/issue-rewrite.md and its mapping to .agentic/issue-rewrite-notes.md. Do not edit
-      the issue, its labels or its comments.
-    tools: { allow_all: true }
-    timeout_seconds: 1800
-
-  # Shows the mapping above the draft in one file, the only kind a prompt
-  # shows, and offers the one option that approves the rewrite, or none on a
-  # short issue.
-  - id: rewrite-gate
-    name: List the rewrite for approval
-    run: |
-      set -eu
-      if [ "{{ steps.rewrite-format.outputs.format }}" = "short" ]; then
-        echo "Issue {{ steps.start.outputs.issue }} is in the short format; nothing to rewrite." | tee .agentic/issue-rewrite-review.md
-        printf '{"approve": []}\n' > .agentic/issue-rewrite-approve.json
-        exit 0
-      fi
-      for draft in .agentic/issue-rewrite.md .agentic/issue-rewrite-notes.md; do
-        [ -s "$draft" ] || { echo "Issue {{ steps.start.outputs.issue }} is legacy but $draft is missing or empty; not rewriting."; exit 1; }
-      done
-      { cat .agentic/issue-rewrite-notes.md; printf '\n## Proposed description\n\n'; cat .agentic/issue-rewrite.md; } > .agentic/issue-rewrite-review.md
-      printf '{"approve": [{"id": "approve", "label": "Replace the description with the draft"}]}\n' > .agentic/issue-rewrite-approve.json
-    timeout_seconds: 120
-    artifacts:
-      - { name: issue-rewrite, path: .agentic/issue-rewrite-review.md }
-      - { name: issue-rewrite-approve, path: .agentic/issue-rewrite-approve.json }
-
-  # No prompt is shown on a short issue.
-  - id: rewrite-approve
-    name: Approve the legacy issue's rewrite
-    type: ask
-    interaction:
-      mode: multiselect
-      message: >-
-        Issue {{ steps.start.outputs.issue }}, which slice {{ steps.next.outputs.slice }} is worked on,
-        was written before the short issue format. The attached file maps each item of its
-        description onto the proposed one below it. Select approve to replace the description with
-        the draft (GitHub keeps the old one in the issue's edit history); select nothing to stop the
-        run with the description untouched.
-      artifact: issue-rewrite
-      options_from:
-        artifact: issue-rewrite-approve
-        file: .agentic/issue-rewrite-approve.json
-        items_path: approve
-        value_field: id
-        label_field: label
-
-  # A command step: the writes to GitHub run exactly as approved, with the
-  # host's gh credentials. rewrite-apply posts no comment.
-  - id: rewrite-apply
-    name: Replace the legacy issue's description with the rewrite
-    run: |
-      set -eu
-      if [ "{{ steps.rewrite-format.outputs.format }}" = "short" ]; then
-        echo "Issue {{ steps.start.outputs.issue }} is in the short format; nothing to rewrite."
-        exit 0
-      fi
-      case '{{ steps.rewrite-approve.outputs.selected }}' in
-        *'"approve"'*) ;;
-        *) echo "The rewrite was not approved; issue {{ steps.start.outputs.issue }}'s description is left untouched."; exit 1 ;;
-      esac
-      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py rewrite-apply --issue {{ steps.start.outputs.issue }} --body-file .agentic/issue-rewrite.md --body-sha "{{ steps.rewrite-format.outputs.body_sha }}"
-    timeout_seconds: 300
-
   # --- The ready check's gate steps, run on the issue the slice is worked on. A
   # step cannot be skipped, so each of them passes straight through when that
   # issue is already labelled dovo:ready for its description as it is: the
@@ -281,7 +188,7 @@ steps:
         --slice {{ steps.next.outputs.slice }} --body-sha "$sha"
     timeout_seconds: 120
 
-  # A not_ready issue needs a person: a size label, a split, a decision or a
+  # A not_ready issue needs a person: a split, a decision, a fixed section or a
   # closed blocker, which no edit here can supply. Rather than failing, the run
   # holds at a prompt that lists the findings, so the person settles them on
   # GitHub and answers (or leaves the run paused and continues it later with
@@ -371,8 +278,8 @@ steps:
           message: >-
             Issue {{ steps.start.outputs.issue }}, which slice {{ steps.next.outputs.slice }} is worked on,
             is not ready to plan, and only a person can settle why: the check's findings are listed below,
-            and its report is attached. Settle them on GitHub (a size label, a split, a decision, a
-            closed blocker), then select the ones you settled to re-check the issue. To stop for
+            and its report is attached. Settle them on GitHub (a split, a decision, a fixed section,
+            a closed blocker), then select the ones you settled to re-check the issue. To stop for
             now, press Ctrl-C: the run stays paused, and `dovo resume` asks again.
           artifact: issue-ready-report
           options_from:
@@ -392,8 +299,7 @@ steps:
 
   # Asked on every run, including one where the issue is already labelled for
   # its description, since a step cannot be skipped; denying stops the run with
-  # the issue as the rewrite left it: rewritten when it was legacy, and
-  # otherwise untouched.
+  # the issue untouched.
   - id: approve
     name: Approve the label
     type: ask

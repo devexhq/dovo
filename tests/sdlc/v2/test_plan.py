@@ -809,36 +809,6 @@ Git becomes the only store of worktree state, so the table only receives writes 
 ## Done when
 O-1 and O-2 hold.
 """
-LEGACY_BODY = """## Goal / User Story
-
-**As a** user, **I want** the table dropped, **so that** Git is the only store.
-
-## Functional requirements
-
-### FR-1: Drop the table
-A fresh database has no `worktrees` table.
-
-```text
-### FR-9: quoted, never a requirement
-```
-
-### FR-2: Commands work without it
-
-## Non-functional requirements
-
-### NFR-1: Reversible
-The migration has a downgrade.
-
-## Error cases to handle
-
-1. A database already without the table → the upgrade is a no-op,
-   exit 0.
-2. A locked database → `LockTimeoutError` propagates.
-
-## Definition of done
-
-1. Not an error case.
-"""
 
 
 def _requirements(monkeypatch: pytest.MonkeyPatch, fake: FakeGh, *argv: str) -> int:
@@ -854,10 +824,10 @@ def _written(workspace: Path, name: str = "requirements.json") -> dict[str, obje
 
 
 class PlanRequirementsTests:
-    def test_requirements_lists_a_short_issues_outcomes_and_decisions(
+    def test_requirements_lists_an_issues_outcomes_and_decisions(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        fake = FakeGh(SHORT_BODY, [])
+        fake = FakeGh(SHORT_BODY.replace("\n", "\r\n"), [])
 
         assert _requirements(monkeypatch, fake, "--out", ".agentic/req.json") == 0
 
@@ -865,7 +835,6 @@ class PlanRequirementsTests:
         assert _written(workspace, "req.json") == {
             "schema_version": 1,
             "issue": 1300,
-            "format": "short",
             "requirements": [
                 {"id": "O-1", "kind": "outcome", "text": "A fresh `dovo init` database has no worktrees table."},
                 {
@@ -883,37 +852,7 @@ class PlanRequirementsTests:
         }
         assert capsys.readouterr() == ("", "")
 
-    def test_requirements_lists_a_legacy_issues_requirements_and_error_cases(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        fake = FakeGh(LEGACY_BODY.replace("\n", "\r\n"), [])
-
-        assert _requirements(monkeypatch, fake) == 0
-
-        assert _written(workspace) == {
-            "schema_version": 1,
-            "issue": 1300,
-            "format": "legacy",
-            "requirements": [
-                {
-                    "id": "FR-1",
-                    "kind": "functional",
-                    "text": "Drop the table\n\nA fresh database has no `worktrees` table.\n\n"
-                    "```text\n### FR-9: quoted, never a requirement\n```",
-                },
-                {"id": "FR-2", "kind": "functional", "text": "Commands work without it"},
-                {"id": "NFR-1", "kind": "non_functional", "text": "Reversible\n\nThe migration has a downgrade."},
-                {
-                    "id": "EC-1",
-                    "kind": "error_case",
-                    "text": "A database already without the table → the upgrade is a no-op, exit 0.",
-                },
-                {"id": "EC-2", "kind": "error_case", "text": "A locked database → `LockTimeoutError` propagates."},
-            ],
-        }
-        assert capsys.readouterr() == ("", "")
-
-    def test_requirements_reads_the_issue_templates_skeleton_as_a_short_issue(
+    def test_requirements_reads_the_issue_templates_skeleton(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         template = (REPO_ROOT / ".dovo/catalog/prompts/sdlc/v2/templates/issue.md").read_text(encoding="utf-8")
@@ -922,9 +861,7 @@ class PlanRequirementsTests:
 
         assert _requirements(monkeypatch, fake) == 0
 
-        written = _written(workspace)
-        assert written["format"] == "short"
-        assert written["requirements"] == [
+        assert _written(workspace)["requirements"] == [
             {
                 "id": "O-1",
                 "kind": "outcome",
@@ -936,7 +873,7 @@ class PlanRequirementsTests:
             {"id": "D-1", "kind": "decision", "text": "<A trade-off a person settled, and what it costs. Accepted.>"},
         ]
 
-    def test_requirements_reads_the_bug_templates_skeleton_as_a_short_issue(
+    def test_requirements_reads_the_bug_templates_skeleton(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         template = (REPO_ROOT / ".dovo/catalog/prompts/sdlc/v2/templates/bug.md").read_text(encoding="utf-8")
@@ -945,9 +882,7 @@ class PlanRequirementsTests:
 
         assert _requirements(monkeypatch, fake) == 0
 
-        written = _written(workspace)
-        assert written["format"] == "short"
-        assert written["requirements"] == [
+        assert _written(workspace)["requirements"] == [
             {
                 "id": "O-1",
                 "kind": "outcome",
@@ -967,7 +902,9 @@ class PlanRequirementsTests:
         ("body", "ident"),
         [
             pytest.param(SHORT_BODY.replace("- **O-1**", "- **O-2**"), "O-2", id="outcome"),
-            pytest.param(LEGACY_BODY.replace("### NFR-1", "### FR-2"), "FR-2", id="functional"),
+            pytest.param(
+                SHORT_BODY.replace("- **O-3** An outcome under", "- **D-1** An outcome under"), "D-1", id="decision"
+            ),
         ],
     )
     def test_requirements_refuses_an_id_numbered_twice(
@@ -985,34 +922,22 @@ class PlanRequirementsTests:
         assert capsys.readouterr() == ("", f"plan.py: Issue 1300 numbers {ident} twice; give each item its own id.\n")
         assert not (workspace / ".agentic" / "requirements.json").exists()
 
-    def test_requirements_numbers_error_cases_by_position(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        fake = FakeGh(LEGACY_BODY.replace("2. A locked", "1. A locked"), [])
-
-        assert _requirements(monkeypatch, fake) == 0
-
-        written = _written(workspace)["requirements"]
-        assert isinstance(written, list)
-        assert [entry["id"] for entry in written if entry["kind"] == "error_case"] == ["EC-1", "EC-2"]
-        assert written[-1]["text"] == "A locked database → `LockTimeoutError` propagates."
-
     @pytest.mark.parametrize(
-        ("body", "issue_format"),
+        "body",
         [
-            pytest.param("## Why\nNo outcomes yet.\n\n## Outcomes\n- O-1 without bold.\n", "short", id="short"),
-            pytest.param("## Goal / User Story\n\nJust a goal.\n", "legacy", id="legacy"),
-            pytest.param("", "legacy", id="empty"),
+            pytest.param("## Why\nNo outcomes yet.\n\n## Outcomes\n- O-1 without bold.\n", id="unnumbered"),
+            pytest.param("## Goal / User Story\n\n### FR-1: Not an outcome\n", id="no-outcomes"),
+            pytest.param("", id="empty"),
         ],
     )
     def test_requirements_writes_an_empty_list_when_nothing_is_numbered(
-        self, body: str, issue_format: str, workspace: Path, monkeypatch: pytest.MonkeyPatch
+        self, body: str, workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         fake = FakeGh(body, [])
 
         assert _requirements(monkeypatch, fake) == 0
 
-        assert _written(workspace) == {"schema_version": 1, "issue": 1300, "format": issue_format, "requirements": []}
+        assert _written(workspace) == {"schema_version": 1, "issue": 1300, "requirements": []}
 
     def test_requirements_refuses_when_gh_fails(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -1134,91 +1059,6 @@ class PlanReadyTests:
         assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body")]
 
 
-# --- the rewrite of a legacy issue -------------------------------------------------
-
-LEGACY_SHA = PLAN.body_sha(LEGACY_BODY)
-REWRITE = ("rewrite-apply", "--issue", "1300", "--body-file", ".agentic/issue-rewrite.md")
-
-
-@pytest.fixture
-def rewrite(workspace: Path) -> Path:
-    """Write the approved draft to .agentic/issue-rewrite.md."""
-    (workspace / ".agentic/issue-rewrite.md").write_text(SHORT_BODY, encoding="utf-8")
-    return workspace
-
-
-class PlanRewriteTests:
-    @pytest.mark.parametrize(
-        ("body", "shape"),
-        [pytest.param(SHORT_BODY, "short", id="short"), pytest.param(LEGACY_BODY, "legacy", id="legacy")],
-    )
-    def test_issue_format_prints_the_descriptions_format_and_body_sha(
-        self,
-        body: str,
-        shape: str,
-        workspace: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        fake = FakeGh(body, [])
-
-        assert _run(monkeypatch, fake, "issue-format", "--issue", "1300") == 0
-
-        assert capsys.readouterr() == (f"format={shape}\nbody_sha={PLAN.body_sha(body)}\n", "")
-        assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body")]
-
-    def test_rewrite_apply_replaces_the_description_and_posts_no_comment(
-        self, rewrite: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        fake = FakeGh(LEGACY_BODY, [])
-
-        assert _run(monkeypatch, fake, *REWRITE, "--body-sha", LEGACY_SHA) == 0
-
-        assert fake.calls == [
-            ("gh", "issue", "view", "1300", "--json", "body"),
-            ("gh", "issue", "edit", "1300", "--body-file", SHORT_BODY),
-        ]
-        assert capsys.readouterr() == ("", "")
-
-    def test_rewrite_apply_refuses_a_description_edited_since_the_draft(
-        self, rewrite: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        fake = FakeGh(LEGACY_BODY, [])
-
-        assert _run(monkeypatch, fake, *REWRITE, "--body-sha", STALE_SHA) == 1
-
-        assert capsys.readouterr() == (
-            "",
-            f"plan.py: Issue 1300's description has body_sha {LEGACY_SHA}, not {STALE_SHA}, "
-            "the one the rewrite was drafted against; draft it again.\n",
-        )
-        assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body")]
-
-    def test_rewrite_apply_refuses_a_draft_not_in_the_short_format(
-        self, rewrite: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        (rewrite / ".agentic/issue-rewrite.md").write_text(LEGACY_BODY, encoding="utf-8")
-        fake = FakeGh(LEGACY_BODY, [])
-
-        assert _run(monkeypatch, fake, *REWRITE, "--body-sha", LEGACY_SHA) == 1
-
-        assert capsys.readouterr() == (
-            "",
-            "plan.py: .agentic/issue-rewrite.md has no ## Outcomes section, so it is not in the short issue format.\n",
-        )
-        assert fake.calls == []
-
-    def test_rewrite_apply_refuses_when_the_edit_fails(
-        self, rewrite: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        fake = FakeGh(LEGACY_BODY, [], frozenset({"edit"}))
-
-        assert _run(monkeypatch, fake, *REWRITE, "--body-sha", LEGACY_SHA) == 1
-
-        assert [call[2] for call in fake.calls] == ["view", "edit"]
-        assert capsys.readouterr().err.startswith("plan.py: command failed: gh issue edit 1300 --body-file ")
-
-
 # --- check-breakdown -------------------------------------------------------------
 
 O_1 = "`dovo session list` hides discarded sessions."
@@ -1227,7 +1067,6 @@ ISSUE_D_1 = "Discarded is a status, not a separate list."
 REQUIREMENTS = {
     "schema_version": 1,
     "issue": 1300,
-    "format": "short",
     "requirements": [
         {"id": "O-1", "kind": "outcome", "text": O_1},
         {"id": "O-2", "kind": "outcome", "text": O_2},

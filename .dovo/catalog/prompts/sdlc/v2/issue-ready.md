@@ -2,7 +2,7 @@
 
 Decide whether an existing issue is ready to plan, against `origin/main` as it is now. An issue records what a person decided, in the short format of [templates/issue.md](templates/issue.md), and planning grounds it in the code just in time. So the check is light. It asks whether the person's intent still holds on `main`, never whether the description matches the code.
 
-The check never edits the issue, its labels or its comments. It writes its verdict to `.agentic/`, and the blueprint applies it after a person approves; run by hand, report the verdict and ask before applying anything. The description is the person's, so no finding proposes a change to the title or the body. The blueprints rewrite a legacy issue, one written before the short format, with the rewrite mode of [issue-write.md](issue-write.md#rewrite-a-legacy-issue) and a person's approval before they run the check, so the check reads only short issues.
+The check never edits the issue, its labels or its comments. It writes its verdict to `.agentic/`, and the blueprint applies it after a person approves; run by hand, report the verdict and ask before applying anything. The description is the person's, so no finding proposes a change to the title or the body.
 
 ## 1. Read
 
@@ -10,7 +10,7 @@ The check never edits the issue, its labels or its comments. It writes its verdi
 - `git fetch origin main` and record `git rev-parse --short origin/main`. Under the blueprint the `ready-base` step has already fetched and checked out `origin/main`, so a fetch the agent sandbox refuses changes nothing; do not report it.
 - Read the issue with `gh issue view <n> --json number,title,body,labels,state`, its blockers with `gh issue view <n> --json blockedBy --jq '.blockedBy.nodes[] | "#\(.number) \(.state)"'` and its sub-issues with `gh issue view <n> --json subIssues --jq '.subIssues.nodes[] | "#\(.number) \(.state) \(.title)"'`.
 - Record the `body_sha` of the description as you read it: `uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py body-sha --issue <n>`.
-- List its numbered items: `uv run python .dovo/catalog/scripts/sdlc/v2/plan.py requirements --issue <n> --out .agentic/requirements.json`. Its `format` is `short` when the description has an `## Outcomes` section and `legacy` otherwise; its `requirements` are the outcomes (`O-n`) and decisions (`D-n`) of a short issue, each with its exact text. Exit 1 names an id the description numbers twice: a `structure` finding (check 4).
+- List its numbered items: `uv run python .dovo/catalog/scripts/sdlc/v2/plan.py requirements --issue <n> --out .agentic/requirements.json`. Its `requirements` are the issue's outcomes (`O-n`) and decisions (`D-n`), each with its exact text. Exit 1 names an id the description numbers twice: a `structure` finding (check 4).
 
 ## 2. Gates
 
@@ -28,7 +28,6 @@ Run the four checks against `origin/main`. Every finding quotes the issue text i
 3. **No decision contradicted.** No decision (`D-n`) is contradicted by work merged since the issue was written: a merged change that settled the same question another way. Each is a `contradiction` finding citing the decision and the commit or pull request: a person keeps the decision, which then reverses the merged work, or drops it.
 4. **The short template.** The description follows [templates/issue.md](templates/issue.md), or [templates/bug.md](templates/bug.md) when it opens with **What happens**:
    - A short issue has Why, Outcomes and Done when (a bug: What happens, Steps to reproduce, Outcomes and Done when); no section outside the template; its sections in the template's order; at least one numbered outcome in `requirements.json`; and no id numbered twice. Each miss is a `structure` finding, and the verdict is `not_ready`: a person fixes the description on GitHub, since this check never rewrites the description. Text the template's checklist would leave out, such as a path, a symbol, a count, a list of the sites a rule applies to, an implementation choice recorded as a decision or a `#<n>` reference, is not a finding, and neither is an issue the template would split. The description is the person's, and planning grounds every such claim. List it under Notes in the report, one line each.
-   - A legacy issue, one without an `## Outcomes` section, is one `structure` finding: "Legacy long-format issue; rewrite it to the short format with issue-write.md's rewrite mode first." The verdict is `not_ready`.
 
 A finding needs evidence: a `path:line`, a sha, a pull request or an issue number. A shape you would prefer, but the issue's own decisions do not require, is not a finding.
 
