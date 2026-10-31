@@ -20,8 +20,6 @@ PR_URL = "https://github.com/o/r/pull/7"
 REVIEW_URL = f"{PR_URL}#pullrequestreview-11"
 COMMENT_URL = f"{PR_URL}#issuecomment-5"
 TABLE_HEADER = "| ID | Location | Rule | Issue | Fix |"
-SESSION = "blueprint_abba01ee"
-COMMENT_HEADER = f"<!-- dovo-review -->\nReviewed commit: `{PR_HEAD}`\nVerdict: APPROVE · Action: none · Round: 2\n"
 
 
 def _load_publisher() -> ModuleType:
@@ -204,18 +202,6 @@ class PublishReviewTests:
             "\n"
             "## dovo-review - round 2\n"
         )
-
-    @pytest.mark.parametrize(
-        ("body", "expected"),
-        [
-            pytest.param(f"{COMMENT_HEADER}Dovo session: `{SESSION}`\n\n## report\n", SESSION, id="four-line-header"),
-            pytest.param(f"{COMMENT_HEADER}\n## report\n", None, id="three-line-header"),
-            pytest.param(f"{COMMENT_HEADER}\nDovo session: `{SESSION}`\n", None, id="session-text-in-report"),
-            pytest.param(f"{COMMENT_HEADER}Dovo session: `{SESSION}`\n\n".replace("\n", "\r\n"), SESSION, id="crlf"),
-        ],
-    )
-    def test_session_from_comment(self, body: str, expected: str | None) -> None:
-        assert PUBLISHER.session_from_comment(body) == expected
 
     @pytest.mark.parametrize("session", [pytest.param("", id="empty"), pytest.param("  ", id="blank")])
     def test_main_rejects_empty_session(
@@ -794,7 +780,7 @@ class PublishReviewTests:
         assert PUBLISHER.parse_finding_marker(line) == expected
 
     @pytest.mark.parametrize(
-        ("reviews", "commit", "expected"),
+        ("reviews", "expected"),
         [
             pytest.param(
                 [
@@ -802,27 +788,17 @@ class PublishReviewTests:
                     _own_review(f"{HEADING}\ny", submitted="2026-10-19T11:00:00Z"),
                     _own_review(f"{HEADING}\nz", url=OLDER_URL, submitted="2026-10-19T09:00:00+00:00"),
                 ],
-                PR_HEAD,
                 REVIEW_URL,
                 id="latest-of-two",
             ),
-            pytest.param(
-                [
-                    _own_review(f"{HEADING}\nx", url=OLDER_URL, submitted="2026-10-19T09:00:00Z"),
-                    _own_review(f"{HEADING}\ny", commit="b" * 40, submitted="2026-10-19T10:00:00Z"),
-                ],
-                None,
-                REVIEW_URL,
-                id="any-commit",
-            ),
-            pytest.param([_own_review(f"{HEADING}\nx", commit="b" * 40)], PR_HEAD, None, id="other-commit"),
-            pytest.param([_own_review("")], PR_HEAD, None, id="not-heading"),
-            pytest.param([_own_review(f"{HEADING}\nx", login="bob")], PR_HEAD, None, id="other-author"),
-            pytest.param([_own_review(f"{HEADING}\nx", submitted=None)], PR_HEAD, None, id="pending"),
+            pytest.param([_own_review(f"{HEADING}\nx", commit="b" * 40)], None, id="other-commit"),
+            pytest.param([_own_review("")], None, id="not-heading"),
+            pytest.param([_own_review(f"{HEADING}\nx", login="bob")], None, id="other-author"),
+            pytest.param([_own_review(f"{HEADING}\nx", submitted=None)], None, id="pending"),
         ],
     )
-    def test_latest_review(self, reviews: list[dict[str, object]], commit: str | None, expected: str | None) -> None:
-        found = PUBLISHER.latest_review(reviews, "me", commit)
+    def test_latest_review(self, reviews: list[dict[str, object]], expected: str | None) -> None:
+        found = PUBLISHER.latest_review(reviews, "me", PR_HEAD)
 
         assert (found or {}).get("url") == expected
 
