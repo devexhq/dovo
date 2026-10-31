@@ -37,6 +37,20 @@ def terminal_result(leaf: ExecutionLeafNode) -> StepResult | None:
     return leaf.attempts[-1].result
 
 
+def scope_results(state: ExecutionStateTree) -> dict[str, StepResult]:
+    """Map step id to terminal result for every top-level step, in tree order.
+
+    Steps inside loops are left out: a condition outside a loop cannot reference them. A skipped step, or one
+    that never ran, has no entry, so a condition that references it does not resolve.
+    """
+    results: dict[str, StepResult] = {}
+    for node in state.nodes:
+        result = terminal_result(node) if node.kind == "step" else None
+        if result is not None:
+            results[node.id] = result
+    return results
+
+
 def iteration_results(iteration: ExecutionIterationRecord) -> dict[str, StepResult]:
     """Map step id to terminal result for every terminal body leaf of iteration that has one, in body order."""
     results: dict[str, StepResult] = {}

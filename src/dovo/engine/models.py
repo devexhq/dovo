@@ -114,6 +114,13 @@ class LoopPromptDecision(StrEnum):
     ABORT = "abort"
 
 
+class SkipCause(StrEnum):
+    """Why a `when` guard skipped a step: the first failing expression was false, or an operand did not resolve."""
+
+    WHEN_FALSE = "when_false"
+    WHEN_UNRESOLVED = "when_unresolved"
+
+
 class StepAction(StrEnum):
     """Orchestration action chosen after a terminal step failure; distinct from user prompt decisions and persisted node transitions."""
 

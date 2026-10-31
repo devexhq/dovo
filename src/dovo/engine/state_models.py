@@ -12,7 +12,7 @@ from dovo.common.timing import TimeSpan
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import InteractionRequest
 from dovo.engine.executors.models import StepResult
-from dovo.engine.models import DefinitionsManifest
+from dovo.engine.models import DefinitionsManifest, SkipCause
 
 
 class NodeState(StrEnum):
@@ -25,9 +25,21 @@ class NodeState(StrEnum):
     FAILED = "failed"
     PAUSED = "paused"
     CANCELLED = "cancelled"
+    SKIPPED = "skipped"
 
 
-TERMINAL_NODE_STATES = frozenset({NodeState.COMPLETED, NodeState.IGNORED, NodeState.FAILED, NodeState.CANCELLED})
+TERMINAL_NODE_STATES = frozenset(
+    {NodeState.COMPLETED, NodeState.IGNORED, NodeState.FAILED, NodeState.CANCELLED, NodeState.SKIPPED}
+)
+
+
+class StepSkip(BaseModel):
+    """The `when` expression that skipped a step or loop, and why it failed."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    cause: SkipCause
+    expression: str
 
 
 class StepAttemptRecord(BaseModel):
@@ -52,6 +64,7 @@ class ExecutionLeafNode(BaseModel):
     state: NodeState = NodeState.PENDING
     attempts: list[StepAttemptRecord] = Field(default_factory=list)
     pending_ask: InteractionRequest | None = None
+    skip: StepSkip | None = None  # Set when a `when` guard skipped the step
 
 
 class ExecutionIterationRecord(BaseModel):
@@ -78,6 +91,7 @@ class ExecutionLoopNode(BaseModel):
     state: NodeState = NodeState.PENDING
     iterations: list[ExecutionIterationRecord] = Field(default_factory=list)
     granted_iterations: int = Field(default=0, ge=0)
+    skip: StepSkip | None = None  # Set when a `when` guard skipped the loop
 
     @property
     def iteration_ceiling(self) -> int:

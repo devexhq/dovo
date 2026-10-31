@@ -40,6 +40,7 @@ from dovo.engine.failure import (
     prompt_failure_decision,
     resolve_terminal_action,
 )
+from dovo.engine.guards import evaluate_guard, guard_skip
 from dovo.engine.loop_events import LoopEventEmitter
 from dovo.engine.loop_policy import LoopDecision, LoopPolicy, LoopTransitionKind
 from dovo.engine.models import (
@@ -58,6 +59,7 @@ from dovo.engine.projection import (
     flatten_step_results,
     iter_leaves,
     iteration_results,
+    scope_results,
     terminal_step_metadata,
 )
 from dovo.engine.state_models import (
@@ -68,6 +70,7 @@ from dovo.engine.state_models import (
     ExecutionStateTree,
     NodeState,
     StepAttemptRecord,
+    StepSkip,
 )
 from dovo.engine.state_store import SessionStateStore, new_iteration
 from dovo.engine.state_validation import validate_loop_structure
@@ -170,7 +173,12 @@ class RunCoordinator:
         )
 
     def _advance_loop(self, loop: ExecutionLoopNode, loop_block: LoopStepBlock) -> NodeTransitionKind:
-        """Orchestrates loop iterations and child steps driven by LoopPolicy."""
+        """Orchestrates loop iterations and child steps driven by LoopPolicy; a failing `when` skips every iteration."""
+        if loop.state is NodeState.PENDING and loop_block.when:
+            skip = self._guard_skip(loop_block.when, None)
+            if skip is not None:
+                return self._skip_node(loop, skip)
+
         events = LoopEventEmitter(loop.id, self._context.session_log_dir, self._observer)
         if loop.state is NodeState.PENDING:
             events.start(loop.max_iterations)
@@ -192,7 +200,16 @@ class RunCoordinator:
         total: int,
         loop: ExecutionLoopNode | None,
     ) -> NodeTransitionKind:
-        """Run or re-enter one live leaf at 1-based idx of total, attributed to the loop's last iteration when loop is set, with the shared attempt, failure-gate, and commit path."""
+        """Run or re-enter one live leaf at 1-based idx of total, attributed to the loop's last iteration when loop is set, with the shared attempt, failure-gate, and commit path.
+
+        A PENDING leaf whose `when` list fails is skipped instead, without an attempt; a leaf that already started
+        never evaluates its guard again.
+        """
+        if leaf.state is NodeState.PENDING and step_def.when:
+            skip = self._guard_skip(step_def.when, loop)
+            if skip is not None:
+                return self._skip_node(leaf, skip)
+
         if step_def.type is StepType.ASK:
             return self._advance_ask(leaf, step_def, index=idx, total=total, loop=loop)
 
@@ -555,6 +572,22 @@ class RunCoordinator:
 
         self._errors.append(f"Step '{node.id}' has no matching definition in the run snapshot.")
         return NodeTransitionKind.FAILED
+
+    def _guard_skip(self, expressions: list[str], loop: ExecutionLoopNode | None) -> StepSkip | None:
+        """Evaluate a `when` list against the run's results, and the current iteration's when loop is set; return its skip or None."""
+        results = scope_results(self._run.state)
+        iteration = loop.iterations[-1] if loop is not None else None
+        if iteration is not None:
+            results.update(iteration_results(iteration))
+        return guard_skip(evaluate_guard(expressions, results, iteration.number if iteration is not None else 1))
+
+    def _skip_node(self, node: ExecutionLeafNode | ExecutionLoopNode, skip: StepSkip) -> NodeTransitionKind:
+        """Persist node as SKIPPED with its skip; a skip counts as success."""
+        node.state = NodeState.SKIPPED
+        node.skip = skip
+        if not self._commit(f"after step '{node.id}' skipped"):
+            return NodeTransitionKind.FAILED
+        return NodeTransitionKind.COMPLETED
 
     def _begin_iteration(
         self, loop: ExecutionLoopNode, iteration: ExecutionIterationRecord, events: LoopEventEmitter

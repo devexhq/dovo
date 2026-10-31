@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
 from dovo.common.models import FailurePolicy
 from dovo.core.interaction import InteractionRequest, RequestOption
 from dovo.engine.executors.models import StepResult
-from dovo.engine.models import DefinitionRef, DefinitionsManifest
+from dovo.engine.models import DefinitionRef, DefinitionsManifest, SkipCause
 from dovo.engine.state_models import (
     ExecutionIterationRecord,
     ExecutionLeafNode,
@@ -16,6 +18,7 @@ from dovo.engine.state_models import (
     ExecutionStateTree,
     NodeState,
     StepAttemptRecord,
+    StepSkip,
 )
 from tests.harness.sessions import SEEDED_SPAN
 
@@ -50,6 +53,47 @@ class ExecutionStateTreeTests:
         restored = ExecutionStateTree.model_validate_json(tree.model_dump_json())
 
         assert restored == tree
+
+    def test_state_saved_before_skips_existed_loads_without_skip_records(self) -> None:
+        saved = {
+            "schema_version": 1,
+            "revision": 3,
+            "manifest": _manifest_dict(),
+            "nodes": [
+                {
+                    "kind": "step",
+                    "id": "setup",
+                    "name": None,
+                    "state": "completed",
+                    "attempts": [],
+                    "pending_ask": None,
+                },
+                {
+                    "kind": "loop",
+                    "id": "fix",
+                    "max_iterations": 2,
+                    "until": ["steps.edit.exit_code == 0"],
+                    "on_max_iterations": "prompt_user",
+                    "state": "pending",
+                    "iterations": [{"number": 1, "state": "pending", "steps": [], "until_passed": None}],
+                    "granted_iterations": 0,
+                },
+            ],
+        }
+
+        tree = ExecutionStateTree.model_validate_json(json.dumps(saved))
+
+        setup, fix = tree.nodes
+        assert isinstance(setup, ExecutionLeafNode) and isinstance(fix, ExecutionLoopNode)
+        assert (setup.state, setup.skip, fix.state, fix.skip) == (NodeState.COMPLETED, None, NodeState.PENDING, None)
+
+    def test_skipped_leaf_round_trips_with_its_skip_record(self) -> None:
+        skip = StepSkip(cause=SkipCause.WHEN_UNRESOLVED, expression="steps.a.exit_code == 0")
+        tree = ExecutionStateTree(
+            manifest=_MANIFEST, nodes=[ExecutionLeafNode(id="b", state=NodeState.SKIPPED, skip=skip)]
+        )
+
+        assert ExecutionStateTree.model_validate_json(tree.model_dump_json()) == tree
 
     def test_unknown_node_kind_raises_validation_error(self) -> None:
         with pytest.raises(ValidationError):

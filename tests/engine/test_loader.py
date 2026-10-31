@@ -244,6 +244,29 @@ class EngineLoaderTests:
         assert projection.lifecycle.status is SessionStatus.FAILED
         assert projection.lifecycle.error_message == "Session interrupted by abnormal process termination"
 
+    @pytest.mark.parametrize(
+        "states",
+        [
+            pytest.param([NodeState.COMPLETED, NodeState.SKIPPED], id="completed_and_skipped"),
+            pytest.param([NodeState.SKIPPED, NodeState.SKIPPED], id="all_skipped"),
+        ],
+    )
+    def test_state_with_only_finished_or_skipped_nodes_loads_and_keeps_the_row_paused(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, states: list[NodeState]
+    ) -> None:
+        _seed(engine_paths, sessions_repo)
+        store = SessionStateStore(sessions_repo, engine_paths, "paused-1")
+        state = store.load([])
+        state.nodes[0].state, state.nodes[1].state = states
+        store.save(state, [])
+
+        _, loaded, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
+
+        assert [node.state for node in loaded.nodes] == states
+        row = sessions_repo.get("paused-1")
+        assert row is not None
+        assert row.status is SessionStatus.PAUSED
+
     def test_worktree_run_with_existing_directory_loads(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:

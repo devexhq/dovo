@@ -24,10 +24,15 @@ class AssertionResult(BaseResult):
 
 
 class ConditionEvaluationResult(BaseResult):
-    """Result of evaluating a single until condition expression."""
+    """Result of evaluating one condition expression of a loop's until or a step's when.
+
+    resolved is False when an operand that references a step found no value: the step was skipped or has not run,
+    or its result lacks the field or output key. Such an expression never passes. A JSON null output is resolved.
+    """
 
     expression: str
     passed: bool
+    resolved: bool = True
     actual: Any = None
     expected: Any = None
     detail: str = ""

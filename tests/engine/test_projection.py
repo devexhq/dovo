@@ -10,6 +10,7 @@ from dovo.engine.projection import (
     flatten_step_results,
     iter_leaves,
     iteration_results,
+    scope_results,
     terminal_step_metadata,
 )
 from dovo.engine.state_models import (
@@ -137,6 +138,22 @@ class ProjectionIterLeavesTests:
         tree = _tree(_leaf("a", NodeState.PENDING), loop, _leaf("z", NodeState.PENDING))
 
         assert [leaf.id for leaf in iter_leaves(tree)] == ["a", "s1", "s2", "s1", "s2", "z"]
+
+
+class ScopeResultsTests:
+    def test_only_top_level_terminal_results_are_mapped_and_loops_and_skips_are_left_out(self) -> None:
+        result_a = _result("a")
+        loop = ExecutionLoopNode(
+            id="fix",
+            max_iterations=1,
+            state=NodeState.COMPLETED,
+            iterations=[
+                ExecutionIterationRecord(number=1, steps=[_leaf("edit", NodeState.COMPLETED, [_result("edit")])])
+            ],
+        )
+        tree = _tree(_leaf("a", NodeState.COMPLETED, [result_a]), _leaf("b", NodeState.SKIPPED), loop)
+
+        assert list(scope_results(tree).items()) == [("a", result_a)]
 
 
 class IterationResultsTests:
