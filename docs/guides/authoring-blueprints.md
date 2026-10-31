@@ -108,6 +108,8 @@ dovo blueprint create --name fix-issue
 
 This writes a template to `.dovo/catalog/blueprints/<name>.yml`.
 
+Check it with `dovo blueprint validate <name>`. `dovo run` applies the same checks before it creates a session or runs any step: a blueprint that fails them does not run, and you see the same errors, warnings and fixes that `dovo blueprint validate` prints.
+
 ---
 
 ## Next Steps

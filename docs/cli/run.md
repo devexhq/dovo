@@ -52,7 +52,7 @@ The `path` of a `cleanup` event (including with `--format json`) is relative to 
 ### Behavior
 
 1. **Initialization**: When the workspace has no `.dovo/project.json`, `dovo run` initializes it first, as `dovo init` would, and prints nothing when that succeeds. When it fails (for example outside a Git repository, or in a directory whose `.dovo` is `DOVO_HOME`), it prints the same error and fix as `dovo init` and exits `1` without running the blueprint. It first undoes what the failed attempt wrote, leaving `.dovo/` as it was before, so the next `dovo run` tries again. Unlike `dovo run`, `dovo init` leaves a failed attempt's files in place.
-2. **Resolution**: Looks up `<name>` in the blueprint catalog.
+2. **Resolution and validation**: Looks up `<name>` in the blueprint catalog and checks the blueprint it finds exactly as [`dovo blueprint validate <name>`](blueprint.md#dovo-blueprint-validate) does: the same checks, `error_code`, messages, order, warnings and remediations. A file in the repository named like the blueprint is never what gets checked. When validation reports errors, `dovo run` prints a `Blueprint Invalid` panel and exits `1` before it creates a session or a worktree, so no step runs (see [Validation failures](#validation-failures)). Each validation warning prints once, as `Warning: <text>`, before the first step, and the run continues.
 3. **Execution**: Runs the blueprint. Before it runs, `dovo run` settles sessions left `running` by a `dovo` process that no longer exists: it marks one `paused` when it saved its progress, its worktree still exists if it used one, and none of its processes is still running, and marks every other one `failed`. It adds `Paused 1 interrupted session; continue it with 'dovo resume <session_id>'.`, `Marked 1 interrupted session failed (session_id: <id>).`, or both sentences, paused first, to its warnings. If another `dovo` process holds the workspace lock until the wait times out, `dovo run` stops with a workspace lock timeout error and exits 1.
 4. **Agent steps**: An agent step sends its `prompt` to the provider and applies any change inside the worktree. Under `--no-worktree`, or a resumed in-place run, it fails with `Agent steps require an active git worktree.` Its stdout is one JSON object (`status`, `summary`, `unfixable_reason`, `touched_files`); see [Agent Providers](../guides/agent-providers.md).
 5. **Secret masking**: Streamed step output, the per-step capture, and failure messages mask secret values: environment variables whose names end in `_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD`, or `_AUTH` (values of 6+ characters), matching keys in the repository `.env`, the step's own `env:` entries under those same name suffixes and 6+ character rule, and common credential formats (GitHub tokens, Anthropic keys, AWS access key IDs). Names listed under `environment.sensitive_variables` in `.dovo/config.json` are also masked with no length floor, including when set only in a step's `env:`; see [`dovo config`](config.md). A masked value prints as `[REDACTED:<NAME>]` or `[REDACTED]`. Assertions still evaluate the raw output.
@@ -60,9 +60,31 @@ The `path` of a `cleanup` event (including with `--format json`) is relative to 
 7. **Diagnostic logs**: When a run hits an unexpected error, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record and, in terminal output, prints one `Details logged: <path> (event <event_id>)` line per record after the run's warnings and outcome. This covers loading the session record, saving the run's state or status, saving its diff, creating, applying (with `--auto-apply`) or removing its worktree, reconciling interrupted sessions, loading the blueprint (including snapshotting its definitions), and a step launching its process, reading its output, calling its agent provider, publishing its artifacts, resolving its `uses:` step, checking an agent's edit or preparing its private scratch, including when the operating system refuses to create that scratch. The run's errors and warnings, each step's error and the saved session hold the message alone, and a recorded step failure adds no `Details logged:` warning; the step's own warnings, such as a failed optional artifact publish, still appear. When loading the blueprint or the run itself hits any other unexpected error, the run fails with `Unexpected error during engine.run: <error>`. `--format json` output carries no reference to the record. When checking an agent's edit fails, the rejected edit is saved and discarded, or left in the worktree when it cannot be saved.
 8. **Exit Codes**:
    - `0`: Successful run or paused run (with run state saved).
-   - `1`: Failed run, or a failed automatic initialization.
+   - `1`: Failed run, a blueprint that fails validation, or a failed automatic initialization.
    - Interrupted with `SIGINT` (Ctrl-C): `dovo run` finishes its cleanup, then ends by the same signal, so shells report `130` and a shell loop stops. A run interrupted while a step runs stops the step, is recorded `cancelled` and prints its outcome first; its worktree is removed unless `--keep` was given. A run interrupted at a `prompt_user` failure prompt, an `ask` prompt or a loop `max_iterations` prompt stays paused.
    - Interrupted with `SIGTERM`: the same, ending by `SIGTERM` (shells report `143`).
+
+### Validation failures
+
+A blueprint with two steps that share the id `a` stops before any step:
+
+```text
+Running blueprint 'deploy'...
+╭──────────────────────────── Blueprint Invalid ─────────────────────────────╮
+│ Blueprint 'deploy' failed validation; no steps ran.                         │
+│ - Step id 'a' is used by more than one step.                                │
+│ Fix:                                                                        │
+│ - Resolve: Step id 'a' is used by more than one step.                       │
+╰─────────────────────────────────────────────────────────────────────────────╯
+```
+
+A schema error names the step by its position in `steps`, as in `- steps.0: Value error, Agent steps must specify a non-empty 'prompt' string.`
+
+With `--format json`, each validation warning is a `WarningEvent` before the first step, and a failed validation is one `BlueprintInvalidEvent` whose payload holds `blueprint`, `error_code`, `errors` (one entry per error) and `remediations`, the same ones `dovo blueprint validate` reports:
+
+```json
+{"event_type": "BlueprintInvalidEvent", "payload": {"blueprint": "deploy", "error_code": "CATALOG_SCHEMA_INVALID", "errors": ["Step id 'a' is used by more than one step."], "remediations": [{"message": "Resolve: Step id 'a' is used by more than one step.", "command": null}]}}
+```
 
 ## Examples
 

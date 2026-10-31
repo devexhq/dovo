@@ -6,6 +6,7 @@ from dovo.cli.context import CliContext
 from dovo.cli.run.observer import resolve_cli_observer
 from dovo.cli.run.prompter import DispatcherFailurePrompter, DispatcherInteractionPrompter, paused_prompt_message
 from dovo.cli.ui import (
+    BlueprintInvalidEvent,
     DiagnosticsEvent,
     ErrorPanelEvent,
     MessageEvent,
@@ -24,6 +25,22 @@ def _first_error(result: BlueprintRunResult, fallback: str) -> str:
     return result.errors[0] if result.errors else fallback
 
 
+def dispatch_blueprint_invalid(result: BlueprintRunResult) -> bool:
+    """Dispatch the Blueprint Invalid event and return True when validation stopped the run before any step."""
+    if result.invalid_blueprint is None or result.error_code is None:
+        return False
+
+    ui_dispatcher.dispatch(
+        BlueprintInvalidEvent(
+            blueprint=result.invalid_blueprint,
+            error_code=result.error_code,
+            errors=list(result.errors),
+            remediations=list(result.remediations),
+        )
+    )
+    return True
+
+
 def _dispatch_paused_prompt(result: BlueprintRunResult, record: SessionRecord | None, *, non_interactive: bool) -> bool:
     """Dispatch the paused-prompt hint and return True when the run stopped at an unanswered ask."""
     if result.paused_prompt_id is None or record is None:
@@ -39,6 +56,8 @@ def _dispatch_run_outcome(
     record: SessionRecord | None,
 ) -> None:
     """Dispatch the appropriate UI event for a completed blueprint run."""
+    if dispatch_blueprint_invalid(result):
+        return
     if result.ok and record is not None:
         ui_dispatcher.dispatch(
             RunSuccessEvent(

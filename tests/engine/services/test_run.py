@@ -14,7 +14,8 @@ from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.catalog import Catalog
-from dovo.core.catalog.definitions import BlueprintDefinition
+from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
+from dovo.core.catalog.models import CatalogItemType
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions import Reconciliation
@@ -27,7 +28,7 @@ from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.lock import time_out_first_lock
-from tests.harness.sessions import fail_reconciliation_list
+from tests.harness.sessions import RecordingRunObserver, fail_reconciliation_list
 
 
 class BlueprintRunServiceExecuteTests:
@@ -137,6 +138,92 @@ class BlueprintRunServiceExecuteTests:
 
 
 class BlueprintRunServiceLoadTests:
+    def test_invalid_blueprint_fails_before_any_session_with_every_validate_error(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        steps: list[dict[str, object]] = [
+            {"id": "a", "run": "echo one"},
+            {"id": "a", "run": "echo two"},
+            {"id": "s", "type": "script", "script_path": "../escape.sh"},
+        ]
+        write_runnable_blueprint(engine_paths.root_dir, key="deploy", steps=steps)
+        observer = RecordingRunObserver()
+
+        result = BlueprintRunService(
+            name="deploy",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+            observer=observer,
+        ).execute()
+
+        validated = Catalog(engine_paths).validate(
+            "deploy", item_type=CatalogItemType.BLUEPRINT, blueprint_cls=BlueprintDefinition, step_cls=StepDefinition
+        )
+        assert (result.invalid_blueprint, result.error_code) == ("deploy", ErrorCode.CATALOG_SCHEMA_INVALID)
+        assert (
+            result.errors
+            == validated.errors
+            == [
+                "Step id 'a' is used by more than one step.",
+                "Step 's' script_path '../escape.sh' is not a safe relative path.",
+            ]
+        )
+        assert result.remediations == validated.remediations
+        assert observer.calls == [("validation_warnings", [])]
+        assert sessions_repo.list() == []
+        assert not engine_paths.worktrees_dir.exists() or list(engine_paths.worktrees_dir.iterdir()) == []
+
+    def test_validation_warnings_reach_the_observer_before_the_first_step_and_not_the_result(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
+    ) -> None:
+        write_runnable_blueprint(
+            engine_paths.root_dir, key="build", steps=[{"id": "build", "type": "script", "script_path": "build.sh"}]
+        )
+        stub_drive_run(None)
+        observer = RecordingRunObserver()
+
+        result = BlueprintRunService(
+            name="build",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            no_worktree=True,
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+            observer=observer,
+        ).execute()
+
+        assert result.ok
+        assert observer.calls == [
+            (
+                "validation_warnings",
+                ["Step 'build' script_path 'build.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
+            )
+        ]
+        assert result.warnings == []
+
+    def test_file_named_like_the_blueprint_is_not_what_gets_validated(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
+    ) -> None:
+        write_runnable_blueprint(engine_paths.root_dir, key="deploy", steps=[{"id": "a", "run": "true"}])
+        (engine_paths.root_dir / "deploy").write_text("steps: [{id: a, run: x}, {id: a, run: y}]\n", encoding="utf-8")
+        stub_drive_run(None)
+
+        result = BlueprintRunService(
+            name="deploy",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            no_worktree=True,
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        ).execute()
+
+        assert (result.ok, result.invalid_blueprint, result.errors) == (True, None, [])
+
     def test_unexpected_definition_error_is_recorded_under_engine_run(
         self,
         engine_paths: WorkspacePaths,

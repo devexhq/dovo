@@ -3,6 +3,7 @@
 from dovo.cli.ui.dispatcher import UiDispatcher, ui_dispatcher
 from dovo.cli.ui.events import (
     AgentProgressEvent,
+    BlueprintInvalidEvent,
     DiagnosticsEvent,
     ErrorPanelEvent,
     LockWaitEvent,
@@ -20,6 +21,7 @@ from dovo.cli.ui.tail import CollapsingTailDisplay
 
 __all__ = [
     "AgentProgressEvent",
+    "BlueprintInvalidEvent",
     "CollapsingTailDisplay",
     "DiagnosticsEvent",
     "ErrorPanelEvent",

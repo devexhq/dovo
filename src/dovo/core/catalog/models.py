@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -121,11 +121,16 @@ class CatalogScan:
 
 @dataclass(frozen=True, slots=True)
 class CatalogResolution:
-    """The highest-precedence record matching a key, its validated definition when one was requested, and every match."""
+    """The highest-precedence record matching a key, its checked definition when one was requested, and every match.
+
+    warnings holds the duplicate-name warning when the winner's tier has more than one match, followed by the
+    definition's validation warnings when a definition was requested.
+    """
 
     record: CatalogRecord
     definition: object | None
     matches: tuple[CatalogRecord, ...]
+    warnings: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,15 +140,6 @@ class SeedSummary:
     created_files: tuple[Path, ...]
     skipped_existing_files: tuple[Path, ...]
     overwritten_files: tuple[Path, ...]
-
-
-class YamlParseOutcome(BaseModel):
-    """Outcome of reading and parsing a YAML catalog blueprint file."""
-
-    model_config = {"extra": "forbid", "strict": True}
-
-    parsed_data: dict[str, Any] | None = None
-    errors: list[str] = Field(default_factory=list)
 
 
 class CatalogListResult(BaseResult):
