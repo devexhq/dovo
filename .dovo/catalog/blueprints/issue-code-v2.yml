@@ -13,7 +13,7 @@
 version: 1
 name: issue-code-v2
 id: issue-code-v2
-description: Pick the next ready slice of an issue's work plan, holding for a person while every slice waits on one, load the plan from the session that wrote it, label the issue the slice is worked on (the slice's own issue when it has one, otherwise the issue itself) with the slice's size, rewrite that issue to the short format when it is a legacy one and a person approves the draft, keeping the old description in a comment, ready that issue unless it is labelled dovo:ready for its description as it is, holding for a person and re-checking it while it is not ready, plan the slice's phases just in time and review and answer that plan, break it into one file per phase and approve both, post its decisions to that issue (or, for a slice issue-plan-v2 already phased and approved, load that plan and its phase files and pass through every planning step), claim the slice, implement the slice one phase per agent session and commit each phase once it passes the quality gate, review and fix blockers and warnings until none remain or only a person can settle them, report how the slice departed from the plan, then open a PR that references the issue, or closes it when the slice is the last, post the final review, record the slice as landed in the work plan and correct the PR's closing lines when the plan as landed changed them
+description: Plan, build and review the next slice of an issue's work plan and open its pull request.
 summary: Next slice of a work plan to a reviewed PR
 
 inputs:

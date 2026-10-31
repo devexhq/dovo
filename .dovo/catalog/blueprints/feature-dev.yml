@@ -1,7 +1,7 @@
 version: 1
 name: feature-dev
 id: feature-dev
-description: Check a GitHub issue is labelled dovo:ready, plan it, review and challenge the plan once and fold in every finding and fold-routed challenge, answer its open questions, walk the approver through it, implement it after approval, review and fix blockers and warnings until none remain or only a person can settle them, then open a PR and post the final review to it
+description: Take a ready GitHub issue through planning, implementation and review to a pull request, with human gates.
 summary: Issue to reviewed PR with human gates
 
 inputs:

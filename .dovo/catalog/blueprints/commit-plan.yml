@@ -1,7 +1,7 @@
 version: 1
 name: commit-plan
 id: commit-plan
-description: Copy plan from .agentic/plan.md into worktree-plans repository and commit/push upstream
+description: Commit the plan in .agentic/plan.md to the worktree-plans repository and push it.
 summary: Commit and push plan to worktree-plans repo
 use_worktree: false
 
