@@ -1320,12 +1320,12 @@ class ReadyTests:
                 id="description-changed",
             ),
             pytest.param(
-                _row("S1", ready_body_sha=BODY_SHA, child=1300),
+                _row("S1", child=1300),
                 False,
-                BODY_SHA,
-                "false",
-                "Issue 1300 is not labelled dovo:ready; checking it.",
-                id="own-issue-not-labelled",
+                "0" * 64,
+                "true",
+                f"Issue 1300 is S1's sub-issue, ready from #{EPIC}'s plan; not checking it.",
+                id="own-sub-issue",
             ),
         ],
     )
@@ -1351,6 +1351,25 @@ class ReadyTests:
 
         assert output.read_text(encoding="utf-8") == f"ready={ready}\n"
         assert capsys.readouterr().out == f"{reason}\n"
+
+    def test_a_slice_start_that_creates_a_sub_issue_needs_no_ready_check(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2"))}, {EPIC: PARENT_BODY})
+        fake.labels[EPIC] = ["dovo:ready"]
+        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": [], "decisions": []})
+
+        assert _main(monkeypatch, fake, "start", "--issue", str(EPIC), "--slice", "S2", "--plan", plan) == 0
+        output.unlink()
+        capsys.readouterr()
+        argv = ("ready-state", "--issue", str(EPIC), "--slice", "S2", "--body-sha", "0" * 64)
+        assert _main(monkeypatch, fake, *argv) == 0
+
+        assert output.read_text(encoding="utf-8") == "ready=true\n"
+        assert capsys.readouterr().out == f"Issue 1300 is S2's sub-issue, ready from #{EPIC}'s plan; not checking it.\n"
+        assert (len(fake.created), fake.labels[1300], fake.removed_labels) == (1, [], [])
 
     def test_ready_records_the_checked_description_on_the_slices_row(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

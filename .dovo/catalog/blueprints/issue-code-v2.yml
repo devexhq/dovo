@@ -174,13 +174,15 @@ steps:
     timeout_seconds: 120
 
   # --- The ready check's gate steps, run on the issue the slice is worked on. A
-  # step cannot be skipped, so each of them passes straight through when that
-  # issue is already labelled dovo:ready for its description as it is: the
-  # check that labelled it recorded the description's body_sha on the slice's
-  # work plan row. A new sub-issue has no such record, so it is checked. ---
+  # step cannot be skipped, so each of them passes straight through, with no
+  # prompt shown, when that issue needs no check: a slice's own sub-issue,
+  # which is ready from the issue's approved plan, or the issue itself while
+  # it is labelled dovo:ready for its description as it is (the check that
+  # labelled it recorded the description's body_sha on the slice's work plan
+  # row). ---
 
   - id: ready-state
-    name: Check whether the slice's issue is labelled dovo:ready for its description
+    name: Check whether the slice's issue needs a ready check
     run: |
       set -eu
       sha=$(uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py body-sha --issue {{ steps.start.outputs.issue }})
@@ -216,10 +218,10 @@ steps:
         name: Re-ground and re-check the slice's issue
         type: agent
         prompt: |
-          Issue already labelled dovo:ready for its description as it is: {{ steps.ready-state.outputs.ready }}
+          Issue ready without a check: {{ steps.ready-state.outputs.ready }}
 
           If that is true, write only .agentic/issue-ready.md, containing the one line
-          "Issue #{{ steps.start.outputs.issue }} is already labelled dovo:ready for its description; not re-checked.",
+          "Issue #{{ steps.start.outputs.issue }} needs no ready check; not checked.",
           and stop. Otherwise run:
 
           Follow .dovo/catalog/prompts/sdlc/v2/issue-ready.md for issue {{ steps.start.outputs.issue }}, the issue issue-code-v2 works slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }} on. The slice's `outcomes` in .agentic/epic-plan.json are the outcomes it delivers. Write .agentic/issue-ready.md and .agentic/issue-ready.json.
@@ -234,15 +236,17 @@ steps:
       # Any verdict but ready means the current body is stale, so a label left
       # from an earlier run is removed and never vouches for it; apply adds it
       # back. Lists what a person must settle: every finding of a not_ready
-      # verdict, and nothing otherwise.
+      # verdict, and nothing otherwise. Also lists the one option that
+      # approves the label for a ready verdict, and none otherwise.
       - id: gate
         name: List what a person must settle on the slice's issue
         run: |
           set -eu
           if [ "{{ steps.ready-state.outputs.ready }}" = "true" ]; then
-            echo "Already labelled dovo:ready for its description."
-            echo "verdict=labelled" >> "$DOVO_OUTPUT"
+            echo "Issue {{ steps.start.outputs.issue }} needs no ready check."
+            echo "verdict=unchecked" >> "$DOVO_OUTPUT"
             printf '{"holds": []}\n' > .agentic/issue-hold.json
+            printf '{"approve": []}\n' > .agentic/issue-approve.json
             exit 0
           fi
           verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
@@ -262,11 +266,14 @@ steps:
           if report["verdict"] == "not_ready" and not holds:
               holds = [{"id": "report", "label": "The check is not_ready but lists no finding; read its report."}]
           json.dump({"holds": holds}, open(".agentic/issue-hold.json", "w"), indent=2)
+          approve = [{"id": "approve", "label": "Label the issue dovo:ready"}] if report["verdict"] == "ready" else []
+          json.dump({"approve": approve}, open(".agentic/issue-approve.json", "w"), indent=2)
           PY
           if [ "$verdict" = "not_ready" ]; then cat .agentic/issue-ready.md; fi
         timeout_seconds: 120
         artifacts:
           - { name: issue-hold, path: .agentic/issue-hold.json }
+          - { name: issue-approve, path: .agentic/issue-approve.json }
           - { name: issue-ready-report, path: .agentic/issue-ready.md }
 
       # No prompt is shown when the gate lists nothing.
@@ -297,18 +304,25 @@ steps:
         timeout_seconds: 60
         on_failure: continue
 
-  # Asked on every run, including one where the issue is already labelled for
-  # its description, since a step cannot be skipped; denying stops the run with
-  # the issue untouched.
+  # No prompt is shown when the issue needed no check, so a slice's own
+  # sub-issue asks for no approval; selecting nothing stops the run with the
+  # issue untouched.
   - id: approve
     name: Approve the label
     type: ask
     interaction:
-      mode: confirm
+      mode: multiselect
       message: >-
-        Label issue {{ steps.start.outputs.issue }} dovo:ready? Already labelled for its description:
-        {{ steps.ready-state.outputs.ready }} (when true, nothing is applied).
-      artifact: issue-ready
+        Issue {{ steps.start.outputs.issue }}, which slice {{ steps.next.outputs.slice }} is worked on,
+        is ready to plan; the check's report is attached. Select the option to label it dovo:ready;
+        select nothing to stop the run with the issue untouched.
+      artifact: issue-ready-report
+      options_from:
+        artifact: issue-approve
+        file: .agentic/issue-approve.json
+        items_path: approve
+        value_field: id
+        label_field: label
 
   # A command step: the label runs exactly as approved, with the host's gh
   # credentials, and no comment is posted. `unchanged` refuses, before the
@@ -320,7 +334,11 @@ steps:
     name: Label the slice's issue and record the check in the work plan
     run: |
       set -eu
-      [ "{{ steps.ready-state.outputs.ready }}" = "true" ] && { echo "Already labelled dovo:ready for its description; nothing to apply."; exit 0; }
+      [ "{{ steps.ready-state.outputs.ready }}" = "true" ] && { echo "Issue {{ steps.start.outputs.issue }} needs no ready check; nothing to apply."; exit 0; }
+      case '{{ steps.approve.outputs.selected }}' in
+        *'"approve"'*) ;;
+        *) echo "The label was not approved; issue {{ steps.start.outputs.issue }} is left unlabelled."; exit 1 ;;
+      esac
       verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
       checked=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json")).get("body_sha", ""))')
       if [ "$verdict" != "ready" ]; then
