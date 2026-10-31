@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import BlueprintDefinition, BlueprintStep
 from dovo.core.catalog.models import CatalogItemType
 from dovo.core.inputs import InputResolveResult, ParameterInput, resolve_inputs
 
@@ -73,7 +73,7 @@ class Blueprint:
         return self._warnings
 
     @property
-    def steps(self) -> list[StepDefinition | LoopStepBlock]:
+    def steps(self) -> list[BlueprintStep]:
         """Return the live steps list from the wrapped document."""
         return self._instance.steps
 

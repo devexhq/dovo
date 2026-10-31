@@ -36,6 +36,17 @@ class StepResolutionTests:
         assert step.command == "npm test"
         assert step.env == {"CI": "1"}
 
+    def test_run_shorthand_and_uses_merge_keep_the_blueprint_step_when_guard(self) -> None:
+        guard = ["steps.check.exit_code == 0"]
+        base = StepDefinition(id="base", type=StepType.COMMAND, command="echo base")
+        using = StepDefinition(id="use-it", uses="base", when=guard)
+
+        merged = merge_uses_step(using, base)
+        expanded = resolve_step_definition({"id": "test", "run": "npm test", "when": guard})
+
+        assert merged is not None
+        assert (merged.when, expanded.when) == (guard, guard)
+
     def test_step_loader_expands_run_shorthand_preserving_artifacts(self) -> None:
         raw = {"id": "test", "run": "make plan", "artifacts": [{"name": "plan", "path": "PLAN.md"}]}
 

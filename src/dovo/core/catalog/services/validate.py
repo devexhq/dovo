@@ -16,7 +16,8 @@ from pydantic_core import ErrorDetails
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
 from dovo.common.models import Remediation
-from dovo.core.catalog.definitions.blueprint import STEP_KIND_TAGS
+from dovo.core.catalog.definitions.blueprint import STEP_KIND_TAGS, BlueprintDefinition
+from dovo.core.catalog.definitions.scopes import condition_reference_errors
 from dovo.core.catalog.exceptions import CatalogError, CatalogValidateFindings
 from dovo.core.catalog.models import CatalogItemType
 
@@ -194,13 +195,14 @@ def _format_pydantic_error(error: ErrorDetails) -> str:
 
 
 def _iter_all_steps(steps: list[object]) -> list[object]:
-    """Flatten top-level steps and any nested loop 'do' steps into one list, duck-typed."""
+    """Flatten top-level entries with the steps of each loop's 'do' and each if block's 'then' and 'else', duck-typed."""
     flattened: list[object] = []
     for step in steps:
         flattened.append(step)
-        nested = getattr(step, "do", None)
-        if isinstance(nested, list):
-            flattened.extend(_iter_all_steps(nested))
+        for list_name in ("do", "then", "else_"):
+            nested = getattr(step, list_name, None)
+            if isinstance(nested, list):
+                flattened.extend(_iter_all_steps(nested))
     return flattened
 
 
@@ -290,16 +292,29 @@ def _audit_script_paths(flat_steps: list[object], repo_root: Path) -> tuple[list
     return errors, warnings
 
 
+def _audit_catalog_step_when(definition: object) -> list[str]:
+    """Return an error when a step catalog file sets 'when', whose step references only a blueprint can check."""
+    if getattr(definition, "when", None) is None:
+        return []
+    step_id = getattr(definition, "id", "")
+    return [
+        f"Step '{step_id}' sets 'when' in a step catalog file; set 'when' on the blueprint step that uses it instead."
+    ]
+
+
 def _semantic_findings(item_type: str, definition: object, repo_root: Path) -> tuple[list[str], list[str]]:
     """Return (errors, warnings) from the semantic audits appropriate to item_type."""
     if item_type == CatalogItemType.STEP.value:
-        return _audit_script_paths([definition], repo_root)
+        step_errors, step_warnings = _audit_script_paths([definition], repo_root)
+        return [*_audit_catalog_step_when(definition), *step_errors], step_warnings
 
     steps = getattr(definition, "steps", None) or []
     inputs = getattr(definition, "inputs", None) or {}
     flat_steps = _iter_all_steps(steps)
 
     errors = [*_audit_duplicate_step_ids(flat_steps), *_audit_duplicate_input_aliases(inputs)]
+    if isinstance(definition, BlueprintDefinition):
+        errors.extend(condition_reference_errors(definition.steps))
     script_errors, warnings = _audit_script_paths(flat_steps, repo_root)
     errors.extend(script_errors)
 

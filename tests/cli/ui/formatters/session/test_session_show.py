@@ -166,6 +166,21 @@ RUN_WITH_STEPS = FormatterCase(
     ],
 )
 
+_GUARDED_STEPS = [
+    StepRunSummary(kind="step", step_id="fold", state="skipped", attempts=0, skip_cause="when_false"),
+    StepRunSummary(kind="if", step_id="route", state="completed", branch="else"),
+    StepRunSummary(
+        kind="step", step_id="ship", state="completed", attempts=1, exit_code=0, duration_seconds=1.0, if_id="route"
+    ),
+]
+RUN_WITH_GUARDED_STEPS = FormatterCase(
+    data=HistoryShowResult(
+        status=HistoryShowStatus.OK, session_id="sess-12345678", session=session_record(), steps=_GUARDED_STEPS
+    ),
+    view=_make_session_show_view(steps=_GUARDED_STEPS),
+    render_expectations=["fold", "skipped (when_false)", "route", "completed (else)", "ship"],
+)
+
 _NO_STEP_DATA_WARNING = "No step data recorded for this session."
 RUN_WITHOUT_STEP_DATA = FormatterCase(
     data=HistoryShowResult(
@@ -219,6 +234,7 @@ HISTORY_SHOW_CASES = [
     pytest.param(PAUSED_RUN_WITH_ERROR, id="paused_run_with_error"),
     pytest.param(RUN_WITH_LOGS, id="run_with_logs"),
     pytest.param(RUN_WITH_STEPS, id="run_with_steps"),
+    pytest.param(RUN_WITH_GUARDED_STEPS, id="run_with_guarded_steps"),
     pytest.param(RUN_WITHOUT_STEP_DATA, id="run_without_step_data"),
     pytest.param(RUN_WITH_STEP_READ_FAILURE, id="run_with_step_read_failure"),
     pytest.param(NOT_FOUND, id="not_found"),
@@ -257,6 +273,9 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                     "loop_id": None,
                     "iteration": None,
                     "iterations": None,
+                    "skip_cause": None,
+                    "branch": None,
+                    "if_id": None,
                 },
                 {
                     "kind": "step",
@@ -271,6 +290,9 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                     "loop_id": None,
                     "iteration": None,
                     "iterations": None,
+                    "skip_cause": None,
+                    "branch": None,
+                    "if_id": None,
                 },
                 {
                     "kind": "loop",
@@ -285,6 +307,9 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                     "loop_id": None,
                     "iteration": None,
                     "iterations": 1,
+                    "skip_cause": None,
+                    "branch": None,
+                    "if_id": None,
                 },
                 {
                     "kind": "step",
@@ -299,6 +324,9 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                     "loop_id": "build-loop",
                     "iteration": 1,
                     "iterations": None,
+                    "skip_cause": None,
+                    "branch": None,
+                    "if_id": None,
                 },
                 {
                     "kind": "step",
@@ -313,6 +341,9 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                     "loop_id": "build-loop",
                     "iteration": 1,
                     "iterations": None,
+                    "skip_cause": None,
+                    "branch": None,
+                    "if_id": None,
                 },
             ],
             "worktree_kept": None,
@@ -323,6 +354,85 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "diagnostics": [],
         },
         id="run_with_steps",
+    ),
+    pytest.param(
+        RUN_WITH_GUARDED_STEPS,
+        {
+            "status": "ok",
+            "session_id": "sess-12345678",
+            "session": {
+                "session_id": "sess-12345678",
+                "blueprint_name": "deploy-blueprint",
+                "status": "completed",
+                "branch_name": "feature/test",
+                "started_at": "2026-08-19 01:00:00",
+                "completed_at": "2026-08-19 01:00:10",
+                "duration_seconds": 10.0,
+                "error_message": None,
+            },
+            "log_files": [],
+            "log_snippet": [],
+            "steps": [
+                {
+                    "kind": "step",
+                    "step_id": "fold",
+                    "name": None,
+                    "state": "skipped",
+                    "attempts": 0,
+                    "exit_code": None,
+                    "duration_seconds": None,
+                    "error_message": None,
+                    "rejected_patch_path": None,
+                    "loop_id": None,
+                    "iteration": None,
+                    "iterations": None,
+                    "skip_cause": "when_false",
+                    "branch": None,
+                    "if_id": None,
+                },
+                {
+                    "kind": "if",
+                    "step_id": "route",
+                    "name": None,
+                    "state": "completed",
+                    "attempts": None,
+                    "exit_code": None,
+                    "duration_seconds": None,
+                    "error_message": None,
+                    "rejected_patch_path": None,
+                    "loop_id": None,
+                    "iteration": None,
+                    "iterations": None,
+                    "skip_cause": None,
+                    "branch": "else",
+                    "if_id": None,
+                },
+                {
+                    "kind": "step",
+                    "step_id": "ship",
+                    "name": None,
+                    "state": "completed",
+                    "attempts": 1,
+                    "exit_code": 0,
+                    "duration_seconds": 1.0,
+                    "error_message": None,
+                    "rejected_patch_path": None,
+                    "loop_id": None,
+                    "iteration": None,
+                    "iterations": None,
+                    "skip_cause": None,
+                    "branch": None,
+                    "if_id": "route",
+                },
+            ],
+            "worktree_kept": None,
+            "worktree_path": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
+        },
+        id="run_with_guarded_steps",
     ),
     pytest.param(
         RUN_WITH_STEP_READ_FAILURE,

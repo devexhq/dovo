@@ -17,7 +17,7 @@ from dovo.common.models import BaseResult, Remediation
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.artifacts.store import ArtifactStore
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import BlueprintStep, LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import InteractionAnswer, InteractionRequest
@@ -112,6 +112,41 @@ class LoopPromptDecision(StrEnum):
     GRANT = "grant"
     CONTINUE = "continue"
     ABORT = "abort"
+
+
+class SkipCause(StrEnum):
+    """Why a `when` guard skipped a step: the first failing expression was false, or an operand did not resolve."""
+
+    WHEN_FALSE = "when_false"
+    WHEN_UNRESOLVED = "when_unresolved"
+
+
+class IfBranch(StrEnum):
+    """Branch an `if` block chose: `then`, `else`, or `none` when its condition failed and it has no `else`."""
+
+    THEN = "then"
+    ELSE = "else"
+    NONE = "none"
+
+
+@dataclass(frozen=True, slots=True)
+class StepSkipNotice:
+    """A step or loop a `when` guard skipped, with the first failing expression and why it failed."""
+
+    step_id: str
+    name: str | None
+    cause: SkipCause
+    expression: str
+
+
+@dataclass(frozen=True, slots=True)
+class IfBranchNotice:
+    """An `if` block that started, the branch it chose and every condition it evaluated, in the order written."""
+
+    block_id: str
+    name: str | None
+    branch: IfBranch
+    conditions: tuple[ConditionEvaluationResult, ...]
 
 
 class StepAction(StrEnum):
@@ -261,6 +296,14 @@ class RunObserver(Protocol):
         """Called immediately after a step finishes."""
         ...
 
+    def on_step_skipped(self, idx: int, total: int, step: StepSkipNotice) -> None:
+        """Called when a `when` guard skips a step or loop, instead of on_step_start and on_step_done."""
+        ...
+
+    def on_if_branch(self, idx: int, total: int, block: IfBranchNotice) -> None:
+        """Called once when an `if` block starts, with the branch it chose and every evaluated condition."""
+        ...
+
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
         """Called when a loop block begins execution."""
         ...
@@ -294,7 +337,7 @@ class RunObserver(Protocol):
         """Called after worktree cleanup/keep decision is applied; worktree_id, branch and remediations are set when a run's worktree is kept for inspection."""
         ...
 
-    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+    def on_run_started(self, steps: Sequence[BlueprintStep]) -> None:
         """Called once per drive_run invocation, after definitions load and before the first step."""
         ...
 

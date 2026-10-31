@@ -13,12 +13,13 @@ from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import FailurePolicy
 from dovo.core.catalog.blueprint import Blueprint
-from dovo.core.catalog.definitions import LoopStepBlock
+from dovo.core.catalog.definitions import IfStepBlock, LoopStepBlock
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.engine import EngineError, SessionStateStore
 from dovo.engine.models import DefinitionRef, DefinitionsManifest, LifecycleUpdate
 from dovo.engine.projection import build_session_json_payload
 from dovo.engine.state_models import (
+    ExecutionIfNode,
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,
@@ -153,6 +154,28 @@ class SessionStateStoreInitializeTests:
         assert row.execution_state_revision == 0
         assert ExecutionStateTree.model_validate_json(row.execution_state_json or "") == expected
         assert all(node.state == NodeState.PENDING for node in expected.nodes)
+
+    def test_initialize_plans_an_if_block_pending_without_a_branch_or_steps(self, tmp_path: Path) -> None:
+        fixture = _Fixture(tmp_path)
+        block = IfStepBlock.model_validate(
+            {
+                "id": "route",
+                "type": "if",
+                "name": "Route",
+                "condition": ["steps.setup.exit_code == 0"],
+                "then": [{"id": "ship", "run": "true"}],
+            }
+        )
+        blueprint = Blueprint(
+            BlueprintBuilder("bp")
+            .with_step(StepBuilder.command("echo setup").with_id("setup").build())
+            .with_step(block)
+            .build()
+        )
+
+        state = fixture.store.initialize(blueprint, fixture.manifest, [])
+
+        assert state.nodes == [ExecutionLeafNode(id="setup"), ExecutionIfNode(id="route", name="Route")]
 
     def test_initialize_missing_row_raises_session_not_found(self, tmp_path: Path) -> None:
         """Raise EngineError(SESSION_NOT_FOUND, "Session 'unknown' not found.") and write no session.json."""

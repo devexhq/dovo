@@ -12,19 +12,23 @@ from dovo.cli.ui.dispatcher import UiDispatcher
 from dovo.cli.ui.events import (
     AgentProgressEvent,
     AgentSummaryView,
+    ConditionOutcomeView,
+    IfBranchEvent,
     LoopConditionView,
     LoopLifecycleEvent,
     StepDoneEvent,
     StepOutputEvent,
+    StepSkippedEvent,
     StepStartEvent,
     WarningEvent,
     WorktreeLifecycleEvent,
 )
 from dovo.common.models import DisplayFormatOptions, OutputFormatOptions, Remediation
 from dovo.common.utils import display_path
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition, StepType
+from dovo.core.catalog.definitions import BlueprintStep, LoopStepBlock, StepDefinition, StepType
 from dovo.engine import RunObserver, RunOutcome
 from dovo.engine.executors.models import AgentProgressUpdate, AgentStepSummary, ConditionEvaluationResult, StepResult
+from dovo.engine.models import IfBranchNotice, StepSkipNotice
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -61,6 +65,7 @@ class DispatcherRunObserver(RunObserver):
         """
         self._dispatcher = dispatcher
         self._live = live
+        self._loop_names: dict[str, str] = {}
 
     def __enter__(self) -> DispatcherRunObserver:
         """Enter observer context and optionally start live display."""
@@ -145,15 +150,49 @@ class DispatcherRunObserver(RunObserver):
             )
         )
 
+    def on_step_skipped(self, idx: int, total: int, step: StepSkipNotice) -> None:
+        """Dispatch the skip of a step or loop by its `when` guard."""
+        self._dispatcher.dispatch(
+            StepSkippedEvent(
+                idx=idx,
+                total=total,
+                step_id=step.step_id,
+                name=step.name,
+                cause=step.cause.value,
+                expression=step.expression,
+            )
+        )
+
+    def on_if_branch(self, idx: int, total: int, block: IfBranchNotice) -> None:
+        """Dispatch the branch an `if` block chose with every condition it evaluated."""
+        self._dispatcher.dispatch(
+            IfBranchEvent(
+                idx=idx,
+                total=total,
+                block_id=block.block_id,
+                name=block.name,
+                branch=block.branch.value,
+                conditions=[
+                    ConditionOutcomeView(expression=result.expression, passed=result.passed, resolved=result.resolved)
+                    for result in block.conditions
+                ],
+            )
+        )
+
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
         """Dispatch loop start event."""
-        self._dispatcher.dispatch(LoopLifecycleEvent(loop_id=loop_id, action="start", max_iterations=max_iterations))
+        self._dispatcher.dispatch(
+            LoopLifecycleEvent(
+                loop_id=loop_id, name=self._loop_names.get(loop_id), action="start", max_iterations=max_iterations
+            )
+        )
 
     def on_loop_iteration_start(self, loop_id: str, iteration: int, max_iterations: int) -> None:
         """Dispatch loop iteration start event."""
         self._dispatcher.dispatch(
             LoopLifecycleEvent(
                 loop_id=loop_id,
+                name=self._loop_names.get(loop_id),
                 action="iteration_start",
                 iteration=iteration,
                 max_iterations=max_iterations,
@@ -168,14 +207,17 @@ class DispatcherRunObserver(RunObserver):
         next_iteration: int | None = None,
     ) -> None:
         """Dispatch loop until conditions evaluated event."""
-        lines = [f"\\[{loop_id}] Evaluated 'until' conditions:"]
+        name = self._loop_names.get(loop_id)
+        label = name or loop_id
+        lines = [f"\\[{label}] Evaluated 'until' conditions:"]
         for r in results:
             lines.append(f"  - {r.expression}: {r.detail}")
         if not all_passed and next_iteration is not None:
-            lines.append(f"\\[{loop_id}] Conditions not met. Continuing to iteration {next_iteration}...")
+            lines.append(f"\\[{label}] Conditions not met. Continuing to iteration {next_iteration}...")
         self._dispatcher.dispatch(
             LoopLifecycleEvent(
                 loop_id=loop_id,
+                name=name,
                 action="conditions_evaluated",
                 message="\n".join(lines),
                 conditions=[
@@ -190,6 +232,7 @@ class DispatcherRunObserver(RunObserver):
         self._dispatcher.dispatch(
             LoopLifecycleEvent(
                 loop_id=loop_id,
+                name=self._loop_names.get(loop_id),
                 action="done",
                 iteration=total_iterations,
                 status=status,
@@ -216,8 +259,9 @@ class DispatcherRunObserver(RunObserver):
             )
         )
 
-    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
-        """Ignore run start; the CLI renders step and loop events as they happen."""
+    def on_run_started(self, steps: Sequence[BlueprintStep]) -> None:
+        """Remember the name of each loop that sets one, so its progress lines show the name instead of the id."""
+        self._loop_names = {step.id: step.name for step in steps if isinstance(step, LoopStepBlock) and step.name}
 
     def on_run_completed(self, outcome: RunOutcome) -> None:
         """Ignore run completion; the run command renders the returned outcome."""

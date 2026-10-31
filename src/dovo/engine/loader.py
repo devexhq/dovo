@@ -22,10 +22,10 @@ from dovo.engine.state_models import (
     NodeState,
 )
 from dovo.engine.state_store import SessionStateStore
-from dovo.engine.state_validation import validate_loop_structure
+from dovo.engine.state_validation import validate_block_structure
 from dovo.engine.writer import get_session_dir, load_blueprint_from_snapshot, snapshot_blueprint_path
 
-_FINISHED_NODE_STATES = frozenset({NodeState.COMPLETED, NodeState.IGNORED})
+_FINISHED_NODE_STATES = frozenset({NodeState.COMPLETED, NodeState.IGNORED, NodeState.SKIPPED})
 
 
 class EngineLoader:
@@ -41,9 +41,9 @@ class EngineLoader:
     ) -> tuple[SessionRecord, ExecutionStateTree, DefinitionsManifest]:
         """Return the paused run's row, state tree, and manifest, or raise EngineError with the failure's ErrorCode.
 
-        The caller holds the workspace lock. A run whose every top-level node is completed or ignored loads like
-        any other, so the coordinator ends it completed. A run whose every top-level node is terminal with one not
-        completed or ignored has no step left: its row is written failed before SESSION_STATE_CORRUPT is raised.
+        The caller holds the workspace lock. A run whose every top-level node is completed, ignored or skipped loads
+        like any other, so the coordinator ends it completed. A run whose every top-level node is terminal with one
+        not completed, ignored or skipped has no step left: its row is written failed before SESSION_STATE_CORRUPT is raised.
         The blueprint snapshot is then checked as `dovo blueprint validate` checks a blueprint, each script_path
         under the run's retained worktree (the repository root for an in-place run): its warnings are appended to
         validation_warnings, and its failure propagates as validation raises it, with nothing written.
@@ -112,7 +112,7 @@ class EngineLoader:
 
     @classmethod
     def _ended_unfinished(cls, state: ExecutionStateTree) -> bool:
-        """Return whether every top-level node is terminal and one of them is neither completed nor ignored."""
+        """Return whether every top-level node is terminal and one of them is not completed, ignored or skipped."""
         return all(node.state in TERMINAL_NODE_STATES for node in state.nodes) and any(
             node.state not in _FINISHED_NODE_STATES for node in state.nodes
         )
@@ -134,7 +134,7 @@ class EngineLoader:
         """Raise SESSION_STATE_CORRUPT when a PAUSED leaf has neither a pending_ask nor a recorded last-attempt result.
 
         The caller holds the workspace lock and has already settled a run with no step left; a run whose every
-        top-level node is completed or ignored passes.
+        top-level node is completed, ignored or skipped passes.
         """
         for leaf in iter_leaves(state):
             has_result = bool(leaf.attempts) and leaf.attempts[-1].result is not None
@@ -201,7 +201,7 @@ class EngineLoader:
                 f"Cannot resume session '{session_id}': {exc}",
             ) from exc
 
-        structure_errors = validate_loop_structure(state, blueprint)
+        structure_errors = validate_block_structure(state, blueprint)
         if structure_errors:
             raise EngineError(
                 ErrorCode.SESSION_STATE_CORRUPT,

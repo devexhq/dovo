@@ -9,6 +9,7 @@ from dovo.common.tool_policy import LEGACY_TOOLS_MESSAGE, ToolPolicy
 from dovo.core.catalog.definitions import (
     ArtifactPublishSpec,
     InteractionSpec,
+    LoopStepBlock,
     StepDefinition,
     StepType,
 )
@@ -329,3 +330,38 @@ class StepAskShapeTests:
 
         assert step.interaction is not None
         assert (step.interaction.options is None) == ("options" not in interaction)
+
+
+_LOOP_PAYLOAD: dict[str, object] = {
+    "id": "fix",
+    "type": "loop",
+    "until": ["steps.check.exit_code == 0"],
+    "do": [{"id": "check", "run": "true"}],
+}
+
+
+class StepWhenTests:
+    @pytest.mark.parametrize(
+        ("model", "payload", "message"),
+        [
+            pytest.param(StepDefinition, {"id": "s1", "run": "echo hi"}, "Step 's1': 'when' must list", id="step"),
+            pytest.param(LoopStepBlock, _LOOP_PAYLOAD, "Loop 'fix': 'when' must list", id="loop"),
+        ],
+    )
+    def test_empty_when_fails_naming_the_step(
+        self, model: type[StepDefinition | LoopStepBlock], payload: dict[str, object], message: str
+    ) -> None:
+        with pytest.raises(ValidationError, match=message):
+            model.model_validate({**payload, "when": []})
+
+    @pytest.mark.parametrize(
+        ("model", "payload"),
+        [
+            pytest.param(StepDefinition, {"id": "s1", "run": "echo hi"}, id="step"),
+            pytest.param(LoopStepBlock, _LOOP_PAYLOAD, id="loop"),
+        ],
+    )
+    def test_when_list_is_kept(self, model: type[StepDefinition | LoopStepBlock], payload: dict[str, object]) -> None:
+        parsed = model.model_validate({**payload, "when": ["steps.a.exit_code == 0"]})
+
+        assert parsed.when == ["steps.a.exit_code == 0"]

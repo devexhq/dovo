@@ -8,11 +8,21 @@ import pytest
 
 from dovo.cli.run.observer import DispatcherRunObserver
 from dovo.cli.ui.dispatcher import UiDispatcher
-from dovo.cli.ui.events import AgentProgressEvent, AgentSummaryView, StepOutputEvent, WorktreeLifecycleEvent
+from dovo.cli.ui.events import (
+    AgentProgressEvent,
+    AgentSummaryView,
+    ConditionOutcomeView,
+    IfBranchEvent,
+    LoopLifecycleEvent,
+    StepOutputEvent,
+    StepSkippedEvent,
+    WorktreeLifecycleEvent,
+)
 from dovo.common.models import Remediation
 from dovo.core.agents import AgentProgressKind
-from dovo.core.catalog.definitions import StepDefinition
-from dovo.engine.executors.models import AgentProgressUpdate
+from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult
+from dovo.engine.models import IfBranch, IfBranchNotice, SkipCause, StepSkipNotice
 from tests.harness.builders import StepBuilder
 
 
@@ -149,3 +159,69 @@ class DispatcherRunObserverCleanupTests:
         assert isinstance(event, WorktreeLifecycleEvent)
         assert (event.action, event.kept, event.worktree_id, event.branch) == ("cleanup", True, "run-1", "dovo/run-1")
         assert event.remediations == [remediation]
+
+
+class DispatcherRunObserverGuardTests:
+    """Dispatch of skip events, and loop names on loop progress events."""
+
+    def test_skipped_step_is_dispatched_as_a_step_skipped_event(self) -> None:
+        dispatcher = _RecordingDispatcher()
+        expression = "steps.a.exit_code == 0"
+        notice = StepSkipNotice(step_id="fold", name="Fold", cause=SkipCause.WHEN_UNRESOLVED, expression=expression)
+
+        DispatcherRunObserver(dispatcher).on_step_skipped(5, 13, notice)
+
+        assert dispatcher.events == [
+            StepSkippedEvent(
+                idx=5, total=13, step_id="fold", name="Fold", cause="when_unresolved", expression=expression
+            )
+        ]
+
+    def test_chosen_branch_is_dispatched_as_an_if_branch_event(self) -> None:
+        dispatcher = _RecordingDispatcher()
+        conditions = (
+            ConditionEvaluationResult(expression="steps.a.exit_code == 0", passed=False, resolved=False),
+            ConditionEvaluationResult(expression="steps.b.exit_code == 0", passed=True),
+        )
+        notice = IfBranchNotice(block_id="route", name="Route", branch=IfBranch.ELSE, conditions=conditions)
+
+        DispatcherRunObserver(dispatcher).on_if_branch(3, 4, notice)
+
+        assert dispatcher.events == [
+            IfBranchEvent(
+                idx=3,
+                total=4,
+                block_id="route",
+                name="Route",
+                branch="else",
+                conditions=[
+                    ConditionOutcomeView(expression="steps.a.exit_code == 0", passed=False, resolved=False),
+                    ConditionOutcomeView(expression="steps.b.exit_code == 0", passed=True, resolved=True),
+                ],
+            )
+        ]
+
+    def test_loop_progress_events_carry_the_name_the_loop_sets(self) -> None:
+        dispatcher = _RecordingDispatcher()
+        observer = DispatcherRunObserver(dispatcher)
+        named = LoopStepBlock.model_validate(
+            {
+                "id": "fix",
+                "type": "loop",
+                "name": "Fix the tests",
+                "until": ["steps.c.exit_code == 0"],
+                "do": [{"id": "c", "run": "x"}],
+            }
+        )
+        unnamed = LoopStepBlock.model_validate(
+            {"id": "polish", "type": "loop", "until": ["steps.d.exit_code == 0"], "do": [{"id": "d", "run": "x"}]}
+        )
+
+        observer.on_run_started([named, unnamed])
+        observer.on_loop_start("fix", 3)
+        observer.on_loop_done("polish", "completed", 1)
+
+        assert dispatcher.events == [
+            LoopLifecycleEvent(loop_id="fix", name="Fix the tests", action="start", max_iterations=3),
+            LoopLifecycleEvent(loop_id="polish", name=None, action="done", iteration=1, status="completed"),
+        ]

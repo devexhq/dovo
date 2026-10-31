@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from dovo.common.models import FailurePolicy
-from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import BlueprintDefinition, IfStepBlock, LoopStepBlock, StepDefinition
 from dovo.core.catalog.exceptions import BlueprintValidationError
 
 
@@ -119,3 +119,80 @@ class LoopBlockDefinitionTests:
         loop = _only_loop(raw)
 
         assert [step.on_failure.action for step in loop.do] == [FailurePolicy.CONTINUE, FailurePolicy.ABORT]
+
+
+def _route(**fields: object) -> dict[str, object]:
+    """Return an if block `route` after step `check`, with fields overriding or adding keys."""
+    block: dict[str, object] = {
+        "id": "route",
+        "type": "if",
+        "condition": ["steps.check.exit_code == 0"],
+        "then": [{"id": "ship", "run": "true"}],
+    }
+    return {**block, **fields}
+
+
+def _only_block(raw_steps: list[object], **document: object) -> IfStepBlock:
+    """Return the if block of a blueprint whose steps are a `check` step followed by raw_steps."""
+    raw: dict[str, object] = {**document, "steps": [{"id": "check", "run": "true"}, *raw_steps]}
+    block = BlueprintDefinition.from_document(raw, key="bp").steps[1]
+    assert isinstance(block, IfStepBlock)
+    return block
+
+
+class IfBlockDefinitionTests:
+    """If blocks parse at the top level, give branch steps the top-level shorthands, and reject what O-10 forbids."""
+
+    def test_branch_steps_get_derived_ids_mapped_command_and_inherited_on_failure(self) -> None:
+        then = [{"run": "a"}, {"name": "Ship it", "command": "b"}]
+        otherwise = [{"run": "c", "on_failure": "abort"}]
+
+        block = _only_block([_route(then=then, **{"else": otherwise})], defaults={"on_failure": "continue"})
+
+        assert [(step.id, step.run) for step in block.branch("then")] == [("route-then-step-1", "a"), ("ship-it", "b")]
+        assert [step.id for step in block.branch("else")] == ["route-else-step-1"]
+        assert [step.on_failure.action for step in [*block.branch("then"), *block.branch("else")]] == [
+            FailurePolicy.CONTINUE,
+            FailurePolicy.CONTINUE,
+            FailurePolicy.ABORT,
+        ]
+
+    def test_else_is_optional(self) -> None:
+        block = _only_block([_route(name="Route the plan")])
+
+        assert (block.name, block.else_, block.branch("else")) == ("Route the plan", None, [])
+
+    @pytest.mark.parametrize(
+        ("block", "message"),
+        [
+            pytest.param(
+                _route(condition=[]), "If block 'route': 'condition' must list at least one", id="empty_condition"
+            ),
+            pytest.param(_route(then=[]), "If block 'route': 'then' must list at least one step", id="empty_then"),
+            pytest.param(
+                _route(**{"else": []}), "If block 'route': 'else' must list at least one step", id="empty_else"
+            ),
+            pytest.param(
+                _route(then=[_loop()]),
+                "If block 'route': step 1 of 'then' is a 'type: loop' block; 'then' holds only steps",
+                id="loop_in_then",
+            ),
+            pytest.param(
+                _route(**{"else": [{"id": "inner", "run": "x"}, _route(id="inner-if")]}),
+                "If block 'route': step 2 of 'else' is a 'type: if' block; 'else' holds only steps",
+                id="if_in_else",
+            ),
+            pytest.param(_route(elif_=["x"]), r"If block 'route' has unknown keys: elif_\.", id="unknown_key"),
+        ],
+    )
+    def test_invalid_block_fails_naming_it(self, block: dict[str, object], message: str) -> None:
+        raw: dict[str, object] = {"steps": [{"id": "check", "run": "true"}, block]}
+
+        with pytest.raises(BlueprintValidationError, match=message):
+            BlueprintDefinition.from_document(raw, key="bp")
+
+    def test_if_block_inside_a_loop_fails_naming_the_loop(self) -> None:
+        raw: dict[str, object] = {"steps": [_loop(do=[{"id": "check", "run": "true"}, _route()])]}
+
+        with pytest.raises(BlueprintValidationError, match="Loop 'fix': step 2 of 'do' is a 'type: if' block"):
+            BlueprintDefinition.from_document(raw, key="bp")

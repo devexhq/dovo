@@ -16,6 +16,34 @@ from dovo.engine.executors.models import (
 class ConditionExpressionEvaluatorTests:
     """Unit tests verifying operand resolution and boolean evaluation contracts."""
 
+    @pytest.mark.parametrize(
+        ("expression", "resolved", "passed"),
+        [
+            pytest.param("steps.build.outputs.verdict == 'ok'", True, True, id="present_output"),
+            pytest.param("steps.build.outputs.verdict == 'bad'", True, False, id="resolved_false"),
+            pytest.param("steps.build.outputs.reason == 'x'", True, False, id="json_null_output_is_resolved"),
+            pytest.param("steps.build.outputs.missing == 'x'", False, False, id="missing_output_key"),
+            pytest.param("steps.build.outputs.verdict.deeper == 'x'", False, False, id="missing_subpath"),
+            pytest.param("steps.other.exit_code == 0", False, False, id="step_without_result"),
+            pytest.param("iteration.index >= 1", True, True, id="iteration_operand"),
+        ],
+    )
+    def test_evaluate_condition_reports_whether_its_step_operands_resolved(
+        self, expression: str, resolved: bool, passed: bool
+    ) -> None:
+        build = StepResult(
+            step_id="build",
+            status="completed",
+            exit_code=0,
+            stdout=json.dumps({"verdict": "ok", "reason": None}),
+            stderr="",
+            duration_seconds=0.1,
+        )
+
+        result = evaluate_condition(expression, step_results={"build": build})
+
+        assert (result.resolved, result.passed) == (resolved, passed)
+
     def test_evaluate_condition_resolves_nested_json_subpath_in_step_outputs(self) -> None:
         step_res = StepResult(
             step_id="build",

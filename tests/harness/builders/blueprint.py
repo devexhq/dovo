@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import BlueprintDefinition, BlueprintStep
 from dovo.core.inputs import InputType, ParameterInput
 from tests.harness.builders.step import StepBuilder
 
@@ -16,7 +16,7 @@ class BlueprintBuilder:
         self._timeout_seconds: int | None = None
         self._env: dict[str, str] = {}
         self._inputs: dict[str, ParameterInput] = {}
-        self._steps: list[StepDefinition | StepBuilder | LoopStepBlock] = []
+        self._steps: list[BlueprintStep | StepBuilder] = []
 
     def with_name(self, name: str) -> BlueprintBuilder:
         """Set the blueprint name."""
@@ -59,14 +59,14 @@ class BlueprintBuilder:
         )
         return self
 
-    def with_step(self, step: StepDefinition | StepBuilder | LoopStepBlock) -> BlueprintBuilder:
+    def with_step(self, step: BlueprintStep | StepBuilder) -> BlueprintBuilder:
         """Append a step to the blueprint."""
         self._steps.append(step)
         return self
 
     def build(self) -> BlueprintDefinition:
         """Build and validate the BlueprintDefinition model."""
-        resolved_steps: list[StepDefinition | LoopStepBlock] = []
+        resolved_steps: list[BlueprintStep] = []
         for step in self._steps:
             if isinstance(step, StepBuilder):
                 resolved_steps.append(step.build())

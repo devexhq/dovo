@@ -4,15 +4,17 @@ from __future__ import annotations
 
 from dovo.core.db import SessionRecord, SessionStatus
 from dovo.engine.executors.models import StepResult
-from dovo.engine.models import DefinitionRef, DefinitionsManifest
+from dovo.engine.models import DefinitionRef, DefinitionsManifest, IfBranch
 from dovo.engine.projection import (
     build_session_json_payload,
     flatten_step_results,
     iter_leaves,
     iteration_results,
+    scope_results,
     terminal_step_metadata,
 )
 from dovo.engine.state_models import (
+    ExecutionIfNode,
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,
@@ -51,7 +53,7 @@ def _leaf(
     return ExecutionLeafNode(id=step_id, name=name, state=state, attempts=attempts)
 
 
-def _tree(*nodes: ExecutionLeafNode | ExecutionLoopNode) -> ExecutionStateTree:
+def _tree(*nodes: ExecutionLeafNode | ExecutionLoopNode | ExecutionIfNode) -> ExecutionStateTree:
     return ExecutionStateTree(manifest=_MANIFEST, nodes=list(nodes))
 
 
@@ -137,6 +139,39 @@ class ProjectionIterLeavesTests:
         tree = _tree(_leaf("a", NodeState.PENDING), loop, _leaf("z", NodeState.PENDING))
 
         assert [leaf.id for leaf in iter_leaves(tree)] == ["a", "s1", "s2", "s1", "s2", "z"]
+
+    def test_iter_leaves_yields_the_saved_branch_steps_of_an_if_block(self) -> None:
+        block = ExecutionIfNode(
+            id="route",
+            state=NodeState.RUNNING,
+            branch=IfBranch.ELSE,
+            steps=[_leaf("ship", NodeState.COMPLETED), _leaf("tag", NodeState.PENDING)],
+        )
+
+        assert [leaf.id for leaf in iter_leaves(_tree(_leaf("a", NodeState.COMPLETED), block))] == ["a", "ship", "tag"]
+
+
+class ScopeResultsTests:
+    def test_top_level_and_chosen_branch_results_are_mapped_and_loops_and_skips_are_left_out(self) -> None:
+        result_a = _result("a")
+        loop = ExecutionLoopNode(
+            id="fix",
+            max_iterations=1,
+            state=NodeState.COMPLETED,
+            iterations=[
+                ExecutionIterationRecord(number=1, steps=[_leaf("edit", NodeState.COMPLETED, [_result("edit")])])
+            ],
+        )
+        result_ship = _result("ship")
+        block = ExecutionIfNode(
+            id="route",
+            state=NodeState.COMPLETED,
+            branch=IfBranch.ELSE,
+            steps=[_leaf("ship", NodeState.COMPLETED, [result_ship])],
+        )
+        tree = _tree(_leaf("a", NodeState.COMPLETED, [result_a]), _leaf("b", NodeState.SKIPPED), loop, block)
+
+        assert list(scope_results(tree).items()) == [("a", result_a), ("ship", result_ship)]
 
 
 class IterationResultsTests:
