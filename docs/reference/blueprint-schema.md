@@ -17,7 +17,7 @@ YAML schema for blueprint files.
 | `env` | `map[string, string]` | No | `{}` | Currently has no effect. |
 | `inputs` | `map[string, ParameterInput]` | No | `{}` | Parameter inputs accepted by the blueprint. See [Inputs Schema](inputs-schema.md). |
 | `defaults` | `BlueprintDefaults` | No | `{}` | Defaults inherited by steps. |
-| `steps` | `list[Step \| Loop]` | No | `[]` | Ordered list of steps to execute. See [Step Schema](step-schema.md). |
+| `steps` | `list[Step \| Loop \| If]` | No | `[]` | Ordered list of steps, loop blocks and `if` blocks to execute. See [Step Schema](step-schema.md). |
 
 ---
 
@@ -33,7 +33,9 @@ Values here apply to any step that does not set its own:
 
 ## Location
 
-Blueprints live in `.dovo/catalog/blueprints/` and can contain steps and loop blocks (`type: loop`).
+Blueprints live in `.dovo/catalog/blueprints/` and can contain steps, loop blocks (`type: loop`) and `if` blocks (`type: if`). Any step or loop can carry a `when` list that skips it when a condition is false; see [Conditions](step-schema.md#conditions).
+
+`dovo run` and `dovo resume` check a blueprint exactly as `dovo blueprint validate` does, and refuse to start a blueprint it rejects. See [`dovo run`](../cli/run.md).
 
 ---
 

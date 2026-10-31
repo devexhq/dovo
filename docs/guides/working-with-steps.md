@@ -124,6 +124,7 @@ Properties every step accepts:
 | `env` | `map[string, string]` | `{}` | Environment variables specific to this step (supports `${{ inputs.* }}`). |
 | `assert` | `StepAssert` | `null` | Declarative quality assertions (exit code, output matchers, file checks). |
 | `on_failure` | `string \| FailureSpec` | `abort` | Failure policy (`abort`, `continue`, `retry`, `prompt_user`). |
+| `when` | `list[string]` | `null` | Conditions that must all be true for the step to run. See [`when`](#run-a-step-only-when-a-condition-holds-when). |
 
 ---
 
@@ -151,6 +152,78 @@ steps:
         assert:
           exit_code: 0
 ```
+
+Steps inside `do` get the same shorthands as top-level steps: an omitted `id` is derived from `name`, or becomes `<loop id>-step-<n>`; a bare `command:` means `run:`; and `defaults.on_failure` applies. A loop rejects any key it does not define, so a misspelled `untill:` fails validation instead of being ignored.
+
+---
+
+## Run a Step Only When a Condition Holds (`when`)
+
+Add a `when` list to a step or loop to skip it unless every condition is true. Conditions use the same syntax as a loop's `until`:
+
+```yaml
+steps:
+  - id: answer-questions
+    type: ask
+    interaction:
+      mode: multiselect
+      message: Which open questions should change the plan?
+      options:
+        - {value: scope, label: Scope}
+        - {value: naming, label: Naming}
+
+  - id: fold-answers
+    name: Fold the answers into the plan
+    type: agent
+    prompt: "Update PLAN.md with the chosen answers."
+    when:
+      - steps.answer-questions.outputs.selected_count > 0
+```
+
+When the person picks nothing, the run skips the agent step and prints one line naming the condition:
+
+```text
+[2/2] Fold the answers into the plan — skipped (when: steps.answer-questions.outputs.selected_count > 0 → FALSE)
+```
+
+A skipped step runs nothing and counts as successful. `dovo session show` lists it as `skipped (when_false)`, or `skipped (when_unresolved)` when a condition referenced a step that did not run or a field it does not have. A later condition that references a skipped step is false.
+
+A `when` list may reference earlier steps only. Inside a loop's `do`, it may also reference earlier steps of the same iteration and `iteration.index`, and it is evaluated again on every iteration. See [Conditions](../reference/step-schema.md#conditions) for the full rules.
+
+---
+
+## Choose Between Two Paths (`type: if`)
+
+An `if` block runs its `then` steps when every condition is true and its `else` steps otherwise:
+
+```yaml
+steps:
+  - id: check
+    run: ./scripts/readiness.sh   # prints {"verdict": "ready"} or {"verdict": "not_ready"}
+
+  - id: route
+    type: if
+    condition:
+      - steps.check.outputs.verdict == "not_ready"
+    then:
+      - id: fix
+        type: agent
+        prompt: "Fix what scripts/readiness.sh reported."
+    else:
+      - id: ship
+        run: ./scripts/release.sh
+```
+
+The run prints the branch it took and the conditions it evaluated:
+
+```text
+[2/2] route — else (if: steps.check.outputs.verdict == "not_ready" → FALSE)
+```
+
+The branch is chosen once, when the block starts; a run paused inside a branch resumes in it. `dovo session show` lists the block as `completed (else)` with the steps that ran under it. Without an `else`, a false condition runs nothing.
+
+!!! warning
+    An `if` block sits only at the top level. Its branches hold steps only: a loop or another `if` block inside `then` or `else` fails validation, and so does an `if` block inside a loop's `do`.
 
 ---
 

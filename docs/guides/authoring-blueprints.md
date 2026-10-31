@@ -108,6 +108,8 @@ dovo blueprint create --name fix-issue
 
 This writes a template to `.dovo/catalog/blueprints/<name>.yml`.
 
+Check it with `dovo blueprint validate <name>`. `dovo run` and `dovo resume` apply the same checks before any step runs and refuse a blueprint that fails them, with the same errors, so a blueprint that validates is one that starts.
+
 ---
 
 ## Next Steps

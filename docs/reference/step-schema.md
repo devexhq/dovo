@@ -1,6 +1,6 @@
 # Step Schema Reference
 
-YAML schema for steps and loop blocks.
+YAML schema for steps, loop blocks and `if` blocks.
 
 ---
 
@@ -27,6 +27,7 @@ Every standard step accepts the following fields:
 | `artifacts` | `list[ArtifactPublishSpec]` | No | `[]` | Files to publish as artifact revisions when the step succeeds. See [`artifacts` Entries](#artifacts-entries). |
 | `max_files` | `integer` | No | `null` | Agent steps only: most files one attempt's patch may touch (at least `1`). Omitted means no limit. See [`max_files` Limit](#max_files-limit). |
 | `interaction` | `object` | Conditional | `null` | Prompt shown to a person. Required when `type: ask`, rejected on every other type. See [`interaction` Block](#interaction-block). |
+| `when` | `list[string]` | No | `null` | Conditions that must all be true for the step to run; otherwise it is skipped. At least one when set. See [Conditions](#conditions). |
 
 ### `max_files` Limit
 
@@ -133,10 +134,57 @@ Repeats the steps in `do` until an `until` condition is met:
 |---|---|---|---|---|
 | `id` | `string` | **Yes** | — | Unique identifier for the loop block. |
 | `type` | `string` | **Yes** | `loop` | Must be `loop`. |
+| `name` | `string` | No | `null` | Display name shown when the loop is skipped. |
 | `max_iterations`| `integer` | No | `5` | Maximum number of iterations (at least 1). |
 | `until` | `list[string]` | **Yes** | — | Termination condition expressions (e.g. `['steps.test.exit_code == 0']`). |
 | `do` | `list[StepDefinition]` | **Yes** | — | List of steps to execute sequentially on each iteration. |
 | `on_max_iterations` | `string` | No | `prompt_user` | Terminal policy (`abort`, `continue`, `prompt_user`) if loop reaches `max_iterations` without terminating. |
+| `when` | `list[string]` | No | `null` | Conditions that must all be true for the loop to start; otherwise it is skipped and runs no iteration. See [Conditions](#conditions). |
+
+A loop accepts only these keys: any other key fails validation with `CATALOG_SCHEMA_INVALID`, naming the loop and every unknown key. The steps in `do` get the same shorthands as top-level steps: a missing `id` becomes the slug of `name`, or `<loop id>-step-<n>` with `<n>` the step's 1-based position in `do`; a bare `command:` means `run:`; and `defaults.on_failure` applies to a step without its own `on_failure`. `do` holds only steps, never a loop or `if` block.
+
+## `if` Block
+
+Runs its `then` steps when every `condition` is true, and its `else` steps otherwise. An `if` block sits only at the top level of `steps`.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `id` | `string` | No | Derived | Unique identifier for the block. Derived like a top-level step id when omitted. |
+| `type` | `string` | **Yes** | - | Must be `if`. |
+| `name` | `string` | No | `null` | Display name shown when the block chooses its branch. |
+| `condition` | `list[string]` | **Yes** | - | Conditions evaluated once, when the block starts. At least one. See [Conditions](#conditions). |
+| `then` | `list[step]` | **Yes** | - | Steps run in order when every condition is true. At least one. |
+| `else` | `list[step]` | No | `null` | Steps run in order when a condition is false. At least one when set. |
+
+The steps in `then` and `else` get the same shorthands as steps in a loop's `do`, with derived ids `<block id>-then-step-<n>` and `<block id>-else-step-<n>`. A branch holds only steps, never a loop or another `if` block, and a step id in a branch must not repeat any other step id in the blueprint.
+
+The branch is chosen and saved when the block starts. A run paused inside a branch resumes in that branch without evaluating the condition again. The block ends `completed` when every step of its branch completed, was ignored or was skipped, and otherwise takes the state of the first branch step that failed, paused or was cancelled. Without an `else`, a false condition runs nothing and the block completes with branch `none`.
+
+## Conditions
+
+`when`, `condition` and a loop's `until` take the same expressions: `<operand> <operator> <operand>`, with operators `==`, `!=`, `>`, `>=`, `<`, `<=` and `contains`. An operand is `steps.<id>.<field>` (`exit_code`, `status`, `stdout`, or `outputs.<path>`, which reads the step's stdout as JSON), `iteration.index` inside a loop's `do`, or a literal such as `0`, `true` or `"ready"`. Each expression must reference a step or the iteration.
+
+| Where | May reference |
+|---|---|
+| `when` on a top-level step or loop | Earlier top-level steps and the steps of earlier `if` blocks. |
+| `when` on a step in `do` | The same, plus earlier steps of the same `do`, in the current iteration. |
+| `when` on a step in `then` or `else` | The steps before the block, plus earlier steps of the same branch. |
+| `condition` of an `if` block | The steps before the block. |
+| `until` of a loop | The steps of its `do`. |
+
+Any other reference fails validation with `CATALOG_SCHEMA_INVALID`, naming the step or block, as does an empty list or an expression that does not parse.
+
+Conditions are evaluated just before the step, loop or block would start. A `when` guard inside `do` is evaluated again on every iteration. A step skipped before a run paused stays skipped when the run resumes.
+
+!!! note
+    An expression whose step operand has no value is false. That covers a step that was skipped, a step that has not run (including one in the branch an `if` block did not take), and a field the step's output lacks, such as a misspelled `outputs` key. A placeholder that references such a step interpolates to an empty string.
+
+A skipped step runs nothing: no attempt, outputs, artifacts or step logs. It counts as successful for the run, so a run whose every step was skipped ends `completed`. The skip records the first failing expression and its cause:
+
+| Cause | Meaning |
+|---|---|
+| `when_false` | Every operand resolved and the expression was false. |
+| `when_unresolved` | A step operand had no value. |
 
 ---
 
