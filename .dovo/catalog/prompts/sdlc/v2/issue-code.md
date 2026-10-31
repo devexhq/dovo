@@ -19,9 +19,9 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 ## Hard boundaries
 
 - **Never commit, stage, push, or touch PR state.** The `issue-code-v2` blueprint's `checkpoint`, `commit`, `commit-fixes` and `push` steps own that.
-- **The slice's phases, one at a time.** Finish a phase (its FRs, tests and deletion ledger, with its scoped tests green) before starting the next, and never interleave FRs across phases. The phases still order the work and bound each step; the slice's phases all land in one PR, in this one run or, in one-phase mode, one run per phase. Another slice's phases are never started, even when the work looks adjacent.
+- **The slice's phases, one at a time.** Finish a phase (its requirements, tests and deletion ledger, with its scoped tests green) before starting the next, and never interleave requirements across phases. The phases still order the work and bound each step; the slice's phases all land in one PR, in this one run or, in one-phase mode, one run per phase. Another slice's phases are never started, even when the work looks adjacent.
 - **Stay within the size budget.** A slice's `src/` plus docs stay under about 400 changed lines and the whole diff, tests included, under about 900 (`git diff --stat origin/main`). When the diff passes either with work left, stop, flag it 🚨 and report what remains, rather than finishing over budget.
-- **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes and message strings in the slice's issue's Pre-determined data or Binding values, or written as code in a phase's `### Code` (in one-phase mode, the phase file's `binding`, which copies it exactly), are normative. Do not rename or extend them.
+- **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes and message strings in the slice's issue's binding values, or written as code in a phase's `### Code` (in one-phase mode, the phase file's `binding`, which copies it exactly), are normative. Do not rename or extend them.
 - **Implement only what the plan's phases ask for.** Never do work the plan's `## Owned elsewhere` (in one-phase mode, the phase file's `owned_elsewhere`) says another issue owns unless a phase plans it as a named departure (in one-phase mode, one of the phase file's `departures`). A sentence your change makes false is fixed regardless (R17), and listed under Deviations if unplanned. Do not add test files the plan's `### Tests` lines (in one-phase mode, the phase file's `tests`) do not name.
 - **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, `.agentic/verdict.txt`, `.agentic/feedback.json` or `.agentic/triage.json` (except with `--triage`).** This prompt writes only `.agentic/implementation-report.md`, plus `.agentic/phase-commit-msg` in one-phase mode, `.agentic/fix-commit-msg` in review and feedback mode, and `.agentic/feedback-outcomes.json` in feedback mode; with `--triage` it writes only `.agentic/triage.json`.
 
@@ -37,14 +37,14 @@ Then build the slice's brief, and keep it in view for the whole run:
 
 ## Implementation loop
 
-Before the first FR, write characterization tests for any existing behaviour the slice touches but must leave unchanged (each NFR or guard stating "unchanged"), and run them green against the untouched code. They then hold that contract through the change. Put them in the test files the slice's test lines (in one-phase mode, the phase file's `tests`) name; a test file no test line names is a plan deviation to report.
+Before the first requirement, write characterization tests for any existing behaviour the slice touches but must leave unchanged (each outcome or decision stating that something stays as it is), and run them green against the untouched code. They then hold that contract through the change. Put them in the test files the slice's test lines (in one-phase mode, the phase file's `tests`) name; a test file no test line names is a plan deviation to report.
 
-Work phase by phase, in the Phases table's order. Within a phase, work one FR at a time, in the plan's order. For each FR:
+Work phase by phase, in the Phases table's order. Within a phase, work one requirement at a time, in the plan's order. For each requirement:
 
 1. Re-read the plan section, then the current contents of every file you are about to touch.
 2. Write the production code at the paths the plan names.
 3. Write the tests the plan's test lines (in one-phase mode, the phase file's `tests`) name, asserting the outcome each line states for the requirements it cites (R12–R16, [testing.md](../../../../../docs/agents/testing.md)).
-4. Run only the scoped tests for what you touched, and fix failures before the next FR:
+4. Run only the scoped tests for what you touched, and fix failures before the next requirement:
 
    ```bash
    uv run dovo run tests --path tests/<mirrored-path> --fast-fail
@@ -60,7 +60,7 @@ A check you add under `tests/lint/` must be able to fail: assert its input set i
 
 ### When the plan is wrong
 
-If a contract cannot be implemented as written, or a cited symbol has moved or does not exist, stop that FR, report what the plan says against what the tree shows, flag it 🚨 and implement the rest. Never redesign a contract on your own or widen scope to make one fit.
+If a contract cannot be implemented as written, or a cited symbol has moved or does not exist, stop that requirement, report what the plan says against what the tree shows, flag it 🚨 and implement the rest. Never redesign a contract on your own or widen scope to make one fit.
 
 ## One-phase mode
 
