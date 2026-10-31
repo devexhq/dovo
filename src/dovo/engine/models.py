@@ -231,7 +231,7 @@ class RunObserver(Protocol):
     """Optional progress hooks for validation, worktree, step, and loop lifecycle events."""
 
     def on_validation_warnings(self, warnings: Sequence[str]) -> None:
-        """Called once, before any session, worktree or step, with the blueprint's validation warnings in `dovo blueprint validate` order."""
+        """Called once per run or resume, before the first step, with the blueprint's validation warnings in `dovo blueprint validate` order."""
         ...
 
     def on_worktree_ready(self, path: Path, active: bool) -> None:

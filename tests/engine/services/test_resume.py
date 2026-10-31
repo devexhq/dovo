@@ -13,6 +13,7 @@ from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
+from dovo.common.models import Remediation
 from dovo.core.agents.models import AgentEnvOverrides
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
@@ -26,6 +27,7 @@ from dovo.engine.models import BlueprintRunResult, RunOutcome
 from dovo.engine.services.resume import BlueprintResumeService
 from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
 from dovo.engine.state_store import SessionStateStore
+from dovo.engine.writer import snapshot_blueprint_path
 from tests.engine.conftest import StubDriveRun
 from tests.harness.ask import scripted_loop_blueprint
 from tests.harness.builders import WorkspaceBuilder
@@ -33,7 +35,13 @@ from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.lock import time_out_first_lock
-from tests.harness.sessions import SEEDED_SPAN, seed_crashed_session, seed_paused_ask_session, seed_paused_session
+from tests.harness.sessions import (
+    SEEDED_SPAN,
+    RecordingRunObserver,
+    seed_crashed_session,
+    seed_paused_ask_session,
+    seed_paused_session,
+)
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 PAUSED_SENTENCE = "Paused 1 interrupted session; continue it with 'dovo resume <session_id>'."
@@ -260,6 +268,44 @@ class BlueprintResumeServiceExecuteTests:
         assert result.session_record is None
         assert result.error_code == ErrorCode.SESSION_NOT_FOUND
         assert result.errors == ["Session 'ghost' not found."]
+
+
+class BlueprintResumeServiceValidationTests:
+    def test_invalid_snapshot_returns_every_validate_error_and_runs_nothing(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        _seed(engine_paths, sessions_repo, "paused-1")
+        before = sessions_repo.get("paused-1")
+        assert before is not None
+        snapshot = snapshot_blueprint_path(engine_paths.session_dir("paused-1"), "paused-1")
+        snapshot.write_text(
+            "name: paused-1\nsteps:\n  - {id: a, run: 'true'}\n  - {id: a, type: script, script_path: missing.sh}\n",
+            encoding="utf-8",
+        )
+        observer = RecordingRunObserver()
+
+        result = BlueprintResumeService(
+            paths=engine_paths,
+            db=sessions_repo,
+            session_id="paused-1",
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+            observer=observer,
+        ).execute()
+
+        assert (result.invalid_blueprint, result.error_code) == ("paused-1", ErrorCode.CATALOG_SCHEMA_INVALID)
+        assert result.errors == ["Step id 'a' is used by more than one step."]
+        assert result.remediations == [Remediation(message="Resolve: Step id 'a' is used by more than one step.")]
+        assert observer.calls == [
+            (
+                "validation_warnings",
+                ["Step 'a' script_path 'missing.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
+            )
+        ]
+        after = sessions_repo.get("paused-1")
+        assert after is not None
+        assert (after.status, after.execution_state_revision) == (SessionStatus.PAUSED, before.execution_state_revision)
 
 
 class BlueprintResumeServiceCatchTests:

@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from dovo.cli import app
@@ -18,6 +19,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
 from dovo.engine import BlueprintResumeService
 from dovo.engine.models import BlueprintRunResult
+from dovo.engine.writer import snapshot_blueprint_path
 from tests.harness import FakeAgentRunner
 from tests.harness.catalog import write_runnable_step
 from tests.harness.diagnostic_log import details_line, diagnostic_record, unwrapped
@@ -167,6 +169,90 @@ class SessionResumeCliIntegrationTests:
         assert record is not None
         assert record.status == SessionStatus.COMPLETED
         assert (cli_workspace / "resumed.marker").exists()
+
+
+_RESUMABLE_STEPS: list[dict[str, object]] = [
+    {"id": "s1", "run": "true"},
+    {"id": "s2", "run": "true", "on_failure": "continue"},
+    {"id": "s3", "run": "true"},
+]
+
+
+def _seed_invalid_snapshot(cli_workspace: Path, session_id: str, steps: list[dict[str, object]]) -> None:
+    """Pause a valid run under session_id, then replace its blueprint snapshot with one holding steps."""
+    _seed_paused_session(
+        cli_workspace,
+        session_id=session_id,
+        steps=_RESUMABLE_STEPS,
+        paused_step_id="s2",
+    )
+    snapshot = snapshot_blueprint_path(initialized_workspace_paths(cli_workspace).session_dir(session_id), session_id)
+    snapshot.write_text(yaml.safe_dump({"name": session_id, "steps": steps}, sort_keys=False), encoding="utf-8")
+
+
+_DUPLICATE_ID_STEPS: list[dict[str, object]] = [{"id": "a", "run": "echo one"}, {"id": "a", "run": "echo two"}]
+
+
+class SessionResumeValidationCliIntegrationTests:
+    """Typer runner tests for GH-1096: dovo resume validates the session's blueprint snapshot before any step."""
+
+    def test_invalid_snapshot_prints_blueprint_invalid_exits_one_and_stays_paused(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        _seed_invalid_snapshot(
+            cli_workspace, "bad-snap", [*_DUPLICATE_ID_STEPS, {"id": "b", "type": "agent", "prompt": ""}]
+        )
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "resume", "bad-snap"])
+
+        assert result.exit_code == 1
+        assert "Blueprint Invalid" in result.stdout
+        assert "Blueprint 'bad-snap' failed validation; no steps ran." in result.stdout
+        assert "- steps.2: Value error, Agent steps must specify a non-empty 'prompt' string." in result.stdout
+        assert "errors.pydantic.dev" not in result.stdout
+        paths = initialized_workspace_paths(cli_workspace)
+        record = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.get("bad-snap")
+        assert record is not None
+        assert record.status == SessionStatus.PAUSED
+
+    def test_invalid_snapshot_json_is_one_blueprint_invalid_event(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        _seed_invalid_snapshot(cli_workspace, "bad-snap", _DUPLICATE_ID_STEPS)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "resume", "bad-snap", "--format", "json"])
+
+        assert result.exit_code == 1
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        assert [event["event_type"] for event in events] == ["MessageEvent", "BlueprintInvalidEvent"]
+        assert events[1]["payload"] == {
+            "blueprint": "bad-snap",
+            "error_code": "CATALOG_SCHEMA_INVALID",
+            "errors": ["Step id 'a' is used by more than one step."],
+            "remediations": [{"message": "Resolve: Step id 'a' is used by more than one step.", "command": None}],
+        }
+
+    def test_snapshot_warning_prints_once_before_the_first_step(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        _seed_invalid_snapshot(
+            cli_workspace,
+            "warn-snap",
+            [*_RESUMABLE_STEPS[:2], {"id": "s3", "run": "true", "env": {"GHOST": "${{ inputs.ghost }}"}}],
+        )
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "session", "resume", "warn-snap", "--format", "json"]
+        )
+
+        assert result.exit_code == 0
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        warnings = [index for index, event in enumerate(events) if event["event_type"] == "WarningEvent"]
+        first_step = next(index for index, event in enumerate(events) if event["event_type"] == "StepStartEvent")
+        assert [events[index]["payload"]["message"] for index in warnings] == [
+            "Placeholder 'inputs.ghost' is not declared in 'inputs:' (CATALOG_UNDECLARED_INPUT_PLACEHOLDER)."
+        ]
+        assert warnings[0] < first_step
 
 
 class SessionResumeEnvFlagsCliIntegrationTests:

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import pytest
+import yaml
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.catalog import CatalogError
+from dovo.core.catalog.exceptions import CatalogValidateFindings
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.interaction import HeadlessAnswerInput
@@ -104,8 +107,6 @@ def _break_seeded_run(paths: WorkspacePaths, sessions: SessionsRepository, fault
         (paths.session_dir("paused-1") / "session.json").write_text(newer.model_dump_json())
     elif fault == "deleted-snapshot":
         snapshot.unlink()
-    elif fault == "invalid-snapshot-yaml":
-        snapshot.write_text("- a\n- list\n")
     else:
         _break_state(paths, sessions, fault)
 
@@ -150,7 +151,7 @@ class EngineLoaderTests:
     ) -> None:
         _seed(engine_paths, sessions_repo)
 
-        row, state, manifest = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+        row, state, manifest = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
 
         assert row.session_id == "paused-1"
         assert manifest == state.manifest
@@ -192,12 +193,6 @@ class EngineLoaderTests:
                 id="missing-snapshot",
             ),
             pytest.param(
-                "invalid-snapshot-yaml",
-                ErrorCode.SESSION_SNAPSHOT_INVALID,
-                "Cannot resume session 'paused-1': ",
-                id="invalid-snapshot",
-            ),
-            pytest.param(
                 "paused-leaf-without-result",
                 ErrorCode.SESSION_STATE_CORRUPT,
                 "Cannot resume session 'paused-1': paused step 'b' has no recorded attempt result.",
@@ -221,13 +216,10 @@ class EngineLoaderTests:
             _break_seeded_run(engine_paths, sessions_repo, fault)
 
         with pytest.raises(EngineError) as exc_info:
-            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
 
         assert exc_info.value.error_code is code
-        if fault == "invalid-snapshot-yaml":
-            assert exc_info.value.message.startswith(message)
-        else:
-            assert exc_info.value.message == message.format(snapshot=snapshot)
+        assert exc_info.value.message == message.format(snapshot=snapshot)
 
     @pytest.mark.parametrize("case", ["failed-step", "exhausted-loop"])
     def test_state_with_a_failed_node_and_no_step_left_finalizes_the_row_and_raises(
@@ -237,7 +229,7 @@ class EngineLoaderTests:
         _seed_ended(engine_paths, sessions_repo, case)
 
         with pytest.raises(EngineError) as exc_info:
-            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
 
         assert exc_info.value.error_code is ErrorCode.SESSION_STATE_CORRUPT
         assert exc_info.value.message == "Cannot resume session 'paused-1': execution state has no step left to run."
@@ -258,7 +250,7 @@ class EngineLoaderTests:
         _seed(engine_paths, sessions_repo, use_worktree=True, worktree_id="dovo_1")
         engine_paths.worktree_dir("dovo_1").mkdir(parents=True)
 
-        row, _, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+        row, _, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
 
         assert row.worktree_id == "dovo_1"
 
@@ -271,11 +263,75 @@ class EngineLoaderTests:
         _seed(engine_paths, sessions_repo, use_worktree=True, worktree_id=worktree_id)
 
         with pytest.raises(EngineError) as exc_info:
-            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
 
         assert exc_info.value.error_code is ErrorCode.SESSION_WORKTREE_MISSING
         assert "no longer exists" in str(exc_info.value)
         assert sessions_repo.get("paused-1") is not None
+
+
+def _rewrite_snapshot(paths: WorkspacePaths, steps: list[dict[str, object]]) -> None:
+    """Replace the seeded paused run's blueprint snapshot with one holding steps."""
+    snapshot = snapshot_blueprint_path(paths.session_dir("paused-1"), "paused-1")
+    snapshot.write_text(yaml.safe_dump({"name": "paused-1", "steps": steps}, sort_keys=False), encoding="utf-8")
+
+
+class EngineLoaderSnapshotValidationTests:
+    """The blueprint snapshot is checked as `dovo blueprint validate` checks a blueprint before a resume runs."""
+
+    @pytest.mark.parametrize(
+        ("content", "code", "errors"),
+        [
+            pytest.param(
+                [{"id": "a", "run": "true"}, {"id": "a", "run": "exit 1"}],
+                ErrorCode.CATALOG_SCHEMA_INVALID,
+                ("Step id 'a' is used by more than one step.",),
+                id="duplicate_step_id",
+            ),
+            pytest.param(
+                [{"id": "a", "run": "true"}, {"id": "b", "type": "agent"}],
+                ErrorCode.CATALOG_SCHEMA_INVALID,
+                ("steps.1: Value error, Agent steps must specify a non-empty 'prompt' string.",),
+                id="agent_without_prompt",
+            ),
+        ],
+    )
+    def test_invalid_snapshot_raises_the_validate_failure_and_keeps_the_session_paused(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        content: list[dict[str, object]],
+        code: ErrorCode,
+        errors: tuple[str, ...],
+    ) -> None:
+        before = _seed(engine_paths, sessions_repo)
+        _rewrite_snapshot(engine_paths, content)
+
+        with pytest.raises(CatalogError) as exc_info:
+            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
+
+        findings = exc_info.value.data
+        assert isinstance(findings, CatalogValidateFindings)
+        assert (exc_info.value.error_code, findings.errors) == (code, errors)
+        after = sessions_repo.get("paused-1")
+        assert after is not None
+        assert (after.status, after.execution_state_revision) == (SessionStatus.PAUSED, before.execution_state_revision)
+
+    def test_script_path_is_checked_against_the_retained_worktree(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        _seed(engine_paths, sessions_repo, use_worktree=True, worktree_id="dovo_1")
+        engine_paths.worktree_dir("dovo_1").mkdir(parents=True)
+        (engine_paths.root_dir / "build.sh").write_text("true\n", encoding="utf-8")
+        _rewrite_snapshot(
+            engine_paths,
+            [{"id": "a", "run": "true"}, {"id": "b", "type": "script", "script_path": "build.sh"}],
+        )
+        warnings: list[str] = []
+
+        EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", warnings)
+
+        assert warnings == ["Step 'b' script_path 'build.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."]
 
 
 class EngineLoaderPausedBodyLeafTests:
@@ -284,7 +340,7 @@ class EngineLoaderPausedBodyLeafTests:
     ) -> None:
         _seed_paused_loop(engine_paths, sessions_repo)
 
-        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
 
         loop = state.nodes[0]
         assert isinstance(loop, ExecutionLoopNode)
@@ -302,7 +358,7 @@ class EngineLoaderPausedBodyLeafTests:
         store.save(state, [])
 
         with pytest.raises(EngineError) as exc_info:
-            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
 
         assert exc_info.value.error_code is ErrorCode.SESSION_STATE_CORRUPT
         assert "'verify'" in str(exc_info.value)
@@ -321,7 +377,7 @@ class EngineLoaderCorruptLoopStateTests:
         store.save(state, [])
 
         with pytest.raises(EngineError) as exc_info:
-            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
 
         assert exc_info.value.error_code is ErrorCode.SESSION_STATE_CORRUPT
         assert str(exc_info.value).endswith(
@@ -357,7 +413,7 @@ class EngineLoaderPausedAskTests:
             engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
         )
 
-        row, state, manifest = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+        row, state, manifest = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
 
         leaf = state.nodes[0]
         assert isinstance(leaf, ExecutionLeafNode)
@@ -381,7 +437,7 @@ class EngineLoaderPausedAskTests:
         store.save(state, [])
 
         with pytest.raises(EngineError) as raised:
-            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
 
         assert raised.value.error_code is ErrorCode.SESSION_STATE_CORRUPT
 
@@ -396,7 +452,7 @@ class EngineLoaderResolveAnswersTests:
         seed_paused_ask_session(
             engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
         )
-        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
         warnings: list[str] = []
 
         answers = EngineLoader.resolve_answers(
@@ -443,7 +499,7 @@ class EngineLoaderResolveAnswersTests:
         seed_paused_ask_session(
             engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
         )
-        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
 
         with pytest.raises(EngineError) as raised:
             EngineLoader.resolve_answers("paused-1", state, [supplied], [])
@@ -455,7 +511,7 @@ class EngineLoaderResolveAnswersTests:
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         _seed(engine_paths, sessions_repo)
-        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
 
         with pytest.raises(EngineError) as raised:
             EngineLoader.resolve_answers("paused-1", state, [HeadlessAnswerInput(step_id="b", value="x")], [])
@@ -472,7 +528,7 @@ class EngineLoaderResolveAnswersTests:
         seed_paused_ask_session(
             engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
         )
-        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
         warnings: list[str] = []
 
         answers = EngineLoader.resolve_answers(

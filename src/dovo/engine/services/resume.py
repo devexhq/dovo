@@ -11,13 +11,13 @@ from dovo.common.filesystem import WorkspacePaths
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.catalog import Catalog
-from dovo.core.db import SessionsRepository
+from dovo.core.db import SessionRecord, SessionsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.core.sessions import reconcile_stale_sessions
 from dovo.engine.engine import Engine
 from dovo.engine.models import BlueprintRunResult, FailurePrompter, InteractionPrompter, RunObserver, RunOutcome
-from dovo.engine.services._shared import fail, finalize, load_record, resolve_env_overrides
+from dovo.engine.services._shared import fail, failed_result, finalize, load_record, resolve_env_overrides
 
 
 @dataclass
@@ -59,34 +59,36 @@ class BlueprintResumeService:
         self.diagnostics.extend(error_diagnostics(reconciliation.diagnostic))
 
         with catch_failure("engine.resume_target", session_id=self.session_id) as caught:
-            target_session_id = self._target_session_id()
+            target = self._target()
         if caught.failure is not None:
             return BlueprintRunResult(
                 session_record=None,
                 warnings=self.warnings,
                 **caught.failure.result_fields(prior_diagnostics=self.diagnostics),
             )
-        if target_session_id is None:
+        if target is None:
             return fail(self.warnings, self.diagnostics, "No paused session found to resume.")
 
+        target_session_id, record = target
         with catch_failure("engine.resume", session_id=target_session_id) as caught:
             run_outcome = self._resume(Catalog(self.paths), target_session_id, env_overrides)
         if caught.failure is not None:
-            return BlueprintRunResult(
-                session_record=None,
-                warnings=self.warnings,
-                **caught.failure.result_fields(prior_diagnostics=self.diagnostics),
+            return failed_result(
+                caught.failure,
+                self.warnings,
+                self.diagnostics,
+                blueprint_name=record.blueprint_name if record is not None else target_session_id,
+                observer=self.observer,
             )
 
         return finalize(self.db, self.warnings, self.diagnostics, run_outcome, target_session_id)
 
-    def _target_session_id(self) -> str | None:
-        """Return session_id after loading its record, or the latest paused session's id, or None when nothing is paused."""
+    def _target(self) -> tuple[str, SessionRecord | None] | None:
+        """Return session_id with its record (None when it cannot be loaded), or the latest paused session and its record, or None when nothing is paused."""
         if self.session_id:
-            load_record(self.db, self.warnings, self.diagnostics, self.session_id)
-            return self.session_id
+            return self.session_id, load_record(self.db, self.warnings, self.diagnostics, self.session_id)
         record = self.db.get_latest_paused()
-        return record.session_id if record is not None else None
+        return (record.session_id, record) if record is not None else None
 
     def _resume(self, catalog: Catalog, session_id: str, env_overrides: AgentEnvOverrides | None) -> RunOutcome:
         """Resume session_id through Engine and return its outcome."""

@@ -33,6 +33,7 @@ from dovo.engine.models import (
     RunRequest,
     RunStartConfig,
 )
+from dovo.engine.notify import safe_notify
 from dovo.engine.preset_prompter import PresetInteractionPrompter
 from dovo.engine.session import drive_run
 from dovo.engine.state_models import ExecutionStateTree
@@ -112,11 +113,17 @@ class Engine:
         no_tty: bool = False,
         env_overrides: AgentEnvOverrides | None = None,
     ) -> RunOutcome:
-        """Load a paused run's durable state and execute it through the same RunCoordinator entry point as run()."""
+        """Load a paused run's durable state and execute it through the same RunCoordinator entry point as run().
+
+        The blueprint snapshot's validation warnings go to the observer's on_validation_warnings before the first
+        step; a snapshot that fails validation raises its CatalogError and leaves the session paused, unchanged.
+        """
         engine_warnings: list[str] = []
+        validation_warnings: list[str] = []
         prior_diagnostics: list[DiagnosticRecord] = []
         with WorkspaceLock(self.paths.lock_file):
-            _, state, _ = EngineLoader.load_for_resume(self.db, self.paths, session_id)
+            _, state, _ = EngineLoader.load_for_resume(self.db, self.paths, session_id, validation_warnings)
+            safe_notify(observer, "on_validation_warnings", validation_warnings)
             if answers:
                 preset = EngineLoader.resolve_answers(session_id, state, answers, engine_warnings)
                 interaction_prompter = PresetInteractionPrompter(preset, interaction_prompter)
