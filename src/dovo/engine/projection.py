@@ -40,17 +40,27 @@ def terminal_result(leaf: ExecutionLeafNode) -> StepResult | None:
 
 
 def scope_results(state: ExecutionStateTree) -> dict[str, StepResult]:
-    """Map step id to terminal result for every top-level step, in tree order.
+    """Map step id to terminal result for every top-level step and every step of a chosen if branch, in tree order.
 
-    Steps inside loops are left out: a condition outside a loop cannot reference them. A skipped step, or one
-    that never ran, has no entry, so a condition that references it does not resolve.
+    Steps inside loops are left out: a condition outside a loop cannot reference them. A skipped step, one that
+    never ran, or one in the branch an if block did not take has no entry, so a condition that references it does
+    not resolve.
     """
     results: dict[str, StepResult] = {}
-    for node in state.nodes:
-        result = terminal_result(node) if node.kind == "step" else None
+    for leaf in _scope_leaves(state):
+        result = terminal_result(leaf)
         if result is not None:
-            results[node.id] = result
+            results[leaf.id] = result
     return results
+
+
+def _scope_leaves(state: ExecutionStateTree) -> Iterator[ExecutionLeafNode]:
+    """Yield every top-level leaf and every leaf of a chosen if branch, in tree order, leaving loops out."""
+    for node in state.nodes:
+        if node.kind == "step":
+            yield node
+        elif node.kind == "if":
+            yield from node.steps
 
 
 def iteration_results(iteration: ExecutionIterationRecord) -> dict[str, StepResult]:

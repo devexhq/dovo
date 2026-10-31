@@ -15,7 +15,7 @@ from dovo.common.process import process_registry
 from dovo.common.timing import TimeSpan
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.catalog.blueprint import Blueprint
-from dovo.core.catalog.definitions import BlueprintStep, LoopStepBlock, StepDefinition, StepType
+from dovo.core.catalog.definitions import BlueprintStep, IfStepBlock, LoopStepBlock, StepDefinition, StepType
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
@@ -40,7 +40,7 @@ from dovo.engine.failure import (
     prompt_failure_decision,
     resolve_terminal_action,
 )
-from dovo.engine.guards import evaluate_guard, guard_skip
+from dovo.engine.guards import choose_branch, evaluate_guard, guard_skip
 from dovo.engine.loop_events import LoopEventEmitter
 from dovo.engine.loop_policy import LoopDecision, LoopPolicy, LoopTransitionKind
 from dovo.engine.models import (
@@ -65,6 +65,7 @@ from dovo.engine.projection import (
 )
 from dovo.engine.state_models import (
     TERMINAL_NODE_STATES,
+    ExecutionIfNode,
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,
@@ -75,7 +76,7 @@ from dovo.engine.state_models import (
     StepSkip,
 )
 from dovo.engine.state_store import SessionStateStore, new_iteration
-from dovo.engine.state_validation import validate_loop_structure
+from dovo.engine.state_validation import validate_block_structure
 from dovo.engine.writer import load_blueprint_from_snapshot
 
 _RERUN_WARNING = (
@@ -490,6 +491,9 @@ class RunCoordinator:
         process_registry.terminate_all(grace_seconds=0.5)
         if self._in_flight is not None and self._in_flight.state not in TERMINAL_NODE_STATES:
             self._in_flight.state = NodeState.CANCELLED
+            for block in self._run.state.nodes:
+                if isinstance(block, ExecutionIfNode) and any(leaf is self._in_flight for leaf in block.steps):
+                    block.state = NodeState.CANCELLED
             self._commit("while cancelling the run")
         self._errors = ["Execution cancelled by user."]
         return self._outcome(SessionStatus.CANCELLED)
@@ -516,7 +520,7 @@ class RunCoordinator:
             self._errors.append(str(exc))
             return False
 
-        structure_errors = validate_loop_structure(state, blueprint)
+        structure_errors = validate_block_structure(state, blueprint)
         if structure_errors:
             self._errors.append(f"Execution state for session '{session_id}' is corrupt: {structure_errors[0]}")
             return False
@@ -572,6 +576,8 @@ class RunCoordinator:
             return self._advance_leaf(node, definition, position)
         if isinstance(node, ExecutionLoopNode) and isinstance(definition, LoopStepBlock):
             return self._advance_loop(node, definition, position)
+        if isinstance(node, ExecutionIfNode) and isinstance(definition, IfStepBlock):
+            return self._advance_if(node, definition, position)
 
         self._errors.append(f"Step '{node.id}' has no matching definition in the run snapshot.")
         return NodeTransitionKind.FAILED
@@ -601,6 +607,54 @@ class RunCoordinator:
         notice = StepSkipNotice(step_id=node.id, name=name, cause=skip.cause, expression=skip.expression)
         safe_notify(self._observer, "on_step_skipped", idx, total, notice)
         return NodeTransitionKind.COMPLETED
+
+    def _advance_if(self, node: ExecutionIfNode, block: IfStepBlock, position: int) -> NodeTransitionKind:
+        """Choose and save the branch when the block starts, then run its steps in order; the block takes their outcome.
+
+        Each branch step reports the block's position, so its counter matches the block's.
+        """
+        if node.state is NodeState.PENDING and not self._choose_branch(node, block):
+            return NodeTransitionKind.FAILED
+
+        steps = block.branch(node.branch.value) if node.branch is not None else []
+        node.state = NodeState.RUNNING
+        idx, total = position + 1, len(self._run.state.nodes)
+        for leaf, step_def in zip(node.steps, steps, strict=True):
+            transition = self._finish_branch_step(leaf, step_def, idx=idx, total=total)
+            if transition is NodeTransitionKind.PAUSED:
+                return self._settle_if(node, NodeState.PAUSED, transition)
+            if transition is NodeTransitionKind.FAILED:
+                return self._settle_if(node, NodeState.FAILED, transition)
+
+        return self._settle_if(node, NodeState.COMPLETED, NodeTransitionKind.COMPLETED)
+
+    def _finish_branch_step(
+        self, leaf: ExecutionLeafNode, step_def: StepDefinition, *, idx: int, total: int
+    ) -> NodeTransitionKind:
+        """Advance one branch step through retries until it is terminal, or return the PAUSED or FAILED that stops it."""
+        transition = NodeTransitionKind.COMPLETED
+        while leaf.state not in TERMINAL_NODE_STATES:
+            self._in_flight = leaf
+            transition = self._advance_slot(leaf, step_def, idx=idx, total=total, loop=None)
+            if transition in (NodeTransitionKind.PAUSED, NodeTransitionKind.FAILED):
+                return transition
+        return transition
+
+    def _choose_branch(self, node: ExecutionIfNode, block: IfStepBlock) -> bool:
+        """Evaluate the block's condition and save the chosen branch with its PENDING steps in one commit."""
+        conditions = evaluate_guard(block.condition, scope_results(self._run.state))
+        branch = choose_branch(conditions, has_else=block.else_ is not None)
+        node.branch = branch
+        node.steps = [ExecutionLeafNode(id=step.id, name=step.name) for step in block.branch(branch.value)]
+        node.state = NodeState.RUNNING
+        return self._commit(f"after if block '{node.id}' chose its branch")
+
+    def _settle_if(self, node: ExecutionIfNode, state: NodeState, transition: NodeTransitionKind) -> NodeTransitionKind:
+        """Give the block state, the outcome of its branch, and commit it; return transition, or FAILED when the commit fails."""
+        node.state = state
+        if not self._commit(f"after if block '{node.id}' {state.value}"):
+            return NodeTransitionKind.FAILED
+        return transition
 
     def _begin_iteration(
         self, loop: ExecutionLoopNode, iteration: ExecutionIterationRecord, events: LoopEventEmitter

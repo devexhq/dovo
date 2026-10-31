@@ -22,7 +22,7 @@ from dovo.engine.state_models import (
     NodeState,
 )
 from dovo.engine.state_store import SessionStateStore
-from dovo.engine.state_validation import validate_loop_structure
+from dovo.engine.state_validation import validate_block_structure
 from dovo.engine.writer import get_session_dir, load_blueprint_from_snapshot, snapshot_blueprint_path
 
 _FINISHED_NODE_STATES = frozenset({NodeState.COMPLETED, NodeState.IGNORED, NodeState.SKIPPED})
@@ -201,7 +201,7 @@ class EngineLoader:
                 f"Cannot resume session '{session_id}': {exc}",
             ) from exc
 
-        structure_errors = validate_loop_structure(state, blueprint)
+        structure_errors = validate_block_structure(state, blueprint)
         if structure_errors:
             raise EngineError(
                 ErrorCode.SESSION_STATE_CORRUPT,

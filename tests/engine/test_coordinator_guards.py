@@ -1,10 +1,13 @@
-"""Contract tests for RunCoordinator over `when` guards: skips, outcomes and resume."""
+"""Contract tests for RunCoordinator over `when` guards and `if` blocks: skips, branches, outcomes and resume."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import InteractionAnswer, InteractionRequest
@@ -12,6 +15,7 @@ from dovo.engine import EngineLoader, RunCoordinator, SessionStateStore
 from dovo.engine.executors.models import StepResult
 from dovo.engine.models import (
     FailurePromptDecision,
+    IfBranch,
     InteractionPrompter,
     RunContext,
     RunOutcome,
@@ -19,6 +23,7 @@ from dovo.engine.models import (
     StepSkipNotice,
 )
 from dovo.engine.state_models import (
+    ExecutionIfNode,
     ExecutionLeafNode,
     ExecutionLoopNode,
     ExecutionStateTree,
@@ -26,7 +31,12 @@ from dovo.engine.state_models import (
     StepSkip,
 )
 from tests.harness.fakes import fixed_clock, fixed_new_id
-from tests.harness.sessions import RecordingRunObserver, ScriptedFailurePrompter, seed_new_session
+from tests.harness.sessions import (
+    NoOpRunObserver,
+    RecordingRunObserver,
+    ScriptedFailurePrompter,
+    seed_new_session,
+)
 
 _SESSION_ID = "guarded"
 _FAILED_CHECK = 'steps.check.status == "ignored"'
@@ -47,7 +57,7 @@ def _coordinator(
     paths: WorkspacePaths,
     sessions: SessionsRepository,
     *,
-    observer: RecordingRunObserver | None = None,
+    observer: NoOpRunObserver | None = None,
     prompter: ScriptedFailurePrompter | None = None,
     interaction_prompter: InteractionPrompter | None = None,
 ) -> RunCoordinator:
@@ -74,7 +84,7 @@ def _run(
     sessions: SessionsRepository,
     steps: list[dict[str, object]],
     *,
-    observer: RecordingRunObserver | None = None,
+    observer: NoOpRunObserver | None = None,
     prompter: ScriptedFailurePrompter | None = None,
     interaction_prompter: InteractionPrompter | None = None,
 ) -> RunOutcome:
@@ -348,3 +358,219 @@ class WhenGuardTests:
         outcome = _coordinator(engine_paths, sessions_repo).execute()
 
         assert (outcome.status, outcome.step_results) == (SessionStatus.COMPLETED, [])
+
+
+class _InterruptingObserver(NoOpRunObserver):
+    """RunObserver raising KeyboardInterrupt when step step_id starts, as Ctrl-C would mid-step."""
+
+    def __init__(self, step_id: str) -> None:
+        self.step_id = step_id
+
+    def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
+        if step.id == self.step_id:
+            raise KeyboardInterrupt
+
+
+def _route(**fields: object) -> dict[str, object]:
+    """Return if block `route` on a failed `check`: then runs `fix`, else runs `ship`, each touching a marker."""
+    block: dict[str, object] = {
+        "id": "route",
+        "type": "if",
+        "condition": [_FAILED_CHECK],
+        "then": [{"id": "fix", "run": "touch fix.marker"}],
+        "else": [{"id": "ship", "run": "touch ship.marker"}],
+    }
+    return {**block, **fields}
+
+
+def _if_node(state: ExecutionStateTree) -> ExecutionIfNode:
+    node = next(node for node in state.nodes if node.id == "route")
+    assert isinstance(node, ExecutionIfNode)
+    return node
+
+
+def _branch(state: ExecutionStateTree) -> tuple[NodeState, IfBranch | None, list[tuple[str, NodeState]]]:
+    """Return the block's state, its branch, and the id and state of each saved branch step."""
+    route = _if_node(state)
+    return route.state, route.branch, [(leaf.id, leaf.state) for leaf in route.steps]
+
+
+class IfBlockTests:
+    @pytest.mark.parametrize(
+        ("check", "block", "expected", "markers"),
+        [
+            pytest.param(
+                {"id": "check", "run": "false", "on_failure": "continue"},
+                _route(),
+                (NodeState.COMPLETED, IfBranch.THEN, [("fix", NodeState.COMPLETED)]),
+                ["fix.marker"],
+                id="then_true",
+            ),
+            pytest.param(
+                {"id": "check", "run": "true"},
+                _route(),
+                (NodeState.COMPLETED, IfBranch.ELSE, [("ship", NodeState.COMPLETED)]),
+                ["ship.marker"],
+                id="else_false",
+            ),
+            pytest.param(
+                {"id": "check", "run": "true"},
+                {key: value for key, value in _route().items() if key != "else"},
+                (NodeState.COMPLETED, IfBranch.NONE, []),
+                [],
+                id="none_without_else",
+            ),
+            pytest.param(
+                {"id": "check", "run": "true"},
+                _route(condition=["steps.check.outputs.verdict == 'ready'"]),
+                (NodeState.COMPLETED, IfBranch.ELSE, [("ship", NodeState.COMPLETED)]),
+                ["ship.marker"],
+                id="unresolved_takes_else",
+            ),
+        ],
+    )
+    def test_only_the_chosen_branch_runs(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        engine_workspace: Path,
+        check: dict[str, object],
+        block: dict[str, object],
+        expected: tuple[NodeState, IfBranch | None, list[tuple[str, NodeState]]],
+        markers: list[str],
+    ) -> None:
+        outcome = _run(engine_paths, sessions_repo, [check, block, {"id": "done", "run": "true"}])
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert _branch(_state(engine_paths, sessions_repo)) == expected
+        assert sorted(path.name for path in engine_workspace.glob("*.marker")) == markers
+
+    @pytest.mark.parametrize(
+        ("otherwise", "status", "expected"),
+        [
+            pytest.param(
+                [{"id": "ship", "run": "false"}, {"id": "after", "run": "true"}],
+                SessionStatus.FAILED,
+                (NodeState.FAILED, IfBranch.ELSE, [("ship", NodeState.FAILED), ("after", NodeState.PENDING)]),
+                id="failed",
+            ),
+            pytest.param(
+                [{"id": "ship", "run": "false", "on_failure": "continue"}],
+                SessionStatus.COMPLETED,
+                (NodeState.COMPLETED, IfBranch.ELSE, [("ship", NodeState.IGNORED)]),
+                id="ignored_counts_as_completed",
+            ),
+            pytest.param(
+                [{"id": "ship", "run": "true", "when": [_FAILED_CHECK]}],
+                SessionStatus.COMPLETED,
+                (NodeState.COMPLETED, IfBranch.ELSE, [("ship", NodeState.SKIPPED)]),
+                id="skipped_counts_as_completed",
+            ),
+        ],
+    )
+    def test_block_takes_the_state_of_its_branch(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        otherwise: list[dict[str, object]],
+        status: SessionStatus,
+        expected: tuple[NodeState, IfBranch | None, list[tuple[str, NodeState]]],
+    ) -> None:
+        steps: list[dict[str, object]] = [{"id": "check", "run": "true"}, _route(**{"else": otherwise})]
+
+        outcome = _run(engine_paths, sessions_repo, steps)
+
+        assert outcome.status == status
+        assert _branch(_state(engine_paths, sessions_repo)) == expected
+
+    def test_guard_inside_a_branch_sees_the_steps_before_the_block_and_earlier_branch_steps(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        otherwise: list[dict[str, object]] = [
+            {"id": "ship", "run": "true", "when": ["steps.check.exit_code == 0"]},
+            {"id": "announce", "run": "true", "when": ["steps.ship.exit_code == 1"]},
+        ]
+        steps: list[dict[str, object]] = [{"id": "check", "run": "true"}, _route(**{"else": otherwise})]
+
+        _run(engine_paths, sessions_repo, steps)
+
+        ship, announce = _if_node(_state(engine_paths, sessions_repo)).steps
+        assert (ship.state, announce.state, announce.skip) == (
+            NodeState.COMPLETED,
+            NodeState.SKIPPED,
+            StepSkip(cause=SkipCause.WHEN_FALSE, expression="steps.ship.exit_code == 1"),
+        )
+
+    def test_reference_to_a_step_of_the_branch_not_taken_resolves_as_never_ran(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
+    ) -> None:
+        steps: list[dict[str, object]] = [
+            {"id": "check", "run": "true"},
+            _route(then=[{"id": "fix", "run": "echo '{\"n\": 1}'"}]),
+            {"id": "after", "run": "true", "when": ["steps.fix.exit_code == 0"]},
+            {"id": "echo", "run": "echo '[${{ steps.fix.outputs.n }}][${{ steps.ship.exit_code }}]' > echo.txt"},
+        ]
+
+        outcome = _run(engine_paths, sessions_repo, steps)
+
+        after = _node(_state(engine_paths, sessions_repo), "after")
+        assert outcome.status == SessionStatus.COMPLETED
+        assert _skip(after) == (
+            NodeState.SKIPPED,
+            StepSkip(cause=SkipCause.WHEN_UNRESOLVED, expression="steps.fix.exit_code == 0"),
+        )
+        assert (engine_workspace / "echo.txt").read_text(encoding="utf-8") == "[][0]\n"
+
+    def test_branch_steps_report_the_block_position(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        observer = RecordingRunObserver()
+        otherwise: list[dict[str, object]] = [{"id": "ship", "run": "true"}, {"id": "tag", "run": "true"}]
+        steps: list[dict[str, object]] = [
+            {"id": "check", "run": "true"},
+            _route(**{"else": otherwise}),
+            {"id": "done", "run": "true"},
+        ]
+
+        _run(engine_paths, sessions_repo, steps, observer=observer)
+
+        starts = [(call[1], call[2], call[3]) for call in observer.calls if call[0] == "step_start"]
+        assert starts == [(1, 3, "check"), (2, 3, "ship"), (2, 3, "tag"), (3, 3, "done")]
+
+    def test_cancel_inside_a_branch_marks_the_step_and_the_block_cancelled(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        steps: list[dict[str, object]] = [{"id": "check", "run": "true"}, _route(), {"id": "done", "run": "true"}]
+
+        outcome = _run(engine_paths, sessions_repo, steps, observer=_InterruptingObserver("ship"))
+
+        state = _state(engine_paths, sessions_repo)
+        assert outcome.status == SessionStatus.CANCELLED
+        assert _branch(state) == (NodeState.CANCELLED, IfBranch.ELSE, [("ship", NodeState.CANCELLED)])
+        assert _node(state, "done").state is NodeState.PENDING
+
+    def test_run_paused_in_a_branch_resumes_in_it_without_choosing_again(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
+    ) -> None:
+        otherwise: list[dict[str, object]] = [
+            {"id": "gate", "run": "test -f allow", "on_failure": "prompt_user"},
+            {"id": "ship", "run": "touch ship.marker"},
+        ]
+        steps: list[dict[str, object]] = [{"id": "check", "run": "true"}, _route(**{"else": otherwise})]
+        paused = _run(engine_paths, sessions_repo, steps, prompter=ScriptedFailurePrompter([KeyboardInterrupt()]))
+        paused_branch = _branch(_state(engine_paths, sessions_repo))
+        _mark_check_ignored(engine_paths, sessions_repo)
+        (engine_workspace / "allow").touch()
+
+        resumed = _coordinator(
+            engine_paths, sessions_repo, prompter=ScriptedFailurePrompter([FailurePromptDecision.RETRY])
+        ).execute()
+
+        assert (paused.status, paused_branch[:2]) == (SessionStatus.PAUSED, (NodeState.PAUSED, IfBranch.ELSE))
+        assert resumed.status == SessionStatus.COMPLETED
+        assert _branch(_state(engine_paths, sessions_repo)) == (
+            NodeState.COMPLETED,
+            IfBranch.ELSE,
+            [("gate", NodeState.COMPLETED), ("ship", NodeState.COMPLETED)],
+        )
+        assert not (engine_workspace / "fix.marker").exists()
