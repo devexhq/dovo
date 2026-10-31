@@ -23,8 +23,8 @@ import tarfile
 from collections import Counter
 from pathlib import Path
 
-from pr_feedback import FAILED_CONCLUSIONS, list_checks, session_from_comment
-from publish_review import find_own_comment, list_comments, pr_repository, run
+from pr_feedback import FAILED_CONCLUSIONS, list_checks
+from publish_review import find_own_comment, list_comments, pr_repository, run, session_from_comment
 
 AGENTIC_DIR = Path(".agentic")
 INPUTS_JSON = AGENTIC_DIR / "grade-inputs.json"

@@ -1,4 +1,4 @@
-"""Tier 1 contract: scripts/pr_feedback.py finds a PR's dovo session and collects its open feedback."""
+"""Tier 1 contract: scripts/pr_feedback.py collects a PR's open feedback, with no dovo session."""
 
 from __future__ import annotations
 
@@ -214,6 +214,7 @@ def _comment_item(item_id: str, author: str, url: str, body: str, summary: str) 
         "summary": summary,
         "body": body,
         "finding": None,
+        "commit": None,
     }
 
 
@@ -230,6 +231,7 @@ def _check_item(item_id: str, name: str, conclusion: str, url: str) -> dict[str,
         "summary": f"{name}: {conclusion}",
         "body": f"{name}: {conclusion}",
         "finding": None,
+        "commit": None,
     }
 
 
@@ -249,67 +251,6 @@ class PrFeedbackTests:
     )
     def test_pr_problem(self, view: dict[str, object], expected: str | None) -> None:
         assert FEEDBACK.pr_problem(view, 7) == expected
-
-    @pytest.mark.parametrize(
-        ("body", "expected"),
-        [
-            pytest.param(f"{HEADER}Dovo session: `{SESSION}`\n\n## report\n", SESSION, id="four-line-header"),
-            pytest.param(f"{HEADER}\n## report\n", None, id="three-line-header"),
-            pytest.param(f"{HEADER}\nDovo session: `{SESSION}`\n", None, id="session-text-in-report"),
-            pytest.param(f"{HEADER}Dovo session: `{SESSION}`\n\n".replace("\n", "\r\n"), SESSION, id="crlf"),
-        ],
-    )
-    def test_session_from_comment(self, body: str, expected: str | None) -> None:
-        assert FEEDBACK.session_from_comment(body) == expected
-
-    @pytest.mark.parametrize(
-        ("comments", "expected"),
-        [
-            pytest.param([OTHER_COMMENT, OWN_COMMENT], OWN_COMMENT, id="own-comment"),
-            pytest.param(
-                [],
-                "no dovo-review comment on pull request #7; run /dovo-review 7 --post first",
-                id="no-comment",
-            ),
-            pytest.param(
-                [{**OWN_COMMENT, "user": "other"}],
-                "no dovo-review comment on pull request #7; run /dovo-review 7 --post first",
-                id="other-author-only",
-            ),
-        ],
-    )
-    def test_review_comment(self, comments: list[dict[str, object]], expected: object) -> None:
-        if isinstance(expected, dict):
-            assert FEEDBACK.review_comment(comments, "me", 7) == expected
-            return
-        with pytest.raises(FEEDBACK.PrFeedbackError) as raised:
-            FEEDBACK.review_comment(comments, "me", 7)
-        assert str(raised.value) == expected
-
-    @pytest.mark.parametrize(
-        ("comment", "expected"),
-        [
-            pytest.param(OWN_COMMENT, SESSION, id="with-session"),
-            pytest.param(
-                {**OWN_COMMENT, "body": f"{HEADER}\nx"},
-                "the dovo-review comment on pull request #7 names no dovo session",
-                id="no-session-line",
-            ),
-        ],
-    )
-    def test_comment_session(self, comment: dict[str, object], expected: str) -> None:
-        if expected == SESSION:
-            assert FEEDBACK.comment_session(comment, 7) == SESSION
-            return
-        with pytest.raises(FEEDBACK.PrFeedbackError) as raised:
-            FEEDBACK.comment_session(comment, 7)
-        assert str(raised.value) == expected
-
-    def test_artifact_problem(self) -> None:
-        assert FEEDBACK.artifact_problem(SESSION, "plan") == (
-            f"cannot restore artifact 'plan' from dovo session {SESSION}; "
-            f"check it with dovo artifacts list --session {SESSION}"
-        )
 
     @pytest.mark.parametrize(
         ("body", "expected"),
@@ -366,6 +307,7 @@ class PrFeedbackTests:
                 "summary": "Fix one",
                 "body": "Fix one",
                 "finding": None,
+                "commit": None,
             },
             {
                 "id": "T2",
@@ -378,6 +320,7 @@ class PrFeedbackTests:
                 "summary": "Fix two",
                 "body": "Fix two",
                 "finding": None,
+                "commit": None,
             },
             {
                 "id": "T3",
@@ -390,6 +333,7 @@ class PrFeedbackTests:
                 "summary": "Fix three",
                 "body": "Fix three",
                 "finding": None,
+                "commit": None,
             },
             {
                 "id": "T4",
@@ -402,6 +346,7 @@ class PrFeedbackTests:
                 "summary": "B1 summary.",
                 "body": f"{PUBLISH.inline_body(B1)}\n",
                 "finding": B1_FINDING,
+                "commit": None,
             },
             {
                 "id": "T5",
@@ -414,6 +359,7 @@ class PrFeedbackTests:
                 "summary": "Typo.",
                 "body": N1_BLOCK,
                 "finding": None,
+                "commit": None,
             },
             {
                 "id": "T6",
@@ -426,6 +372,7 @@ class PrFeedbackTests:
                 "summary": "Marker first.",
                 "body": f"{MARKER_FIRST}\nMarker first.",
                 "finding": None,
+                "commit": None,
             },
             {
                 "id": "T7",
@@ -438,29 +385,9 @@ class PrFeedbackTests:
                 "summary": "Plain note.",
                 "body": f"Plain note.\n{MARKER_FIRST}",
                 "finding": {"id": "W9", "severity": "WARNING", "rule": "R4"},
+                "commit": None,
             },
         ]
-
-    @pytest.mark.parametrize(
-        ("body", "expected"),
-        [
-            pytest.param(str(OWN_COMMENT["body"]), DOVO_REVIEW_URL, id="linked"),
-            pytest.param(str(OWN_COMMENT["body"]).replace("\n", "\r\n"), DOVO_REVIEW_URL, id="crlf"),
-            pytest.param(str(_own_comment("**Findings:** none")["body"]), None, id="findings-none"),
-            pytest.param(
-                str(_own_comment("**Findings:** 1 blocking · 0 warnings · 0 suggestions · 0 nits")["body"]),
-                None,
-                id="unlinked",
-            ),
-            pytest.param(
-                str(_own_comment(LINKED_LINE.replace("[review]", "[round 1 review]"))["body"]),
-                None,
-                id="old-round-link",
-            ),
-        ],
-    )
-    def test_linked_review(self, body: str, expected: str | None) -> None:
-        assert FEEDBACK.linked_review(body) == expected
 
     def test_finding_items(self) -> None:
         items = FEEDBACK.finding_items(_dovo_review(HEAD, [B1, N1]))
@@ -477,6 +404,7 @@ class PrFeedbackTests:
                 "summary": B1_SUMMARY,
                 "body": B1_BLOCK,
                 "finding": B1_FINDING,
+                "commit": HEAD,
             },
             {
                 "id": "R2",
@@ -489,6 +417,7 @@ class PrFeedbackTests:
                 "summary": "Typo.",
                 "body": N1_BLOCK,
                 "finding": {"id": "N1", "severity": "NIT", "rule": None},
+                "commit": HEAD,
             },
         ]
 
@@ -551,19 +480,24 @@ class PrFeedbackTests:
             _review("Bot review", {"__typename": "Bot", "login": "copilot"}, "2026-10-20T17:00:00Z"),
             _review("", {"__typename": "User", "login": "erin"}, "2026-10-20T18:00:00Z"),
             _review("Pending review", {"__typename": "User", "login": "me"}, None),
+            _review("Old review", {"__typename": "User", "login": "frank"}, "2026-10-18T10:00:00Z"),
+            _review("My own review", {"__typename": "User", "login": "me"}, "2026-10-20T19:00:00Z"),
         ]
 
-        items = FEEDBACK.comment_items(comments, reviews, "me", CUTOFF)
+        items = FEEDBACK.comment_items(comments, reviews, "me")
 
         assert items == [
             _comment_item("C1", "dave", "https://x/r/Edi", "Edited review", "Edited review"),
-            _comment_item("C2", "alice", "https://x/c4", "Edited note", "Edited note"),
+            _comment_item("C2", "alice", "https://x/c3", "Old note", "Old note"),
+            _comment_item("C3", "alice", "https://x/c4", "Edited note", "Edited note"),
+            _comment_item("C4", "frank", "https://x/r/Old", "Old review", "Old review"),
+            _comment_item("C5", "bob", "https://x/c5", "At the cut-off", "At the cut-off"),
             _comment_item(
-                "C3", "carol", "https://x/r/**A", "**Actionable** comments posted: 3", "Actionable comments posted: 3"
+                "C6", "carol", "https://x/r/**A", "**Actionable** comments posted: 3", "Actionable comments posted: 3"
             ),
-            _comment_item("C4", "coderabbitai[bot]", "https://x/c2", str(OTHER_COMMENT["body"]), "Walkthrough"),
-            _comment_item("C5", "ghost", "https://x/c7", "Deleted user note", "Deleted user note"),
-            _comment_item("C6", "copilot[bot]", "https://x/r/Bot", "Bot review", "Bot review"),
+            _comment_item("C7", "coderabbitai[bot]", "https://x/c2", str(OTHER_COMMENT["body"]), "Walkthrough"),
+            _comment_item("C8", "ghost", "https://x/c7", "Deleted user note", "Deleted user note"),
+            _comment_item("C9", "copilot[bot]", "https://x/r/Bot", "Bot review", "Bot review"),
         ]
 
     def test_check_items(self) -> None:
@@ -639,12 +573,11 @@ class PrFeedbackTests:
             [_thread("Fix one", author={"__typename": "Bot", "login": "coderabbitai"})], "me"
         ) + FEEDBACK.finding_items(_dovo_review(HEAD, [B1]))
 
-        document = FEEDBACK.feedback_document(1121, HEAD, SESSION, items)
+        document = FEEDBACK.feedback_document(1121, HEAD, items)
 
         assert document == {
             "pr": 1121,
             "head": HEAD,
-            "session": SESSION,
             "items": [
                 {
                     "id": "T1",
@@ -657,6 +590,7 @@ class PrFeedbackTests:
                     "summary": "Fix one",
                     "body": "Fix one",
                     "finding": None,
+                    "commit": None,
                     "label": "T1 [review_thread, coderabbitai[bot]] Fix one",
                 },
                 {
@@ -670,6 +604,7 @@ class PrFeedbackTests:
                     "summary": B1_SUMMARY,
                     "body": B1_BLOCK,
                     "finding": B1_FINDING,
+                    "commit": HEAD,
                     "label": f"R1 [review_finding, dovo-review, B1 BLOCKER] {B1_SUMMARY}",
                 },
             ],
@@ -711,29 +646,13 @@ class PrFeedbackTests:
         assert FEEDBACK.main() == 1
         assert capsys.readouterr().err == "pr_feedback.py: pull request #7 is not open\n"
 
-    def test_main_reports_artifact_problem(
+    def test_main_collects(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         ran: list[tuple[str, ...]] = []
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
-        fake_run = _fake_run(ran, failing_artifact="review")
-        monkeypatch.setattr(FEEDBACK, "run", fake_run)
-        monkeypatch.setattr(PUBLISH, "run", fake_run)
-
-        assert FEEDBACK.main() == 1
-        assert capsys.readouterr().err == f"pr_feedback.py: {FEEDBACK.artifact_problem(SESSION, 'review')}\n"
-        assert not [args for args in ran if args[0] == "git"]
-        assert not (tmp_path / ".agentic" / "feedback.json").exists()
-
-    def test_main_restores_and_collects(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        ran: list[tuple[str, ...]] = []
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
-        later = _dovo_review(HEAD, [N1], submitted="2026-10-19T10:00:00Z", url=LATER_REVIEW_URL)
-        fake_run = _fake_run(ran, reviews=(later, _dovo_review(HEAD, [B1])))
+        fake_run = _fake_run(ran, reviews=(_dovo_review(HEAD, [B1]),))
         monkeypatch.setattr(FEEDBACK, "run", fake_run)
         monkeypatch.setattr(PUBLISH, "run", fake_run)
         agentic = tmp_path / ".agentic"
@@ -743,11 +662,11 @@ class PrFeedbackTests:
         assert FEEDBACK.main() == 0
 
         assert not (agentic / "triage.json").exists()
-        assert capsys.readouterr().out == (
-            f"Restored dovo session {SESSION} and collected 4 feedback items for pull request #7\n"
-        )
+        assert capsys.readouterr().out == "Collected 4 feedback items for pull request #7\n"
         document = json.loads((agentic / "feedback.json").read_text(encoding="utf-8"))
-        assert (document["pr"], document["head"], document["session"]) == (7, HEAD, SESSION)
+        assert PUBLISH.session_from_comment(str(OWN_COMMENT["body"])) == SESSION
+        assert set(document) == {"pr", "head", "items"}
+        assert (document["pr"], document["head"]) == (7, HEAD)
         assert [item["label"] for item in document["items"]] == [
             "T1 [review_thread, alice] Fix one",
             f"R1 [review_finding, dovo-review, B1 BLOCKER] {B1_SUMMARY}",
@@ -758,16 +677,36 @@ class PrFeedbackTests:
         assert (agentic / "pr-branch").read_text(encoding="utf-8") == "alice/fix\n"
         assert (agentic / "pr-url").read_text(encoding="utf-8") == f"{PR_URL}\n"
         assert ("git", "switch", "-q", "--detach", HEAD) in ran
-        assert not (agentic / "review.json").exists()
+        assert not [args for args in ran if args[:4] == ("uv", "run", "dovo", "artifacts")]
 
-    def test_main_lists_no_findings_when_comment_has_none(
+    def test_main_collects_without_dovo_review_comment(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
+        fake_run = _fake_run([], reviews=(_dovo_review(HEAD, [B1, N1]),), own_comment=None)
+        monkeypatch.setattr(FEEDBACK, "run", fake_run)
+        monkeypatch.setattr(PUBLISH, "run", fake_run)
+
+        assert FEEDBACK.main() == 0
+
+        assert capsys.readouterr().out == "Collected 5 feedback items for pull request #7\n"
+        document = json.loads((tmp_path / ".agentic" / "feedback.json").read_text(encoding="utf-8"))
+        assert [
+            (item["id"], item["finding"]["id"], item["commit"])
+            for item in document["items"]
+            if item["source"] == "review_finding"
+        ] == [("R1", "B1", HEAD), ("R2", "N1", HEAD)]
+
+    def test_main_takes_latest_review_whatever_the_comment_says(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        earlier = "b" * 40
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
         fake_run = _fake_run(
             [],
-            reviews=(_dovo_review(HEAD, [B1]),),
+            reviews=(_dovo_review(earlier, [B1]),),
             own_comment=_own_comment("**Findings:** none"),
         )
         monkeypatch.setattr(FEEDBACK, "run", fake_run)
@@ -776,10 +715,11 @@ class PrFeedbackTests:
         assert FEEDBACK.main() == 0
 
         document = json.loads((tmp_path / ".agentic" / "feedback.json").read_text(encoding="utf-8"))
-        assert [item["id"] for item in document["items"]] == ["T1", "C1", "K1"]
-        assert capsys.readouterr().out == (
-            f"Restored dovo session {SESSION} and collected 3 feedback items for pull request #7\n"
-        )
+        assert [
+            (item["id"], item["finding"], item["commit"])
+            for item in document["items"]
+            if item["source"] == "review_finding"
+        ] == [("R1", B1_FINDING, earlier)]
 
     def test_reads_later_of_two_posts_on_one_head(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         first = _payload([_finding("B1", "BLOCKER", "src/a.py", 3, "R4")])
@@ -808,9 +748,7 @@ class PrFeedbackTests:
         pushed = "b" * 40
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
-        on_pushed = _dovo_review(pushed, [N1], submitted="2026-10-19T10:00:00Z", url=LATER_REVIEW_URL)
-        reviews = (on_pushed, _dovo_review(HEAD, [B1]))
-        fake_run = _fake_run([], reviews=reviews, pr_head=pushed)
+        fake_run = _fake_run([], reviews=(_dovo_review(HEAD, [B1]),), pr_head=pushed)
         monkeypatch.setattr(FEEDBACK, "run", fake_run)
         monkeypatch.setattr(PUBLISH, "run", fake_run)
 
@@ -819,7 +757,7 @@ class PrFeedbackTests:
         document = json.loads((tmp_path / ".agentic" / "feedback.json").read_text(encoding="utf-8"))
         assert document["head"] == pushed
         assert [item["id"] for item in document["items"] if item["source"] == "review_finding"] == ["R1"]
-        assert document["items"][1]["finding"] == B1_FINDING
+        assert (document["items"][1]["finding"], document["items"][1]["commit"]) == (B1_FINDING, HEAD)
 
     def test_main_reports_unreadable_checks(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -843,16 +781,14 @@ def _fake_run(
     ran: list[tuple[str, ...]],
     *,
     reviews: tuple[dict[str, object], ...] = (),
-    own_comment: dict[str, object] = OWN_COMMENT,
+    own_comment: dict[str, object] | None = OWN_COMMENT,
     pr_head: str = HEAD,
-    failing_artifact: str | None = None,
     failing_checks: bool = False,
 ) -> Callable[..., str]:
-    """Return a `run` double answering the gh, dovo and git calls of one restore of PR #7, recording each in ran.
+    """Return a `run` double answering the gh and git calls of one collect of PR #7, recording each in ran.
 
-    The pull request's comments are own_comment, the viewer's dovo-review comment, then OTHER_COMMENT. The
-    pull request's head is pr_head. Downloading failing_artifact raises CalledProcessError. The GraphQL
-    call answers one thread for `reviewThreads` and the reviews nodes for `reviews`; the check-runs call on
+    The pull request's comments are own_comment, the viewer's dovo-review comment, unless None, then
+    OTHER_COMMENT. The pull request's head is pr_head. The GraphQL call answers one thread for `reviewThreads` and the reviews nodes for `reviews`; the check-runs call on
     pr_head answers a failed `Tests` and a passed `Prek` run, or raises CalledProcessError when failing_checks is set.
     """
 
@@ -861,10 +797,9 @@ def _fake_run(
         if args[:3] == ("gh", "pr", "view"):
             view = {"number": 7, "state": "OPEN", "headRefName": "alice/fix", "headRefOid": pr_head}
             return json.dumps({**view, "url": PR_URL, "isCrossRepository": False})
-        if args[:5] == ("uv", "run", "dovo", "artifacts", "download"):
-            return _download(args, failing_artifact)
         if args[:2] == ("gh", "api"):
-            return _gh_api(args, reviews, (own_comment, OTHER_COMMENT), pr_head, failing_checks)
+            comments = (OTHER_COMMENT,) if own_comment is None else (own_comment, OTHER_COMMENT)
+            return _gh_api(args, reviews, comments, pr_head, failing_checks)
         assert args[0] == "git", f"ran {args}"
         return ""
 
@@ -878,7 +813,7 @@ def _gh_api(
     pr_head: str,
     failing_checks: bool,
 ) -> str:
-    """Answer a `gh api` call of one restore of PR #7: the viewer, its comments, GraphQL nodes or check runs."""
+    """Answer a `gh api` call of one collect of PR #7: the viewer, its comments, GraphQL nodes or check runs."""
     if args[-3:] == ("user", "--jq", ".login"):
         return "me"
     if "repos/o/r/issues/7/comments" in args:
@@ -889,14 +824,6 @@ def _gh_api(
         return json.dumps(_thread("Fix one", author={"__typename": "User", "login": "alice"}))
     assert f"repos/o/r/commits/{pr_head}/check-runs" in args, f"ran {args}"
     return _checks(args, failing_checks)
-
-
-def _download(args: tuple[str, ...], failing_artifact: str | None) -> str:
-    """Answer a `dovo artifacts download` call, creating .agentic/ as a download does and failing for failing_artifact."""
-    if args[6] == failing_artifact:
-        raise subprocess.CalledProcessError(1, list(args), stderr="no such artifact")
-    Path(".agentic").mkdir(exist_ok=True)
-    return ""
 
 
 def _checks(args: tuple[str, ...], failing: bool) -> str:
