@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Protocol, Self
 
@@ -14,6 +16,7 @@ from pydantic_core import ErrorDetails
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
 from dovo.common.models import Remediation
+from dovo.core.catalog.definitions.blueprint import STEP_KIND_TAGS
 from dovo.core.catalog.exceptions import CatalogError, CatalogValidateFindings
 from dovo.core.catalog.models import CatalogItemType
 
@@ -31,42 +34,64 @@ class _PydanticModel(Protocol):
         ...
 
 
-def validate_catalog_item(
+@dataclass(frozen=True, slots=True)
+class CheckedDefinition:
+    """A catalog definition that passed the schema check and every audit, with the warnings found on the way."""
+
+    definition: object
+    warnings: tuple[str, ...]
+
+
+def check_catalog_item(
     resolved_path: Path,
     item_type: str,
     key: str,
     *,
     repo_root: Path,
-    blueprint_cls: type[_PydanticModel],
-    step_cls: type[_PydanticModel],
-) -> list[str]:
-    """Read, schema-check and audit one already-resolved catalog definition file without executing it; return its warnings.
+    definition_cls: type[_PydanticModel],
+    prior_warnings: Sequence[str] = (),
+) -> CheckedDefinition:
+    """Read, schema-check and audit one already-resolved catalog definition file without executing it.
 
-    Target resolution lives on ``Catalog._resolve_validate_target``, not here, so this module never imports
-    ``Catalog`` (which would create an import cycle, since ``catalog.py`` already imports this module).
+    This is the one check behind ``dovo blueprint validate`` and every definition a catalog lookup loads.
+    prior_warnings, such as a lookup's duplicate-name warning, come first in the returned warnings and in a
+    failure's findings. Each ``script_path`` is looked up under repo_root. Target resolution lives on ``Catalog``,
+    not here, so this module never imports ``Catalog`` (``catalog.py`` already imports this module).
 
     Raises:
         CatalogError: CATALOG_FILE_UNREADABLE or CATALOG_SYNTAX_INVALID when the file cannot be read or parsed,
-            and CATALOG_SCHEMA_INVALID, carrying every message and warning in ``CatalogValidateFindings``,
-            when the schema check or an audit fails.
+            and CATALOG_SCHEMA_INVALID when the schema check or an audit fails; each carries every message and
+            warning in ``CatalogValidateFindings``.
     """
-    parsed = _read_and_parse_target_yaml(resolved_path)
-    definition = _validate_schema(item_type, parsed, key, blueprint_cls=blueprint_cls, step_cls=step_cls)
-    return _run_semantic_audits(item_type, definition, repo_root)
+    warnings = tuple(prior_warnings)
+    parsed = _read_and_parse_target_yaml(resolved_path, warnings)
+    definition = _validate_schema(definition_cls, parsed, key, warnings)
+    errors, found = _semantic_findings(item_type, definition, repo_root)
+    warnings = (*warnings, *found)
+    if errors:
+        raise _schema_invalid(errors, _resolve_remediations(errors), warnings)
+    return CheckedDefinition(definition=definition, warnings=warnings)
 
 
-def _schema_invalid(errors: list[str], remediations: list[Remediation], warnings: list[str]) -> CatalogError:
-    """Return the CATALOG_SCHEMA_INVALID error: the first message as its own, every message and warning as its data."""
+def _catalog_failure(
+    error_code: ErrorCode, errors: Sequence[str], remediations: Sequence[Remediation], warnings: Sequence[str]
+) -> CatalogError:
+    """Return the check failure: the first message as its own, every message and warning as its findings."""
     return CatalogError(
-        ErrorCode.CATALOG_SCHEMA_INVALID,
+        error_code,
         errors[0],
         remediations,
         data=CatalogValidateFindings(errors=tuple(errors), warnings=tuple(warnings)),
     )
 
 
-def _read_and_parse_target_yaml(resolved_path: Path) -> dict[str, Any]:
-    """Read and YAML-parse resolved_path into its top-level mapping.
+def _schema_invalid(errors: list[str], remediations: list[Remediation], warnings: Sequence[str]) -> CatalogError:
+    """Return the CATALOG_SCHEMA_INVALID failure carrying every message and warning."""
+    return _catalog_failure(ErrorCode.CATALOG_SCHEMA_INVALID, errors, remediations, warnings)
+
+
+def _read_and_parse_target_yaml(resolved_path: Path, warnings: Sequence[str]) -> dict[str, Any]:
+    """Read and YAML-parse resolved_path into its top-level mapping; a failure carries warnings as its findings'.
 
     Raises:
         CatalogError: CATALOG_FILE_UNREADABLE when the file cannot be read, CATALOG_SYNTAX_INVALID when it is
@@ -75,27 +100,30 @@ def _read_and_parse_target_yaml(resolved_path: Path) -> dict[str, Any]:
     try:
         content = resolved_path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise CatalogError(
+        raise _catalog_failure(
             ErrorCode.CATALOG_FILE_UNREADABLE,
-            f"Failed to read '{resolved_path}': {exc}.",
+            [f"Failed to read '{resolved_path}': {exc}."],
             [Remediation(message=f"Check that '{resolved_path}' exists and is readable.")],
+            warnings,
         ) from None
 
     try:
         parsed = yaml.safe_load(content)
     except yaml.YAMLError as exc:
         location = _format_yaml_error_location(exc)
-        raise CatalogError(
+        raise _catalog_failure(
             ErrorCode.CATALOG_SYNTAX_INVALID,
-            f"YAML syntax error in '{resolved_path}' at {location}: {exc}.",
+            [f"YAML syntax error in '{resolved_path}' at {location}: {exc}."],
             [Remediation(message=f"Fix the YAML syntax error at {location} in '{resolved_path}'.")],
+            warnings,
         ) from None
 
     if not isinstance(parsed, dict):
-        raise CatalogError(
+        raise _catalog_failure(
             ErrorCode.CATALOG_SYNTAX_INVALID,
-            f"'{resolved_path}' root content must be a YAML mapping.",
+            [f"'{resolved_path}' root content must be a YAML mapping."],
             [Remediation(message=f"Rewrite '{resolved_path}' with a top-level YAML mapping (key: value pairs).")],
+            warnings,
         )
 
     return parsed
@@ -110,25 +138,19 @@ def _format_yaml_error_location(exc: yaml.YAMLError) -> str:
 
 
 def _validate_schema(
-    item_type: str,
-    parsed: dict[str, Any],
-    key: str,
-    *,
-    blueprint_cls: type[_PydanticModel],
-    step_cls: type[_PydanticModel],
+    definition_cls: type[_PydanticModel], parsed: dict[str, Any], key: str, warnings: Sequence[str]
 ) -> object:
-    """Validate parsed against the already-known schema class for item_type and return the definition.
+    """Validate parsed against definition_cls and return the definition; a failure carries warnings as its findings'.
 
     Raises:
         CatalogError: CATALOG_SCHEMA_INVALID with one message and remediation per schema error.
     """
-    definition_cls = step_cls if item_type == CatalogItemType.STEP.value else blueprint_cls
     try:
         from_document = getattr(definition_cls, "from_document", None)
         return from_document(parsed, key=key) if callable(from_document) else definition_cls.model_validate(parsed)
     except (DefinitionLoadError, DefinitionValidationError, ValidationError) as exc:
         errors, remediations = _format_schema_exception(exc, key)
-        raise _schema_invalid(errors, remediations, []) from exc
+        raise _schema_invalid(errors, remediations, warnings) from exc
 
 
 def _format_schema_exception(
@@ -163,8 +185,11 @@ def _extract_validation_error(exc: Exception) -> ValidationError | None:
 
 
 def _format_pydantic_error(error: ErrorDetails) -> str:
-    """Format one Pydantic error entry as '<dotted.location>: <message>.'."""
-    location = ".".join(str(part) for part in error["loc"]) or "<root>"
+    """Format one Pydantic error entry as '<dotted.location>: <message>.', without the step-kind tag of a steps entry."""
+    loc = list(error["loc"])
+    if len(loc) > 2 and loc[0] == "steps" and isinstance(loc[1], int) and loc[2] in STEP_KIND_TAGS:
+        del loc[2]
+    location = ".".join(str(part) for part in loc) or "<root>"
     return _sentence(f"{location}: {error['msg']}")
 
 
@@ -263,19 +288,6 @@ def _audit_script_paths(flat_steps: list[object], repo_root: Path) -> tuple[list
                 f"Step '{step_id}' script_path '{script_path}' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."
             )
     return errors, warnings
-
-
-def _run_semantic_audits(item_type: str, definition: object, repo_root: Path) -> list[str]:
-    """Run the semantic audits appropriate to item_type and return their warnings.
-
-    Raises:
-        CatalogError: CATALOG_SCHEMA_INVALID with every audit error, one 'Resolve: <error>' remediation per
-            error, and the audit warnings.
-    """
-    errors, warnings = _semantic_findings(item_type, definition, repo_root)
-    if errors:
-        raise _schema_invalid(errors, _resolve_remediations(errors), warnings)
-    return warnings
 
 
 def _semantic_findings(item_type: str, definition: object, repo_root: Path) -> tuple[list[str], list[str]]:

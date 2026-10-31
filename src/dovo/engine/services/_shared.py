@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
+from dovo.common.exceptions import Failure
 from dovo.core.agents.environment import env_passthrough_flag_error
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
+from dovo.core.catalog.exceptions import CatalogValidateFindings
 from dovo.core.db import SessionRecord, SessionsRepository
-from dovo.engine.models import BlueprintRunResult, RunOutcome
+from dovo.engine.models import BlueprintRunResult, RunObserver, RunOutcome
+from dovo.engine.notify import safe_notify
 
 
 def fail(warnings: list[str], diagnostics: list[DiagnosticRecord], message: str) -> BlueprintRunResult:
@@ -17,6 +20,30 @@ def fail(warnings: list[str], diagnostics: list[DiagnosticRecord], message: str)
         warnings=warnings,
         diagnostics=diagnostics,
     )
+
+
+def failed_result(
+    failure: Failure,
+    warnings: list[str],
+    diagnostics: list[DiagnosticRecord],
+    *,
+    blueprint_name: str,
+    observer: RunObserver | None,
+) -> BlueprintRunResult:
+    """Build the failed result for a failure caught before any step ran.
+
+    A validation failure, whose data is ``CatalogValidateFindings``, names blueprint_name as the invalid blueprint,
+    lists every validation error, and hands its warnings to the observer as validation warnings; any other failure
+    carries its own message alone.
+    """
+    fields = failure.result_fields(prior_diagnostics=diagnostics)
+    findings = failure.data
+    if not isinstance(findings, CatalogValidateFindings):
+        return BlueprintRunResult(session_record=None, warnings=warnings, **fields)
+
+    safe_notify(observer, "on_validation_warnings", findings.warnings)
+    fields["errors"] = list(findings.errors)
+    return BlueprintRunResult(session_record=None, warnings=warnings, invalid_blueprint=blueprint_name, **fields)
 
 
 def load_record(

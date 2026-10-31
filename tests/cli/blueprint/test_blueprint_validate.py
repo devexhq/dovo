@@ -104,6 +104,56 @@ class BlueprintValidateAskCliIntegrationTests:
         assert result.exit_code == 0, result.stdout
 
 
+def _issue_1084_loop(**fields: object) -> dict[str, object]:
+    """Return the loop block of the GH-1084 steps to reproduce, with fields overriding its keys."""
+    loop: dict[str, object] = {
+        "id": "phases",
+        "type": "loop",
+        "until": ["steps.check.exit_code == 0"],
+        "for_each": {"artifact": "plan", "file": "plan.json", "items_path": "phases"},
+        "do": [{"id": "check", "run": "true"}],
+    }
+    return {**loop, **fields}
+
+
+class BlueprintValidateLoopCliIntegrationTests:
+    """Typer runner regression tests for GH-1084: loop blocks reject unknown keys and `do` steps get the shorthands."""
+
+    def _validate(
+        self, cli_runner: CliRunner, workspace: Path, loop: dict[str, object]
+    ) -> tuple[int, dict[str, object]]:
+        target = workspace / "phases.yml"
+        target.write_text(yaml.safe_dump({"name": "phases", "steps": [loop]}, sort_keys=False), encoding="utf-8")
+        result = cli_runner.invoke(
+            app, ["-p", str(workspace), "blueprint", "validate", str(target), "--format", "json"]
+        )
+        return result.exit_code, json.loads(result.stdout)["payload"]
+
+    def test_issue_1084_loop_with_unknown_key_fails(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        exit_code, payload = self._validate(cli_runner, isolated_workspace, _issue_1084_loop())
+
+        assert exit_code == 1
+        assert payload["error_code"] == "CATALOG_SCHEMA_INVALID"
+        assert payload["errors"] == ["steps.0: Value error, Loop 'phases' has unknown keys: for_each."]
+
+    @pytest.mark.parametrize(
+        "do",
+        [
+            pytest.param([{"name": "Run tests", "run": "uv run pytest"}, {"run": "echo fix"}], id="steps_without_id"),
+            pytest.param([{"id": "check", "command": "echo hi"}], id="command_shorthand"),
+        ],
+    )
+    def test_issue_1084_do_steps_take_the_shorthands(
+        self, cli_runner: CliRunner, isolated_workspace: Path, do: list[dict[str, object]]
+    ) -> None:
+        loop = _issue_1084_loop(until=["iteration.index == 1"], do=do)
+        del loop["for_each"]
+
+        exit_code, payload = self._validate(cli_runner, isolated_workspace, loop)
+
+        assert (exit_code, payload["errors"]) == (0, [])
+
+
 class BlueprintValidateCliTests:
     """Typer runner tests for dovo blueprint validate's classified and unexpected failures."""
 

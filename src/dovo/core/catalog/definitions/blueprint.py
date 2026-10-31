@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Any
+from typing import Annotated, Any, Final
 
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, Discriminator, Field, Tag, ValidationError, field_validator, model_validator
 
 from dovo.common.models import OnFailureSpec
 from dovo.core.catalog.definitions.conditions import validate_condition_expression
@@ -15,6 +15,21 @@ from dovo.core.catalog.exceptions import BlueprintValidationError
 from dovo.core.inputs import ParameterInput
 
 _SLUG_RE = re.compile(r"[^\w-]+")
+
+STEP_KIND_TAGS: Final[frozenset[str]] = frozenset({"step", "loop"})
+"""The tags of the steps-entry union, which pydantic adds to an error's location after the entry's index."""
+
+
+def _step_kind(value: object) -> str:
+    """Return the union tag of one steps entry: 'loop' for a loop block, 'step' for anything else."""
+    kind = value.get("type") if isinstance(value, dict) else getattr(value, "type", None)
+    return "loop" if kind == "loop" else "step"
+
+
+_StepEntry = Annotated[
+    Annotated[StepDefinition, Tag("step")] | Annotated[LoopStepBlock, Tag("loop")],
+    Discriminator(_step_kind),
+]
 
 
 def extract_defaults_on_failure(raw_defaults: object) -> object | None:
@@ -96,7 +111,7 @@ class BlueprintDefinition(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     inputs: dict[str, ParameterInput] = Field(default_factory=dict)
     defaults: BlueprintDefaults = Field(default_factory=BlueprintDefaults)
-    steps: list[StepDefinition | LoopStepBlock] = Field(default_factory=list)
+    steps: list[_StepEntry] = Field(default_factory=list)
 
     @classmethod
     def from_document(cls, raw: dict[str, object], *, key: str) -> BlueprintDefinition:
@@ -120,7 +135,7 @@ class BlueprintDefinition(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _fill_step_shorthand_defaults(cls, data: object) -> object:
-        """Fill missing step ids, map bare ``command:``, and inherit defaults.on_failure."""
+        """Fill missing step ids, map bare ``command:``, and inherit defaults.on_failure, inside loop ``do`` too."""
         if not isinstance(data, dict):
             return data
 
@@ -131,7 +146,7 @@ class BlueprintDefinition(BaseModel):
 
         on_failure_default = extract_defaults_on_failure(payload.get("defaults"))
         payload["steps"] = [
-            cls._normalize_step_item(item, idx, on_failure_default) for idx, item in enumerate(raw_steps, start=1)
+            cls._normalize_entry(item, f"step-{idx}", on_failure_default) for idx, item in enumerate(raw_steps, start=1)
         ]
         return payload
 
@@ -142,17 +157,13 @@ class BlueprintDefinition(BaseModel):
         return self
 
     @classmethod
-    def _ensure_step_id(cls, step_dict: dict[str, Any], idx: int) -> None:
-        """Assign a default ``id`` when missing or empty."""
-        existing = step_dict.get("id")
-        if existing:
+    def _ensure_step_id(cls, step_dict: dict[str, Any], fallback: str) -> None:
+        """Assign the slug of ``name``, else fallback, as ``id`` when it is missing or empty."""
+        if step_dict.get("id"):
             return
         name_val = step_dict.get("name")
-        if isinstance(name_val, str) and name_val.strip():
-            slug = _SLUG_RE.sub("-", name_val.strip().lower()).strip("-")
-            step_dict["id"] = slug or f"step-{idx}"
-        else:
-            step_dict["id"] = f"step-{idx}"
+        slug = _SLUG_RE.sub("-", name_val.strip().lower()).strip("-") if isinstance(name_val, str) else ""
+        step_dict["id"] = slug or fallback
 
     @classmethod
     def _map_command_shorthand(cls, step_dict: dict[str, Any]) -> None:
@@ -164,11 +175,28 @@ class BlueprintDefinition(BaseModel):
         step_dict["run"] = step_dict.pop("command")
 
     @classmethod
-    def _normalize_step_item(cls, item: object, idx: int, on_failure_default: object | None = None) -> object:
-        """Normalize one raw step entry for ``StepDefinition`` validation."""
+    def _normalize_entry(cls, item: object, fallback_id: str, on_failure_default: object | None) -> object:
+        """Normalize one raw top-level entry: a step, or a loop block whose ``do`` steps are normalized as well."""
         if not isinstance(item, dict):
             return item
-        step_dict = dict(item)
-        cls._ensure_step_id(step_dict, idx)
-        cls._map_command_shorthand(step_dict)
-        return apply_on_failure_default(step_dict, on_failure_default)
+        entry = dict(item)
+        cls._ensure_step_id(entry, fallback_id)
+        if entry.get("type") == "loop":
+            cls._normalize_do_steps(entry, on_failure_default)
+            return entry
+        cls._map_command_shorthand(entry)
+        return apply_on_failure_default(entry, on_failure_default)
+
+    @classmethod
+    def _normalize_do_steps(cls, loop: dict[str, object], on_failure_default: object | None) -> None:
+        """Normalize each step of the loop's ``do``, deriving a missing id as '<loop id>-step-<n>'."""
+        raw_steps = loop.get("do")
+        if not isinstance(raw_steps, list):
+            return
+        loop["do"] = [
+            item
+            if isinstance(item, dict) and item.get("type") == "loop"
+            # A nested loop is left as written, so the step model rejects it.
+            else cls._normalize_entry(item, f"{loop['id']}-step-{position}", on_failure_default)
+            for position, item in enumerate(raw_steps, start=1)
+        ]

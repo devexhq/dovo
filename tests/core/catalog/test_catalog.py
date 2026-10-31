@@ -14,7 +14,8 @@ from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.core.catalog import Catalog, CatalogError
-from dovo.core.catalog.definitions import BlueprintDefinition
+from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
+from dovo.core.catalog.exceptions import CatalogValidateFindings
 from dovo.core.catalog.models import (
     CatalogCreateResult,
     CatalogDeleteResult,
@@ -233,42 +234,58 @@ class CatalogGetTests:
         )
 
     @pytest.mark.parametrize(
-        ("content", "code", "message_start"),
+        ("content", "code"),
         [
+            pytest.param("- a\n- b\n", ErrorCode.CATALOG_SYNTAX_INVALID, id="non_mapping"),
+            pytest.param("name: bad\nsteps: [\n", ErrorCode.CATALOG_SYNTAX_INVALID, id="syntax"),
+            pytest.param("name: bad\ntimeout_seconds: x\nsteps: []\n", ErrorCode.CATALOG_SCHEMA_INVALID, id="schema"),
             pytest.param(
-                "- a\n- b\n",
-                ErrorCode.CATALOG_SYNTAX_INVALID,
-                "Failed to load catalog blueprint 'blueprints/bad.yml': invalid or non-object YAML content.",
-                id="non_mapping",
-            ),
-            pytest.param(
-                "name: bad\nsteps: [\n",
-                ErrorCode.CATALOG_SYNTAX_INVALID,
-                "Failed to load catalog blueprint 'blueprints/bad.yml'",
-                id="syntax",
-            ),
-            pytest.param(
-                "name: bad\ntimeout_seconds: x\nsteps: []\n",
+                "name: bad\nsteps: [{id: a, run: one}, {id: a, run: two}]\n",
                 ErrorCode.CATALOG_SCHEMA_INVALID,
-                "Model validation failed for 'bad': Blueprint definition validation failed:",
-                id="schema",
+                id="duplicate_step_id",
             ),
         ],
     )
-    def test_get_unloadable_definition_raises_classified_error(
-        self, workspace_paths: WorkspacePaths, content: str, code: ErrorCode, message_start: str
+    def test_get_unloadable_definition_raises_the_validate_failure(
+        self, workspace_paths: WorkspacePaths, content: str, code: ErrorCode
     ) -> None:
-        """Raise CatalogError with error_code == code and message starting message_start, and leave <DOVO_HOME>/logs absent."""
+        """Raise CatalogError with the code, errors and warnings `dovo blueprint validate` reports, and leave <DOVO_HOME>/logs absent."""
         blueprint_file = workspace_paths.catalog_blueprints_dir / "bad.yml"
         blueprint_file.parent.mkdir(parents=True, exist_ok=True)
         blueprint_file.write_text(content, encoding="utf-8")
+        catalog = Catalog(workspace_paths)
 
         with pytest.raises(CatalogError) as raised:
-            Catalog(workspace_paths).get("bad", item_type=CatalogItemType.BLUEPRINT, definition_cls=BlueprintDefinition)
+            catalog.get("bad", item_type=CatalogItemType.BLUEPRINT, definition_cls=BlueprintDefinition)
 
-        assert raised.value.error_code == code
-        assert raised.value.message.startswith(message_start)
+        validated = catalog.validate(
+            "bad", item_type=CatalogItemType.BLUEPRINT, blueprint_cls=BlueprintDefinition, step_cls=StepDefinition
+        )
+        findings = raised.value.data
+        assert isinstance(findings, CatalogValidateFindings)
+        assert (raised.value.error_code, list(findings.errors), list(findings.warnings)) == (
+            code,
+            validated.errors,
+            validated.warnings,
+        )
+        assert list(raised.value.remediations) == validated.remediations
+        assert "errors.pydantic.dev" not in " ".join(findings.errors)
         assert not resolve_global_paths(None).logs_dir.exists()
+
+    def test_get_with_definition_returns_the_validate_warnings(self, workspace_paths: WorkspacePaths) -> None:
+        blueprint_file = workspace_paths.catalog_blueprints_dir / "scripted.yml"
+        blueprint_file.parent.mkdir(parents=True, exist_ok=True)
+        blueprint_file.write_text(
+            "name: scripted\nsteps: [{id: build, type: script, script_path: scripts/build.sh}]\n", encoding="utf-8"
+        )
+
+        resolution = Catalog(workspace_paths).get(
+            "scripted", item_type=CatalogItemType.BLUEPRINT, definition_cls=BlueprintDefinition
+        )
+
+        assert resolution.warnings == (
+            "Step 'build' script_path 'scripts/build.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND).",
+        )
 
     def test_get_unexpected_definition_error_propagates_unrecorded(self, workspace_paths: WorkspacePaths) -> None:
         """Raise RuntimeError("boom") from get(definition_cls=_ExplodingBlueprintDefinition) and leave <DOVO_HOME>/logs absent."""

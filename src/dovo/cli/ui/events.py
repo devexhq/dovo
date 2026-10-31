@@ -20,6 +20,17 @@ class ErrorPanelEvent(BaseModel):
     border_style: str = "red"
 
 
+class BlueprintInvalidEvent(BaseModel):
+    """UI event for a blueprint that failed validation before any step ran: every error, with the code and remediations `dovo blueprint validate` reports."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    blueprint: str
+    error_code: str
+    errors: list[str]
+    remediations: list[Remediation]
+
+
 class WarningEvent(BaseModel):
     """UI event representing a warning notice."""
 

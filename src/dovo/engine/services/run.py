@@ -24,7 +24,8 @@ from dovo.engine.models import (
     RunOutcome,
     RunRequest,
 )
-from dovo.engine.services._shared import fail, finalize, resolve_env_overrides
+from dovo.engine.notify import safe_notify
+from dovo.engine.services._shared import fail, failed_result, finalize, resolve_env_overrides
 
 
 @dataclass
@@ -56,6 +57,10 @@ class BlueprintRunService:
     def execute(self) -> BlueprintRunResult:
         """Run the full execution pipeline and return the outcome, reporting any failure behind the engine.run catch.
 
+        The blueprint record the name resolves to is checked as `dovo blueprint validate` checks it before any
+        session, worktree or step exists: a failure returns with invalid_blueprint set, and the warnings go to the
+        observer's on_validation_warnings before the first step.
+
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
         """
@@ -69,9 +74,15 @@ class BlueprintRunService:
         self.diagnostics.extend(error_diagnostics(reconciliation.diagnostic))
 
         catalog = Catalog(self.paths)
+        blueprint: Blueprint | None = None
         with catch_failure("engine.run", blueprint=self.name) as caught:
             blueprint = Blueprint.load(self.name, catalog=catalog)
+            safe_notify(self.observer, "on_validation_warnings", blueprint.warnings)
             run_outcome = self._run(catalog, blueprint, env_overrides)
+        if caught.failure is not None and blueprint is None:
+            return failed_result(
+                caught.failure, self.warnings, self.diagnostics, blueprint_name=self.name, observer=self.observer
+            )
         if caught.failure is not None:
             return BlueprintRunResult(
                 session_record=None,

@@ -74,6 +74,104 @@ class RunCliTests:
         ]
 
 
+_UNDECLARED_PLACEHOLDER_STEP: dict[str, object] = {"id": "s1", "run": "true", "env": {"GHOST": "${{ inputs.ghost }}"}}
+
+
+class RunValidationCliIntegrationTests:
+    """Typer runner tests for GH-1096: dovo run validates the blueprint as dovo blueprint validate does."""
+
+    def test_issue_1096_duplicate_step_ids_fail_before_any_step(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        write_runnable_blueprint(
+            cli_workspace, key="deploy", steps=[{"id": "a", "run": "echo one"}, {"id": "a", "run": "echo two"}]
+        )
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "deploy", "--no-worktree"])
+
+        assert result.exit_code == 1
+        assert "Blueprint Invalid" in result.stdout
+        assert "Blueprint 'deploy' failed validation; no steps ran." in result.stdout
+        assert "- Step id 'a' is used by more than one step." in result.stdout
+        assert "- Resolve: Step id 'a' is used by more than one step." in result.stdout
+        paths = initialized_workspace_paths(cli_workspace)
+        assert DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list() == []
+
+    def test_issue_1096_agent_step_without_prompt_lists_one_error_without_a_raw_dump(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        write_runnable_blueprint(
+            cli_workspace, key="deploy", steps=[{"id": "a", "run": "echo one"}, {"id": "b", "type": "agent"}]
+        )
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "deploy", "--no-worktree"])
+
+        assert result.exit_code == 1
+        assert "- steps.1: Value error, Agent steps must specify a non-empty 'prompt' string." in result.stdout
+        assert "errors.pydantic.dev" not in result.stdout
+        assert "LoopStepBlock" not in result.stdout
+
+    def test_invalid_blueprint_json_is_one_blueprint_invalid_event(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        write_runnable_blueprint(
+            cli_workspace,
+            key="deploy",
+            steps=[
+                {"id": "a", "run": "echo one"},
+                {"id": "a", "run": "echo two"},
+                {"id": "s", "type": "script", "script_path": "missing.sh"},
+            ],
+        )
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "run", "deploy", "--no-worktree", "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        assert [event["event_type"] for event in events] == ["MessageEvent", "WarningEvent", "BlueprintInvalidEvent"]
+        assert events[1]["payload"] == {
+            "message": "Step 's' script_path 'missing.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."
+        }
+        assert events[2]["payload"] == {
+            "blueprint": "deploy",
+            "error_code": "CATALOG_SCHEMA_INVALID",
+            "errors": ["Step id 'a' is used by more than one step."],
+            "remediations": [{"message": "Resolve: Step id 'a' is used by more than one step.", "command": None}],
+        }
+
+    def test_validation_warning_prints_once_before_the_first_step_and_the_run_completes(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        write_runnable_blueprint(cli_workspace, key="build", steps=[_UNDECLARED_PLACEHOLDER_STEP])
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "build", "--no-worktree", "--format", "json"])
+
+        assert result.exit_code == 0
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        warnings = [index for index, event in enumerate(events) if event["event_type"] == "WarningEvent"]
+        first_step = next(index for index, event in enumerate(events) if event["event_type"] == "StepStartEvent")
+        assert [events[index]["payload"]["message"] for index in warnings] == [
+            "Placeholder 'inputs.ghost' is not declared in 'inputs:' (CATALOG_UNDECLARED_INPUT_PLACEHOLDER)."
+        ]
+        assert warnings[0] < first_step
+
+    def test_validation_warning_prints_in_the_terminal_with_validate_text(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        write_runnable_blueprint(cli_workspace, key="build", steps=[_UNDECLARED_PLACEHOLDER_STEP])
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "build", "--no-worktree"])
+
+        assert result.exit_code == 0, result.stdout
+        warning = (
+            "Warning: Placeholder 'inputs.ghost' is not declared in 'inputs:' (CATALOG_UNDECLARED_INPUT_PLACEHOLDER)."
+        )
+        assert result.stdout.count(warning) == 1
+        assert result.stdout.index(warning) < result.stdout.index("Blueprint Run Completed:")
+
+
 class RunCliIntegrationTests:
     """Typer runner integration tests for dovo run."""
 

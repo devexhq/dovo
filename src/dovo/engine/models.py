@@ -228,7 +228,11 @@ class RunContext:
 
 @runtime_checkable
 class RunObserver(Protocol):
-    """Optional progress hooks for worktree, step, and loop lifecycle events."""
+    """Optional progress hooks for validation, worktree, step, and loop lifecycle events."""
+
+    def on_validation_warnings(self, warnings: Sequence[str]) -> None:
+        """Called once per run or resume, before the first step, with the blueprint's validation warnings in `dovo blueprint validate` order."""
+        ...
 
     def on_worktree_ready(self, path: Path, active: bool) -> None:
         """Called after the execution directory is chosen."""
@@ -322,10 +326,16 @@ class RunOutcome(BaseModel):
 
 
 class BlueprintRunResult(BaseResult):
-    """Result of executing a blueprint."""
+    """Result of executing a blueprint.
+
+    invalid_blueprint names the blueprint when validation stopped the run or resume before any step ran; errors then
+    hold every validation error, and error_code and remediations are those `dovo blueprint validate` reports.
+    Validation warnings reach the observer before any step and are not repeated in warnings.
+    """
 
     session_record: SessionRecord | None = None
     paused_prompt_id: str | None = None
+    invalid_blueprint: str | None = None
 
     @property
     def ok(self) -> bool:

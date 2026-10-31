@@ -39,6 +39,7 @@ def _event_formatters(console: Console | None) -> FormatterTable:
 
     return {
         models.ErrorPanelEvent: formatters.ErrorPanelFormatter(),
+        models.BlueprintInvalidEvent: formatters.BlueprintInvalidFormatter(),
         models.LockWaitEvent: formatters.LockWaitFormatter(),
         models.WarningEvent: formatters.WarningFormatter(),
         models.DiagnosticsEvent: formatters.DiagnosticsFormatter(),

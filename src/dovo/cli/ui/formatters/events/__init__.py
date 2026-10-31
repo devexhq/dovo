@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .agent_progress import AgentProgressFormatter
+from .blueprint_invalid import BlueprintInvalidFormatter
 from .diagnostics import DiagnosticsFormatter
 from .error_panel import ErrorPanelFormatter
 from .lock_wait import LockWaitFormatter
@@ -18,6 +19,7 @@ from .worktree import WorktreeLifecycleFormatter
 
 __all__ = [
     "AgentProgressFormatter",
+    "BlueprintInvalidFormatter",
     "DiagnosticsFormatter",
     "ErrorPanelFormatter",
     "LockWaitFormatter",

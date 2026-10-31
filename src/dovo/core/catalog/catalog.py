@@ -7,10 +7,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol, Self
 
-from pydantic import ValidationError
-
 from dovo.common.error_codes import ErrorCode
-from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError, Failure, catch_failure
+from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.core.catalog.exceptions import CatalogError, CatalogValidateFindings
@@ -25,7 +23,6 @@ from dovo.core.catalog.models import (
     CatalogShowResult,
     CatalogTier,
     CatalogValidateResult,
-    YamlParseOutcome,
 )
 from dovo.core.catalog.services.inventory import (
     coerce_catalog_item_type,
@@ -38,7 +35,7 @@ from dovo.core.catalog.services.inventory import (
     resolve_deletable_catalog_item,
     scan_and_index_catalog,
 )
-from dovo.core.catalog.services.validate import validate_catalog_item
+from dovo.core.catalog.services.validate import check_catalog_item
 
 
 class _PydanticModel(Protocol):
@@ -146,23 +143,40 @@ class Catalog:
         item_type: CatalogItemType | str | None = None,
         definition_cls: type[_PydanticModel] | None = None,
     ) -> CatalogResolution:
-        """Return the highest-precedence record matching key_or_sha, validating its content into definition_cls when given.
+        """Return the highest-precedence record matching key_or_sha, checking its content into definition_cls when given.
+
+        A requested definition goes through the checks ``dovo blueprint validate`` applies to the winning record,
+        each ``script_path`` looked up under the repository root, and its warnings follow the duplicate-name warning
+        in the resolution's warnings.
 
         Raises:
             CatalogError: CATALOG_NOT_FOUND when nothing matches ("Catalog item '<key>' not found."),
-                CATALOG_SYNTAX_INVALID or CATALOG_SCHEMA_INVALID when the winner cannot be loaded into
-                definition_cls, CATALOG_WRITE_FAILED when reindexing fails, CATALOG_TYPE_INVALID for an
-                unknown item_type.
+                CATALOG_FILE_UNREADABLE, CATALOG_SYNTAX_INVALID or CATALOG_SCHEMA_INVALID, carrying every
+                error and warning in ``CatalogValidateFindings``, when the winner fails those checks,
+                CATALOG_WRITE_FAILED when reindexing fails, CATALOG_TYPE_INVALID for an unknown item_type.
         """
         self.sync()
         parsed_item_type = coerce_catalog_item_type(item_type) if item_type is not None else None
-        matches = find_catalog_record_matches(key_or_sha, parsed_item_type, self.paths)
+        matches = tuple(find_catalog_record_matches(key_or_sha, parsed_item_type, self.paths))
         if not matches:
             raise CatalogError(ErrorCode.CATALOG_NOT_FOUND, f"Catalog item '{key_or_sha}' not found.")
 
         winner = matches[0]
-        definition = self._load_definition(winner, definition_cls, key_or_sha) if definition_cls is not None else None
-        return CatalogResolution(record=winner, definition=definition, matches=tuple(matches))
+        warnings = _duplicate_name_warnings(key_or_sha, winner, matches)
+        if definition_cls is None:
+            return CatalogResolution(record=winner, definition=None, matches=matches, warnings=warnings)
+
+        checked = check_catalog_item(
+            resolve_catalog_record_path(winner, self.paths),
+            winner.item_type.value,
+            winner.key or key_or_sha,
+            repo_root=self.path,
+            definition_cls=definition_cls,
+            prior_warnings=warnings,
+        )
+        return CatalogResolution(
+            record=winner, definition=checked.definition, matches=matches, warnings=checked.warnings
+        )
 
     def create(
         self,
@@ -242,17 +256,17 @@ class Catalog:
         target is inspected directly as item_type and never touches the index. Resolution warnings come
         before the definition's own, on success and failure alike.
         """
-        resolution: tuple[Path, str, str, builtins.list[str]] | None = None
+        resolution: tuple[Path, str, str, tuple[str, ...]] | None = None
         with catch_failure("catalog.validate", target=target) as caught:
             resolution = self._resolve_validate_target(target, item_type=item_type)
             resolved_path, item_type_value, key, resolution_warnings = resolution
-            item_warnings = validate_catalog_item(
+            checked = check_catalog_item(
                 resolved_path,
                 item_type_value,
                 key,
                 repo_root=self.path,
-                blueprint_cls=blueprint_cls,
-                step_cls=step_cls,
+                definition_cls=step_cls if item_type_value == CatalogItemType.STEP.value else blueprint_cls,
+                prior_warnings=resolution_warnings,
             )
         if caught.failure is not None:
             if resolution is None:
@@ -263,7 +277,7 @@ class Catalog:
             target=target,
             resolved_path=resolved_path,
             item_type=item_type_value,
-            warnings=[*resolution_warnings, *item_warnings],
+            warnings=builtins.list(checked.warnings),
         )
 
     def _resolve_validate_target(
@@ -271,7 +285,7 @@ class Catalog:
         target: str,
         *,
         item_type: CatalogItemType,
-    ) -> tuple[Path, str, str, builtins.list[str]]:
+    ) -> tuple[Path, str, str, tuple[str, ...]]:
         """Resolve target to (absolute_path, item_type_value, definition_key, warnings), looking a catalog name up among items of item_type only.
 
         Raises:
@@ -286,12 +300,12 @@ class Catalog:
         file_candidate = candidate if candidate.is_absolute() else self.path / candidate
 
         if file_candidate.is_file():
-            return file_candidate, item_type.value, file_candidate.stem, []
+            return file_candidate, item_type.value, file_candidate.stem, ()
 
         resolution = self.get(target, item_type=item_type)
         record = resolution.record
         resolved_path = resolve_catalog_record_path(record, self.paths)
-        return resolved_path, record.item_type.value, record.key, _duplicate_name_warnings(target, resolution)
+        return resolved_path, record.item_type.value, record.key, resolution.warnings
 
     @staticmethod
     def read_yaml(path: Path) -> dict[str, Any]:
@@ -304,54 +318,19 @@ class Catalog:
             raise CatalogError(ErrorCode.CATALOG_SYNTAX_INVALID, f"Failed to load catalog blueprint '{path}': {detail}")
         return yaml_file.parsed
 
-    def _read_and_parse_yaml(self, file_path: Path, rel_path: Path) -> YamlParseOutcome:
-        """Read and parse a catalog YAML file, returning parsed dict or error messages."""
-        yaml_file = Filesystem.read_yaml_file(file_path)
-        if yaml_file.error or yaml_file.parsed is None or not isinstance(yaml_file.parsed, dict):
-            error_message = (
-                yaml_file.error or f"Failed to load catalog blueprint '{rel_path}': invalid or non-object YAML content."
-            )
-            return YamlParseOutcome(parsed_data=None, errors=[error_message])
-        return YamlParseOutcome(parsed_data=yaml_file.parsed, errors=[])
 
-    def _load_definition(
-        self,
-        record: CatalogRecord,
-        definition_cls: type[_PydanticModel],
-        key_or_sha: str,
-    ) -> object:
-        """Read record's YAML and build definition_cls from it.
-
-        Raises:
-            CatalogError: CATALOG_SYNTAX_INVALID when the YAML is unreadable or not an object, CATALOG_SCHEMA_INVALID
-                ("Model validation failed for '<key_or_sha>': <exc>") when the definition fails validation.
-        """
-        parse_outcome = self._read_and_parse_yaml(resolve_catalog_record_path(record, self.paths), record.path)
-        if parse_outcome.errors or parse_outcome.parsed_data is None:
-            raise CatalogError(ErrorCode.CATALOG_SYNTAX_INVALID, parse_outcome.errors[0])
-
-        from_document = getattr(definition_cls, "from_document", None)
-        try:
-            if callable(from_document):
-                return from_document(parse_outcome.parsed_data, key=record.key or key_or_sha)
-            return definition_cls.model_validate(parse_outcome.parsed_data)
-        except (ValidationError, DefinitionLoadError, DefinitionValidationError) as exc:
-            raise CatalogError(
-                ErrorCode.CATALOG_SCHEMA_INVALID, f"Model validation failed for '{key_or_sha}': {exc}"
-            ) from exc
-
-
-def _duplicate_name_warnings(key_or_sha: str, resolution: CatalogResolution) -> builtins.list[str]:
-    """Return the 'Duplicate catalog name …' warning when the winner's tier holds more than one match, else []."""
-    winner = resolution.record
-    same_tier_matches = [match for match in resolution.matches if match.tier == winner.tier]
+def _duplicate_name_warnings(
+    key_or_sha: str, winner: CatalogRecord, matches: tuple[CatalogRecord, ...]
+) -> tuple[str, ...]:
+    """Return the 'Duplicate catalog name …' warning when the winner's tier holds more than one match, else ()."""
+    same_tier_matches = [match for match in matches if match.tier == winner.tier]
     if len(same_tier_matches) <= 1:
-        return []
+        return ()
     other_matching_paths = ", ".join(match.path.as_posix() for match in same_tier_matches if match.path != winner.path)
-    return [
+    return (
         f"Duplicate catalog name '{key_or_sha}' at tier '{winner.tier.value}'; using "
-        f"'{winner.path.as_posix()}' (also found in: {other_matching_paths})."
-    ]
+        f"'{winner.path.as_posix()}' (also found in: {other_matching_paths}).",
+    )
 
 
 def _target_lookup_failure(target: str, item_type: CatalogItemType, failure: Failure) -> CatalogValidateResult:
@@ -367,15 +346,20 @@ def _target_lookup_failure(target: str, item_type: CatalogItemType, failure: Fai
 
 
 def _definition_failure(
-    target: str, resolution: tuple[Path, str, str, builtins.list[str]], failure: Failure
+    target: str, resolution: tuple[Path, str, str, tuple[str, ...]], failure: Failure
 ) -> CatalogValidateResult:
-    """Build the failed validate result for a resolved target: the failure's fields with every error its findings carry, and the resolution warnings followed by the findings' warnings."""
+    """Build the failed validate result for a resolved target: the failure's fields with every error and warning its findings carry, which start with the resolution warnings, or the resolution warnings alone for an unexpected failure."""
     resolved_path, item_type_value, _, warnings = resolution
     fields = failure.result_fields()
     findings = failure.data
     if isinstance(findings, CatalogValidateFindings):
         fields["errors"] = builtins.list(findings.errors)
-        warnings = [*warnings, *findings.warnings]
+        warnings = findings.warnings
     return CatalogValidateResult(
-        valid=False, target=target, resolved_path=resolved_path, item_type=item_type_value, warnings=warnings, **fields
+        valid=False,
+        target=target,
+        resolved_path=resolved_path,
+        item_type=item_type_value,
+        warnings=builtins.list(warnings),
+        **fields,
     )

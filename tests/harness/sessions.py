@@ -58,6 +58,9 @@ def fail_reconciliation_list(monkeypatch: pytest.MonkeyPatch) -> None:
 class NoOpRunObserver(RunObserver):
     """RunObserver ignoring every hook; subclass and override only the callbacks a test records."""
 
+    def on_validation_warnings(self, warnings: Sequence[str]) -> None:
+        pass
+
     def on_worktree_ready(self, path: Path, active: bool) -> None:
         pass
 
@@ -141,6 +144,9 @@ class RecordingRunObserver(NoOpRunObserver):
 
     def _record(self, hook: str, *args: object) -> None:
         self.calls.append((hook, *(_recorded(arg) for arg in args)))
+
+    def on_validation_warnings(self, warnings: Sequence[str]) -> None:
+        self._record("validation_warnings", warnings)
 
     def on_worktree_ready(self, path: Path, active: bool) -> None:
         self._record("worktree_ready", path, active)

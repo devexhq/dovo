@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -18,23 +19,33 @@ class Blueprint:
 
     spec: ClassVar[type[BlueprintDefinition]] = BlueprintDefinition
 
-    def __init__(self, instance: BlueprintDefinition, *, key: str = "", path: Path | None = None) -> None:
+    def __init__(
+        self,
+        instance: BlueprintDefinition,
+        *,
+        key: str = "",
+        path: Path | None = None,
+        warnings: Sequence[str] = (),
+    ) -> None:
         self._instance = instance
         self._key = key or instance.name
         self._path = path
+        self._warnings = tuple(warnings)
 
     @classmethod
     def load(cls, key: str, *, catalog: Catalog) -> Blueprint:
-        """Load and validate one Blueprint by its globally unique catalog key.
+        """Load one Blueprint by its globally unique catalog key, checked as `dovo blueprint validate` checks it.
 
         Raises:
-            CatalogError: If no record matches key, or its YAML or definition is invalid.
+            CatalogError: CATALOG_NOT_FOUND when no record matches key; CATALOG_FILE_UNREADABLE,
+                CATALOG_SYNTAX_INVALID or CATALOG_SCHEMA_INVALID, carrying every error and warning in
+                ``CatalogValidateFindings``, when the record fails validation.
         """
         resolution = catalog.get(key, item_type=CatalogItemType.BLUEPRINT, definition_cls=BlueprintDefinition)
         definition = resolution.definition
         if not isinstance(definition, BlueprintDefinition):
             raise TypeError(f"Catalog.get returned {type(definition).__name__} for blueprint '{key}'.")
-        return cls(definition, key=resolution.record.key, path=resolution.record.path)
+        return cls(definition, key=resolution.record.key, path=resolution.record.path, warnings=resolution.warnings)
 
     @property
     def definition(self) -> BlueprintDefinition:
@@ -55,6 +66,11 @@ class Blueprint:
     def path(self) -> Path | None:
         """Return the blueprint's catalog-relative path, if loaded from the catalog."""
         return self._path
+
+    @property
+    def warnings(self) -> tuple[str, ...]:
+        """Return the validation warnings found when the blueprint was loaded, in `dovo blueprint validate` order."""
+        return self._warnings
 
     @property
     def steps(self) -> list[StepDefinition | LoopStepBlock]:
