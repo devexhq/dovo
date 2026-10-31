@@ -1,7 +1,7 @@
 version: 1
 name: tests
 id: tests
-description: Run the test suite, or a scoped part of it, against the working tree
+description: Run the test suite, or part of it, against the working tree.
 summary: Scoped test run for quick feedback; the full gate is `quality`
 use_worktree: false
 

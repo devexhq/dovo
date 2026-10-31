@@ -70,7 +70,6 @@ FEEDBACK_ITEMS: list[dict[str, object]] = [
     {
         **_item("R1", "review_finding", None, "https://x/review", PUBLISH.finding_block(W2)),
         "finding": {"id": "W2", "severity": "WARNING", "rule": "R17"},
-        "commit": REVIEWED,
     },
     _item("C1", "comment", None, "https://x/c1", "Walkthrough"),
     _item("K1", "check", None, "https://ci/tests", "Tests: failure"),
@@ -99,6 +98,15 @@ OUTCOME_COMMENT = (
     "<!-- dovo-pr-fix-outcomes -->\n"
     "`W2` · `scripts/publish_review.py:120-124` · 1a2b3c4: Not changed: The issue body is edited by a person before merge."
 )
+REVIEW_COMMENT: dict[str, object] = {
+    "id": 11,
+    "user": "me",
+    "body": PUBLISH.comment_body(
+        {"head": REVIEWED, "verdict": "APPROVE", "action": "none", "round": 1},
+        "## dovo-review - round 1\n",
+        session="s",
+    ),
+}
 
 
 def _without(entries: list[dict[str, object]], item_id: str) -> list[dict[str, object]]:
@@ -131,7 +139,7 @@ def _write_agentic(
     """Write .agentic/feedback.json with items (FEEDBACK_ITEMS by default), pr-url and, unless None, triage and outcomes."""
     agentic = root / ".agentic"
     agentic.mkdir()
-    feedback = {"pr": 7, "head": "a" * 40, "items": FEEDBACK_ITEMS if items is None else items}
+    feedback = {"pr": 7, "head": "a" * 40, "session": "s", "items": FEEDBACK_ITEMS if items is None else items}
     (agentic / "feedback.json").write_text(json.dumps(feedback), encoding="utf-8")
     (agentic / "pr-url").write_text(f"{PR_URL}\n", encoding="utf-8")
     if triage is not None:
@@ -319,6 +327,17 @@ class ReplyThreadsTests:
 
         assert REPLY.heading_location(str(items[0]["body"])) == "scripts/publish_review.py:120-124"
 
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            pytest.param(str(REVIEW_COMMENT["body"]), REVIEWED, id="header-line"),
+            pytest.param("<!-- dovo-review -->\nVerdict: APPROVE\n", None, id="no-line"),
+            pytest.param("<!-- dovo-review -->\n\nReviewed commit: `abc1234`\n", None, id="line-below-blank"),
+        ],
+    )
+    def test_reviewed_commit(self, body: str, expected: str | None) -> None:
+        assert REPLY.reviewed_commit(body) == expected
+
     def test_outcome_comment(self) -> None:
         findings = [
             REPLY.FindingOutcome(
@@ -390,7 +409,7 @@ class ReplyThreadsTests:
             )
             for thread, body in REPLIES.items()
         }
-        comments: list[dict[str, object]] = [{"id": 12, "user": "me", "body": earlier}]
+        comments: list[dict[str, object]] = [REVIEW_COMMENT, {"id": 12, "user": "me", "body": earlier}]
         _setup(tmp_path, monkeypatch, _fake_run([], posted, threads, comments=comments))
 
         assert REPLY.main() == 0
@@ -470,13 +489,6 @@ class ReplyThreadsTests:
                 ".agentic/feedback.json item R1 names no dovo finding",
                 id="r-no-finding",
             ),
-            pytest.param(
-                [{key: value for key, value in item.items() if key != "commit"} for item in FEEDBACK_ITEMS],
-                {"items": TRIAGE_ITEMS},
-                {"items": OUTCOME_ITEMS},
-                ".agentic/feedback.json item R1 names no reviewed commit",
-                id="r-no-commit",
-            ),
         ],
     )
     def test_main_stops_before_posting(
@@ -497,17 +509,46 @@ class ReplyThreadsTests:
         assert capsys.readouterr().err == f"reply_threads.py: {expected}\n"
         assert ran == []
 
+    @pytest.mark.parametrize(
+        ("comments", "r1_reply", "expected"),
+        [
+            pytest.param(
+                [],
+                "Edited by a person.",
+                "the dovo-review comment on pull request #7 names no reviewed commit",
+                id="no-dovo-review-comment",
+            ),
+            pytest.param(
+                [{"id": 11, "user": "me", "body": "<!-- dovo-review -->\nVerdict: APPROVE\n"}],
+                "Edited by a person.",
+                "the dovo-review comment on pull request #7 names no reviewed commit",
+                id="no-reviewed-commit",
+            ),
+            pytest.param(
+                [REVIEW_COMMENT],
+                "x" * 65_536,
+                f"the outcome comment is {len(OUTCOME_COMMENT) - len(str(TRIAGE_ITEMS[4]['reply'])) + 65_536} "
+                "characters; GitHub accepts at most 65536",
+                id="too-long",
+            ),
+        ],
+    )
     def test_main_stops_before_writing(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+        self,
+        comments: list[dict[str, object]],
+        r1_reply: str,
+        expected: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         posted: list[tuple[str, ...]] = []
-        triage = {"items": _replace(TRIAGE_ITEMS, "R1", reply="x" * 65_536)}
-        _setup(tmp_path, monkeypatch, _fake_run([], posted), triage=triage, outcomes={"items": OUTCOME_ITEMS})
+        triage = {"items": _replace(TRIAGE_ITEMS, "R1", reply=r1_reply)}
+        fake_run = _fake_run([], posted, comments=comments)
+        _setup(tmp_path, monkeypatch, fake_run, triage=triage, outcomes={"items": OUTCOME_ITEMS})
 
         assert REPLY.main() == 1
 
-        length = len(OUTCOME_COMMENT) - len(str(TRIAGE_ITEMS[4]["reply"])) + 65_536
-        expected = f"the outcome comment is {length} characters; GitHub accepts at most 65536"
         assert capsys.readouterr().err == f"reply_threads.py: {expected}\n"
         assert posted == []
 
@@ -587,13 +628,13 @@ def _fake_run(
     """Return a `run` double answering one reply step on PR #7, recording each command in ran.
 
     `git rev-parse --short HEAD` answers COMMIT and the viewer lookup `me`. The comment listing answers
-    comments, or none. The replies query answers the thread's node from threads, or an
+    comments, or REVIEW_COMMENT alone. The replies query answers the thread's node from threads, or an
     unresolved thread with someone else's comment. Each reply mutation is recorded in posted as
     ("reply", thread, body), each resolve as ("resolve", thread) and each comment written as ("comment", body),
     read from its `body=@<file>` field. failing names a (call, thread) pair, call being `reply`, `resolve`,
     `replies_query` or `comment` (with thread ""), that raises CalledProcessError.
     """
-    listed = [] if comments is None else comments
+    listed = [REVIEW_COMMENT] if comments is None else comments
 
     def fake_run(*args: str) -> str:
         ran.append(args)

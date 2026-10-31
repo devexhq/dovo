@@ -1,7 +1,7 @@
 version: "1.0"
 name: "review-fix"
 id: "review-fix"
-description: "Iteratively remediate review findings until trigger passes"
+description: "Fix review findings in a loop until the review passes."
 timeout_seconds: 600
 
 steps:

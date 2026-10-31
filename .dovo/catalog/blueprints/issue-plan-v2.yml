@@ -9,7 +9,7 @@
 version: 1
 name: issue-plan-v2
 id: issue-plan-v2
-description: Ready a GitHub issue (rewrite a legacy issue to the short format once a person approves the draft, keeping the old description in a comment, then check it against main, holding for a person and re-checking it while it is not ready, and, once a person approves, label it dovo:ready), slice it into PRs with the sdlc v2 issue-plan prompt (the feature contract and the slice table, each slice with the outcomes it delivers, on an epic, one slice on a plain issue, and no phases), challenge the plan once and fold in every fold-routed challenge, settle every open question as a decision, check that each outcome belongs to one slice, and when the plan has one slice phase it in the same run (plan, review, answer and break down the slice, as issue-code-v2 would), walk the approver through it and ask for one approval, then post the plans' decisions to the issue and write the feature contract and the work plan into the issue's work plan comment, recording a one-slice plan as phased, creating no sub-issues, and label the issue type:epic when it has two or more slices, each of which its own issue-code-v2 run phases just in time
+description: Ready a GitHub issue and slice it into an approved work plan, with human gates.
 summary: Issue to an approved work plan comment on the ticket, with human gates
 
 inputs:

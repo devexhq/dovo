@@ -5,7 +5,7 @@
 version: 1
 name: issue-plan
 id: issue-plan
-description: Ready a GitHub issue (re-ground it against main, re-check it, holding for a person and re-checking it while it is not ready, and, once a person approves, apply the edits and label it dovo:ready), slice it into PRs with the sdlc v1 issue-plan prompt (the feature contract and the slice table on an epic, one slice on a plain issue, and no phases, which each slice's issue-code run plans just in time), review and challenge the plan once and fold in every finding and fold-routed challenge, answer its open questions, walk the approver through it, then write the feature contract and the work plan into the issue body
+description: Ready a GitHub issue and slice it into an approved work plan with the frozen sdlc v1 flow.
 summary: Issue to an approved work plan on the ticket, with human gates
 
 inputs:

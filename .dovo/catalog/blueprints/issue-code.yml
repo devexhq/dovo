@@ -9,7 +9,7 @@
 version: 1
 name: issue-code
 id: issue-code
-description: Pick the next ready slice of an issue's work plan, holding for a person while every slice waits on one, load the plan from the session that wrote it, ready the slice's child issue if it is not labelled dovo:ready, holding for a person and re-checking it while it is not ready, plan the slice's phases just in time and review, challenge, answer and approve that plan, claim the slice, implement the slice one phase per agent session and commit each phase once it passes the quality gate, review and fix blockers and warnings until none remain or only a person can settle them, report how the slice departed from the plan, then open a PR that closes the child issue, post the final review and record the slice as landed in the work plan
+description: Build the next slice of an issue's work plan into a reviewed pull request with the frozen sdlc v1 flow.
 summary: Next slice of a work plan to a reviewed PR
 
 inputs:
