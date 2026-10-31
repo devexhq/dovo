@@ -16,7 +16,7 @@ under the marker is stamped from review.json, never from the report's prose, and
 the comment is refused unless review.json's verdict, action and blocking count
 agree and the pull request head is the commit the review covered. With
 --session, the header also names the dovo session that produced the review, so
-grade-pr can read that run's state. Every API call targets the pull request's
+pr-fix can restore that run's state. Every API call targets the pull request's
 own repository.
 """
 
@@ -182,21 +182,6 @@ def comment_body(review: dict[str, object], report: str, *, session: str | None)
     if session is not None:
         header += f"{SESSION_LABEL}`{session}`\n"
     return f"{header}\n{report}"
-
-
-def session_from_comment(body: str) -> str | None:
-    """Return the ID on the header's ``Dovo session: `<id>` `` line, or None when the header has none.
-
-    The header is the lines before the first blank line, so text in the review
-    report below it is never read as a session.
-    """
-    for line in body.splitlines():
-        if not line.strip():
-            return None
-        if line.startswith(SESSION_LABEL):
-            session = line.removeprefix(SESSION_LABEL).strip().strip("`")
-            return session or None
-    return None
 
 
 def find_own_comment(comments: list[dict[str, object]], viewer: str, *, marker: str = MARKER) -> int | None:
@@ -688,20 +673,20 @@ def list_comments(host: str, repository: str, number: int) -> list[dict[str, obj
     return [json.loads(line) for line in output.splitlines() if line.strip()]
 
 
-def _is_heading_review(review: dict[str, object], viewer: str, commit: str | None) -> bool:
-    """Return whether the REVIEWS_QUERY node is viewer's (`author.login`), submitted, on commit (any commit when None) and headed REVIEW_HEADING."""
+def _is_heading_review(review: dict[str, object], viewer: str, commit: str) -> bool:
+    """Return whether the REVIEWS_QUERY node is viewer's (`author.login`), submitted, on commit and headed REVIEW_HEADING."""
     author = review.get("author")
     reviewed = review.get("commit")
     return (
         (author.get("login") if isinstance(author, dict) else None) == viewer
-        and (commit is None or (reviewed.get("oid") if isinstance(reviewed, dict) else None) == commit)
+        and (reviewed.get("oid") if isinstance(reviewed, dict) else None) == commit
         and bool(review.get("submittedAt"))
         and str(review.get("body") or "").splitlines()[:1] == [REVIEW_HEADING]
     )
 
 
-def latest_review(reviews: list[dict[str, object]], viewer: str, commit: str | None) -> dict[str, object] | None:
-    """Return viewer's latest submitted REVIEWS_QUERY node, by submittedAt, on commit (any commit when None) whose body's first line is REVIEW_HEADING, else None."""
+def latest_review(reviews: list[dict[str, object]], viewer: str, commit: str) -> dict[str, object] | None:
+    """Return viewer's latest submitted REVIEWS_QUERY node, by submittedAt, on commit whose body's first line is REVIEW_HEADING, else None."""
     candidates = [review for review in reviews if _is_heading_review(review, viewer, commit)]
     if not candidates:
         return None
@@ -903,9 +888,7 @@ def main() -> int:
         )
     )
     parser.add_argument("--pr", required=True, help="Pull request number, URL or branch.")
-    parser.add_argument(
-        "--session", metavar="SESSION", help="Dovo session ID to stamp on the comment header, for grade-pr."
-    )
+    parser.add_argument("--session", metavar="SESSION", help="Dovo session ID to stamp on the comment header.")
     args = parser.parse_args()
     pr: str = args.pr
     session: str | None = args.session
