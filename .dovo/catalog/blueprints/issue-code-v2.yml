@@ -504,17 +504,15 @@ steps:
     prompt: |
       Session that already phased the slice, if any: "{{ steps.phased-check.outputs.phased_session }}".
 
-      If that is not empty, write only .agentic/plan-review.md, containing the one line
-      "Slice {{ steps.next.outputs.slice }} was reviewed and approved in session {{ steps.phased-check.outputs.phased_session }}; not reviewed again.",
-      and .agentic/plan-review.json, containing {"findings": []}, and stop. Otherwise:
+      If that is not empty, write only .agentic/plan-review.json, containing {"findings": []},
+      and stop: slice {{ steps.next.outputs.slice }} was reviewed and approved in that session.
+      Otherwise:
 
       Follow .dovo/catalog/prompts/sdlc/v2/issue-plan-review.md in the mode `/issue-plan-review --slice {{ steps.next.outputs.slice }}`.
-      Review .agentic/plan.md and write findings to .agentic/plan-review.md and
-      .agentic/plan-review.json.
+      Review .agentic/plan.md and write findings to .agentic/plan-review.json.
     tools: { allow_all: true }
     timeout_seconds: 1800
     artifacts:
-      - { name: plan-review, path: .agentic/plan-review.md }
       - { name: plan-findings, path: .agentic/plan-review.json }
 
   # No challenge follows: the design was challenged when the issue was planned,
@@ -527,21 +525,38 @@ steps:
       nothing.
       Otherwise update .agentic/plan.md and .agentic/plan.json:
         - Address every finding in .agentic/plan-review.json, by id, as each one describes.
-        - Write every open question in the bulleted form of the plan template in
-          docs/agents/planning.md, one fact per bullet.
         - Addressing a finding may make an open question moot, change its assumed answer or
-          raise a new one: remove, rewrite or add entries under Open questions to match.
+          raise a new one: remove, rewrite or add entries in plan.json `open_questions` to
+          match. Open questions live only in plan.json.
         - Keep .agentic/plan.json in the shape the issue-plan prompt defines for slice mode
           (`.dovo/catalog/prompts/sdlc/v2/issue-plan.md`), and in agreement with .agentic/plan.md. Never
           change its contract or slices, or the plan's Feature contract and Slices sections,
           other than slice {{ steps.next.outputs.slice }}'s phases: a finding that needs either
           changed becomes an open question whose assumed answer keeps them.
+        - Run `uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py questions` and fix
+          every problem it names.
       Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
     tools: { allow_all: true }
     timeout_seconds: 1800
     artifacts:
       - { name: plan, path: .agentic/plan.md }
       - { name: plan-questions, path: .agentic/plan.json }
+
+  # What the person reads at the prompt below, built from plan.json: the open
+  # questions with their assumed answers and recommendations, and the
+  # decisions. Holds the run when an open question is malformed; the message
+  # names it. The person fixes it in .agentic/plan.json and retries, keeping
+  # its id and summary, which the prompt lists from the plan-questions
+  # artifact fold-findings published.
+  - id: questions-summary
+    name: Summarise the slice plan's open questions and decisions
+    run: >-
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py questions
+      --plan .agentic/plan.json --summary .agentic/plan-summary.md
+    timeout_seconds: 120
+    on_failure: prompt_user
+    artifacts:
+      - { name: plan-summary, path: .agentic/plan-summary.md }
 
   # Asked after the findings are folded in, so every question reflects them.
   # No prompt is shown when the plan has no open question, as for a slice
@@ -551,8 +566,11 @@ steps:
     type: ask
     interaction:
       mode: multiselect
-      message: Which open questions do you want to answer instead of accepting the plan's assumed answer?
-      artifact: plan
+      message: >-
+        Which open questions do you want to answer instead of accepting the plan's assumed answer?
+        The attached summary gives each one's assumed answer and recommendation. A question you do
+        not tick settles to its assumed answer.
+      artifact: plan-summary
       options_from:
         artifact: plan-questions
         file: .agentic/plan.json
@@ -659,8 +677,8 @@ steps:
       Explain .agentic/plan.md to the person approving it and write .agentic/plan-walkthrough.md.
       The plan phases slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked
       on issue {{ steps.next.outputs.issue }}, within the feature contract and slices approved
-      when the issue was sliced: explain this slice's phases, and say which "as landed" reports
-      of earlier slices shaped them. Explain the breakdown too: the phase files in
+      when the issue was sliced: walk through this slice in slice mode, and say which "as
+      landed" reports of earlier slices shaped it. Check the breakdown too: the phase files in
       .agentic/phases/, listed in .agentic/phases/index.json, the only files each phase's code
       agent reads.
       Do not change the plan, implement anything, commit or push.
@@ -805,7 +823,6 @@ steps:
           quality gate: read the log and fix what it reports.
         tools: { allow_all: true }
         timeout_seconds: 3600
-        artifacts: [{ name: implementation-report, path: .agentic/implementation-report.md }]
 
       - id: verify
         name: Run the quality gate
@@ -933,7 +950,6 @@ steps:
           changed nothing, report that you did nothing. Do not commit, stage or push.
         tools: { allow_all: true }
         timeout_seconds: 3600
-        artifacts: [{ name: implementation-report, path: .agentic/implementation-report.md }]
 
       # The fixer runs only scoped checks, so the full gate runs here. A round
       # that changed nothing skips it unless the last round's gate failed.
@@ -957,6 +973,8 @@ steps:
 
   # fix-gate.log is left only when the last gate on the fixes failed, which a
   # loop that ran out of rounds lets through. Unresolved findings still publish.
+  # The implementation report is published here, once, after the code and fix
+  # loops have written their last entry; no later step reads it.
   - id: fix-gate
     name: Stop before publishing when the fixes fail the quality gate
     run: |
@@ -966,6 +984,8 @@ steps:
         exit 1
       fi
     on_failure: prompt_user
+    artifacts:
+      - { name: implementation-report, path: .agentic/implementation-report.md, required: false }
 
   # Written from everything committed, so it reports the code the final review
   # saw. The plan is republished whether or not it changed: land repoints the

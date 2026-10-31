@@ -9,7 +9,7 @@ Review a **slice plan**, `/issue-plan-review --slice <id>`: the phases of that o
 3. **Coverage**: does every requirement land in a phase and a test, and nothing more.
 4. **Shape and rules**: phasing per [planning.md](../../../../../docs/agents/planning.md), the slice against the issue plan per [issue-plan](issue-plan.md), and the design against R1–R18 in [AGENTS.md](../../../../../AGENTS.md).
 
-Output goes to `.agentic/plan-review.md`, paired with `.agentic/plan-review.json`. The plan's author applies the findings, and a human approves the plan before `/issue-code` runs. Your job is to make that approval short. The findings that matter most come from reading the code, not from re-reading the plan.
+Output goes to `.agentic/plan-review.json`. The plan's author applies the findings, and a human approves the plan before `/issue-code` runs. Your job is to make that approval short. The findings that matter most come from reading the code, not from re-reading the plan.
 
 ## Hard boundaries
 
@@ -24,27 +24,27 @@ The plan is `<plan-path>` when given, otherwise `.agentic/plan.md`. If it is mis
 
 ## 2. Review from a fresh context
 
-A reviewer that shares the planner's context inherits its blind spots. If this session wrote the plan, delegate the review to a fresh subagent. Give it the Hard boundaries above as its first lines, the plan path and the issue number, and nothing else: no rationale and no "I already checked X". If no subagent can be launched, say so in the report's **Provenance** line and do not approve.
+A reviewer that shares the planner's context inherits its blind spots. If this session wrote the plan, delegate the review to a fresh subagent. Give it the Hard boundaries above as its first lines, the plan path and the issue number, and nothing else: no rationale and no "I already checked X". If no subagent can be launched, set `provenance` to `same_session` and do not approve.
 
 ## 3. Check grounding
 
 - **Base commit:** run `git merge-base --is-ancestor <sha> HEAD` on the sha in the "Grounded against" line. If it is not an ancestor, or `git log --oneline <sha>..HEAD -- <planned paths>` shows commits, the citations may be stale; say so.
-- **Citations:** open every `path:line` in Traps, the artifact inventory and the Phases table, and sample the phase sections. A citation that points at the wrong symbol, or a symbol that no longer exists, is a finding.
+- **Citations:** open every `path:line` in Changes to existing behaviour, Traps, the artifact inventory and the Phases table, and in the open questions' `details`, and sample the phase sections. A citation that points at the wrong symbol, or a symbol that no longer exists, is a finding.
 - **Links:** open every file the plan links to and confirm it belongs to this issue. A link to another issue's evidence is a Blocking finding: the implementer will trust it.
 
 ## 4. Hunt for what the plan missed
 
 Read every function the plan changes, and its callers (`rg -n '\b<symbol>\b' src tests`). Look for:
 
-- **Existing behaviour** the change alters for current users, such as an existing command that starts behaving differently. The plan must name it.
+- **Existing behaviour** the change alters for current users, such as an existing command that starts behaving differently. The plan must name it under Changes to existing behaviour.
 - **Existing bugs on the path** the plan builds on, which the new code would inherit or make worse.
 - **Persisted formats** (session state and manifests, `data.db`, `config.json`, catalog `index.json`, blueprint and step YAML): can data written before the change still be read after it? Strict models with `extra="forbid"`, required new fields and renamed keys all break existing data.
 - **Exhaustive iterations** over an enum or type list that gains a member: every one must be listed or found by a planned `rg`.
 - **Merge, override and default semantics** that treat fields one at a time when the plan makes two fields depend on each other.
 - **Callers the plan does not list** for a signature it changes.
 - **Conditionals left to the implementer**, such as "delete X after grep confirms": run the check now and report the answer.
-- **Issue shapes the code contradicts**: the plan adopts an internal shape from the issue (a helper name, module, type alias or scope boundary) that the code shows is wrong, such as a symbol that duplicates or shadows an existing one, or an injected dependency the change holds but bypasses. A Trap that tells the implementer to work around the issue's shape is the usual sign. Take a position and report it as a Warning whose Fix is the better design and names the departure from the issue (planning.md Step 1). Never leave it as a neutral "confirm" under **For the human**.
-- **Guards that exclude the adopted foundation**: the plan follows an issue guard ("same message as today") that forbids behaviour of the foundation the issue adopts, or freezes wording nothing relies on (planning.md Step 1). Report it as a Warning whose Fix is the departure, and recommend it under **For the human**.
+- **Issue shapes the code contradicts**: the plan adopts an internal shape from the issue (a helper name, module, type alias or scope boundary) that the code shows is wrong, such as a symbol that duplicates or shadows an existing one, or an injected dependency the change holds but bypasses. A Trap that tells the implementer to work around the issue's shape is the usual sign. Take a position and report it as a Warning whose Fix is the better design and names the departure from the issue (planning.md Step 1). Never leave it as a neutral "confirm" in `for_human`.
+- **Guards that exclude the adopted foundation**: the plan follows an issue guard ("same message as today") that forbids behaviour of the foundation the issue adopts, or freezes wording nothing relies on (planning.md Step 1). Report it as a Warning whose Fix is the departure, and recommend it in `for_human`.
 
 A miss is Blocking when implementing the plan as written produces a bug, data loss, a crash or a broken public surface; otherwise a Warning.
 
@@ -57,13 +57,13 @@ The requirements are the slice's numbered items in `.agentic/requirements.json`:
 - Nothing an issue under `## Owned elsewhere` owns is planned, unless the plan names it as a departure (a `planner` decision or an Open Question), or it is a sentence the change makes false (R17).
 - Unrequested surface is surface that serves no FR, NFR, guard or Definition of done item. It gets no finding when a rule requires it (R10 callers, R17 sentences) or the plan names it as a departure (a `planner` decision or an Open Question); otherwise it is a Warning when public and a Suggestion when internal.
 - Each planned test pins a contract no other test pins (R12), and sibling cases are planned as one parametrized test, on one line.
-- Each Open Question states the answer the plan assumes, and `.agentic/plan.json` lists the same Open Questions with the same ids and assumed answers. A missing or disagreeing `plan.json` is a Warning: the blueprint asks the human from it. A Decision that changes public surface or a persisted format without an Open Question is a finding.
+- Open questions live only in `plan.json` `open_questions`, each with the answer the plan assumes, and each phase written against one cites its id. A phase that depends on an answer no open question or decision records is a Warning: the blueprint asks the human from `plan.json`. A decision that changes public surface or a persisted format without an open question is a finding. `plan.md` restating the open questions or decisions is a Suggestion to drop the copy.
 
 ## 6. Check shape and rules
 
-- The plan follows the template in [planning.md](../../../../../docs/agents/planning.md) Step 4, including the Phases table. That template has no Traceability, GWT Scenarios, per-phase Instructions, Edge cases or **Unchanged:** section, so their absence is never a finding. A phase's `### Code` that copies a literal the issue's Pre-determined data already holds, or stubs a private helper, is a Suggestion whose Fix is to cite the issue section or drop the stub.
+- The plan follows the template in [planning.md](../../../../../docs/agents/planning.md) Step 4, including the Phases table, as [issue-plan](issue-plan.md) Step 4 changes it: no What you're approving section, and a `## Changes to existing behaviour` section instead. Neither template has a Traceability, GWT Scenarios, per-phase Instructions, Edge cases or **Unchanged:** section, so their absence is never a finding. A phase's `### Code` that copies a literal the issue's Pre-determined data already holds, or stubs a private helper, is a Suggestion whose Fix is to cite the issue section or drop the stub.
 - Each phase is one concern, roughly 400 changed lines or less, passes the gate on its own and ships something. A phase over budget states why it cannot be split.
-- The phases of each slice together serve one responsibility, since each slice lands in one PR. A slice whose phases mix kinds of change (a foundation and its adoption, or a behaviour change and a refactor), not flagged under What you're approving with a recommendation to split the slice, is a Warning.
+- The phases of each slice together serve one responsibility, since each slice lands in one PR. A slice whose phases mix kinds of change (a foundation and its adoption, or a behaviour change and a refactor), not raised as an open question recommending to split the slice, is a Warning.
 - `.agentic/plan.json` `slices` agrees with the plan's `## Slices` table, every phase belongs to the slice under review, and a plain issue (`contract` is `null`) has one slice.
 - Phases are ordered by dependency, lower layers first, and replacing an internal is phased add, switch callers, delete, with the deletion phase in the ledger (R10).
 - The planned design against R1–R18: report **only violations**, each with the rule ID and the plan section that breaks it.
@@ -82,46 +82,9 @@ Report each failure as a Blocking finding citing the field or section:
 - **The "as landed" reports are heeded:** every report under the epic's `## Work plan` that names this slice under Later slices affected, or records a convention this slice follows, is reflected in the phases or raised as an Open Question.
 - **Size:** the slice's phases together stay within its budget: `src/` plus docs under about 400 changed lines, and the whole PR under about 900, or the plan says why the slice cannot be split.
 
-## 7. Write the report
+## 7. Write the findings
 
-Write `.agentic/plan-review.md`, overwriting any earlier one, and echo the verdict, the Blocking list and the questions for the human in chat:
-
-```markdown
-## dovo-plan-review
-
-**Verdict:** APPROVE | CHANGES REQUIRED
-**Plan:** `<plan path>`, grounded at `<sha>` (ancestor of HEAD: yes | no)
-**Provenance:** fresh session | same session that wrote the plan
-
-### Blocking
-
-| ID | Plan section | Evidence | Issue | Fix |
-|---|---|---|---|---|
-| B1 | Phase 2 Code | `path:line` or FR-n | What goes wrong if implemented as written. | The concrete change to the plan. |
-
-### Warnings
-
-| ID | Plan section | Evidence | Issue | Fix |
-|---|---|---|---|---|
-
-### Suggestions
-
-| ID | Plan section | Evidence | Issue | Fix |
-|---|---|---|---|---|
-
-### Coverage
-- Unmapped requirements: <FR/NFR/error/DoD IDs, or "none">
-- Commands missing R13 cases: <command: case, or "none">
-
-### For the human
-- <each decision only a human can make, with the plan's current assumption and your recommendation>
-```
-
-An empty section keeps its heading with the line `none`. IDs are the tier letter plus a number from 1 within the tier, in row order. Say `APPROVE` only with zero Blocking findings.
-
-## 8. Emit the machine-readable findings
-
-Write `.agentic/plan-review.json` alongside the markdown, overwriting any earlier one. The blueprint that phases the slice (`issue-code-v2`, or `issue-plan-v2` for a one-slice plan) folds every finding it lists into the plan, so it must agree with `plan-review.md` row for row.
+Write `.agentic/plan-review.json`, overwriting any earlier one, and echo the verdict, the Blocking findings and `for_human` in chat. The blueprint that phases the slice (`issue-code-v2`, or `issue-plan-v2` for a one-slice plan) folds every finding it lists into the plan.
 
 ```json
 {
@@ -149,10 +112,10 @@ Write `.agentic/plan-review.json` alongside the markdown, overwriting any earlie
 ```
 
 - `verdict` is exactly `APPROVE` or `CHANGES_REQUIRED`, and is `APPROVE` iff `counts.blocking` is `0`. `round` counts this prompt's runs on the plan, from 1.
-- `provenance` is `fresh_session` or `same_session`. `grounded_at` and `grounded_is_ancestor` come from the **Plan** line.
-- `findings` lists every finding, Blocking first, then Warnings, then Suggestions, each with the `id` from its `plan-review.md` row. `severity` is `BLOCKER`, `WARNING` or `SUGGESTION`. `section`, `evidence` and `fix` copy the row's columns; `summary` is the row's Issue in one line. `rule` is an R-id when the finding is a rule violation, otherwise `null`.
-- `coverage` lists the IDs from the **Coverage** section (`"<command>: <case>"` strings for R13 gaps), `[]` for "none". `for_human` copies the **For the human** bullets, `[]` for "none".
+- `provenance` is `fresh_session` or `same_session`. `grounded_at` is the sha in the plan's "Grounded against" line, and `grounded_is_ancestor` the result of the base commit check.
+- `findings` lists every finding, Blocking first, then Warnings, then Suggestions. `id` is the tier letter (`B`, `W`, `S`) plus a number from 1 within the tier. `severity` is `BLOCKER`, `WARNING` or `SUGGESTION`. `section` is the plan section, `evidence` the `path:line` or requirement id, `summary` what goes wrong if the plan is implemented as written, in one line, and `fix` the concrete change to the plan. `rule` is an R-id when the finding is a rule violation, otherwise `null`.
+- `coverage` lists the unmapped requirement ids and the R13 gaps (`"<command>: <case>"`), `[]` for none. `for_human` lists each decision only a human can make, with the plan's current assumption and your recommendation, `[]` for none.
 
-## 9. Hand off
+## 8. Hand off
 
-Report the report path and the verdict. On `CHANGES REQUIRED`, the plan's author applies the findings and this prompt runs once more in a fresh session. **Cap at 2 rounds**; after that, the human decides on whatever is still open. Do not start `/issue-code`: a human approves the plan first.
+Report the file path and the verdict. On `CHANGES_REQUIRED`, the plan's author applies the findings and this prompt runs once more in a fresh session. **Cap at 2 rounds**; after that, the human decides on whatever is still open. Do not start `/issue-code`: a human approves the plan first.

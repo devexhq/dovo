@@ -282,8 +282,7 @@ steps:
     type: agent
     prompt: |
       Follow .dovo/catalog/prompts/sdlc/v2/plan-challenge.md.
-      Challenge .agentic/plan.md and write challenges to .agentic/plan-challenge.md and
-      .agentic/plan-challenge.json.
+      Challenge .agentic/plan.md and write challenges to .agentic/plan-challenge.json.
       The plan splits the issue into slices, one PR each, listed under slices in
       .agentic/plan.json, and writes no phases: each slice is phased and reviewed later, and is
       not challenged again. Each slice lands on its own, so challenge the contract and how the
@@ -291,7 +290,6 @@ steps:
     tools: { allow_all: true }
     timeout_seconds: 1800
     artifacts:
-      - { name: plan-challenge, path: .agentic/plan-challenge.md }
       - { name: plan-challenges, path: .agentic/plan-challenge.json }
 
   - id: fold-challenges
@@ -303,30 +301,22 @@ steps:
       Otherwise update .agentic/plan.md and .agentic/plan.json:
         - Fold every challenge in .agentic/plan-challenge.json routed "fold" by planning its
           alternative.
-        - For every challenge routed "ask", add an open question, or rewrite the one it
-          concerns, that keeps the plan's current answer as the assumed answer and lists the
-          challenge's alternative under alternatives. End its summary with
-          "(assumed: <plan's answer>; challenged: <alternative>; recommended: <assumed |
-          challenged | none>)" and cite the challenge id and its evidence in why.
-        - Write every open question in the bulleted form of the plan template in
-          docs/agents/planning.md, one fact per bullet. On each question a challenge raised, add
-          its Challenged, Turns on and Recommended bullets:
-            - Re-read the code at every `path:line` the plan and the challenge cite, and the
-              issue and its comments, before you weigh them. Base the recommendation only on
-              what you confirmed, and drop any evidence that does not hold.
-            - Turns on names the one fact or preference the choice depends on, so the human
-              can dispute the premise rather than the verdict.
-            - Recommend "assumed" or "challenged", or "none" when the choice depends on a
-              preference the code cannot settle. Give the strongest point for the side you
-              do not recommend. The plan being written against its answer is no reason to
-              recommend it.
-            - Add a Note for an issue sentence the choice reverses, a follow-up it needs, or
-              the test that would pin it.
+        - For every challenge routed "ask", add an open question to plan.json `open_questions`,
+          or update the one it concerns. Keep the plan's current answer as `assumed`, set
+          `challenged` to true, put the challenge's alternative first in `alternatives`, and
+          write the challenger's case as `challenge_details`, one fact per item, citing the
+          challenge id and its evidence.
+        - Before you weigh a challenge, re-read the code at every `path:line` the plan and the
+          challenge cite, and the issue and its comments. Drop evidence that does not hold.
+          Set `recommendation` to "assumed" or "challenge" on what you confirmed. The plan being
+          written against its answer is no reason to recommend it.
         - Folding a challenge may make an open question moot, change its assumed answer or raise
-          a new one: remove, rewrite or add entries under Open questions to match.
+          a new one: remove, rewrite or add entries in `open_questions` to match.
         - Keep .agentic/plan.json in the shape the issue-plan prompt defines
           (`.dovo/catalog/prompts/sdlc/v2/issue-plan.md`), including its contract and slices, and in
-          agreement with .agentic/plan.md.
+          agreement with .agentic/plan.md. Open questions live only in plan.json.
+        - Run `uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py questions` and fix
+          every problem it names.
       Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
     tools: { allow_all: true }
     timeout_seconds: 1800
@@ -334,14 +324,33 @@ steps:
       - { name: plan, path: .agentic/plan.md }
       - { name: plan-questions, path: .agentic/plan.json }
 
+  # What the person reads at the prompt below, built from plan.json: the open
+  # questions with their assumed answers and recommendations, and the
+  # decisions. Holds the run when an open question is malformed; the message
+  # names it. The person fixes it in .agentic/plan.json and retries, keeping
+  # its id and summary, which the prompt lists from the plan-questions
+  # artifact fold-challenges published.
+  - id: questions-summary
+    name: Summarise the plan's open questions and decisions
+    run: >-
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py questions
+      --plan .agentic/plan.json --summary .agentic/plan-summary.md
+    timeout_seconds: 120
+    on_failure: prompt_user
+    artifacts:
+      - { name: plan-summary, path: .agentic/plan-summary.md }
+
   # Asked after the challenges are folded in, so every question reflects them.
   - id: answer-questions
     name: Answer the plan's open questions
     type: ask
     interaction:
       mode: multiselect
-      message: Which open questions do you want to answer instead of accepting the plan's assumed answer?
-      artifact: plan
+      message: >-
+        Which open questions do you want to answer instead of accepting the plan's assumed answer?
+        The attached summary gives each one's assumed answer and recommendation. A question you do
+        not tick settles to its assumed answer, also when the challenge is recommended.
+      artifact: plan-summary
       options_from:
         artifact: plan-questions
         file: .agentic/plan.json
@@ -391,8 +400,9 @@ steps:
   # slice lists an outcome the issue does not have; the message names which. A
   # failed session cannot resume, so the person fixes the slices' outcomes in
   # .agentic/plan.json and .agentic/plan.md and retries rather than losing the
-  # run. A retry that passes publishes both files again, so the walkthrough,
-  # the approval and the work plan read the fixed plan.
+  # run. It only reads the plan, so it publishes nothing: the steps below read
+  # the files in the worktree, and slice-plan, the next step to publish the
+  # plan, publishes the fixed files.
   - id: check-slices
     name: Check that each outcome belongs to one slice
     run: >-
@@ -400,9 +410,6 @@ steps:
       --plan .agentic/plan.json --requirements .agentic/requirements.json
     timeout_seconds: 120
     on_failure: prompt_user
-    artifacts:
-      - { name: plan, path: .agentic/plan.md }
-      - { name: plan-questions, path: .agentic/plan.json }
 
   # --- A plan of one slice is phased here, so the issue gets one planning
   # chain and one approval: the slice is planned, reviewed (with no challenge,
@@ -473,17 +480,15 @@ steps:
     prompt: |
       The plan's one slice: "{{ steps.one-slice.outputs.slice }}".
 
-      If that is empty, write only .agentic/plan-review.md, containing the one line
-      "Two or more slices; each slice's plan is reviewed in its own issue-code-v2 run.", and
-      .agentic/plan-review.json, containing {"findings": []}, and stop. Otherwise:
+      If that is empty, write only .agentic/plan-review.json, containing {"findings": []}, and
+      stop: each slice's plan of a plan with two or more slices is reviewed in its own
+      issue-code-v2 run. Otherwise:
 
       Follow .dovo/catalog/prompts/sdlc/v2/issue-plan-review.md in the mode `/issue-plan-review --slice {{ steps.one-slice.outputs.slice }}`.
-      Review .agentic/plan.md and write findings to .agentic/plan-review.md and
-      .agentic/plan-review.json.
+      Review .agentic/plan.md and write findings to .agentic/plan-review.json.
     tools: { allow_all: true }
     timeout_seconds: 1800
     artifacts:
-      - { name: plan-review, path: .agentic/plan-review.md }
       - { name: plan-findings, path: .agentic/plan-review.json }
 
   - id: fold-findings
@@ -494,21 +499,34 @@ steps:
       nothing.
       Otherwise update .agentic/plan.md and .agentic/plan.json:
         - Address every finding in .agentic/plan-review.json, by id, as each one describes.
-        - Write every open question in the bulleted form of the plan template in
-          docs/agents/planning.md, one fact per bullet.
         - Addressing a finding may make an open question moot, change its assumed answer or
-          raise a new one: remove, rewrite or add entries under Open questions to match.
+          raise a new one: remove, rewrite or add entries in plan.json `open_questions` to
+          match. Open questions live only in plan.json.
         - Keep .agentic/plan.json in the shape the issue-plan prompt defines for slice mode
           (`.dovo/catalog/prompts/sdlc/v2/issue-plan.md`), and in agreement with .agentic/plan.md. Never
           change its contract or slices, or the plan's Feature contract and Slices sections,
           other than slice {{ steps.one-slice.outputs.slice }}'s phases: a finding that needs
           either changed becomes an open question whose assumed answer keeps them.
+        - Run `uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py questions` and fix
+          every problem it names.
       Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
     tools: { allow_all: true }
     timeout_seconds: 1800
     artifacts:
       - { name: plan, path: .agentic/plan.md }
       - { name: plan-questions, path: .agentic/plan.json }
+
+  # As questions-summary above, for the slice plan. With two or more slices
+  # the plan has no open question left, so the summary lists none.
+  - id: slice-questions-summary
+    name: Summarise the slice plan's open questions and decisions
+    run: >-
+      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py questions
+      --plan .agentic/plan.json --summary .agentic/plan-summary.md
+    timeout_seconds: 120
+    on_failure: prompt_user
+    artifacts:
+      - { name: plan-summary, path: .agentic/plan-summary.md }
 
   # No prompt is shown when the slice plan raises no question, nor for a plan
   # of two or more slices, whose questions were all settled above.
@@ -517,8 +535,11 @@ steps:
     type: ask
     interaction:
       mode: multiselect
-      message: Which open questions of the slice's plan do you want to answer instead of accepting the plan's assumed answer?
-      artifact: plan
+      message: >-
+        Which open questions of the slice's plan do you want to answer instead of accepting the
+        plan's assumed answer? The attached summary gives each one's assumed answer and
+        recommendation. A question you do not tick settles to its assumed answer.
+      artifact: plan-summary
       options_from:
         artifact: plan-questions
         file: .agentic/plan.json
@@ -626,10 +647,11 @@ steps:
       the slices land in, and that each slice's phases are planned and approved in its own
       issue-code-v2 run.
       Otherwise the issue is one slice, one PR, and .agentic/plan.md phases it, within the issue
-      plan in .agentic/epic-plan.md: explain the slice's phases, in slice mode, and the decisions
-      of both plans. Explain the breakdown too: the phase files in .agentic/phases/, listed in
-      .agentic/phases/index.json, the only files each phase's code agent reads. Say that this is
-      the slice's only approval: the issue-code-v2 run that codes it skips planning.
+      plan in .agentic/epic-plan.md: walk through it in slice mode, taking the decisions of both
+      plans (.agentic/epic-plan.json and .agentic/plan.json). Check the breakdown too: the phase
+      files in .agentic/phases/, listed in .agentic/phases/index.json, the only files each
+      phase's code agent reads. Say that this is the slice's only approval: the issue-code-v2 run
+      that codes it skips planning.
       Do not change the plan, implement anything, commit or push.
     tools: { allow_all: true }
     timeout_seconds: 1800
@@ -650,7 +672,9 @@ steps:
   # feature-dev hands the approver's instructions straight to its code step;
   # here the code runs in later issue-code-v2 sessions, which read only the plan
   # artifacts, so the instructions go into the plan. Passed through env so the
-  # comment is never parsed as shell.
+  # comment is never parsed as shell. It publishes the plan because it changes
+  # it: issue-code-v2 downloads the latest revision, so the instructions reach
+  # it only through this one.
   - id: keep-instructions
     name: Add the approver's instructions to the plan
     run: |

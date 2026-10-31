@@ -2,7 +2,7 @@
 
 Challenge an issue plan written by `issue-plan` in issue mode: the contract and the slices, with no phases. This prompt asks whether the plan, and the issue behind it, are the right design. It runs once per issue, never on a slice plan: `issue-plan-review` reviews each slice's phases against the decisions settled here. No review runs on the issue plan itself: its outcome coverage and slice sizes are checked by `plan.py check-slices`, and grounding, R13 matrices and rule-by-rule checks belong to each slice's review, so leave them out.
 
-Output goes to `.agentic/plan-challenge.md`, paired with `.agentic/plan-challenge.json`. The blueprint folds challenges routed `fold` into the plan and asks a human about those routed `ask`, so every challenge you write costs either a plan change or a human decision. "No challenges" is a normal result for a plan whose design holds.
+Output goes to `.agentic/plan-challenge.json`. The blueprint folds challenges routed `fold` into the plan and asks a human about those routed `ask`, so every challenge you write costs either a plan change or a human decision. "No challenges" is a normal result for a plan whose design holds.
 
 ## Hard boundaries
 
@@ -17,11 +17,11 @@ The plan is `<plan-path>` when given, otherwise `.agentic/plan.md`. If it is mis
 
 ## 2. Challenge from a fresh context
 
-If this session wrote or reviewed the plan, delegate the challenge to a fresh subagent. Give it the Hard boundaries above as its first lines, the plan path and the issue number, and nothing else. If no subagent can be launched, say so in the report's **Provenance** line.
+If this session wrote or reviewed the plan, delegate the challenge to a fresh subagent. Give it the Hard boundaries above as its first lines, the plan path and the issue number, and nothing else. If no subagent can be launched, set `provenance` to `same_session`.
 
 ## 3. Argue for the plan first
 
-Before challenging anything, write two or three sentences under **Steelman**: the approach the plan takes and the strongest reason it is right. A challenge must beat that reason, not a weaker version of it.
+Before challenging anything, write two or three sentences as the `steelman`: the approach the plan takes and the strongest reason it is right. A challenge must beat that reason, not a weaker version of it.
 
 ## 4. Challenge through these lenses
 
@@ -46,37 +46,11 @@ A challenge states:
 
 Keep at most five, ranked by the cost of being wrong. Drop a challenge whose failure is cosmetic, whose alternative is a matter of taste, or that only restates a rule check.
 
-When a challenge exists because a pattern lives only in the code, add a **Rule proposal**: the one sentence for `AGENTS.md` or a doc under `docs/agents/` that would let a rule check catch it next time.
+When a challenge exists because a pattern lives only in the code, add a **Rule proposal**: the one sentence for `AGENTS.md` or a doc under `docs/agents/` that would let a rule check catch it next time, and the file it belongs in.
 
-## 6. Write the report
+## 6. Write the challenges
 
-Write `.agentic/plan-challenge.md`, overwriting any earlier one, and echo the challenges in chat:
-
-```markdown
-## dovo-plan-challenge
-
-**Plan:** `<plan path>`, grounded at `<sha>`
-**Provenance:** fresh session | same session that wrote or reviewed the plan
-
-### Steelman
-
-<two or three sentences>
-
-### Challenges
-
-| ID | Lens | Plan section | Claim | Evidence | Failure | Alternative | Route |
-|---|---|---|---|---|---|---|---|
-| C1 | failure_path | Phase 2 Code | ... | `path:line` | ... | ... | ask |
-
-### Rule proposals
-- C1: <the sentence, and the file it belongs in>
-```
-
-An empty section keeps its heading with the line `none`.
-
-## 7. Emit the machine-readable challenges
-
-Write `.agentic/plan-challenge.json` alongside the markdown, overwriting any earlier one, agreeing with `plan-challenge.md` row for row:
+Write `.agentic/plan-challenge.json`, overwriting any earlier one, and echo the challenges in chat:
 
 ```json
 {
@@ -102,8 +76,9 @@ Write `.agentic/plan-challenge.json` alongside the markdown, overwriting any ear
 
 - `provenance` is `fresh_session` or `same_session`.
 - `lens` is one of the six names in step 4; `route` is `fold` or `ask`; `rule_proposal` is `null` when there is none.
-- `challenges` is `[]` when the report says `none`.
+- `id` is `C1`, `C2` and so on; `section` is the plan section the challenge concerns.
+- `challenges` is `[]` when no challenge clears the bar.
 
-## 8. Hand off
+## 7. Hand off
 
-Report the report path and the number of challenges by route. Do not edit the plan: the blueprint folds `fold` challenges and turns `ask` challenges into Open Questions for a human.
+Report the file path and the number of challenges by route. Do not edit the plan: the blueprint folds `fold` challenges and turns `ask` challenges into Open Questions for a human.
