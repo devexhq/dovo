@@ -659,6 +659,39 @@ class CatalogValidateLoopBlockTests:
         assert (result.error_code, result.errors) == (None, [])
 
 
+class CatalogValidateWhenTests:
+    """`when` scope errors are listed one per entry with their own remediation; a step catalog file rejects `when`."""
+
+    def test_each_scope_error_is_its_own_entry_with_a_resolve_remediation(self, isolated_workspace: Path) -> None:
+        steps = [
+            {"id": "a", "run": "x", "when": ["steps.later.exit_code == 0"]},
+            {"id": "b", "run": "y", "when": ["iteration.index > 1"]},
+            {"id": "later", "run": "z"},
+        ]
+        _write_yaml(isolated_workspace / "when.yml", {"name": "when", "steps": steps})
+
+        result = _validate("when.yml", path=isolated_workspace)
+
+        expected = [
+            "Step 'a': Step id 'later' referenced in when condition 'steps.later.exit_code == 0' "
+            "not found in earlier steps (allowed: none).",
+            "Step 'b': Operand 'iteration.index' in when condition 'iteration.index > 1' "
+            "is only available inside a loop's 'do'.",
+        ]
+        assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
+        assert result.errors == expected
+        assert result.remediations == [Remediation(message=f"Resolve: {error}") for error in expected]
+
+    def test_step_catalog_file_with_when_fails_validation(self, isolated_workspace: Path) -> None:
+        _write_yaml(isolated_workspace / "guarded.yml", {"id": "s", "run": "x", "when": ["steps.a.exit_code == 0"]})
+
+        result = _validate("guarded.yml", path=isolated_workspace, item_type=CatalogItemType.STEP)
+
+        message = "Step 's' sets 'when' in a step catalog file; set 'when' on the blueprint step that uses it instead."
+        assert (result.error_code, result.errors) == (ErrorCode.CATALOG_SCHEMA_INVALID, [message])
+        assert result.remediations == [Remediation(message=f"Resolve: {message}")]
+
+
 class _ExplodingBlueprintDefinition(BlueprintDefinition):
     """BlueprintDefinition whose document loading fails with an unexpected RuntimeError."""
 

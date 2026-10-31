@@ -200,8 +200,14 @@
             { "type": "string", "enum": ["abort", "continue", "prompt_user", "retry"] },
             { "$ref": "#/$defs/failure_spec" }
           ]
-        }
+        },
+        "when": { "$ref": "#/$defs/conditions" }
       }
+    },
+    "conditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" }
     },
     "loop_step": {
       "type": "object",
@@ -225,7 +231,8 @@
         "on_max_iterations": {
           "type": "string",
           "enum": ["abort", "continue", "prompt_user"]
-        }
+        },
+        "when": { "$ref": "#/$defs/conditions" }
       }
     },
     "failure_spec": {

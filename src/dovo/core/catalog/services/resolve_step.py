@@ -97,6 +97,7 @@ def merge_uses_step(using: StepDefinition, base_definition: StepDefinition) -> S
                 "assert": _pick("assert_"),
                 "on_failure": _pick("on_failure"),
                 "artifacts": _pick("artifacts"),
+                "when": using.when,
             }
         )
     except (ValidationError, ValueError):
@@ -166,6 +167,7 @@ def _resolve_run(step: StepDefinition) -> StepDefinition:
             "assert": step.assert_,
             "on_failure": step.on_failure,
             "artifacts": step.artifacts,
+            "when": step.when,
         }
     )
 

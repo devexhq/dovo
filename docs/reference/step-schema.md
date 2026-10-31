@@ -27,6 +27,7 @@ Every standard step accepts the following fields:
 | `artifacts` | `list[ArtifactPublishSpec]` | No | `[]` | Files to publish as artifact revisions when the step succeeds. See [`artifacts` Entries](#artifacts-entries). |
 | `max_files` | `integer` | No | `null` | Agent steps only: most files one attempt's patch may touch (at least `1`). Omitted means no limit. See [`max_files` Limit](#max_files-limit). |
 | `interaction` | `object` | Conditional | `null` | Prompt shown to a person. Required when `type: ask`, rejected on every other type. See [`interaction` Block](#interaction-block). |
+| `when` | `list[string]` | No | `null` | Conditions that must all be true for the step to run. Blueprint steps only. See [`when` Guards](#when-guards). |
 
 ### `max_files` Limit
 
@@ -138,6 +139,22 @@ Repeats the steps in `do` until an `until` condition is met:
 | `until` | `list[string]` | **Yes** | — | Termination condition expressions (e.g. `['steps.test.exit_code == 0']`). |
 | `do` | `list[StepDefinition]` | **Yes** | — | List of steps to execute sequentially on each iteration. |
 | `on_max_iterations` | `string` | No | `prompt_user` | Terminal policy (`abort`, `continue`, `prompt_user`) if loop reaches `max_iterations` without terminating. |
+| `when` | `list[string]` | No | `null` | Conditions that must all be true for the loop to start. See [`when` Guards](#when-guards). |
+
+---
+
+## `when` Guards
+
+A `when` list holds condition expressions written exactly as loop `until` conditions are, such as `steps.check.exit_code == 0`. Any step kind and any loop can carry one, including steps inside a loop's `do`.
+
+`dovo blueprint validate`, `dovo run` and `dovo resume` reject a blueprint, naming the step or loop, when:
+
+- a `when` list is empty or holds an invalid expression;
+- an expression references a step that is not an earlier step in the same or an enclosing scope. A top-level step sees the top-level steps before it. A step inside `do` also sees the steps before it in the same `do`. A loop's own id cannot be referenced, and the steps inside its `do` are not visible after the loop;
+- an expression uses `iteration.index` outside a loop's `do`.
+
+!!! warning
+    A step catalog file cannot set `when`: its step references can only be checked in the blueprint that uses it. Set `when` on the blueprint step that `uses` the catalog step instead.
 
 ---
 

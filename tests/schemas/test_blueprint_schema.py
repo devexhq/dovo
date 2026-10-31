@@ -17,3 +17,14 @@ class BlueprintSchemaLoopParityTests:
 
         assert set(loop_step["properties"]) == set(LoopStepBlock.model_fields)
         assert loop_step["additionalProperties"] is False
+
+
+class BlueprintSchemaWhenTests:
+    """Steps and loop blocks take a non-empty `when` list of condition strings."""
+
+    def test_step_and_loop_when_is_a_non_empty_string_list(self) -> None:
+        defs = json.loads((files("dovo.schemas.v1") / "blueprint.json").read_text(encoding="utf-8"))["$defs"]
+
+        assert defs["standard_step"]["properties"]["when"] == {"$ref": "#/$defs/conditions"}
+        assert defs["loop_step"]["properties"]["when"] == {"$ref": "#/$defs/conditions"}
+        assert defs["conditions"] == {"type": "array", "minItems": 1, "items": {"type": "string"}}

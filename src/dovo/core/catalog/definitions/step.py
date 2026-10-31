@@ -265,6 +265,12 @@ class ArtifactPublishSpec(BaseModel):
     required: bool = True
 
 
+def _reject_empty_when(owner: str, when: list[str] | None) -> None:
+    """Raise ValueError naming owner when its 'when' list is set but empty."""
+    if when is not None and not when:
+        raise ValueError(f"{owner}: 'when' must list at least one condition.")
+
+
 class StepDefinition(BaseModel):
     """Single model for a step in a blueprint or in the step catalog."""
 
@@ -287,6 +293,7 @@ class StepDefinition(BaseModel):
     artifacts: list[ArtifactPublishSpec] = Field(default_factory=list)
     interaction: InteractionSpec | None = None
     max_files: int | None = Field(default=None, ge=1)
+    when: list[str] | None = None
 
     @field_validator("type", mode="before")
     @classmethod
@@ -315,7 +322,8 @@ class StepDefinition(BaseModel):
 
     @model_validator(mode="after")
     def validate_step_shape(self) -> "StepDefinition":
-        """Enforce exactly one of run/uses/inline-type mode."""
+        """Enforce exactly one of run/uses/inline-type mode and a non-empty 'when' list."""
+        _reject_empty_when(f"Step '{self.id}'", self.when)
         _validate_ask_shape(self)
         if self.type == StepType.ASK:
             return self
@@ -342,6 +350,7 @@ class LoopStepBlock(BaseModel):
     until: list[str] = Field(min_length=1)
     do: list[StepDefinition] = Field(min_length=1)
     on_max_iterations: FailurePolicy = FailurePolicy.PROMPT_USER
+    when: list[str] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -367,7 +376,8 @@ class LoopStepBlock(BaseModel):
 
     @model_validator(mode="after")
     def validate_on_max_iterations_context(self) -> "LoopStepBlock":
-        """Reject FailurePolicy values not valid for the terminal context (e.g. RETRY)."""
+        """Reject FailurePolicy values not valid for the terminal context (e.g. RETRY) and an empty 'when' list."""
+        _reject_empty_when(f"Loop '{self.id}'", self.when)
         allowed = FailurePolicy.context("terminal")
         if self.on_max_iterations not in allowed:
             raise ValueError(f"Loop '{self.id}': on_max_iterations must be one of {sorted(allowed)}.")
