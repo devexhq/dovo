@@ -17,12 +17,13 @@ Ground against `origin/main` (`git fetch origin main`), reading only; never edit
 - **Dependencies:** search open issues for work this one needs first (`gh issue list --state open --search "<terms>"`). Each becomes a **Depends on** item stating what this issue assumes it delivers.
 - **Already shipped:** check that no outcome is already delivered: the CLI's help (`uv run dovo <command> --help`), merged pull requests (`gh pr list --state merged --search "<terms>"`) and the code (`rg`). Drop an outcome that has shipped, and tell the person.
 - **Owners:** for what the issue leaves out, find the open issue that owns it, so **Out of scope** can name it.
+- **A bug still happens:** for a bug, follow the steps to reproduce on `main` when they only read state or run in a scratch workspace, and say whether it reproduced. A bug that no longer reproduces is not filed; tell the person which merged pull request fixed it when you can find it.
 
 Record none of what the grounding finds in the code: paths, symbols, revision numbers, column lists, test names and counts stay out of the issue.
 
 ## 3. Draft
 
-Write the title and body to the template, its sections in order:
+Write the title and body to the template, its sections in order. A bug, behaviour that is wrong today, uses [templates/bug.md](templates/bug.md): **What happens** and **Steps to reproduce** take the place of **Why**, and **Done when** names the regression test; everything else below holds.
 
 - **Why** in the person's terms.
 - One **Outcome** per observable behaviour, numbered from `O-1`, stated as a rule that holds wherever it applies. Where the grounding found many places it applies today, state what they share, with one or two as examples, and leave finding the rest to planning.
@@ -34,7 +35,7 @@ No hard line wraps: each paragraph and list item is one line, and every issue re
 
 ## 4. Check
 
-Run the template's checklist over every sentence and over the whole issue. Then show the person the title and body, and publish only when they ask: `gh issue create --title "<title>" --body-file <file> --label dovo-size-<s|m|l>`, choosing the size by the descriptions of the repository's `dovo-size-*` labels. Add `--blocked-by <n>` for each **Depends on** issue that must merge first.
+Run the template's checklist over every sentence and over the whole issue. Then show the person the title and body, and publish only when they ask: `gh issue create --title "<title>" --body-file <file> --label dovo-size-<s|m|l>`, choosing the size by the descriptions of the repository's `dovo-size-*` labels, plus `--label type:bug` for a bug. Add `--blocked-by <n>` for each **Depends on** issue that must merge first.
 
 ## Rewrite a legacy issue
 
@@ -44,6 +45,7 @@ Given an existing issue's number, and any overlapping issues you were asked to c
 2. **Ground lightly,** as in step 2, only enough to drop what already shipped and to name overlaps: check each functional requirement and error case against `main`, and search open issues for the same work (`gh issue list --state open --search "<terms>"`).
 3. **Draft** `.agentic/issue-rewrite.md`, the whole description, to the template as in step 3:
    - **Keep every decision a person made.** A choice the old text settles (in its scope, a requirement, a guard, its Pre-determined data or a note) becomes a decision with its cost, or, for a literal a person chose (a name, a message, an exit code, a key), a Binding values line with the exact value. When unsure whether a person decided something, keep it.
+   - **A bug** (labelled `type:bug`, or describing behaviour that is wrong today) is drafted to [templates/bug.md](templates/bug.md): **What happens** and **Steps to reproduce** from the old report's observed behaviour and repro, keeping the user-facing steps and dropping any guessed cause or source location.
    - **Outcomes** from the functional requirements and error cases: the behaviour a user or caller observes, one item each, numbered from `O-1`. Leave out what has already shipped. Requirements that repeat one rule across a list of sites become that one rule.
    - **Why** from the goal or user story; **Depends on** from the blockers and the issues the old text says must land first, each with its assumption; **Out of scope** from the items another issue owns, naming that issue; **Done when** naming the outcomes by id, plus any doc check the old definition of done holds.
    - **Drop what the code can tell:** paths, symbols, revision numbers, column lists, test names, counts, inventories, implementation steps, restated `AGENTS.md` rules and grep bars.

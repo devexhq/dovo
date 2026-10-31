@@ -858,6 +858,33 @@ class PlanRequirementsTests:
             {"id": "D-1", "kind": "decision", "text": "<A trade-off a person settled, and what it costs. Accepted.>"},
         ]
 
+    def test_requirements_reads_the_bug_templates_skeleton_as_a_short_issue(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        template = (REPO_ROOT / ".dovo/catalog/prompts/sdlc/v2/templates/bug.md").read_text(encoding="utf-8")
+        skeleton = template.split("```markdown\n", 1)[1].split("\n```", 1)[0]
+        fake = FakeGh(skeleton, [])
+
+        assert _requirements(monkeypatch, fake) == 0
+
+        written = _written(workspace)
+        assert written["format"] == "short"
+        assert written["requirements"] == [
+            {
+                "id": "O-1",
+                "kind": "outcome",
+                "text": (
+                    "<The correct behaviour, as a rule that holds wherever the bug could occur, "
+                    "not only for the steps above.>"
+                ),
+            },
+            {
+                "id": "D-1",
+                "kind": "decision",
+                "text": "<A trade-off a person settled about the fix, and what it costs.>",
+            },
+        ]
+
     @pytest.mark.parametrize(
         ("body", "ident"),
         [
