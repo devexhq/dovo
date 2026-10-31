@@ -163,7 +163,7 @@ def scripted_loop_blueprint() -> dict[str, object]:
         "command": (
             'echo "run" >> producer-runs.txt; '
             'echo "feedback: {{ steps.approve.outputs.comment }}" >> feedback.txt; '
-            'echo "plan" > PLAN.md'
+            'echo "plan revised for: {{ steps.approve.outputs.comment }}" > PLAN.md'
         ),
         "artifacts": [{"name": "plan", "path": "PLAN.md"}],
     }

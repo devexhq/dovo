@@ -83,9 +83,10 @@ class ArtifactStoreTests:
         store = ArtifactStore(artifacts, "wf_1")
         other = ArtifactStore(artifacts, "wf_other")
         worktree_path = _worktree(tmp_path, "plan")
-        for _ in range(2):
-            _publish(store, worktree_path)
-        for _ in range(5):
+        for round_number in range(5):
+            (worktree_path / "PLAN.md").write_text(f"plan {round_number}", encoding="utf-8")
+            if round_number < 2:
+                _publish(store, worktree_path)
             _publish(other, worktree_path)
 
         assert store.resolve_references({"plan": {"revision"}}).references == {"plan": {"revision": "2"}}

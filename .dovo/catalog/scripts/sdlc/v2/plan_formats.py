@@ -3,12 +3,29 @@
 A decision is one entry of `decisions` in .agentic/plan.json: a choice the plan
 is written against, and who settled it. `settled_by` is `human` for an open
 question the human answered, with `answer` holding the human's words;
-`assumed_accepted` for an open question the human left to its assumed answer;
-and `planner` for a departure from the issue the planner made, which the human
+`assumed_accepted` for an open question the human left unanswered whose
+recommendation was its assumed answer; `challenge_accepted` for one the human
+left unanswered whose recommendation was the challenge's answer; and `planner` for a departure from the issue the planner made, which the human
 approves with the plan. `was` is the id of the open question the decision
 settles, or null for a planner's departure that was never one. `replaces`, when
 present, names the decision an earlier planning session posted to the issue
 that this one takes the place of: `{"id": "D-2", "session": "<session id>"}`.
+
+An open question is one entry of `open_questions` in .agentic/plan.json, the
+only place the plan states it. `summary` is the question on one line of at most
+120 characters, `assumed` the answer the plan is written against, at most 200,
+and `details` its context and why it matters, at most 5 one-line bullets of at
+most 140 characters each. `challenged` is true when the plan challenge disputed
+the assumed answer; `challenge_answer` then holds the answer the challenge
+proposes, one line of at most 200 characters, and `challenge_details` the
+challenger's case, in the same caps as `details`. An unchallenged question has
+`challenge_answer` `""` and `challenge_details` `[]`. `alternatives` lists the
+other options, one line each. `recommendation` is `assumed` or `challenge`,
+the answer the planner recommends, which settles the question unless a person
+answers it; only a challenged question recommends the challenge. `phases` are
+the phase numbers and `blocks` the slice ids whose plan changes with the
+answer, and the optional `replaces` names the prior decision the question asks
+to confirm again. A question has no other field.
 
 A prior decision is one entry of `decisions` in .agentic/prior-decisions.json,
 which `plan.py prior-decisions` writes from the issue's `dovo:decisions`
@@ -51,8 +68,8 @@ import re
 from dataclasses import dataclass
 from datetime import date
 
-SETTLED_BY = ("human", "assumed_accepted", "planner")
-FROM_QUESTION = frozenset({"human", "assumed_accepted"})
+SETTLED_BY = ("human", "assumed_accepted", "challenge_accepted", "planner")
+FROM_QUESTION = frozenset({"human", "assumed_accepted", "challenge_accepted"})
 DECISION_ID = re.compile(r"D-\d+")
 QUESTION_ID = re.compile(r"OQ-\d+")
 ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -84,6 +101,27 @@ PHASE_FIELDS = frozenset(
     }
 )
 ACTION_FIELDS = frozenset({"id", "kind", "target", "do", "requirements"})
+QUESTION_FIELDS = frozenset(
+    {
+        "id",
+        "summary",
+        "assumed",
+        "details",
+        "challenged",
+        "challenge_answer",
+        "challenge_details",
+        "recommendation",
+        "alternatives",
+        "phases",
+        "blocks",
+        "replaces",
+    }
+)
+RECOMMENDATIONS = ("assumed", "challenge")
+SUMMARY_CAP = 120
+ASSUMED_CAP = 200
+BULLET_CAP = 140
+BULLET_COUNT = 5
 
 
 class FormatError(ValueError):
@@ -249,6 +287,137 @@ class Decision:
             date=_date(raw, owner),
             replaces=_replaces(raw, owner),
         )
+
+
+def _one_line(text: str, owner: str, key: str) -> str:
+    """Return text when it is one line.
+
+    Raises:
+        FormatError: text spans more than one line.
+    """
+    if "\n" in text:
+        raise FormatError(f"{owner} {key} spans more than one line.")
+    return text
+
+
+def _capped(text: str, cap: int, owner: str, key: str) -> str:
+    """Return text when it is one line of at most cap characters.
+
+    Raises:
+        FormatError: text spans more than one line or is longer than cap.
+    """
+    if len(_one_line(text, owner, key)) > cap:
+        raise FormatError(f"{owner} {key} is {len(text)} characters long; at most {cap}.")
+    return text
+
+
+def _bullets(raw: dict[str, object], key: str, owner: str) -> tuple[str, ...]:
+    """Return raw[key] when it is at most BULLET_COUNT one-line bullets of at most BULLET_CAP characters each.
+
+    Raises:
+        FormatError: raw[key] is not a list of strings, holds too many bullets, or a bullet is too long.
+    """
+    bullets = _texts(raw, key, owner)
+    if len(bullets) > BULLET_COUNT:
+        raise FormatError(f"{owner} has {len(bullets)} {key} items; at most {BULLET_COUNT}.")
+    return tuple(_capped(bullet, BULLET_CAP, owner, f"{key} item") for bullet in bullets)
+
+
+@dataclass(frozen=True)
+class OpenQuestion:
+    """One open question in plan.json's open_questions: the answer the plan assumes, and how a challenge weighed it."""
+
+    id: str
+    summary: str
+    assumed: str
+    details: tuple[str, ...]
+    challenged: bool
+    challenge_answer: str
+    challenge_details: tuple[str, ...]
+    recommendation: str
+    alternatives: tuple[str, ...]
+    phases: tuple[int, ...]
+    blocks: tuple[str, ...]
+
+    @property
+    def recommended(self) -> str:
+        """Return the answer the planner recommends: the assumed one, or the challenge's."""
+        return self.assumed if self.recommendation == "assumed" else self.challenge_answer
+
+    @classmethod
+    def from_json(cls, raw: object, position: int) -> OpenQuestion:
+        """Return the open question raw describes; position (from 1) names it while it has no id.
+
+        Raises:
+            FormatError: raw is not a well-formed open question; the message names the question and the field.
+        """
+        ident = raw.get("id") if isinstance(raw, dict) else None
+        if not isinstance(ident, str) or not QUESTION_ID.fullmatch(ident):
+            raise FormatError(f"Open question {position} has id {ident!r}; it must be OQ-<n>.")
+        owner = f"Open question {ident}"
+        question = _object(raw, owner, QUESTION_FIELDS)
+        missing = sorted(QUESTION_FIELDS - {"replaces"} - question.keys())
+        if missing:
+            raise FormatError(f"{owner} has no {', '.join(missing)}.")
+        challenged = question.get("challenged")
+        if not isinstance(challenged, bool):
+            raise FormatError(f"{owner} has challenged {challenged!r}; it must be true or false.")
+        recommendation = question.get("recommendation")
+        if recommendation not in RECOMMENDATIONS:
+            raise FormatError(f"{owner} has recommendation {recommendation!r}; it must be assumed or challenge.")
+        entry = cls(
+            id=ident,
+            summary=_capped(_text(question, "summary", owner), SUMMARY_CAP, owner, "summary"),
+            assumed=_capped(_text(question, "assumed", owner), ASSUMED_CAP, owner, "assumed"),
+            details=_bullets(question, "details", owner),
+            challenged=challenged,
+            challenge_answer=_challenge_answer(question, challenged=challenged, owner=owner),
+            challenge_details=_bullets(question, "challenge_details", owner),
+            recommendation=str(recommendation),
+            alternatives=tuple(
+                _one_line(item, owner, "alternatives item") for item in _texts(question, "alternatives", owner)
+            ),
+            phases=_numbers(question, "phases", owner),
+            blocks=_texts(question, "blocks", owner),
+        )
+        _replaces(question, owner)
+        entry.check_challenge(owner)
+        return entry
+
+    def check_challenge(self, owner: str) -> None:
+        """Refuse challenge fields that disagree with challenged.
+
+        Raises:
+            FormatError: an unchallenged question has challenge details or recommends the challenge, or a
+                challenged one has no challenge details.
+        """
+        if not self.challenged:
+            if self.challenge_details:
+                raise FormatError(f"{owner} has challenge_details but challenged is false.")
+            if self.recommendation != "assumed":
+                raise FormatError(f"{owner} recommends the challenge but challenged is false.")
+            return
+        if not self.challenge_details:
+            raise FormatError(f"{owner} is challenged but has no challenge_details.")
+
+
+def _challenge_answer(raw: dict[str, object], *, challenged: bool, owner: str) -> str:
+    """Return the answer the challenge proposes: one line of at most ASSUMED_CAP characters when challenged, "" otherwise.
+
+    Raises:
+        FormatError: challenge_answer is not a string, is empty on a challenged question, is set on an
+            unchallenged one, or spans more than one line or ASSUMED_CAP characters.
+    """
+    value = raw.get("challenge_answer")
+    if not isinstance(value, str):
+        raise FormatError(f"{owner} has challenge_answer {value!r}; it must be a string.")
+    if not challenged:
+        if value:
+            raise FormatError(f'{owner} has a challenge_answer but challenged is false; it must be "".')
+        return value
+    if not value.strip():
+        raise FormatError(f"{owner} is challenged but has no challenge_answer.")
+    return _capped(value, ASSUMED_CAP, owner, "challenge_answer")
 
 
 @dataclass(frozen=True)

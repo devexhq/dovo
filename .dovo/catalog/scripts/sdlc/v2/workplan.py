@@ -609,11 +609,18 @@ def _settled_by(item: dict[str, object]) -> str:
     return " ".join(part for part in parts if part)
 
 
+def _recommended(item: dict[str, object]) -> str:
+    """Return the answer an open question recommends: its assumed one, or the challenge's."""
+    if _text(item, "recommendation") == "challenge" and _text(item, "challenge_answer"):
+        return _text(item, "challenge_answer")
+    return _text(item, "assumed")
+
+
 def _open_question(item: dict[str, object]) -> str:
     """Render one open question with the slices it blocks and its recommended answer."""
     blocks = _joined(item, "blocks")
     blocked = f" (blocks {blocks})" if blocks else ""
-    return f"- **{_text(item, 'id')}**{blocked}: {_text(item, 'summary')} **Recommended:** {_text(item, 'assumed')}"
+    return f"- **{_text(item, 'id')}**{blocked}: {_text(item, 'summary')} **Recommended:** {_recommended(item)}"
 
 
 def render_questions(open_questions: list[dict[str, object]]) -> str:

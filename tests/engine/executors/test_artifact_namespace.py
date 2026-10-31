@@ -20,8 +20,8 @@ class ArtifactNamespaceProviderTests:
         artifact_store: ArtifactStore,
         publish_artifact: PublishArtifact,
     ) -> None:
-        publish_artifact("plan", {"PLAN.md": "plan"})
-        publish_artifact("plan", {"PLAN.md": "plan"})
+        publish_artifact("plan", {"PLAN.md": "first"})
+        publish_artifact("plan", {"PLAN.md": "second"})
         record = artifacts_repository.get("wf_1", "plan")
         assert record is not None
         expected = {"revision": "2", "dir": str(record.path)}[field_name]

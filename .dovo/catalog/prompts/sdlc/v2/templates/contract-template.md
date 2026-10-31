@@ -64,8 +64,8 @@ them to each issue's body; the ready check never does.>
 |---|---|---|---|
 | D1 | <the choice> | <the concrete reason> | user <date> / plan-challenge Cn / inherited from #n (confirmed <date>) |
 
-Open questions, each with a recommended answer until the user settles it:
-- **Q1** (blocks Sx): <the question>. **Recommended:** <answer>, because <reason>.
+<Open questions are not written here: they live in plan.json `open_questions`, and the work plan
+comment lists the ones still open under this section.>
 
 ### Code inventory
 <Counts and locations of every site the feature touches, at the grounding sha. One line per
@@ -118,7 +118,7 @@ The contract scales with how far the shared surfaces spread. An epic whose slice
 | Target contract | required | give the end state or the delta per surface, with a baseline and `touched_by` | describe how the slices get there, or restate an architecture entry |
 | Conventions | when the slices follow a rule no architecture entry states, or a named exemplar | cite entries by anchor; mark whether each exemplar conforms | restate an entry's text |
 | Overrides | when an existing issue says something this contract makes wrong | quote the sentence it replaces | paraphrase it |
-| Decisions | when a choice would otherwise be made twice, or an open question remains | give a reason and a source for each; confirm inherited ones; recommend an answer to each open question | leave a decision implicit in a slice, or an inherited one unconfirmed; re-decide a rule an architecture entry already states |
+| Decisions | when a choice would otherwise be made twice, or an open question remains | give a reason and a source for each; confirm inherited ones; raise each open question in plan.json with its assumed answer | leave a decision implicit in a slice, or an inherited one unconfirmed; re-decide a rule an architecture entry already states |
 | Code inventory | when slice sizing rests on counted sites | be reproducible from a command at the grounding sha; assign each row a slice | be a hand-made estimate |
 | Ownership | required | give exactly one owner per surface and aspect | let two slices define the same aspect |
 | Lint gates | when a convention becomes a `tests/lint/` check | land each check with the fix that makes it pass | land a check that fails on main |
@@ -152,7 +152,7 @@ The contract scales with how far the shared surfaces spread. An epic whose slice
   "checkpoints": [{ "after": ["S1"], "kind": "pilot" }, { "after": ["S3", "S4"], "kind": "shared-surface" },
                   { "before": "S8", "kind": "baseline" }]
 },
-"open_questions": [ … existing field; each item gains an optional "blocks": ["S3"] … ]
+"open_questions": [ … existing field (its shape is in `issue-plan.md` Step 5); "blocks" names the slices each one blocks … ]
 ```
 
 `slices[]` (its full shape is in `issue-plan.md` Step 5) carries:

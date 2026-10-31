@@ -22,7 +22,7 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 - **The slice's phases, one at a time.** Finish a phase (its FRs, tests and deletion ledger, with its scoped tests green) before starting the next, and never interleave FRs across phases. The phases still order the work and bound each step; the slice's phases all land in one PR, in this one run or, in one-phase mode, one run per phase. Another slice's phases are never started, even when the work looks adjacent.
 - **Stay within the size budget.** A slice's `src/` plus docs stay under about 400 changed lines and the whole diff, tests included, under about 900 (`git diff --stat origin/main`). When the diff passes either with work left, stop, flag it 🚨 and report what remains, rather than finishing over budget.
 - **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes and message strings in the slice's issue's Pre-determined data or Binding values, or written as code in a phase's `### Code` (in one-phase mode, the phase file's `binding`, which copies it exactly), are normative. Do not rename or extend them.
-- **Implement only what the plan's phases ask for.** Never do work the plan's `## Owned elsewhere` (in one-phase mode, the phase file's `owned_elsewhere`) says another issue owns unless a phase plans it as a named departure (in one-phase mode, one of the phase file's `departures`). A sentence your change makes false is fixed regardless (R17), and listed under Plan deviations if unplanned. Do not add test files the plan's `### Tests` lines (in one-phase mode, the phase file's `tests`) do not name.
+- **Implement only what the plan's phases ask for.** Never do work the plan's `## Owned elsewhere` (in one-phase mode, the phase file's `owned_elsewhere`) says another issue owns unless a phase plans it as a named departure (in one-phase mode, one of the phase file's `departures`). A sentence your change makes false is fixed regardless (R17), and listed under Deviations if unplanned. Do not add test files the plan's `### Tests` lines (in one-phase mode, the phase file's `tests`) do not name.
 - **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, `.agentic/verdict.txt`, `.agentic/feedback.json` or `.agentic/triage.json` (except with `--triage`).** This prompt writes only `.agentic/implementation-report.md`, plus `.agentic/phase-commit-msg` in one-phase mode, `.agentic/fix-commit-msg` in review and feedback mode, and `.agentic/feedback-outcomes.json` in feedback mode; with `--triage` it writes only `.agentic/triage.json`.
 
 ## Before writing code
@@ -31,9 +31,9 @@ Read [AGENTS.md](../../../../../AGENTS.md): its rules R1–R18 are what the revi
 
 Then build the slice's brief, and keep it in view for the whole run:
 
-- **The epic contract:** `plan.json` `contract` is binding. Its target contract, conventions, decisions and shared-surface ownership bind this slice. Skip this when `contract` is `null`. Compare it with the `## Feature contract` section of the epic's work plan comment (`gh issue view <epic> --json comments`, the comment whose first line is `<!-- dovo:workplan schema_version=1 -->`, `<epic>` being `plan.json` `issue`). The open questions the comment lists under Decisions are the epic plan's, not part of `contract`, so they are never drift. When the comment has that section and it says something else the plan's `contract` does not, the contract has drifted: never switch to either silently. Write the drift (each differing section, quoted from both) to `.agentic/implementation-report.md`, flag it 🚨, and stop before any edit.
+- **The epic contract:** `plan.json` `contract` is binding. Its target contract, conventions, decisions and shared-surface ownership bind this slice. Skip this when `contract` is `null`. Compare it with the `## Feature contract` section of the epic's work plan comment (`gh issue view <epic> --json comments`, the comment whose first line is `<!-- dovo:workplan schema_version=1 -->`, `<epic>` being `plan.json` `issue`). The open questions the comment lists under Decisions are the epic plan's, not part of `contract`, so they are never drift. When the comment has that section and it says something else the plan's `contract` does not, the contract has drifted: never switch to either silently. Write the drift (each differing section, quoted from both) as a deviation in `.agentic/implementation-report.md`, flag it 🚨, and stop before any edit.
 - **The slice's issue:** the slice's `child` when it has an issue of its own, otherwise `plan.json` `issue`. Read it with `gh issue view <n> --json number,title,body`, live, since it is readied just before coding. The slice's outcomes (`O-n`), the issue's decisions (`D-n`, and those in its `dovo:decisions` comments), its binding values and Done when are what the reviewer checks this slice against, and its **Out of scope** items name work this slice must not do; on a legacy issue, its FRs, NFRs, guards and Definition of done, and its **Owned elsewhere** pointers. On an issue whose plan has two or more slices, the slice's outcomes are only those its `outcomes` lists; the other outcomes belong to other slices.
-- **Sibling open issues that could collide:** list the epic's other open sub-issues (`gh issue view <epic> --json subIssues`) and any open issue naming a path this slice touches (`gh issue list --state open --search "<path>"`). Name each in the implementation report with the surface it shares, and leave its owned work to it.
+- **Sibling open issues that could collide:** list the epic's other open sub-issues (`gh issue view <epic> --json subIssues`) and any open issue naming a path this slice touches (`gh issue list --state open --search "<path>"`). Leave its owned work to it, and name it under the implementation report's Deviations when the slice touches its surface anyway.
 
 ## Implementation loop
 
@@ -104,15 +104,22 @@ Fix failures in the code, never with a suppression, a baseline entry or a lowere
 
 ## Implementation report (`.agentic/implementation-report.md`)
 
-Write it after the checks are green (or as green as they will get, with failures stated). Sections, in order:
+Write it after the checks are green (or as green as they will get, with failures stated). It records only how the work went against the plan; `git status`, the commits and the gate logs hold the changed files and the check results. At most 40 lines, in this form, not counting the `### Feedback round` subsections a pr-fix round adds:
 
-1. **Header**: plan title, the slice id with the issue it is worked on, the phases implemented (and any skipped as already present), the sibling open issues that could collide with the surface each shares, the diff size against the budget, and one line stating nothing was committed or pushed.
-2. **Plan deviations**: every place the code differs from the plan (in one-phase mode, from the phase file and any plan section you read), one numbered item each naming its phase, with the reason, including files touched outside the plan, unplanned helpers, and every 🚨. Write `none` only if you checked. A deviation not listed here is silent to the reviewer.
-3. **Implementation details**: one subsection per phase: what was built per package, and the deletions executed.
-4. **Quality gates**: each command with the number it observed.
-5. **Changed files**: from `git status --short`.
+```markdown
+# Slice <id> of #<issue>: <plan title>, <diff size> of <budget> changed lines
+- Phase 1: done. <what it built, in one clause>.
+- Phase 2: skipped, already present.
 
-In one-phase mode, add to the report rather than rewrite it, and leave every entry earlier phases wrote in place (create the report when it is absent): add phase `<n>` to the header's list of phases implemented, add its deviations as further numbered Plan deviations items naming phase `<n>`, add its subsection under Implementation details, and refresh Quality gates and Changed files for this phase. A run that retries phase `<n>` (after a failed gate or an interrupted run) finds phase `<n>` already in the report: update its existing subsection and its existing deviation items in place, add only deviations not yet listed, and never list phase `<n>` twice in the header. The header's commit line says earlier phases are committed by the blueprint and this phase is not yet.
+## Deviations
+1. Phase 2: <where the code differs from the plan, and why>.
+```
+
+- **Header line**: the slice id, the issue it is worked on, the plan title and the diff size against the budget.
+- **One line per phase**: done, skipped as already present, or stopped 🚨, with what it built in one clause.
+- **Deviations**: every place the code differs from the plan (in one-phase mode, from the phase file and any plan section you read), one numbered item each naming its phase, with the reason, including files touched outside the plan, unplanned helpers, a sibling open issue whose surface the slice touched, and every 🚨. Write `none` only if you checked. A deviation not listed here is silent to the reviewer.
+
+In one-phase mode, add to the report rather than rewrite it, and leave every line earlier phases wrote in place (create the report when it is absent): add phase `<n>`'s line and its deviations as further numbered items naming phase `<n>`, and refresh the header's diff size. A run that retries phase `<n>` (after a failed gate or an interrupted run) finds phase `<n>` already in the report: update its line and its deviation items in place, add only deviations not yet listed, and never list phase `<n>` twice.
 
 ## Review mode (`/issue-code review`)
 
@@ -125,7 +132,7 @@ In one-phase mode, add to the report rather than rewrite it, and leave every ent
 4. Fix a "delete this" finding by deleting, never by adding a comment that explains why the duplicate is fine.
 5. Dispute rather than comply when a finding is wrong: state why it does not hold and flag it 🚨 for the human.
 6. Run the completion checks above.
-7. Update `.agentic/implementation-report.md` in place: add a `### Review round <n>` subsection listing each finding by id as fixed, disputed or deferred with the `path:line` changed, add new deviations, and refresh Quality gates and Changed files. Do not edit `review.md` or `review.json`.
+7. Update `.agentic/implementation-report.md` in place: add a deviation for each finding you disputed or deferred (`Review round <n>, <id>: <why>`) and for each new departure from the plan, and refresh the header's diff size. Fixed findings are listed in `.agentic/fix-commit-msg`, not here. Do not edit `review.md` or `review.json`.
 8. When this round changed any file, write `.agentic/fix-commit-msg`, overwriting any earlier one: a Conventional Commits title (`type(scope): imperative summary`, a type `scripts/check_commit_msg.py` accepts) naming what the fixes change in the code, never "address review findings"; a blank line; then one line per finding fixed, `- <id> (review round <n>): <what changed, with path>`. Findings disputed or deferred are not listed. When nothing changed, do not write the file.
 
    ```text
@@ -166,8 +173,8 @@ Report each addressed finding by id as fixed, disputed or deferred, with the `pa
 6. Re-read each cited file from disk before editing it.
 7. For a `K#` item, find the job its check name runs in `.github/workflows/` and reproduce the failure locally with the repository's own command for it (such as `uv run dovo run quality`) before changing code. Fix what the reproduction shows. When you cannot reproduce it, change nothing for that item and record it as deferred with the reason.
 8. When a `fix` item does not hold, or you cannot fix it, change nothing for it and record it as deferred, flagged 🚨 for the person in the report. Never dismiss it yourself: every dismissal is one a person approved. Then run the completion checks above.
-9. Update `.agentic/implementation-report.md` in place, also when there is no `fix` item, so the report records every dismissal the person approved: add a `### Feedback round <n>` subsection, `<n>` being one more than the number of `### Feedback round` subsections already there. List every triaged item with its action, each `fix` item as fixed or deferred with the `path:line` changed, and each dovo finding by its `finding.id` (`T1 (W1)`). Add new deviations, and refresh Quality gates and Changed files. Do not edit `feedback.json`, `triage.json`, `review.md` or `review.json`.
-10. Write `.agentic/feedback-outcomes.json`, overwriting any earlier one, with only an `items` list: one entry per `fix` item, in `triage.json` order, carrying the outcome the report states for it. `outcome` is `fixed` or `deferred`, and `note` is one sentence on what changed or why not. With no `fix` item, write no outcomes file.
+9. Update `.agentic/implementation-report.md` in place, or create it with a header line when it is absent, also when there is no `fix` item, so the report records every dismissal the person approved: add a `### Feedback round <n>` subsection, `<n>` being one more than the number of `### Feedback round` subsections already there, with one line per triaged item: its action, each `fix` item as fixed or deferred with the `path:line` changed, and each dovo finding by its `finding.id` (`T1 (W1)`). pr-fix's re-review reads this subsection as the author's claims. Add each new departure from the plan as a deviation. Do not edit `feedback.json`, `triage.json`, `review.md` or `review.json`.
+10. Write `.agentic/feedback-outcomes.json`, overwriting any earlier one, with only an `items` list: one entry per `fix` item, in `triage.json` order, carrying the outcome its `### Feedback round` line states. `outcome` is `fixed` or `deferred`, and `note` is one sentence on what changed or why not. With no `fix` item, write no outcomes file.
 
     ```json
     {

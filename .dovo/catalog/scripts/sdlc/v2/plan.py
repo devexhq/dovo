@@ -19,6 +19,17 @@ as a decision. It refuses a plan whose `open_questions` is not `[]`, or whose
 also refuses a decision whose `phases` name a phase the slice does not have.
 A plan that passes prints nothing and exits 0.
 
+`questions` runs before the blueprints ask a person which open questions to
+answer, and the planning and fold steps run it on the plan.json they write. It
+refuses, naming the question and the field, a plan whose `open_questions`
+holds an entry that is not a well-formed open question (the shape and caps
+are `OpenQuestion` in plan_formats.py) or reuses another's id, and a plan
+whose `decisions` is malformed as `check-questions` says. Given `--summary`, it
+writes there, as markdown, the open questions as a table with each one's
+assumed answer and recommendation, then their details, then the decisions one
+line each: the file the person reads at that prompt. A plan that passes prints
+nothing and exits 0.
+
 `check-breakdown` runs after `breakdown`, which writes one phase file per
 phase of the slice to .agentic/phases/ (the shape is `Phase` in
 plan_formats.py). It refuses, naming every problem it finds: a file that is
@@ -131,6 +142,7 @@ from plan_formats import (
     SESSION_ID,
     Decision,
     FormatError,
+    OpenQuestion,
     Phase,
     PriorDecision,
     Requirement,
@@ -181,7 +193,11 @@ BULLET_RE = re.compile(r"- \*\*(?P<id>D-\d+)\*\* (?P<text>.+)")
 REPLACES_RE = re.compile(r"Replaces (?P<id>D-\d+) \(session (?P<session>[^\s()]+)\)\.$")
 OUTCOME_ENTRY = re.compile(r"(?P<id>O-\d+)(?: \((?P<part>[^()]+)\))?")
 SIZES = ("s", "m", "l")
-SETTLED_LABELS = {"assumed_accepted": "Assumed answer, accepted", "planner": "Planner, approved with the plan"}
+SETTLED_LABELS = {
+    "assumed_accepted": "Assumed answer, accepted",
+    "challenge_accepted": "Challenge's answer, accepted",
+    "planner": "Planner, approved with the plan",
+}
 MINIMIZE = "mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { clientMutationId } }"
 
 
@@ -299,6 +315,88 @@ def check_questions(path: Path, slice_id: str | None) -> None:
     if stray:
         listed = ", ".join(str(n) for n in numbers)
         raise PlanError(f"{path}: {'; '.join(stray)}, which slice {slice_id} does not have; its phases are {listed}.")
+
+
+def load_open_questions(plan: dict[str, object], path: Path) -> list[OpenQuestion]:
+    """Return the plan's open questions, in order.
+
+    Raises:
+        PlanError: open_questions is missing, holds a malformed question or reuses an id.
+    """
+    questions: list[OpenQuestion] = []
+    for position, raw in enumerate(_list(plan, "open_questions", path), start=1):
+        try:
+            question = OpenQuestion.from_json(raw, position)
+        except FormatError as error:
+            raise PlanError(f"{path}: {error}") from error
+        if any(earlier.id == question.id for earlier in questions):
+            raise PlanError(f"{path}: Open question {question.id} appears twice.")
+        questions.append(question)
+    return questions
+
+
+def _cell(text: str) -> str:
+    """Return text fit for one markdown table cell."""
+    return " ".join(text.split()).replace("|", "\\|")
+
+
+def _question_row(question: OpenQuestion) -> str:
+    """Return the summary table's row for question."""
+    recommended = "assumed" if question.recommendation == "assumed" else f"challenge: {question.recommended}"
+    cells = [question.id, question.summary, question.assumed, "yes" if question.challenged else "no", recommended]
+    return f"| {' | '.join(_cell(cell) for cell in cells)} |"
+
+
+def _question_details(question: OpenQuestion) -> list[str]:
+    """Return question's heading and bullets: its details, the challenger's case and the other answers."""
+    lines = ["", f"### {question.id}", "", *(f"- {item}" for item in question.details)]
+    if question.challenged:
+        lines.append(f"- Challenge answer: {question.challenge_answer}")
+    lines += [f"- Challenge: {item}" for item in question.challenge_details]
+    if question.alternatives:
+        lines.append(f"- Other answers: {'; '.join(question.alternatives)}")
+    return lines
+
+
+def render_summary(plan: dict[str, object], questions: list[OpenQuestion], decisions: list[Decision]) -> str:
+    """Return the summary a person reads before answering: the open questions as a table, then the decisions."""
+    issue = plan.get("issue")
+    lines = [
+        f"# Plan summary for #{issue}" if isinstance(issue, int) else "# Plan summary",
+        "",
+        "## Open questions",
+        "",
+    ]
+    if questions:
+        lines += [
+            "A question you do not tick settles to its recommended answer.",
+            "",
+            "| ID | Question | Assumed answer | Challenged | Recommended |",
+            "|---|---|---|---|---|",
+            *(_question_row(question) for question in questions),
+        ]
+        for question in questions:
+            lines += _question_details(question)
+    else:
+        lines.append("None.")
+    lines += ["", "## Decisions", ""]
+    bullets = [f"- **{d.id}** {_sentence(d.decision)}. *{_label(d)}.*" for d in decisions]
+    lines += bullets or ["None."]
+    return "\n".join(lines) + "\n"
+
+
+def check_open_questions(path: Path, summary: Path | None) -> None:
+    """Refuse the plan at path unless its open questions and decisions are well formed; write the summary when asked.
+
+    Raises:
+        PlanError: open_questions or decisions is missing, malformed or reuses an id.
+    """
+    plan = load_plan(path)
+    questions = load_open_questions(plan, path)
+    decisions = load_decisions(plan, path)
+    if summary is not None:
+        summary.parent.mkdir(parents=True, exist_ok=True)
+        summary.write_text(render_summary(plan, questions, decisions), encoding="utf-8")
 
 
 # --- the slices ----------------------------------------------------------------
@@ -1196,7 +1294,7 @@ def pass_through_check(record: Path, agentic: Path) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser for the check-slices, check-questions, check-breakdown, decisions-comment, prior-decisions, requirements, body-sha, ready-comment, ready-state, issue-format, rewrite-apply and pass-through subcommands."""
+    """Return the parser for the check-slices, check-questions, questions, check-breakdown, decisions-comment, prior-decisions, requirements, body-sha, ready-comment, ready-state, issue-format, rewrite-apply and pass-through subcommands."""
     parser = argparse.ArgumentParser(description="Check the slice plan in .agentic/plan.json and keep its decisions.")
     commands = parser.add_subparsers(dest="command", required=True)
     slices = commands.add_parser("check-slices", help="Refuse slices that leave out an outcome or deliver it twice.")
@@ -1205,6 +1303,9 @@ def build_parser() -> argparse.ArgumentParser:
     check = commands.add_parser("check-questions", help="Refuse a plan with an open question or a malformed decision.")
     check.add_argument("--plan", type=Path, default=PLAN_JSON, help="The plan.json to check.")
     check.add_argument("--slice", help="The slice whose phases every decision's phases must belong to.")
+    questions = commands.add_parser("questions", help="Refuse malformed open questions; write the plan summary.")
+    questions.add_argument("--plan", type=Path, default=PLAN_JSON, help="The plan.json whose open questions to check.")
+    questions.add_argument("--summary", type=Path, help="Write the open questions and decisions here as markdown.")
     breakdown = commands.add_parser("check-breakdown", help="Refuse phase files that drop or misquote anything.")
     breakdown.add_argument("--slice", required=True, help="The slice the phase files break down.")
     breakdown.add_argument("--plan", type=Path, default=PLAN_JSON, help="The plan.json listing the slice's phases.")
@@ -1284,14 +1385,23 @@ def _dispatch_pass_through(args: argparse.Namespace) -> bool:
     return True
 
 
+def _dispatch_questions(args: argparse.Namespace) -> bool:
+    """Run the check-questions or questions subcommand args names; return False for any other."""
+    if args.command == "check-questions":
+        check_questions(args.plan, args.slice)
+    elif args.command == "questions":
+        check_open_questions(args.plan, args.summary)
+    else:
+        return False
+    return True
+
+
 def dispatch(args: argparse.Namespace) -> None:
     """Run the subcommand args names."""
-    if _dispatch_ready(args) or _dispatch_rewrite(args) or _dispatch_pass_through(args):
+    if _dispatch_ready(args) or _dispatch_rewrite(args) or _dispatch_pass_through(args) or _dispatch_questions(args):
         return
     if args.command == "check-slices":
         check_slices(args.plan, args.requirements)
-    elif args.command == "check-questions":
-        check_questions(args.plan, args.slice)
     elif args.command == "check-breakdown":
         check_breakdown(args.plan, args.plan_md, args.requirements, args.phases, args.slice)
     elif args.command == "decisions-comment":

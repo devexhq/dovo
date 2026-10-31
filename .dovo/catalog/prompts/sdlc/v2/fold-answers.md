@@ -1,6 +1,6 @@
 # fold-answers
 
-Settle every open question of a plan written by `issue-plan`: a slice plan, or in issue mode the plan that slices an issue. The human has just been asked which open questions to answer: each one they ticked is settled by their answer, and each one they left is settled by the answer the plan assumed. After this prompt the plan has no open questions, only decisions that say who settled them. The blueprint's next step, `check-questions`, stops the run if any question is left open or any decision is malformed.
+Settle every open question of a plan written by `issue-plan`: a slice plan, or in issue mode the plan that slices an issue. The human has just been asked which open questions to answer: each one they ticked is settled by their answer, and each one they left is settled by the planner's recommended answer: the assumed one, or the challenge's. After this prompt the plan has no open questions, only decisions that say who settled them. The blueprint's next step, `check-questions`, stops the run if any question is left open or any decision is malformed.
 
 The blueprint gives you the ticked question ids, the human's answers (one comment, usually written as `OQ-1: <answer>`) and the slice id, or says the plan slices the issue in issue mode. The issue the decisions are posted to is the slice's issue, the one the blueprint says the slice is worked on (its own issue when it has one, otherwise the sliced issue), or in issue mode the issue itself.
 
@@ -14,8 +14,8 @@ The blueprint gives you the ticked question ids, the human's answers (one commen
 
 For every entry of `plan.json` `open_questions`, in order:
 
-- **Ticked:** rewrite the plan against the human's answer, as if it had been the plan's answer from the start: every phase, test line and trap it changes (in issue mode, every slice, contract section and Traceability row). The decision is the answer as planned, with `settled_by` `"human"` and `answer` holding the human's words for that question, unedited. If the comment gives no answer for a ticked question, settle nothing in either file and report which question has no answer. `check-questions` then stops the run with that question still open.
-- **Not ticked:** the plan already holds the assumed answer; remove its "Reply '…' for …" text. The decision is the question's `assumed` answer, with `settled_by` `"assumed_accepted"` and no `answer`.
+- **Ticked:** rewrite the plan against the human's answer, as if it had been the plan's answer from the start: every phase, test line and trap it changes (in issue mode, every slice and contract section). The decision is the answer as planned, with `settled_by` `"human"` and `answer` holding the human's words for that question, unedited. If the comment gives no answer for a ticked question, settle nothing in either file and report which question has no answer. `check-questions` then stops the run with that question still open.
+- **Not ticked:** the question settles to its recommended answer, with no `answer`. When `recommendation` is `"assumed"`, the plan already holds it: the decision is the question's `assumed` answer, with `settled_by` `"assumed_accepted"`. When it is `"challenge"`, rewrite the plan against `challenge_answer` as for a ticked question; the decision is that answer, with `settled_by` `"challenge_accepted"`.
 
 ## 2. Record the decisions
 
@@ -24,28 +24,16 @@ Append one entry per question to `plan.json` `decisions`, keeping the entries al
 - `id`: the next free `D-<n>`, continuing after the highest decision id in the issue the decisions are posted to (its Decisions, `gh issue view <n> --json body`), in `.agentic/prior-decisions.json`, in `decisions` and, for a slice plan, in `.agentic/epic-plan.json` `decisions`, which a run that phases a plan's one slice has not posted yet.
 - `was`: the question's `OQ-<n>` id.
 - `decision`: one sentence stating the choice itself.
-- `rejected`: the answers not taken, one sentence each: the question's `alternatives`, minus the human's answer, plus the assumed answer when the human chose another. `[]` when there were none.
+- `rejected`: the answers not taken, one sentence each: the question's `assumed` answer, `challenge_answer` (when challenged) and `alternatives`, minus the answer the decision takes. `[]` when there were none.
 - `phases`: the question's `phases`.
 - `date`: today, as `YYYY-MM-DD` (`date +%F`).
 - `replaces`: the question's `replaces`, copied unchanged, when it has one; leave the key out otherwise.
 
 Then set `open_questions` to `[]`.
 
-## 3. Rewrite the plan's markdown
+## 3. Update the plan's markdown
 
-In `.agentic/plan.md`, under What you're approving, replace the **Open questions:** block with a **Decisions:** block, one entry per decision this prompt added, in id order:
-
-```markdown
-**Decisions:**
-
-> **D-<n> (was OQ-<m>, settled by the human | assumed answer accepted): <the decision>**
-> - **Answer:** <the human's words> (only when settled by the human)
-> - **Why:** <the question's reasons that still hold, one fact per bullet, each with its `path:line`>
-> - **Rejected:** <each answer not taken>
-> - **Phases:** <the phases it shapes> (in issue mode, **Slices:** <the slices it blocks>)
-```
-
-Write "None." under **Decisions:** when the plan had no open questions. Replace every `OQ-<m>` reference elsewhere in the plan, such as a phase's "[See OQ-<m>.]", with its `D-<n>`. Keep `plan.json` agreeing with `plan.md`, and in the shape [issue-plan.md](issue-plan.md) Step 5 defines for the plan's mode.
+`plan.md` states no open questions or decisions: they live in `plan.json`. Replace every `OQ-<m>` reference in it, such as a phase's "[See OQ-<m>.]", with its `D-<n>`. Keep `plan.json` agreeing with `plan.md`, and in the shape [issue-plan.md](issue-plan.md) Step 5 defines for the plan's mode.
 
 ## 4. Hand off
 

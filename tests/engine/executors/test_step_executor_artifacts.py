@@ -182,7 +182,7 @@ class StepExecutionArtifactReferencesTests:
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
         worktree_path = tmp_path / "wt"
-        publisher = _command_step("echo plan > PLAN.md")
+        publisher = _command_step("echo plan >> PLAN.md")
         renderer = StepDefinition.model_validate(
             {"id": "show", "type": "command", "command": "echo {{ artifacts.plan.revision }}"}
         )
@@ -193,3 +193,20 @@ class StepExecutionArtifactReferencesTests:
             printed.append(_run(renderer, worktree_path, engine_paths, artifacts_repository).stdout)
 
         assert printed == ["1\n", "2\n"]
+
+    def test_republishing_unchanged_content_keeps_the_revision_later_steps_see(
+        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+    ) -> None:
+        worktree_path = tmp_path / "wt"
+        publisher = _command_step("echo plan > PLAN.md")
+        renderer = StepDefinition.model_validate(
+            {"id": "show", "type": "command", "command": "echo {{ artifacts.plan.revision }}"}
+        )
+
+        printed: list[str] = []
+        for _ in range(2):
+            assert _run(publisher, worktree_path, engine_paths, artifacts_repository).status == "completed"
+            printed.append(_run(renderer, worktree_path, engine_paths, artifacts_repository).stdout)
+
+        assert printed == ["1\n", "1\n"]
+        assert [record.revision for record in artifacts_repository.list("wf_1")] == [1]

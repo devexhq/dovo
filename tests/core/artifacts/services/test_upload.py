@@ -123,6 +123,53 @@ class UploadServiceTests:
         assert (second_dir / "manifest.json").is_file()
         assert first.digest != second.digest
 
+    def test_publish_artifact_unchanged_bundle_keeps_the_latest_revision(
+        self, tmp_path: Path, artifacts_repository: ArtifactsRepository
+    ) -> None:
+        worktree_path = _worktree_with_wheel(tmp_path, b"same")
+        artifacts_dir = tmp_path / "artifacts"
+        first = _publish(worktree_path, artifacts_dir, artifacts_repository)
+        manifest_before = (artifacts_dir / "wf_abc123" / "dist-packages" / "1" / "manifest.json").read_bytes()
+
+        again = _publish(worktree_path, artifacts_dir, artifacts_repository, provenance=ArtifactProvenance(attempt=2))
+
+        assert (again.status, again.revision, again.digest, again.file_count) == (
+            ArtifactUploadStatus.OK,
+            1,
+            first.digest,
+            1,
+        )
+        assert [(record.revision, record.attempt) for record in artifacts_repository.list("wf_abc123")] == [(1, None)]
+        assert sorted(path.name for path in (artifacts_dir / "wf_abc123" / "dist-packages").iterdir()) == ["1"]
+        assert list((artifacts_dir / "wf_abc123").glob(".tmp-*")) == []
+        assert (artifacts_dir / "wf_abc123" / "dist-packages" / "1" / "manifest.json").read_bytes() == manifest_before
+
+    def test_publish_artifact_unchanged_bundle_after_expiry_adds_a_revision(
+        self, tmp_path: Path, artifacts_repository: ArtifactsRepository
+    ) -> None:
+        worktree_path = _worktree_with_wheel(tmp_path, b"same")
+        artifacts_dir = tmp_path / "artifacts"
+        first = _publish(worktree_path, artifacts_dir, artifacts_repository)
+        artifacts_repository.delete("wf_abc123", "dist-packages", 1)
+        artifacts_repository.create(
+            "wf_abc123",
+            "dist-packages",
+            artifacts_dir / "wf_abc123" / "dist-packages" / "1",
+            revision=1,
+            size_bytes=4,
+            file_count=1,
+            expires_at="2000-01-01 00:00:00",
+            digest=first.digest,
+            step_id=None,
+            attempt=None,
+            loop_iteration=None,
+        )
+
+        again = _publish(worktree_path, artifacts_dir, artifacts_repository)
+
+        assert (again.status, again.revision, again.digest) == (ArtifactUploadStatus.OK, 2, first.digest)
+        assert sorted(record.revision for record in artifacts_repository.list("wf_abc123")) == [1, 2]
+
     def test_publish_artifact_lost_revision_race_takes_next_revision(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -163,6 +210,7 @@ class UploadServiceTests:
         worktree_path = _worktree_with_wheel(tmp_path)
         artifacts_dir = tmp_path / "artifacts"
         _publish(worktree_path, artifacts_dir, artifacts_repository)
+        (worktree_path / "dist" / "pkg.whl").write_bytes(b"changed")
         monkeypatch.setattr(artifacts_repository, "next_revision", lambda _session_id, _name: 1)
 
         result = _publish(worktree_path, artifacts_dir, artifacts_repository)
