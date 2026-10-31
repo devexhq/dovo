@@ -1,4 +1,4 @@
-"""Tier 1 contract: sdlc v2's plan.py checks a slice plan's decisions, posts them to the issue and reads them back."""
+"""Tier 1 contract: sdlc v2's plan.py checks a slice plan's decisions, reads back the latest approved plan's, and posts no comment."""
 
 from __future__ import annotations
 
@@ -7,10 +7,8 @@ import json
 import subprocess
 import sys
 from collections.abc import Callable
-from datetime import date
 from pathlib import Path
 from types import ModuleType
-from typing import Self
 
 import pytest
 
@@ -560,37 +558,26 @@ REPLACING = {
     "date": "2026-10-30",
     "replaces": {"id": "D-1", "session": "blueprint_plan01"},
 }
-VIEW = ("gh", "issue", "view", "1300", "--json", "body,comments")
-MINIMIZE = (
-    "query=mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { clientMutationId } }"
-)
-POSTED = (
-    f"<!-- dovo:decisions schema_version=1 slice=S2 session=blueprint_code02 body_sha={DESCRIPTION_SHA} -->\n"
-    "**Planning decisions** (2026-10-30, slice S2, session blueprint_code02)\n"
-    "\n"
-    "- **D-3** Required config's ConfigError carries the load's diagnostic records. *Answered: accept challenge.* "
-    "Rejected: A raise without the records (diagnostics: []).\n"
-    "- **D-4** Discarded sessions stay hidden unless --all is passed. *Assumed answer, accepted.* "
-    "Rejected: Show them with a discarded status column.\n"
-    "- **D-5** The list reuses worktree_list's empty-state line. *Planner, approved with the plan.*\n"
-    "- **D-6** Sessions are listed newest first. *Assumed answer, accepted.* "
-    "Replaces D-1 (session blueprint_plan01).\n"
-)
-
-
-def _comment(node_id: str, session: str, sha: str, *bullets: str, minimized: bool = False) -> dict[str, object]:
-    """Return a gh issue view comment holding session's dovo:decisions comment for slice S1."""
-    marker = f"<!-- dovo:decisions schema_version=1 slice=S1 session={session} body_sha={sha} -->"
-    body = "\n".join([marker, f"**Planning decisions** (2026-10-28, slice S1, session {session})", "", *bullets])
-    return {"id": node_id, "body": body, "isMinimized": minimized}
+VIEW = ("gh", "issue", "view", "1300", "--json", "body")
+# Comments an earlier version posted on the issue, which no subcommand reads any more.
+OLD_COMMENTS: list[object] = [
+    {
+        "id": "IC_decisions",
+        "body": f"<!-- dovo:decisions schema_version=1 slice=S1 session=bp_old body_sha={DESCRIPTION_SHA} -->\n"
+        f"**Planning decisions** (2026-10-28, slice S1, session bp_old)\n\n{REPLACED_BULLET}\n",
+        "isMinimized": False,
+    },
+    {"id": "IC_ready", "body": f"<!-- dovo:ready schema_version=1 body_sha={DESCRIPTION_SHA} -->\nReady.\n"},
+]
 
 
 class FakeGh:
     """A `run` double answering the gh calls plan.py makes, against one issue's description and comments.
 
     It has `run`'s signature, so it replaces it at the subprocess boundary. `calls` records every call,
-    with the body file of a posted comment or an edited description replaced by its text; `failing` names
-    the calls that fail by their third word (`view`, `comment`, `edit` or `graphql`); `view`, when given, is
+    with the body file of a posted comment or an edited description replaced by its text, so a test sees
+    any comment plan.py would post; `failing` names the calls that fail by their third word (`view`,
+    `comment`, `edit` or `graphql`); `view`, when given, is
     what `gh issue view` prints
     in place of the issue's JSON, which otherwise holds the requested fields of body, comments and labels.
     """
@@ -632,16 +619,9 @@ def _run(monkeypatch: pytest.MonkeyPatch, fake: FakeGh, *argv: str) -> int:
     return _main(monkeypatch, *argv)
 
 
-def _post(monkeypatch: pytest.MonkeyPatch, fake: FakeGh, session: str = SESSION, slice_id: str = SLICE) -> int:
-    """Run plan.py decisions-comment for slice_id of issue 1300 against fake."""
-    argv = ["decisions-comment", "--plan", ".agentic/plan.json", "--issue", "1300", "--slice", slice_id]
-    return _run(monkeypatch, fake, *argv, "--session", session)
-
-
-def _write_prior(root: Path, sha: str = DESCRIPTION_SHA) -> None:
-    """Write the .agentic/prior-decisions.json prior-decisions leaves, recording the description's sha."""
-    prior = {"schema_version": 1, "issue": 1300, "body_sha": sha, "decisions": []}
-    (root / ".agentic" / "prior-decisions.json").write_text(json.dumps(prior), encoding="utf-8")
+def _prior(monkeypatch: pytest.MonkeyPatch, fake: FakeGh, *extra: str) -> int:
+    """Run plan.py prior-decisions for issue 1300 against fake with extra arguments."""
+    return _run(monkeypatch, fake, "prior-decisions", "--issue", "1300", *extra)
 
 
 class PlanBodyShaTests:
@@ -669,257 +649,98 @@ class PlanBodyShaTests:
         assert PLAN.body_sha(body) != DESCRIPTION_SHA
 
 
-class PlanDecisionsCommentTests:
-    def test_decisions_comment_posts_every_decision_on_one_line_each(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        _write_plan(workspace, [], [HUMAN, ASSUMED, PLANNER, REPLACING])
-        _write_prior(workspace)
-        fake = FakeGh(DESCRIPTION, [])
-
-        assert _post(monkeypatch, fake) == 0
-
-        assert fake.calls == [VIEW, ("gh", "issue", "comment", "1300", "--body-file", POSTED)]
-        assert capsys.readouterr() == ("", "")
-
-    def test_decisions_comment_names_the_description_prior_decisions_read(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        _write_plan(workspace, [], [HUMAN, ASSUMED, PLANNER, REPLACING])
-        fake = FakeGh(DESCRIPTION, [])
-        assert _run(monkeypatch, fake, "prior-decisions", "--issue", "1300") == 0
-        fake.body = DESCRIPTION.replace("Only", "Just")
-
-        assert _post(monkeypatch, fake) == 0
-
-        assert fake.calls[-1] == ("gh", "issue", "comment", "1300", "--body-file", POSTED)
-        assert capsys.readouterr() == ("", "")
-
-    def test_decisions_comment_refuses_without_a_recorded_body_sha(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        _write_plan(workspace, [], [HUMAN])
-        _write_json(workspace / ".agentic/prior-decisions.json", {"schema_version": 1, "issue": 1300, "decisions": []})
-        fake = FakeGh(DESCRIPTION, [])
-
-        assert _post(monkeypatch, fake) == 1
-
-        assert fake.calls == []
-        assert capsys.readouterr() == (
-            "",
-            "plan.py: .agentic/prior-decisions.json has no body_sha; run prior-decisions before planning.\n",
-        )
-
-    def test_decisions_comment_refuses_a_slice_that_is_not_one_token(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        _write_plan(workspace, [], [HUMAN])
-        _write_prior(workspace)
-        fake = FakeGh(DESCRIPTION, [])
-
-        assert _post(monkeypatch, fake, slice_id="S 2") == 1
-
-        assert fake.calls == []
-        assert capsys.readouterr() == (
-            "",
-            "plan.py: Slice 'S 2' must be non-empty, without whitespace or parentheses.\n",
-        )
-
-    def test_decisions_comment_posts_nothing_for_a_plan_without_decisions(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        _write_plan(workspace, [], [])
-        fake = FakeGh(DESCRIPTION, [])
-
-        assert _post(monkeypatch, fake) == 0
-
-        assert fake.calls == []
-        assert capsys.readouterr() == ("", "")
-
-    def test_decisions_comment_hides_only_earlier_comments_it_wholly_replaces(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        _write_plan(workspace, [], [PLANNER, REPLACING])
-        _write_prior(workspace)
-        kept = "- **D-2** Keep the table. *Planner, approved with the plan.*"
-        fake = FakeGh(
-            DESCRIPTION,
-            [
-                _comment("IC_replaced", "blueprint_plan01", DESCRIPTION_SHA, REPLACED_BULLET),
-                _comment("IC_partly", "blueprint_plan01", DESCRIPTION_SHA, REPLACED_BULLET, kept),
-                _comment("IC_other", "blueprint_plan00", DESCRIPTION_SHA, REPLACED_BULLET),
-                _comment("IC_hidden", "blueprint_plan01", DESCRIPTION_SHA, REPLACED_BULLET, minimized=True),
-                {"id": "IC_chat", "body": "Looks good.", "isMinimized": False},
-            ],
-        )
-
-        assert _post(monkeypatch, fake) == 0
-
-        assert fake.calls[2:] == [("gh", "api", "graphql", "-f", MINIMIZE, "-f", "id=IC_replaced")]
-        assert capsys.readouterr() == ("", "")
-
-    def test_decisions_comment_reports_a_failed_hide_without_failing(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        _write_plan(workspace, [], [REPLACING])
-        _write_prior(workspace)
-        comments: list[object] = [_comment("IC_replaced", "blueprint_plan01", STALE_SHA, REPLACED_BULLET)]
-        fake = FakeGh(DESCRIPTION, comments, frozenset({"graphql"}))
-
-        assert _post(monkeypatch, fake) == 0
-
-        assert [call[:3] for call in fake.calls] == [VIEW[:3], ("gh", "issue", "comment"), ("gh", "api", "graphql")]
-        assert capsys.readouterr() == (
-            "",
-            "plan.py: could not hide comment IC_replaced of session blueprint_plan01: HTTP 502\n",
-        )
-
-    def test_decisions_comment_refuses_when_the_post_fails(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        _write_plan(workspace, [], [REPLACING])
-        _write_prior(workspace)
-        comments: list[object] = [_comment("IC_replaced", "blueprint_plan01", STALE_SHA, REPLACED_BULLET)]
-        fake = FakeGh(DESCRIPTION, comments, frozenset({"comment"}))
-
-        assert _post(monkeypatch, fake) == 1
-
-        assert [call[:3] for call in fake.calls] == [VIEW[:3], ("gh", "issue", "comment")]
-        assert capsys.readouterr().err.startswith("plan.py: command failed: gh issue comment 1300 --body-file ")
-
-    def test_decisions_comment_refuses_an_empty_session(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        _write_plan(workspace, [], [HUMAN])
-        fake = FakeGh(DESCRIPTION, [])
-
-        assert _post(monkeypatch, fake, session="") == 1
-
-        assert fake.calls == []
-        assert capsys.readouterr() == (
-            "",
-            "plan.py: Session '' must be non-empty, without whitespace or parentheses.\n",
-        )
+class PlanPriorDecisionsTests:
+    def _plans(self, workspace: Path) -> tuple[str, str]:
+        """Write a slice plan phasing S2 and the issue plan kept beside it; return their paths."""
+        slice_plan = {
+            "issue": 1300,
+            "slices": [{"id": "S1", "phases": []}, {"id": "S2", "phases": [1]}],
+            "decisions": [HUMAN, {**REPLACING, "decision": "Sessions are listed newest first."}],
+        }
+        issue_plan = {"issue": 1300, "slices": [{"id": "S1", "phases": []}], "decisions": [PLANNER, HUMAN]}
+        (workspace / ".agentic/prior").mkdir()
+        _write_json(workspace / ".agentic/prior/plan.json", slice_plan)
+        _write_json(workspace / ".agentic/prior/epic-plan.json", issue_plan)
+        return ".agentic/prior/plan.json", ".agentic/prior/epic-plan.json"
 
     @pytest.mark.parametrize(
-        ("replaces", "message"),
+        ("planned", "status"),
         [
-            pytest.param({"id": "D-1"}, "its session must be a session id", id="no-session"),
-            pytest.param({"id": "OQ-1", "session": "s"}, "its id must be D-<n>", id="question-id"),
-            pytest.param("D-1", "its id must be D-<n>", id="not-an-object"),
+            pytest.param(DESCRIPTION_SHA, "given", id="description-unchanged"),
+            pytest.param("", "given", id="not-recorded"),
+            pytest.param(STALE_SHA, "to_confirm", id="description-changed"),
         ],
     )
-    def test_decisions_comment_refuses_a_malformed_replaces(
+    def test_prior_decisions_reads_the_plans_the_work_plan_names_and_no_comment(
         self,
-        replaces: object,
-        message: str,
+        planned: str,
+        status: str,
         workspace: Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        _write_plan(workspace, [], [{**REPLACING, "replaces": replaces}])
-        fake = FakeGh(DESCRIPTION, [])
+        slice_plan, issue_plan = self._plans(workspace)
+        fake = FakeGh(DESCRIPTION.replace("\n", "\r\n"), OLD_COMMENTS)
+        argv = ("--plan", slice_plan, "--plan", issue_plan, "--session", "bp_plan", "--planned-sha", planned)
 
-        assert _post(monkeypatch, fake) == 1
-
-        assert fake.calls == []
-        assert (
-            capsys.readouterr().err
-            == f"plan.py: .agentic/plan.json: Decision D-6 has replaces {replaces!r}; {message}.\n"
-        )
-
-
-class PlanPriorDecisionsTests:
-    def test_prior_decisions_marks_each_decision_given_or_to_confirm(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        replacing = (
-            "- **D-3** Hide discarded and archived sessions. *Answered: also archived.* "
-            "Replaces D-2 (session blueprint_plan01)."
-        )
-        fake = FakeGh(
-            DESCRIPTION.replace("\n", "\r\n"),
-            [
-                _comment(
-                    "IC_given",
-                    "blueprint_plan01",
-                    DESCRIPTION_SHA,
-                    "- **D-1** Keep the table. *Planner, approved with the plan.*",
-                    "- **D-2** Hide discarded sessions. *Assumed answer, accepted.*",
-                ),
-                {"id": "IC_chat", "body": "Looks good.\n- **D-9** not a decision", "isMinimized": False},
-                _comment("IC_stale", "blueprint_plan00", STALE_SHA, "- **D-1** Show them. *Answered: show them.*"),
-                _comment("IC_hidden", "blueprint_old", STALE_SHA, REPLACED_BULLET, minimized=True),
-                _comment("IC_new", "blueprint_code02", DESCRIPTION_SHA, replacing),
-            ],
-        )
-
-        assert _run(monkeypatch, fake, "prior-decisions", "--issue", "1300", "--out", ".agentic/prior.json") == 0
+        assert _prior(monkeypatch, fake, "--out", ".agentic/prior.json", *argv) == 0
 
         assert fake.calls == [VIEW]
-        assert json.loads((workspace / ".agentic" / "prior.json").read_text(encoding="utf-8")) == {
+        assert _written(workspace, "prior.json") == {
             "schema_version": 1,
             "issue": 1300,
             "body_sha": DESCRIPTION_SHA,
             "decisions": [
                 {
-                    "id": "D-1",
-                    "text": "Keep the table. *Planner, approved with the plan.*",
-                    "slice": "S1",
-                    "session": "blueprint_plan01",
-                    "status": "given",
-                },
-                {
-                    "id": "D-1",
-                    "text": "Show them. *Answered: show them.*",
-                    "slice": "S1",
-                    "session": "blueprint_plan00",
-                    "status": "to_confirm",
-                },
-                {
                     "id": "D-3",
-                    "text": replacing.removeprefix("- **D-3** "),
-                    "slice": "S1",
-                    "session": "blueprint_code02",
-                    "status": "given",
+                    "text": "Required config's ConfigError carries the load's diagnostic records. "
+                    "*Answered: accept challenge.* Rejected: A raise without the records (diagnostics: []).",
+                    "slice": "S2",
+                    "session": "bp_plan",
+                    "status": status,
+                },
+                {
+                    "id": "D-6",
+                    "text": "Sessions are listed newest first. *Assumed answer, accepted.* "
+                    "Replaces D-1 (session blueprint_plan01).",
+                    "slice": "S2",
+                    "session": "bp_plan",
+                    "status": status,
+                },
+                {
+                    "id": "D-5",
+                    "text": "The list reuses worktree_list's empty-state line. *Planner, approved with the plan.*",
+                    "slice": "all",
+                    "session": "bp_plan",
+                    "status": status,
                 },
             ],
         }
         assert capsys.readouterr() == ("", "")
 
-    def test_prior_decisions_writes_an_empty_list_to_the_default_path(
+    def test_prior_decisions_without_a_plan_writes_an_empty_list_to_the_default_path(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        fake = FakeGh(DESCRIPTION, [])
+        fake = FakeGh(DESCRIPTION, OLD_COMMENTS)
 
-        assert _run(monkeypatch, fake, "prior-decisions", "--issue", "1300") == 0
+        assert _prior(monkeypatch, fake) == 0
 
         written = json.loads((workspace / ".agentic" / "prior-decisions.json").read_text(encoding="utf-8"))
         assert written == {"schema_version": 1, "issue": 1300, "body_sha": DESCRIPTION_SHA, "decisions": []}
+        assert fake.calls == [VIEW]
 
-    def test_prior_decisions_keeps_out_what_a_hidden_comment_replaced(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    def test_prior_decisions_refuses_a_plan_with_a_malformed_decision(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        kept = "- **D-2** Keep the table. *Planner, approved with the plan.*"
-        middle = "- **D-1** Show them. *Answered: show them.* Replaces D-1 (session blueprint_plan00)."
-        latest = "- **D-1** Hide them. *Answered: hide them.* Replaces D-1 (session blueprint_plan01)."
-        fake = FakeGh(
-            DESCRIPTION,
-            [
-                _comment("IC_first", "blueprint_plan00", DESCRIPTION_SHA, REPLACED_BULLET, kept),
-                _comment("IC_middle", "blueprint_plan01", DESCRIPTION_SHA, middle, minimized=True),
-                _comment("IC_latest", "blueprint_code02", DESCRIPTION_SHA, latest),
-            ],
+        _write_plan(workspace, [], [{**REPLACING, "replaces": "D-1"}])
+        fake = FakeGh(DESCRIPTION, [])
+
+        assert _prior(monkeypatch, fake, "--plan", ".agentic/plan.json") == 1
+
+        assert capsys.readouterr().err == (
+            "plan.py: .agentic/plan.json: Decision D-6 has replaces 'D-1'; its id must be D-<n>.\n"
         )
-
-        assert _run(monkeypatch, fake, "prior-decisions", "--issue", "1300") == 0
-
-        written = _written(workspace, "prior-decisions.json")["decisions"]
-        assert isinstance(written, list)
-        assert [(entry["id"], entry["session"]) for entry in written] == [
-            ("D-2", "blueprint_plan00"),
-            ("D-1", "blueprint_code02"),
-        ]
+        assert not (workspace / ".agentic" / "prior-decisions.json").exists()
 
     @pytest.mark.parametrize(
         ("printed", "message"),
@@ -928,7 +749,7 @@ class PlanPriorDecisionsTests:
             pytest.param("[]", "printed no JSON object.", id="not-an-object"),
         ],
     )
-    @pytest.mark.parametrize(("command", "fields"), [("prior-decisions", "body,comments"), ("requirements", "body")])
+    @pytest.mark.parametrize(("command", "fields"), [("prior-decisions", "body"), ("requirements", "body")])
     def test_prior_decisions_and_requirements_refuse_when_gh_prints_no_json_object(
         self,
         command: str,
@@ -956,7 +777,7 @@ class PlanPriorDecisionsTests:
 
         assert capsys.readouterr() == (
             "",
-            "plan.py: command failed: gh issue view 1300 --json body,comments: HTTP 502\n",
+            "plan.py: command failed: gh issue view 1300 --json body: HTTP 502\n",
         )
         assert not (workspace / ".agentic" / "prior-decisions.json").exists()
 
@@ -1272,42 +1093,28 @@ def _requirement_items(workspace: Path) -> list[dict[str, object]]:
     return items
 
 
-# --- ready-comment and ready-state -----------------------------------------------
+# --- unchanged and body-sha --------------------------------------------------------
 
-READY_TEXT = "Ready to plan at 630086c0 (2026-10-30).\nNo changes needed.\n"
-
-
-def _ready(sha: str, *, hidden: bool = False, author: str = "OWNER") -> dict[str, object]:
-    """Return a dovo:ready comment naming sha by an author of association author, hidden when asked."""
-    body = f"<!-- dovo:ready schema_version=1 body_sha={sha} -->\n{READY_TEXT}"
-    return {"body": body, "isMinimized": hidden, "authorAssociation": author}
-
-
-READY_COMMENT = ("ready-comment", "--issue", "1300", "--comment", ".agentic/issue-ready-comment.md")
+UNCHANGED = ("unchanged", "--issue", "1300")
 
 
 class PlanReadyTests:
-    def test_ready_comment_posts_the_comment_headed_by_the_descriptions_sha(
+    def test_unchanged_passes_the_description_the_check_read_and_posts_nothing(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        (workspace / ".agentic/issue-ready-comment.md").write_text(READY_TEXT, encoding="utf-8")
-        fake = FakeGh(DESCRIPTION, [])
+        fake = FakeGh(DESCRIPTION, OLD_COMMENTS)
 
-        assert _run(monkeypatch, fake, *READY_COMMENT, "--body-sha", DESCRIPTION_SHA) == 0
+        assert _run(monkeypatch, fake, *UNCHANGED, "--body-sha", DESCRIPTION_SHA) == 0
 
-        assert fake.calls == [
-            ("gh", "issue", "view", "1300", "--json", "body"),
-            ("gh", "issue", "comment", "1300", "--body-file", str(_ready(DESCRIPTION_SHA)["body"])),
-        ]
+        assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body")]
         assert capsys.readouterr() == ("", "")
 
-    def test_ready_comment_refuses_a_description_other_than_the_one_checked(
+    def test_unchanged_refuses_a_description_other_than_the_one_checked(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        (workspace / ".agentic/issue-ready-comment.md").write_text(READY_TEXT, encoding="utf-8")
         fake = FakeGh(DESCRIPTION, [])
 
-        assert _run(monkeypatch, fake, *READY_COMMENT, "--body-sha", STALE_SHA) == 1
+        assert _run(monkeypatch, fake, *UNCHANGED, "--body-sha", STALE_SHA) == 1
 
         assert capsys.readouterr() == (
             "",
@@ -1326,106 +1133,16 @@ class PlanReadyTests:
         assert capsys.readouterr() == (f"{DESCRIPTION_SHA}\n", "")
         assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body")]
 
-    def test_ready_comment_refuses_an_empty_comment(
-        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        (workspace / ".agentic/issue-ready-comment.md").write_text("\n", encoding="utf-8")
-        fake = FakeGh(DESCRIPTION, [])
-
-        assert _run(monkeypatch, fake, *READY_COMMENT, "--body-sha", DESCRIPTION_SHA) == 1
-
-        assert capsys.readouterr() == (
-            "",
-            "plan.py: .agentic/issue-ready-comment.md is empty; the ready check writes the comment.\n",
-        )
-        assert fake.calls == []
-
-    @pytest.mark.parametrize(
-        ("labels", "comments", "out", "reason"),
-        [
-            pytest.param(
-                (), [_ready(DESCRIPTION_SHA)], "ready=false", "Issue 1300 is not labelled dovo:ready; checking it.",
-                id="not-labelled",
-            ),
-            pytest.param(
-                ("dovo:ready",), [{"body": READY_TEXT, "isMinimized": False}], "ready=false",
-                "No ready comment on issue 1300 names the description it checked; checking it.",
-                id="no-marker",
-            ),
-            pytest.param(
-                ("dovo:ready",), [_ready(DESCRIPTION_SHA), _ready(STALE_SHA)], "ready=false",
-                "Issue 1300's description changed since the check that labelled it; checking it.",
-                id="description-changed",
-            ),
-            pytest.param(
-                ("dovo:ready",), [_ready(STALE_SHA), _ready(DESCRIPTION_SHA, author="CONTRIBUTOR")], "ready=false",
-                "Issue 1300's description changed since the check that labelled it; checking it.",
-                id="untrusted-author-ignored",
-            ),
-            pytest.param(
-                ("dovo:ready",), [_ready(DESCRIPTION_SHA, author="NONE")], "ready=false",
-                "No ready comment on issue 1300 names the description it checked; checking it.",
-                id="only-untrusted-author",
-            ),
-            pytest.param(
-                ("dovo:ready",), [_ready(DESCRIPTION_SHA, author="MEMBER"), _ready(STALE_SHA, author="NONE")],
-                "ready=true", "Issue 1300 is labelled dovo:ready for its description as it is; not checking it.",
-                id="member-trusted",
-            ),
-            pytest.param(
-                ("type:bug", "dovo:ready"), [_ready(STALE_SHA), _ready(DESCRIPTION_SHA), _ready(STALE_SHA, hidden=True)],
-                "ready=true", "Issue 1300 is labelled dovo:ready for its description as it is; not checking it.",
-                id="unchanged",
-            ),
-        ],
-    )  # fmt: skip
-    def test_ready_state_is_true_only_for_the_description_the_labelling_check_read(
-        self,
-        labels: tuple[str, ...],
-        comments: list[object],
-        out: str,
-        reason: str,
-        workspace: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        fake = FakeGh(DESCRIPTION, comments, labels=labels)
-
-        assert _run(monkeypatch, fake, "ready-state", "--issue", "1300") == 0
-
-        assert capsys.readouterr() == (f"{out}\n", f"plan.py: {reason}\n")
-        assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body,labels,comments")]
-
 
 # --- the rewrite of a legacy issue -------------------------------------------------
 
 LEGACY_SHA = PLAN.body_sha(LEGACY_BODY)
 REWRITE = ("rewrite-apply", "--issue", "1300", "--body-file", ".agentic/issue-rewrite.md")
-ORIGINAL = (
-    "Original description, replaced on 2026-10-30 with the short issue format (why, outcomes, decisions, "
-    "binding values). Kept here so nothing is lost.\n"
-    "\n"
-    "<details>\n"
-    "<summary>Original description</summary>\n"
-    "\n"
-    f"{LEGACY_BODY.rstrip()}\n"
-    "\n"
-    "</details>\n"
-)
-
-
-class FixedDate(date):
-    """A date whose today is 2026-10-30."""
-
-    @classmethod
-    def today(cls) -> Self:
-        return cls(2026, 10, 30)
 
 
 @pytest.fixture
-def rewrite(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Write the approved draft to .agentic/issue-rewrite.md and fix today at 2026-10-30."""
-    monkeypatch.setattr(PLAN, "date", FixedDate)
+def rewrite(workspace: Path) -> Path:
+    """Write the approved draft to .agentic/issue-rewrite.md."""
     (workspace / ".agentic/issue-rewrite.md").write_text(SHORT_BODY, encoding="utf-8")
     return workspace
 
@@ -1450,7 +1167,7 @@ class PlanRewriteTests:
         assert capsys.readouterr() == (f"format={shape}\nbody_sha={PLAN.body_sha(body)}\n", "")
         assert fake.calls == [("gh", "issue", "view", "1300", "--json", "body")]
 
-    def test_rewrite_apply_posts_the_old_description_collapsed_before_replacing_it(
+    def test_rewrite_apply_replaces_the_description_and_posts_no_comment(
         self, rewrite: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         fake = FakeGh(LEGACY_BODY, [])
@@ -1459,7 +1176,6 @@ class PlanRewriteTests:
 
         assert fake.calls == [
             ("gh", "issue", "view", "1300", "--json", "body"),
-            ("gh", "issue", "comment", "1300", "--body-file", ORIGINAL),
             ("gh", "issue", "edit", "1300", "--body-file", SHORT_BODY),
         ]
         assert capsys.readouterr() == ("", "")
@@ -1492,15 +1208,15 @@ class PlanRewriteTests:
         )
         assert fake.calls == []
 
-    def test_rewrite_apply_leaves_the_description_when_the_comment_fails(
+    def test_rewrite_apply_refuses_when_the_edit_fails(
         self, rewrite: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        fake = FakeGh(LEGACY_BODY, [], frozenset({"comment"}))
+        fake = FakeGh(LEGACY_BODY, [], frozenset({"edit"}))
 
         assert _run(monkeypatch, fake, *REWRITE, "--body-sha", LEGACY_SHA) == 1
 
-        assert [call[2] for call in fake.calls] == ["view", "comment"]
-        assert capsys.readouterr().err.startswith("plan.py: command failed: gh issue comment 1300 --body-file ")
+        assert [call[2] for call in fake.calls] == ["view", "edit"]
+        assert capsys.readouterr().err.startswith("plan.py: command failed: gh issue edit 1300 --body-file ")
 
 
 # --- check-breakdown -------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Tier 1 contract: sdlc v2's workplan.py renders, picks, claims and lands an issue's slices in its work plan comment."""
+"""Tier 1 contract: sdlc v2's workplan.py renders, picks, starts, claims and lands an issue's slices in its work plan comment, the only comment it posts."""
 
 from __future__ import annotations
 
@@ -221,10 +221,10 @@ def _row(slice_id: str, **overrides: object) -> object:
     return WORKPLAN.Slice(**defaults)
 
 
-def _workplan(*rows: object, landed: str = "", head: str = "") -> str:
+def _workplan(*rows: object, head: str = "", body_sha: str | None = None) -> str:
     """Return a work plan comment holding head, then a work plan of rows from PLAN_SESSION revision 3."""
-    plan = WORKPLAN.WorkPlan(PLAN_SESSION, 3, list(rows))
-    return WORKPLAN.with_workplan(f"{MARKER}\n\n{head}" if head else f"{MARKER}\n", plan, landed)
+    plan = WORKPLAN.WorkPlan(PLAN_SESSION, 3, list(rows), body_sha)
+    return WORKPLAN.with_workplan(f"{MARKER}\n\n{head}" if head else f"{MARKER}\n", plan)
 
 
 def _stored(text: str) -> dict[str, object]:
@@ -294,83 +294,33 @@ CONTRACT: dict[str, object] = {
     "checkpoints": [{"after": ["S1"], "kind": "pilot"}, {"before": "S2", "kind": "baseline"}],
 }
 
-CONTRACT_SECTION = """\
-## Feature contract
-Grounded at `main@944de0ce`.
-
-### Problem
-Output shapes disagree.
-
-### Existing issues
-| Issue | Role | Becomes |
-|---|---|---|
-| #1131 | child | S1 |
-
-### Prerequisites
-- #1192: needed by S2, because results carry errors
-
-### Non-goals
-- **Excluded:** Colour, because cosmetic.
-- **Owned:** Locks, owned by #999.
-
-### Target contract
-- **JSON envelope** (`results.md#envelope`): one envelope
-  - Baseline (main@944de0ce): two envelopes
-  - Touched by: S1, S2.
-
-### Conventions
-- Use ok (new; written by S1)
-- **Exemplar:** `src/a.py`, does not yet conform (fixed by S2). Shortest.
-
-### Overrides
-- #1060, "keep it" → drop it, per D1.
-
-### Decisions
-| ID | Decision | Why | Settled by |
-|---|---|---|---|
-| D1 | One envelope | Agreement | user 2026-10-28 |
-
-Open questions, each with a recommended answer until the user settles it:
-- **OQ-1** (blocks S2): Drop v1? **Recommended:** Yes.
-
-### Code inventory
-At `944de0ce`.
-- envelopes: 2, S1 (`rg x`)
-
-<details><summary>Sites</summary>
-
-- `src/a.py:3`
-
-</details>
-
-### Shared-surface ownership
-| Surface | Aspect | Owner | Extended by |
-|---|---|---|---|
-| envelope | create | S1 | S2 |
-
-### Lint gates
-| Check | Enforces | Lands with | Cites |
-|---|---|---|---|
-| `tests/lint/test_x.py` (new) | one envelope | S1 | — |
-
-### Checkpoints
-- After the pilot (S1).
-- Baseline: before S2, across every landed slice and any open slice PR.
-"""
-
-
-QUESTION = {
-    "id": "OQ-1",
-    "summary": "Drop v1?",
-    "assumed": "Yes.",
-    "details": ["No consumer reads v1."],
-    "challenged": False,
-    "challenge_answer": "",
-    "challenge_details": [],
-    "recommendation": "assumed",
-    "alternatives": ["Drop v1 after the next release."],
+# What an earlier version wrote into the work plan comment: a feature contract before the work plan, and
+# "as landed" reports after its JSON line. The scripts still run on such a comment and never read either.
+OLD_CONTRACT_SECTION = "## Feature contract\nGrounded at `main@944de0ce`.\n\n### Problem\nOutput shapes disagree.\n"
+OLD_LANDED = "\n### S1 as landed (#1215)\n#### Departures\n- Renamed a helper.\n"
+# An earlier version's ready stamp and planning-decisions comments, which the scripts ignore.
+OLD_READY_COMMENT = (
+    f"<!-- dovo:ready schema_version=1 body_sha={BODY_SHA} -->\nReady to plan at abc1234 (2026-10-28).\n"
+)
+OLD_DECISIONS_COMMENT = (
+    f"<!-- dovo:decisions schema_version=1 slice=all session=bp_old body_sha={BODY_SHA} -->\n"
+    "**Planning decisions** (2026-10-28, slice all, session bp_old)\n\n- **D-3** Keep v1. *Planner, approved with the plan.*\n"
+)
+PARENT_BODY = (
+    "## Why\nOutput shapes disagree, so callers parse two envelopes.\n\n"
+    "## Outcomes\n- **O-1** Every command prints one envelope.\n- **O-2** Errors carry a code.\n"
+    "- **O-3** The docs show the envelope.\n\n"
+    "## Decisions\n- **D-1** One envelope for every command. Accepted.\n\n"
+    "## Done when\nO-1 to O-3 hold.\n"
+)
+PLAN_DECISION = {
+    "id": "D-2",
+    "was": "OQ-1",
+    "decision": "Drop v1 now.",
+    "settled_by": "assumed_accepted",
+    "rejected": [],
     "phases": [],
-    "blocks": ["S2"],
+    "date": "2026-10-29",
 }
 
 
@@ -387,12 +337,13 @@ class RenderTests:
         fake = FakeGh({})
         plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
 
-        assert _render(monkeypatch, fake, plan, "2") == 0
+        assert _render(monkeypatch, fake, plan, "2", "--body-sha", BODY_SHA, "--ready-body-sha", BODY_SHA) == 0
 
         stored = (
             '{"plan_session":"blueprint_plan01","plan_revision":2,"slices":[{"id":"S1","title":"Title S1",'
             '"depends_on":[],"blocked_by":[],"closing_docs":false,"outcomes":["O-1"],"status":"pending","pr":null,'
-            '"session":null,"size":"s","child":null,"phased_session":null,"phased_body_sha":null}]}'
+            '"session":null,"size":"s","child":null,"phased_session":null,"phased_body_sha":null,'
+            f'"ready_body_sha":"{BODY_SHA}"}}],"body_sha":"{BODY_SHA}"}}'
         )
         assert fake.texts(EPIC) == [
             f"{MARKER}\n"
@@ -400,54 +351,53 @@ class RenderTests:
             "## Work plan\n"
             "Plan Session ID: `blueprint_plan01` (plan revision 2)\n"
             "\n"
-            "| Slice | Scope | Outcomes | Depends on | Status | PR | Code session |\n"
-            "|---|---|---|---|---|---|---|\n"
-            "| S1 | Title S1 | O-1 | — | pending | — | — |\n"
+            "| Slice | Scope | Outcomes | Depends on | Status | Issue | PR | Code session |\n"
+            "|---|---|---|---|---|---|---|---|\n"
+            "| S1 | Title S1 | O-1 | — | pending | — | — | — |\n"
             "\n"
             f"<!-- dovo:workplan {stored} -->\n"
         ]
-        assert (fake.bodies[EPIC], fake.edits, fake.created) == (INTRO, [], [])
+        assert (fake.bodies[EPIC], fake.edits, fake.created, fake.sub_issues) == (INTRO, [], [], [])
 
-    def test_epic_renders_contract_before_work_plan_and_a_second_render_edits_the_same_comment(
+    def test_epic_posts_only_the_work_plan_and_a_second_render_edits_the_same_comment(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         slices = [_slice("S1", pilot=True), _slice("S2", depends_on=["S1"], blocked_by=[1192], outcomes=["O-2"])]
-        plan = _write_json(
-            tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices, "open_questions": [QUESTION]}
-        )
+        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices, "decisions": []})
         fake = FakeGh({})
 
         assert _render(monkeypatch, fake, plan, "1") == 0
         first = fake.workplan()
         assert _render(monkeypatch, fake, plan, "2") == 0
 
-        assert first.startswith(f"{MARKER}\n\n{CONTRACT_SECTION}\n## Work plan\n")
-        assert "| S2 | Title S2 | O-2 | S1, #1192 | pending | — | — |" in first
+        assert first.startswith(f"{MARKER}\n\n## Work plan\n")
+        assert "Feature contract" not in first
+        assert "| S2 | Title S2 | O-2 | S1, #1192 | pending | — | — | — |" in first
         assert fake.texts(EPIC) == [
             first.replace("(plan revision 1)", "(plan revision 2)").replace('"plan_revision":1', '"plan_revision":2')
         ]
         assert fake.patched == [6_513_400_000]
-        assert (fake.bodies[EPIC], fake.edits) == (INTRO, [])
+        assert (fake.bodies[EPIC], fake.edits, fake.created, fake.sub_issues) == (INTRO, [], [], [])
 
-    def test_a_question_recommending_the_challenge_lists_the_challenges_answer(
+    def test_renders_over_an_earlier_versions_comments_and_leaves_them_alone(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        question = {
-            **QUESTION,
-            "challenged": True,
-            "challenge_answer": "Keep v1 one more release.",
-            "challenge_details": ["A plugin reads v1."],
-            "recommendation": "challenge",
-        }
-        slices = [_slice("S1", pilot=True), _slice("S2", depends_on=["S1"], blocked_by=[1192], outcomes=["O-2"])]
-        plan = _write_json(
-            tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices, "open_questions": [question]}
-        )
-        fake = FakeGh({})
+        row = _row("S1", status="merged", pr=1215, session="bp_c")
+        old = _workplan(row, _row("S2", outcomes=["O-2"]), head=OLD_CONTRACT_SECTION + "\n") + OLD_LANDED
+        fake = FakeGh({EPIC: OLD_READY_COMMENT})
+        fake.comments[EPIC].append({"id": 7, "body": old})
+        fake.comments[EPIC].append({"id": 8, "body": OLD_DECISIONS_COMMENT})
+        slices = [_slice("S1"), _slice("S2", outcomes=["O-2"])]
+        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": slices})
 
-        assert _render(monkeypatch, fake, plan) == 0
+        assert _render(monkeypatch, fake, plan, "4") == 0
 
-        assert "- **OQ-1** (blocks S2): Drop v1? **Recommended:** Keep v1 one more release.\n" in fake.workplan()
+        texts = fake.texts(EPIC)
+        assert (texts[0], texts[2]) == (OLD_READY_COMMENT, OLD_DECISIONS_COMMENT)
+        assert texts[1].startswith(f"{MARKER}\n\n{OLD_CONTRACT_SECTION}\n## Work plan\n")
+        assert "as landed" not in texts[1]
+        assert [(row["status"], row["pr"]) for row in _rows(texts[1])] == [("merged", 1215), ("pending", None)]
+        assert len(texts) == 3
 
     def test_never_touches_a_comment_maintained_by_hand(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fake = FakeGh({EPIC: BY_HAND})
@@ -471,107 +421,19 @@ class RenderTests:
         assert capsys.readouterr().err == f"workplan.py: #{EPIC} has 2 work plan comments; delete all but one\n"
         assert fake.patched == []
 
-    def test_short_contract_renders_only_its_sections(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        empty: dict[str, object] = {
-            key: [] for key in ("existing_issues", "prerequisites", "non_goals", "conventions", "exemplars")
-        }
-        empty.update({key: [] for key in ("overrides", "decisions", "lint_gates", "checkpoints")})
-        contract = {
-            **empty,
-            "inventory": None,
-            "problem": "Output shapes disagree.",
-            "target": [
-                {
-                    "surface": "JSON envelope",
-                    "entry": None,
-                    "end_state": "one envelope",
-                    "baseline": {"as_of": "main@944de0ce", "text": "two envelopes"},
-                    "touched_by": ["S1"],
-                }
-            ],
-            "ownership": [{"surface": "envelope", "aspect": "create", "owner": "S1", "extended_by": []}],
-        }
-        fake = FakeGh({})
-        plan = _write_json(
-            tmp_path / "plan.json", {"contract": contract, "slices": [_slice("S1")], "open_questions": []}
-        )
-
-        assert _render(monkeypatch, fake, plan) == 0
-
-        assert fake.workplan().split("## Work plan\n")[0] == (
-            f"{MARKER}\n"
-            "\n"
-            "## Feature contract\n"
-            "\n"
-            "### Problem\n"
-            "Output shapes disagree.\n"
-            "\n"
-            "### Target contract\n"
-            "- **JSON envelope**: one envelope\n"
-            "  - Baseline (main@944de0ce): two envelopes\n"
-            "  - Touched by: S1.\n"
-            "\n"
-            "### Shared-surface ownership\n"
-            "| Surface | Aspect | Owner | Extended by |\n"
-            "|---|---|---|---|\n"
-            "| envelope | create | S1 | — |\n"
-            "\n"
-        )
-
-    def test_multi_line_override_is_fenced_under_its_bullet(self) -> None:
-        replacement = "Slice S3 of #925.\n\n## Goal\n\n````text\nliteral\n````\n"
-        overrides = [{"issue": 1259, "quote": "## Goal …", "replacement": replacement, "per": "D2"}]
-
-        section = WORKPLAN.render_contract({"overrides": overrides}, "")
-
-        assert section == (
-            "## Feature contract\n"
-            "\n"
-            "### Overrides\n"
-            '- #1259, "## Goal …", per D2, becomes:\n'
-            "  `````text\n"
-            "  Slice S3 of #925.\n"
-            "\n"
-            "  ## Goal\n"
-            "\n"
-            "  ````text\n"
-            "  literal\n"
-            "  ````\n"
-            "  `````\n"
-        )
-
-    def test_refuses_a_contract_that_renders_a_heading_outside_a_fence(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        contract = {"problem": "Output shapes disagree.\n## Notes"}
-        fake = FakeGh({})
-        plan = _write_json(
-            tmp_path / "plan.json", {"contract": contract, "slices": [_slice("S1")], "open_questions": []}
-        )
-
-        assert _render(monkeypatch, fake, plan) == 1
-
-        assert capsys.readouterr().err == (
-            "workplan.py: the contract renders a `## ` heading outside a code fence, which would end its section\n"
-        )
-        assert fake.texts(EPIC) == []
-
-    def test_rerender_keeps_slice_state_children_and_landed_reports(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        landed = "### S1 as landed (#1215)\n- Departed."
-        fake = FakeGh(
-            {EPIC: _workplan(_row("S1", status="merged", pr=1215, session="bp_c", child=1131), landed=landed)}
-        )
+    def test_rerender_keeps_slice_state_and_children(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        row = _row("S1", status="merged", pr=1215, session="bp_c", child=1131, ready_body_sha=BODY_SHA)
+        fake = FakeGh({EPIC: _workplan(row)})
         plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
 
-        assert _render(monkeypatch, fake, plan, "4") == 0
+        assert _render(monkeypatch, fake, plan, "4", "--ready-body-sha", "0" * 64) == 0
 
         text = fake.workplan()
         assert _stored(text)["plan_revision"] == 4
-        assert [(row["status"], row["pr"], row["child"]) for row in _rows(text)] == [("merged", 1215, 1131)]
-        assert "| S1 (#1131) | Title S1 | O-1 | — | merged | #1215 | bp_c |" in text
-        assert text.endswith(f"-->\n\n{landed}\n")
+        assert [(row["status"], row["pr"], row["child"], row["ready_body_sha"]) for row in _rows(text)] == [
+            ("merged", 1215, 1131, BODY_SHA)
+        ]
+        assert "| S1 | Title S1 | O-1 | — | merged | #1131 | #1215 | bp_c |" in text
 
     @pytest.mark.parametrize("contract", [pytest.param(None, id="plain"), pytest.param(CONTRACT, id="with-contract")])
     def test_phased_records_the_one_slice_as_phased_in_this_session(
@@ -646,7 +508,7 @@ class RenderTests:
 
         text = fake.workplan()
         assert [(row["child"], row["status"]) for row in _rows(text)] == [(1131, "pending"), (None, "pending")]
-        assert "| S1 (#1131) | Title S1 | O-1 | — | pending | — | — |" in text
+        assert "| S1 | Title S1 | O-1 | — | pending | #1131 | — | — |" in text
         assert (fake.created, fake.sub_issues) == ([], [])
 
     def test_refuses_an_issue_planned_with_v1(
@@ -776,32 +638,30 @@ class NextTests:
         [
             pytest.param(
                 [_row("S1")],
-                f"slice=S1\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nphased_session=\nremaining=0\n"
-                f"closing_lines=Closes #{EPIC}\n",
+                f"slice=S1\nplan_session={PLAN_SESSION}\nplan_revision=3\nbody_sha={BODY_SHA}\nphased_session=\n"
+                "landed=\n",
                 id="only-slice",
             ),
             pytest.param(
-                [_row("S1", status="merged", pr=1215), _row("S2", depends_on=["S1"]), _row("S3")],
-                f"slice=S2\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nphased_session=\nremaining=1\n"
-                f"closing_lines=Part of #{EPIC} (slice S2 of 3)\n",
+                [_row("S1", status="merged", pr=1215, session="bp_c1"), _row("S2", depends_on=["S1"]), _row("S3")],
+                f"slice=S2\nplan_session={PLAN_SESSION}\nplan_revision=3\nbody_sha={BODY_SHA}\nphased_session=\n"
+                "landed=S1=bp_c1\n",
                 id="middle-slice",
             ),
             pytest.param(
-                [_row("S1", status="merged", pr=1215), _row("S2", status="merged", pr=1216), _row("S3")],
-                f"slice=S3\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nphased_session=\nremaining=0\n"
-                f"closing_lines=Closes #{EPIC}\n",
+                [
+                    _row("S1", status="merged", pr=1215, session="bp_c1"),
+                    _row("S2", status="merged", pr=1216, session="bp_c2"),
+                    _row("S3"),
+                ],
+                f"slice=S3\nplan_session={PLAN_SESSION}\nplan_revision=3\nbody_sha={BODY_SHA}\nphased_session=\n"
+                "landed=S1=bp_c1 S2=bp_c2\n",
                 id="last-slice",
             ),
             pytest.param(
-                [_row("S1", child=1131), _row("S2")],
-                f"slice=S1\nissue=1131\nplan_session={PLAN_SESSION}\nplan_revision=3\nphased_session=\nremaining=1\n"
-                f"closing_lines<<WORKPLAN_EOF\nCloses #1131\nPart of #{EPIC} (slice S1 of 2)\nWORKPLAN_EOF\n",
-                id="own-issue",
-            ),
-            pytest.param(
                 [_row("S1", phased_session=PLAN_SESSION)],
-                f"slice=S1\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\n"
-                f"phased_session={PLAN_SESSION}\nremaining=0\nclosing_lines=Closes #{EPIC}\n",
+                f"slice=S1\nplan_session={PLAN_SESSION}\nplan_revision=3\nbody_sha={BODY_SHA}\n"
+                f"phased_session={PLAN_SESSION}\nlanded=\n",
                 id="phased",
             ),
         ],
@@ -811,7 +671,7 @@ class NextTests:
     ) -> None:
         output = tmp_path / "output"
         monkeypatch.setenv("DOVO_OUTPUT", str(output))
-        fake = FakeGh({EPIC: _workplan(*rows)})
+        fake = FakeGh({EPIC: _workplan(*rows, body_sha=BODY_SHA)})
 
         assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
 
@@ -835,27 +695,14 @@ class NextTests:
         assert output.read_text(encoding="utf-8").splitlines()[0] == "slice=S2"
         assert (fake.created, fake.sub_issues, fake.edits) == ([], [], [])
 
-    @pytest.mark.parametrize(
-        ("closed", "closing"),
-        [
-            pytest.param(False, f"remaining=1\nclosing_lines=Part of #{EPIC} (slice S2 of 2)\n", id="issue-open"),
-            pytest.param(True, f"remaining=0\nclosing_lines=Closes #{EPIC}\n", id="issue-closed"),
-        ],
-    )
-    def test_never_picks_a_handed_off_slice_and_counts_it_done_once_its_issue_closes(
-        self, closed: bool, closing: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_never_picks_a_handed_off_slice(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         output = tmp_path / "output"
         monkeypatch.setenv("DOVO_OUTPUT", str(output))
         fake = FakeGh({EPIC: _workplan(_row("S1", status="handed_off", child=1300), _row("S2"))})
-        if closed:
-            fake.closed.add(1300)
 
         assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
 
-        assert output.read_text(encoding="utf-8") == (
-            f"slice=S2\nissue={EPIC}\nplan_session={PLAN_SESSION}\nplan_revision=3\nphased_session=\n{closing}"
-        )
+        assert output.read_text(encoding="utf-8").splitlines()[0] == "slice=S2"
 
     def test_refuses_an_issue_planned_with_v1(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -1021,7 +868,7 @@ class ClaimTests:
         assert code == 0
         row = _rows(fake.workplan())[0]
         assert (row["status"], row["session"]) == ("in_progress", CODE_SESSION)
-        assert f"| S1 | Title S1 | O-1 | — | in_progress | — | {CODE_SESSION} |" in fake.workplan()
+        assert f"| S1 | Title S1 | O-1 | — | in_progress | — | — | {CODE_SESSION} |" in fake.workplan()
         assert fake.edits == []
 
     def test_keeps_the_slices_phased_plan(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1055,33 +902,31 @@ class ClaimTests:
 
 
 class LandTests:
-    def _argv(self, tmp_path: Path, plan: Mapping[str, object], *extra: str, report: str = "") -> tuple[str, ...]:
-        """Return land's argv for S1 with PR 1215, a report, plan and an epic plan holding CONTRACT under tmp_path."""
-        report_path = tmp_path / "slice-report.md"
-        report_path.write_text(report or "## Departures\n- Renamed a helper.\n", encoding="utf-8")
+    def _argv(self, tmp_path: Path, plan: Mapping[str, object], *extra: str) -> tuple[str, ...]:
+        """Return land's argv for S1 with PR 1215, plan and an epic plan holding CONTRACT under tmp_path."""
         plan_path = _write_json(tmp_path / "plan.json", plan)
         base_path = _write_json(tmp_path / "epic-plan.json", {"contract": CONTRACT, "slices": []})
         return (
             "land", "--issue", str(EPIC), "--slice", "S1", "--session", CODE_SESSION,
-            "--pr", "1215", "--report", str(report_path), "--plan", plan_path, "--base-plan", base_path, *extra,
+            "--pr", "1215", "--plan", plan_path, "--base-plan", base_path, *extra,
         )  # fmt: skip
 
-    def _contract_workplan(self) -> str:
-        """Return a work plan comment holding CONTRACT_SECTION and a work plan whose S1 this code session claimed."""
+    def _claimed_workplan(self, head: str = "") -> str:
+        """Return a work plan comment holding head and a work plan whose S1 this code session claimed."""
         rows = [_row("S1", status="in_progress", session=CODE_SESSION), _row("S2", outcomes=["O-2"])]
-        return _workplan(*rows, head=CONTRACT_SECTION)
+        return _workplan(*rows, head=head)
 
     def _slices(self, **s2: object) -> list[dict[str, object]]:
         return [_slice("S1"), _slice("S2", outcomes=["O-2"], **s2)]
 
-    def test_marks_in_review_and_appends_the_landed_report(
+    def test_marks_in_review_and_writes_no_report_or_other_comment(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         output = tmp_path / "output"
         monkeypatch.setenv("DOVO_OUTPUT", str(output))
-        fake = FakeGh({EPIC: self._contract_workplan()})
-        slice_question = {**QUESTION, "summary": "Rename the helper?", "assumed": "No.", "blocks": []}
-        plan = {"contract": CONTRACT, "slices": self._slices(), "open_questions": [slice_question]}
+        fake = FakeGh({EPIC: self._claimed_workplan()})
+        before = fake.workplan()
+        plan = {"contract": CONTRACT, "slices": self._slices()}
 
         assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0
 
@@ -1089,10 +934,24 @@ class LandTests:
         stored = _stored(text)
         assert (stored["plan_session"], stored["plan_revision"]) == (PLAN_SESSION, 3)
         assert (_rows(text)[0]["status"], _rows(text)[0]["pr"]) == ("in_review", 1215)
-        assert text.startswith(f"{MARKER}\n\n{CONTRACT_SECTION}\n## Work plan\n")
-        assert text.endswith("-->\n\n### S1 as landed (#1215)\n#### Departures\n- Renamed a helper.\n")
+        assert "| S1 | Title S1 | O-1 | — | in_review | — | #1215 | blueprint_code02 |" in text
+        assert text.endswith("-->\n")
+        assert len(text.splitlines()) == len(before.splitlines())
         assert output.read_text(encoding="utf-8") == f"remaining=1\nclosing_lines=Part of #{EPIC} (slice S1 of 2)\n"
-        assert (fake.bodies[EPIC], fake.edits) == (INTRO, [])
+        assert (fake.texts(EPIC), fake.bodies[EPIC], fake.edits) == ([text], INTRO, [])
+
+    def test_keeps_an_earlier_versions_contract_section_and_drops_its_landed_reports(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = FakeGh({EPIC: self._claimed_workplan(head=OLD_CONTRACT_SECTION + "\n") + OLD_LANDED})
+        plan = {"contract": CONTRACT, "slices": self._slices()}
+
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0
+
+        text = fake.workplan()
+        assert text.startswith(f"{MARKER}\n\n{OLD_CONTRACT_SECTION}\n## Work plan\n")
+        assert text.endswith("-->\n")
+        assert _rows(text)[0]["status"] == "in_review"
 
     @pytest.mark.parametrize(
         ("s1", "s2", "added", "outputs"),
@@ -1142,7 +1001,7 @@ class LandTests:
         output = tmp_path / "output"
         monkeypatch.setenv("DOVO_OUTPUT", str(output))
         rows = [_row("S1", status="in_progress", session=CODE_SESSION, **s1), _row("S2", **s2)]
-        fake = FakeGh({EPIC: _workplan(*rows, head=CONTRACT_SECTION)})
+        fake = FakeGh({EPIC: _workplan(*rows)})
         fake.closed.add(1301)
         plan = {"contract": CONTRACT, "slices": [_slice("S1"), _slice("S2"), *added]}
 
@@ -1171,107 +1030,35 @@ class LandTests:
     def test_refuses_a_comment_longer_than_github_allows(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        fake = FakeGh({EPIC: self._contract_workplan()})
+        fake = FakeGh({EPIC: self._claimed_workplan(head="x" * 65_536 + "\n")})
         before = fake.workplan()
         plan = {"contract": CONTRACT, "slices": self._slices()}
 
-        assert _main(monkeypatch, fake, *self._argv(tmp_path, plan, report="x" * 65_536)) == 1
+        assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 1
 
         error = capsys.readouterr().err
         match = re.fullmatch(
             r"workplan\.py: the work plan comment would be (?P<size>[\d,]+) characters, over GitHub's 65,536; "
-            r'shorten its "as landed" reports by hand and run the command again\n',
+            r"shorten what a person added to it and run the command again\n",
             error,
         )
         assert match is not None, error
         assert int(match["size"].replace(",", "")) > 65_536
         assert (fake.workplan(), fake.patched) == (before, [])
 
-    def test_amended_contract_is_rerendered_keeping_the_epic_questions_and_repoints(
+    def test_amended_contract_repoints_the_plan_session_and_stays_out_of_the_comment(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        fake = FakeGh({EPIC: self._contract_workplan()})
+        fake = FakeGh({EPIC: self._claimed_workplan()})
         amended = {**CONTRACT, "conventions": [{"rule": "Use ok() everywhere", "entry": None, "new_in": "S1"}]}
 
         assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": amended, "slices": self._slices()})) == 0
 
         text = fake.workplan()
-        expected = CONTRACT_SECTION.replace("- Use ok (new;", "- Use ok() everywhere (new;")
-        assert text.startswith(f"{MARKER}\n\n{expected}\n## Work plan\n")
+        assert "Use ok() everywhere" not in text
+        assert text.startswith(f"{MARKER}\n\n## Work plan\n")
         stored = _stored(text)
         assert (stored["plan_session"], stored["plan_revision"]) == (CODE_SESSION, None)
-
-    def test_a_contract_already_amended_is_left_alone(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        amended = {**CONTRACT, "conventions": [{"rule": "Use ok() everywhere", "entry": None, "new_in": "S1"}]}
-        text = self._contract_workplan().replace("- Use ok (new;", "- Use ok() everywhere (new;")
-        fake = FakeGh({EPIC: text})
-
-        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": amended, "slices": self._slices()})) == 0
-
-        assert fake.workplan().split("## Work plan")[0] == text.split("## Work plan")[0]
-        assert _stored(fake.workplan())["plan_session"] == PLAN_SESSION
-
-    def test_refuses_a_contract_edited_during_the_run(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        fake = FakeGh({EPIC: self._contract_workplan().replace("Output shapes disagree.", "Edited on GitHub.")})
-        amended = {**CONTRACT, "conventions": [{"rule": "Use ok() everywhere", "entry": None, "new_in": "S1"}]}
-
-        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": amended, "slices": self._slices()})) == 1
-
-        assert capsys.readouterr().err == (
-            f"workplan.py: #{EPIC}'s Feature contract was edited during this run: it is neither the contract this "
-            "run started from nor the amended one; reconcile it by hand and run land again\n"
-        )
-        assert fake.patched == []
-
-    def test_amends_a_contract_whose_override_replaces_a_whole_body(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        override = {
-            "issue": 1259,
-            "quote": "## Goal …",
-            "replacement": "Slice S3.\n\n## Goal\n\nNew body.\n",
-            "per": "D1",
-        }
-        base = {**CONTRACT, "overrides": [override]}
-        amended = {**base, "conventions": [{"rule": "Use ok() everywhere", "entry": None, "new_in": "S1"}]}
-        questions = WORKPLAN.body_questions(self._contract_workplan())
-        rows = [_row("S1", status="in_progress", session=CODE_SESSION), _row("S2", outcomes=["O-2"])]
-        fake = FakeGh({EPIC: _workplan(*rows, head=WORKPLAN.render_contract(base, questions))})
-        argv = self._argv(tmp_path, {"contract": amended, "slices": self._slices()})
-        _write_json(tmp_path / "epic-plan.json", {"contract": base, "slices": []})
-
-        assert _main(monkeypatch, fake, *argv) == 0
-
-        expected = WORKPLAN.render_contract(amended, questions)
-        assert fake.workplan().startswith(f"{MARKER}\n\n{expected}\n## Work plan\n")
-
-    def test_a_decision_with_an_open_questions_id_settles_it(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        fake = FakeGh({EPIC: self._contract_workplan()})
-        settled = {"id": "OQ-1", "decision": "Drop v1", "why": "S1 landed without it", "settled_by": None}
-        decisions = CONTRACT["decisions"]
-        assert isinstance(decisions, list)
-        decided = {**CONTRACT, "decisions": [*decisions, settled]}
-
-        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": decided, "slices": self._slices()})) == 0
-
-        text = fake.workplan()
-        assert "| OQ-1 | Drop v1 | S1 landed without it |" in text
-        assert "Open questions, each with a recommended answer" not in text
-        assert _stored(text)["plan_session"] == CODE_SESSION
-
-    def test_crlf_comment_with_an_unchanged_contract_is_not_amended(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        fake = FakeGh({EPIC: self._contract_workplan().replace("\n", "\r\n")})
-
-        assert _main(monkeypatch, fake, *self._argv(tmp_path, {"contract": CONTRACT, "slices": self._slices()})) == 0
-
-        assert _stored(fake.workplan())["plan_session"] == PLAN_SESSION
-        assert WORKPLAN.lf(fake.workplan()).startswith(f"{MARKER}\n\n{CONTRACT_SECTION}\n## Work plan\n")
 
     def test_a_phased_slice_keeps_its_phased_plan_and_the_plan_session(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1287,7 +1074,7 @@ class LandTests:
         assert [(row["status"], row["phased_session"]) for row in _rows(text)] == [("in_review", PLAN_SESSION)]
 
     def test_amended_plan_repoints_the_plan_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = FakeGh({EPIC: self._contract_workplan()})
+        fake = FakeGh({EPIC: self._claimed_workplan()})
         plan = {"contract": CONTRACT, "slices": self._slices(title="Narrower S2")}
 
         assert _main(monkeypatch, fake, *self._argv(tmp_path, plan)) == 0
@@ -1405,6 +1192,239 @@ class LandTests:
         assert fake.patched == []
 
 
+class StartTests:
+    def _start(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake: FakeGh, slice_id: str = "S2") -> int:
+        """Run start for slice_id of EPIC with a plan.json holding PLAN_DECISION."""
+        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": [], "decisions": [PLAN_DECISION]})
+        return _main(monkeypatch, fake, "start", "--issue", str(EPIC), "--slice", slice_id, "--plan", plan)
+
+    def test_a_sliced_plan_gives_the_slice_a_linked_sub_issue_its_pull_request_closes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        rows = [_row("S1", status="merged", pr=1215, session="bp_c1"), _row("S2", outcomes=["O-2", "O-3 (docs)"])]
+        fake = FakeGh({EPIC: _workplan(*rows)}, {EPIC: PARENT_BODY})
+
+        assert self._start(tmp_path, monkeypatch, fake) == 0
+
+        assert fake.created == [
+            (
+                "Title S2",
+                f"Slice S2 of #{EPIC} (2 slices): Title S2. The work plan comment on #{EPIC} tracks it.\n"
+                "\n"
+                "## Why\n"
+                "Output shapes disagree, so callers parse two envelopes.\n"
+                "\n"
+                "## Outcomes\n"
+                "- **O-2** Errors carry a code.\n"
+                "- **O-3** The docs show the envelope. This slice delivers only its docs part.\n"
+                "\n"
+                "## Decisions\n"
+                "- **D-1** One envelope for every command. Accepted.\n"
+                "- **D-2** Drop v1 now.\n"
+                "\n"
+                "## Done when\n"
+                "O-2, O-3 hold.\n",
+            )
+        ]
+        assert fake.labels[1300] == []
+        assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
+        assert [row["child"] for row in _rows(fake.workplan())] == [None, 1300]
+        assert "| S2 | Title S2 | O-2, O-3 (docs) | — | pending | #1300 | — | — |" in fake.workplan()
+        assert output.read_text(encoding="utf-8") == (
+            f"issue=1300\nremaining=0\nclosing_lines<<WORKPLAN_EOF\nCloses #1300\nCloses #{EPIC}\nWORKPLAN_EOF\n"
+        )
+        assert (len(fake.texts(EPIC)), fake.texts(1300), fake.bodies[EPIC], fake.edits) == (1, [], PARENT_BODY, [])
+
+    def test_a_middle_slice_is_part_of_the_issue_and_a_rerun_reuses_its_sub_issue(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2"), _row("S3"))}, {EPIC: PARENT_BODY})
+
+        assert self._start(tmp_path, monkeypatch, fake, "S1") == 0
+        assert self._start(tmp_path, monkeypatch, fake, "S1") == 0
+
+        assert len(fake.created) == 1
+        assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
+        closing = (
+            f"issue=1300\nremaining=2\nclosing_lines<<WORKPLAN_EOF\nCloses #1300\nPart of #{EPIC} (slice S1 of 3)\n"
+        )
+        assert output.read_text(encoding="utf-8") == f"{closing}WORKPLAN_EOF\n" * 2
+
+    def test_a_one_slice_plan_gets_no_sub_issue_and_its_pull_request_closes_the_issue(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1"))}, {EPIC: PARENT_BODY})
+        before = fake.workplan()
+
+        assert self._start(tmp_path, monkeypatch, fake, "S1") == 0
+
+        assert output.read_text(encoding="utf-8") == f"issue={EPIC}\nremaining=0\nclosing_lines=Closes #{EPIC}\n"
+        assert (fake.created, fake.sub_issues, fake.patched) == ([], [], [])
+        assert fake.texts(EPIC) == [before]
+
+    def test_a_slice_with_its_own_issue_keeps_it_linked(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1", child=1131), _row("S2"))})
+
+        assert self._start(tmp_path, monkeypatch, fake, "S1") == 0
+
+        assert (fake.created, fake.sub_issues) == ([], [(EPIC, "sub_issue_id=91131")])
+        assert output.read_text(encoding="utf-8").splitlines()[0] == "issue=1131"
+
+    def test_a_link_failure_keeps_the_record_and_a_rerun_links_without_creating(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2"))}, {EPIC: PARENT_BODY})
+        fake.failing_links = 1
+
+        assert self._start(tmp_path, monkeypatch, fake) == 1
+        assert capsys.readouterr().err == (
+            f"workplan.py: linking #1300 failed (gh api --method POST repos/o/r/issues/{EPIC}/sub_issues "
+            "-F sub_issue_id=91300: HTTP 502); run start again to link it\n"
+        )
+        assert self._start(tmp_path, monkeypatch, fake) == 0
+
+        assert len(fake.created) == 1
+        assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
+
+    def test_a_legacy_issue_still_gets_a_short_sub_issue(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2", outcomes=[]))})
+
+        assert self._start(tmp_path, monkeypatch, fake) == 0
+
+        assert fake.created[0][1] == (
+            f"Slice S2 of #{EPIC} (2 slices): Title S2. The work plan comment on #{EPIC} tracks it.\n\n"
+            "## Why\nTitle S2.\n\n## Outcomes\n- Title S2.\n\n## Decisions\n- **D-2** Drop v1 now.\n\n"
+            "## Done when\nTitle S2.\n"
+        )
+
+
+class ReadyTests:
+    def _state(self, monkeypatch: pytest.MonkeyPatch, fake: FakeGh, body_sha: str = BODY_SHA) -> int:
+        return _main(monkeypatch, fake, "ready-state", "--issue", str(EPIC), "--slice", "S1", "--body-sha", body_sha)
+
+    @pytest.mark.parametrize(
+        ("row", "labelled", "body_sha", "ready", "reason"),
+        [
+            pytest.param(
+                _row("S1", ready_body_sha=BODY_SHA),
+                True,
+                BODY_SHA,
+                "true",
+                f"Issue {EPIC} is labelled dovo:ready for its description as it is; not checking it.",
+                id="unchanged",
+            ),
+            pytest.param(
+                _row("S1", ready_body_sha=BODY_SHA),
+                False,
+                BODY_SHA,
+                "false",
+                f"Issue {EPIC} is not labelled dovo:ready; checking it.",
+                id="not-labelled",
+            ),
+            pytest.param(
+                _row("S1"),
+                True,
+                BODY_SHA,
+                "false",
+                f"No ready check of issue {EPIC} is recorded in the work plan; checking it.",
+                id="not-recorded",
+            ),
+            pytest.param(
+                _row("S1", ready_body_sha=BODY_SHA),
+                True,
+                "0" * 64,
+                "false",
+                f"Issue {EPIC}'s description changed since the check that labelled it; checking it.",
+                id="description-changed",
+            ),
+            pytest.param(
+                _row("S1", ready_body_sha=BODY_SHA, child=1300),
+                False,
+                BODY_SHA,
+                "false",
+                "Issue 1300 is not labelled dovo:ready; checking it.",
+                id="own-issue-not-labelled",
+            ),
+        ],
+    )
+    def test_ready_state_is_true_only_for_the_description_the_recorded_check_read(
+        self,
+        row: object,
+        labelled: bool,
+        body_sha: str,
+        ready: str,
+        reason: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: OLD_READY_COMMENT})
+        fake.comments[EPIC].append({"id": 7, "body": _workplan(row)})
+        if labelled:
+            fake.labels[EPIC] = ["dovo:ready"]
+
+        assert self._state(monkeypatch, fake, body_sha) == 0
+
+        assert output.read_text(encoding="utf-8") == f"ready={ready}\n"
+        assert capsys.readouterr().out == f"{reason}\n"
+
+    def test_ready_records_the_checked_description_on_the_slices_row(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2"))})
+
+        argv = ("ready", "--issue", str(EPIC), "--slice", "S1", "--body-sha", BODY_SHA)
+        assert _main(monkeypatch, fake, *argv) == 0
+
+        assert [row["ready_body_sha"] for row in _rows(fake.workplan())] == [BODY_SHA, None]
+        assert len(fake.texts(EPIC)) == 1
+
+    def test_a_new_sub_issue_drops_the_ready_check_recorded_for_the_issue(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake = FakeGh({EPIC: _workplan(_row("S1", ready_body_sha=BODY_SHA), _row("S2"))}, {EPIC: PARENT_BODY})
+        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": [], "decisions": []})
+
+        assert _main(monkeypatch, fake, "start", "--issue", str(EPIC), "--slice", "S1", "--plan", plan) == 0
+
+        first = _rows(fake.workplan())[0]
+        assert (first["child"], first["ready_body_sha"]) == (1300, None)
+
+
+class ShowTests:
+    @pytest.mark.parametrize(
+        ("comments", "outputs"),
+        [
+            pytest.param({}, "plan_session=\nbody_sha=\n", id="no-work-plan"),
+            pytest.param(
+                {EPIC: _workplan(_row("S1"), body_sha=BODY_SHA)},
+                f"plan_session={PLAN_SESSION}\nbody_sha={BODY_SHA}\n",
+                id="work-plan",
+            ),
+            pytest.param({EPIC: _workplan(_row("S1"))}, f"plan_session={PLAN_SESSION}\nbody_sha=\n", id="no-sha"),
+        ],
+    )
+    def test_writes_the_plan_session_and_the_description_it_planned(
+        self, comments: dict[int, str], outputs: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+
+        assert _main(monkeypatch, FakeGh(comments), "show", "--issue", str(EPIC)) == 0
+
+        assert output.read_text(encoding="utf-8") == outputs
+
+
 class SplitOutTests:
     def _split(self, monkeypatch: pytest.MonkeyPatch, fake: FakeGh) -> int:
         return _main(monkeypatch, fake, "split-out", "--issue", str(EPIC), "--slice", "S2")
@@ -1428,7 +1448,7 @@ class SplitOutTests:
         assert fake.labels[1300] == []
         assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
         assert [row["child"] for row in _rows(fake.workplan())] == [None, 1300]
-        assert "| S2 (#1300) | Title S2 | O-2, O-3 | — | pending | — | — |" in fake.workplan()
+        assert "| S2 | Title S2 | O-2, O-3 | — | pending | #1300 | — | — |" in fake.workplan()
         assert output.read_text(encoding="utf-8") == "child=1300\n"
 
     def test_a_link_failure_keeps_the_record_and_a_rerun_links_without_creating(
@@ -1461,7 +1481,7 @@ class SplitOutTests:
             (None, "pending"),
             (1300, "handed_off"),
         ]
-        assert "| S2 (#1300) | Title S2 | O-1 | — | handed_off | — | — |" in fake.workplan()
+        assert "| S2 | Title S2 | O-1 | — | handed_off | #1300 | — | — |" in fake.workplan()
         assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
         assert output.read_text(encoding="utf-8") == "child=1300\n"
 

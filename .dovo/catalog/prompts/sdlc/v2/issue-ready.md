@@ -34,7 +34,7 @@ A finding needs evidence: a `path:line`, a sha, a pull request or an issue numbe
 
 ## 4. Report
 
-Write `.agentic/issue-ready.md`: the verdict, the base sha, one line per finding with its evidence and fix, and a Notes heading with one line per note from check 4, left out when there is none. Write `.agentic/issue-ready-comment.md`, the comment posted with the label: `Ready to plan at <sha> (<YYYY-MM-DD>).`, followed by `No changes needed.` The blueprint posts it with `plan.py ready-comment`, which heads it with a `<!-- dovo:ready ... -->` marker naming the description the check read, so `issue-code-v2` re-checks the issue only once that description changes. Write `.agentic/issue-ready.json` to agree with the report (the issue numbers and shas below are illustrative placeholders; do not look them up):
+Write `.agentic/issue-ready.md`: the verdict, the base sha, one line per finding with its evidence and fix, and a Notes heading with one line per note from check 4, left out when there is none. No comment is posted on the issue: the blueprint labels it and records the `body_sha` below in the work plan, so `issue-code-v2` re-checks the issue only once that description changes. Write `.agentic/issue-ready.json` to agree with the report (the issue numbers and shas below are illustrative placeholders; do not look them up):
 
 ```json
 {
@@ -55,7 +55,7 @@ Write `.agentic/issue-ready.md`: the verdict, the base sha, one line per finding
 ```
 
 - `verdict` is `ready` (no findings) or `not_ready` (a gate failed or a finding needs a person).
-- `body_sha` names the description the check certifies: the sha step 1 recorded. `plan.py ready-comment` refuses to post the comment, and the issue stays unlabelled, when the description is no longer that one.
+- `body_sha` names the description the check certifies: the sha step 1 recorded. `plan.py unchanged` refuses, and the issue stays unlabelled, when the description is no longer that one.
 - `kind` is `gate`, `stale`, `contradiction` or `structure`. `evidence` is a `path:line`, a sha, a pull request or an issue number; for a `contradiction`, the decision id and the commit or pull request (`D-2, #1290`).
 
-Remove the `dovo:ready` label whenever the body is edited by hand: it certifies the body as of its comment's sha.
+Remove the `dovo:ready` label whenever the body is edited by hand: it certifies the body as of the sha the work plan records.

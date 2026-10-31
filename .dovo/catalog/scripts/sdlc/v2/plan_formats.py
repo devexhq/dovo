@@ -8,8 +8,8 @@ recommendation was its assumed answer; `challenge_accepted` for one the human
 left unanswered whose recommendation was the challenge's answer; and `planner` for a departure from the issue the planner made, which the human
 approves with the plan. `was` is the id of the open question the decision
 settles, or null for a planner's departure that was never one. `replaces`, when
-present, names the decision an earlier planning session posted to the issue
-that this one takes the place of: `{"id": "D-2", "session": "<session id>"}`.
+present, names the decision of an earlier planning session's plan that this
+one takes the place of: `{"id": "D-2", "session": "<session id>"}`.
 
 An open question is one entry of `open_questions` in .agentic/plan.json, the
 only place the plan states it. `summary` is the question on one line of at most
@@ -28,11 +28,12 @@ answer, and the optional `replaces` names the prior decision the question asks
 to confirm again. A question has no other field.
 
 A prior decision is one entry of `decisions` in .agentic/prior-decisions.json,
-which `plan.py prior-decisions` writes from the issue's `dovo:decisions`
-comments. Its `status` is `given` when the issue's description is unchanged
-since the comment was posted, and `to_confirm` otherwise. The document's
-`body_sha` is the description's as it was read, which `plan.py
-decisions-comment` later posts as the description the plan was written
+which `plan.py prior-decisions` writes from the plan.json of the session the
+issue's work plan names. Its `status` is `given` when the issue's description
+is unchanged since that plan was written, and `to_confirm` otherwise; its
+`session` is that session and its `slice` the slice that plan phases, or
+`all`. The document's `body_sha` is the description's as it was read, which
+`workplan.py render` later records as the description the plan was written
 against.
 
 A requirement is one entry of `requirements` in .agentic/requirements.json,
@@ -422,7 +423,7 @@ def _challenge_answer(raw: dict[str, object], *, challenged: bool, owner: str) -
 
 @dataclass(frozen=True)
 class PriorDecision:
-    """A decision read back from one of the issue's dovo:decisions comments, with the bullet's text after its id."""
+    """A decision read back from the issue's latest approved plan, with its one-line text after its id."""
 
     id: str
     text: str
