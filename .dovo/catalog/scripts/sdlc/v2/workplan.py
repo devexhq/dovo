@@ -1,51 +1,70 @@
 #!/usr/bin/env python3
-"""Keeps an issue's feature contract and work plan current in one comment on the issue.
+"""Keeps an issue's work plan current in the one comment the slice flow posts on the issue.
 
-The slice flow's plan run writes `## Feature contract` and `## Work plan` with
-`render` into the issue's work plan comment, the one comment whose first line is
-exactly `<!-- dovo:workplan schema_version=1 -->`, creating it when the issue
-has none. A comment whose marker carries anything more, such as
-`maintained=by-hand`, is a person's and is never read or written. The issue's
-description is never written. Each code run then picks its slice with `next`,
-takes it with `claim` once its own plan is approved, and records its pull
-request with `land`, which repoints the work plan at the code session when its
-report amended later slices or the contract. No child issue is created for a
-slice, except by `split-out`, which a person runs to give one slice its own
-issue. A slice's own issue, whether an existing sub-issue the plan maps to it
-(plan.json `slices[].child`) or one `split-out` created, is its row's `child`.
-`split-out --handed-off` also marks the slice `handed_off`, for work handed to
-someone outside the flow: `next` never picks it, and it counts as done once its
-own issue is closed. The work plan is a table for people plus a
+The work plan comment is the one comment whose first line is exactly
+`<!-- dovo:workplan schema_version=1 -->`. The slice flow's plan run writes its
+`## Work plan` section with `render`, creating the comment when the issue has
+none, and every later run edits it in place. A comment whose marker carries
+anything more, such as `maintained=by-hand`, is a person's and is never read or
+written. The issue's description is never written, and no other comment is
+posted on the issue: the plan, its decisions and its feature contract stay in
+the planning and coding sessions' artifacts, which the work plan names. A
+section other than `## Work plan` left in the comment by an earlier version is
+kept as it is and never read. The work plan is a table listing each slice with
+its status, its own issue, its pull request and its code session, plus a
 `<!-- dovo:workplan {json} -->` line that this script alone parses and
-rewrites. Every write re-reads the comment first; when it changed since this
-run read it, the change is applied once more to the new text, and a second
-change refuses. A write that would make the comment longer than GitHub's
-65,536 characters refuses rather than truncating. `render` and `next` refuse an
-issue whose description holds v1's work plan. `next` and `land` write their
-outputs as `key=value` lines to `$DOVO_OUTPUT`: `remaining`, the number of
-other slices not yet done, and `closing_lines`, the lines the slice's pull
-request ends with; `land` computes both from the plan as landed. `next` also
-writes `issue`, the issue the slice is worked on: its `child` when it has one,
-otherwise the issue whose work plan holds it, and `phased_session`, the
-session whose artifacts hold the slice's approved phased plan, or "" when the
-slice is still to be phased. `render --phased-body-sha`, run when the planning
-run phased the plan's one slice, records that session on its row with the
-body_sha of the description it was phased against; a pending row rendered
-again without it drops both. `phased` writes `phased_session` again, empty
-unless that phased plan still holds: the slice has no issue of its own, no
-landed slice has amended the plan since, and the description's body_sha is
-unchanged. `land`'s
-`--sweep` corrects other issues' descriptions, and skips an entry for the issue
-or the slice's own issue, naming it on stderr. `pr-links` replaces the closing
-lines in a pull request's description that name the issues the given lines
-name, when they differ from the ones given, so a slice whose plan changed while
-it was in review still closes the right issues. It reads every GitHub closing
-keyword, never a line inside a fenced code block, and leaves a closing line
-naming another issue alone. With `--hold`,
-`next` also writes the holds file a blueprint's `ask` step lists:
-`{"holds": []}` once a slice is picked, or one hold per slice that waits on a
-person (an open blocker, an unmerged slice, a pull request in review), in which
-case it exits 0 without outputs instead of refusing.
+rewrites; it holds no per-slice prose, so it stays short however many slices
+land.
+
+Each code run picks its slice with `next`, then `start`s it: on a plan of two or
+more slices, `start` gives the slice its own issue, a sub-issue of the issue in
+the short issue format built from the issue's description and plan.json, when
+it has none, records it as the slice's `child` and links it. A one-slice plan's
+slice is worked on the issue itself. The run takes the slice with `claim` once
+its own plan is approved, and records its pull request with `land`, which
+repoints the work plan at the code session when the slice amended later slices
+or the contract. `split-out` gives a slice its own issue the same way when a
+person asks; `split-out --handed-off` also marks the slice `handed_off`, for
+work handed to someone outside the flow: `next` never picks it, and it counts
+as done once its own issue is closed. A slice's own issue, an existing
+sub-issue the plan maps to it (plan.json `slices[].child`) or one `start` or
+`split-out` created, is its row's `child`.
+
+Every write re-reads the comment first; when it changed since this run read
+it, the change is applied once more to the new text, and a second change
+refuses. A write that would make the comment longer than GitHub's 65,536
+characters refuses rather than truncating. `render` and `next` refuse an issue
+whose description holds v1's work plan.
+
+`next`, `start`, `land`, `show`, `phased` and `ready-state` write their outputs
+as `key=value` lines to `$DOVO_OUTPUT`. `next` writes `slice`, `plan_session`,
+`plan_revision`, `body_sha` (the body_sha of the description the plan was
+written against, or ""), `phased_session` and `landed`, the `<slice>=<session>`
+pairs of the slices in review or merged, whose sessions hold their "as landed"
+reports. `start` and `land` write `issue`, the issue the slice is worked on
+(`start` only), `remaining`, the number of other slices not yet done, and
+`closing_lines`, the lines the slice's pull request ends with; `land` computes
+them from the plan as landed. `show` writes the work plan's `plan_session` and
+`body_sha`, both "" when the issue has no work plan. `render --phased-body-sha`,
+run when the planning run phased the plan's one slice, records that session on
+its row with the body_sha of the description it was phased against; a pending
+row rendered again without it drops both. `phased` writes `phased_session`
+again, empty unless that phased plan still holds: the slice has no issue of its
+own, no landed slice has amended the plan since, and the description's body_sha
+is unchanged. `render --ready-body-sha` and `ready` record the body_sha of the
+description the ready check that labelled the slice's issue `dovo:ready` read,
+and `ready-state` writes `ready=true` only while that issue is labelled and its
+description is still that one. `land`'s `--sweep` corrects other issues'
+descriptions, and skips an entry for the issue or the slice's own issue, naming
+it on stderr. `pr-links` replaces the closing lines in a pull request's
+description that name the issues the given lines name, when they differ from
+the ones given, so a slice whose plan changed while it was in review still
+closes the right issues. It reads every GitHub closing keyword, never a line
+inside a fenced code block, and leaves a closing line naming another issue
+alone. With `--hold`, `next` also writes the holds file a blueprint's `ask`
+step lists: `{"holds": []}` once a slice is picked, or one hold per slice that
+waits on a person (an open blocker, an unmerged slice, a pull request in
+review), in which case it exits 0 without outputs instead of refusing.
 """
 
 from __future__ import annotations
@@ -62,8 +81,6 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
-CONTRACT_HEADING = "## Feature contract"
-QUESTIONS_INTRO = "Open questions, each with a recommended answer until the user settles it:"
 WORKPLAN_HEADING = "## Work plan"
 WORKPLAN_MARKER = "<!-- dovo:workplan schema_version=1 -->"
 WORKPLAN_COMMENT_RE = re.compile(r"<!-- dovo:workplan (\{.*\}) -->")
@@ -71,6 +88,7 @@ COMMENT_ID_RE = re.compile(r"#issuecomment-(\d+)$")
 COMMENT_LIMIT = 65_536
 READY_LABEL = "dovo:ready"
 ACTIVE_STATUSES = ("in_progress", "in_review")
+LANDED_STATUSES = ("in_review", "merged")
 HANDED_OFF = "handed_off"
 V1_WORKPLAN = "<!-- dovo:workplan {"
 HEREDOC_DELIMITER = "WORKPLAN_EOF"
@@ -81,6 +99,8 @@ CLOSING_LINE_RE = re.compile(
     r"(?i:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?[ \t]+#(?P<closed>\d+)|Part of #(?P<part_of>\d+) \(slice \S+ of \d+\)"
 )
 FENCE_OPEN = re.compile(r" {0,3}(?P<fence>`{3,}|~{3,})")
+ITEM_RE = re.compile(r"- \*\*(?P<id>[OD]-\d+)\*\* (?P<text>.+)")
+OUTCOME_ENTRY = re.compile(r"(?P<id>O-\d+)(?: \((?P<part>[^()]+)\))?")
 
 
 class WorkplanError(RuntimeError):
@@ -100,13 +120,15 @@ class Slice:
     """One slice row: its definition from plan.json and the state the code runs record.
 
     outcomes are the issue's O-n ids the slice delivers. child is the slice's
-    own issue, an existing sub-issue the plan maps to it or the one `split-out`
-    created, or None. status is pending, in_progress, in_review, merged, or
-    handed_off for a slice handed to someone outside the flow. phased_session
-    is the session whose plan and phases artifacts hold the slice's approved
-    phased plan, when the planning run phased it (`render --phased`), else None;
-    phased_body_sha is the body_sha of the issue's description that plan was
-    written against.
+    own issue, an existing sub-issue the plan maps to it or the one `start` or
+    `split-out` created, or None. status is pending, in_progress, in_review,
+    merged, or handed_off for a slice handed to someone outside the flow.
+    phased_session is the session whose plan and phases artifacts hold the
+    slice's approved phased plan, when the planning run phased it (`render
+    --phased`), else None; phased_body_sha is the body_sha of the issue's
+    description that plan was written against. ready_body_sha is the body_sha
+    of the description of the issue the slice is worked on that the ready check
+    which labelled it `dovo:ready` read, or None when no check is recorded.
     """
 
     id: str
@@ -122,15 +144,20 @@ class Slice:
     child: int | None = None
     phased_session: str | None = None
     phased_body_sha: str | None = None
+    ready_body_sha: str | None = None
 
 
 @dataclass
 class WorkPlan:
-    """The parsed `dovo:workplan` JSON line: the plan session to load and every slice row."""
+    """The parsed `dovo:workplan` JSON line: the plan session to load, every slice row and the description planned against.
+
+    body_sha is the body_sha of the issue's description the plan was written against, or None when not recorded.
+    """
 
     plan_session: str
     plan_revision: int | None
     slices: list[Slice]
+    body_sha: str | None = None
 
 
 @dataclass(frozen=True)
@@ -175,6 +202,11 @@ def _optional_int(value: object, what: str) -> int | None:
     if not isinstance(value, int) or isinstance(value, bool):
         raise WorkplanError(f"{what} must be an issue number or null, not {value!r}")
     return value
+
+
+def _optional_str(value: object) -> str | None:
+    """Return value as text, or None when it is null."""
+    return None if value is None else str(value)
 
 
 def _size(value: object, slice_id: str) -> str | None:
@@ -282,7 +314,7 @@ def check_started_unchanged(plan_slices: list[Slice], current: list[Slice]) -> N
 
 
 def _carry_over(row: Slice, old: Slice | None) -> Slice:
-    """Return row with old's size and child (unless row names them), status, PR and session.
+    """Return row with old's size and child (unless row names them), status, PR, session and ready check.
 
     A started slice also keeps the phased plan it started from, unless row names one; a pending
     slice takes row's, so planning the issue again drops a phased plan it did not write.
@@ -303,10 +335,11 @@ def _carry_over(row: Slice, old: Slice | None) -> Slice:
         child=child,
         phased_session=phased,
         phased_body_sha=phased_sha,
+        ready_body_sha=old.ready_body_sha if child == old.child else None,
     )
 
 
-# --- comment sections ---------------------------------------------------------
+# --- the comment --------------------------------------------------------------
 
 
 def _find_block(text: str, is_start: Callable[[str], bool], is_end: Callable[[str], bool]) -> tuple[int, int] | None:
@@ -331,12 +364,9 @@ def find_section(body: str, heading: str) -> tuple[int, int] | None:
     return _find_block(body, lambda line: line.rstrip() == heading, lambda line: line.startswith("## "))
 
 
-def set_section(body: str, heading: str, text: str, *, before: str | None = None) -> str:
-    """Return body with the section titled heading replaced by text, else inserted before `before`, else appended."""
+def set_section(body: str, heading: str, text: str) -> str:
+    """Return body with the section titled heading replaced by text, else appended."""
     span = find_section(body, heading)
-    anchor = find_section(body, before) if span is None and before else None
-    if anchor is not None:
-        span = (anchor[0], anchor[0])
     if span is None:
         return body.rstrip("\n") + "\n\n" + text if body.strip() else text
     start, end = span
@@ -344,8 +374,10 @@ def set_section(body: str, heading: str, text: str, *, before: str | None = None
     return body[:start] + text + ("\n" + tail if tail else "")
 
 
-def split_workplan(text: str) -> tuple[WorkPlan, str]:
-    """Return the work plan parsed from the comment text's `dovo:workplan` JSON line and the text after it ("as landed" reports).
+def split_workplan(text: str) -> WorkPlan:
+    """Return the work plan parsed from the comment text's `dovo:workplan` JSON line.
+
+    Anything after that line in the section, such as an earlier version's "as landed" reports, is ignored.
 
     Raises:
         WorkplanError: When text has no work plan or its JSON line is malformed.
@@ -358,10 +390,10 @@ def split_workplan(text: str) -> tuple[WorkPlan, str]:
     try:
         data = _object(json.loads(match.group(1)), "the dovo:workplan comment")
         slices = [_stored_slice(_object(row, "a dovo:workplan slice")) for row in _list(data["slices"])]
-        plan = WorkPlan(str(data["plan_session"]), _optional_int(data.get("plan_revision"), "plan_revision"), slices)
+        revision = _optional_int(data.get("plan_revision"), "plan_revision")
+        return WorkPlan(str(data["plan_session"]), revision, slices, _optional_str(data.get("body_sha")))
     except (json.JSONDecodeError, KeyError, ValueError) as error:
         raise WorkplanError(f"the dovo:workplan comment is malformed: {error}") from error
-    return plan, section[match.end() :].strip("\n")
 
 
 def lf(text: str) -> str:
@@ -369,22 +401,15 @@ def lf(text: str) -> str:
     return text.replace("\r\n", "\n")
 
 
-def current_rows(text: str, plan_slices: list[Slice]) -> tuple[list[Slice], str]:
-    """Return plan_slices merged with the comment text's work plan rows, and its "as landed" reports.
-
-    Text without a `## Work plan` section gives plan_slices as they are.
-    """
+def current_rows(text: str, plan_slices: list[Slice]) -> list[Slice]:
+    """Return plan_slices merged with the comment text's work plan rows; text without a `## Work plan` gives them as they are."""
     if find_section(text, WORKPLAN_HEADING) is None:
-        return plan_slices, ""
-    current, landed = split_workplan(text)
-    return merge_rows(plan_slices, current.slices), landed
+        return plan_slices
+    return merge_rows(plan_slices, split_workplan(text).slices)
 
 
 def _stored_slice(data: dict[str, object]) -> Slice:
     """Return one slice row from the dovo:workplan JSON line."""
-    session = data.get("session")
-    phased = data.get("phased_session")
-    phased_sha = data.get("phased_body_sha")
     return Slice(
         id=str(data["id"]),
         title=str(data["title"]),
@@ -394,11 +419,12 @@ def _stored_slice(data: dict[str, object]) -> Slice:
         outcomes=[str(item) for item in _list(data.get("outcomes"))],
         status=str(data["status"]),
         pr=_optional_int(data.get("pr"), "pr"),
-        session=None if session is None else str(session),
+        session=_optional_str(data.get("session")),
         size=_size(data.get("size"), str(data["id"])),
         child=_optional_int(data.get("child"), "child"),
-        phased_session=None if phased is None else str(phased),
-        phased_body_sha=None if phased_sha is None else str(phased_sha),
+        phased_session=_optional_str(data.get("phased_session")),
+        phased_body_sha=_optional_str(data.get("phased_body_sha")),
+        ready_body_sha=_optional_str(data.get("ready_body_sha")),
     )
 
 
@@ -430,14 +456,11 @@ def _comment_json(plan: WorkPlan) -> str:
     return text.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
 
 
-def render_workplan(plan: WorkPlan, landed: str) -> str:
-    """Return the `## Work plan` section: the plan session line, the slice table, the JSON line and landed reports.
-
-    A slice with its own issue names that issue after its id.
+def render_workplan(plan: WorkPlan) -> str:
+    """Return the `## Work plan` section: the plan session line, one table row per slice and the JSON line.
 
     Args:
         plan: The work plan to render.
-        landed: The "as landed" reports to keep under the JSON line, or "".
 
     Returns:
         The section text, ending with a newline.
@@ -445,313 +468,108 @@ def render_workplan(plan: WorkPlan, landed: str) -> str:
     revision = "" if plan.plan_revision is None else f" (plan revision {plan.plan_revision})"
     rows = [
         [
-            row.id if row.child is None else f"{row.id} (#{row.child})",
+            row.id,
             row.title,
             ", ".join(row.outcomes),
             ", ".join(row.depends_on + _refs(row.blocked_by)),
             row.status,
+            f"#{row.child}" if row.child is not None else "",
             f"#{row.pr}" if row.pr is not None else "",
             row.session or "",
         ]
         for row in plan.slices
     ]
-    table = _table(["Slice", "Scope", "Outcomes", "Depends on", "Status", "PR", "Code session"], rows)
+    table = _table(["Slice", "Scope", "Outcomes", "Depends on", "Status", "Issue", "PR", "Code session"], rows)
     parts = [WORKPLAN_HEADING, f"Plan Session ID: `{plan.plan_session}`{revision}", "", table, ""]
     parts.append(f"<!-- dovo:workplan {_comment_json(plan)} -->")
-    text = "\n".join(parts) + "\n"
-    return text + ("\n" + landed.strip("\n") + "\n" if landed.strip() else "")
+    return "\n".join(parts) + "\n"
 
 
-def with_contract(text: str, contract: dict[str, object], questions: str) -> str:
-    """Return the comment text with its `## Feature contract` rendered from contract and questions, before the work plan."""
-    return set_section(text, CONTRACT_HEADING, render_contract(contract, questions), before=WORKPLAN_HEADING)
+def with_workplan(text: str, plan: WorkPlan) -> str:
+    """Return the comment text with its `## Work plan` section replaced by plan."""
+    return set_section(text, WORKPLAN_HEADING, render_workplan(plan))
 
 
-def with_workplan(text: str, plan: WorkPlan, landed: str) -> str:
-    """Return the comment text with its `## Work plan` section replaced by plan and landed."""
-    return set_section(text, WORKPLAN_HEADING, render_workplan(plan, landed))
+# --- a slice's own issue ------------------------------------------------------
 
 
-def add_landed(landed: str, slice_id: str, pr: int, report: str) -> str:
-    """Return landed with slice_id's "as landed" report added, replacing an earlier one for that slice.
-
-    Headings of level 1-3 in report are demoted to level 4, so the report stays inside the work plan.
-    """
-    demoted = re.sub(r"^#{1,3}(?=\s)", "####", report.strip("\n"), flags=re.MULTILINE)
-    block = f"### {slice_id} as landed (#{pr})\n{demoted}\n"
-    prefix = f"### {slice_id} as landed ("
-    span = _find_block(landed, lambda line: line.startswith(prefix), lambda line: line.startswith("### "))
+def _section_body(body: str, heading: str) -> str:
+    """Return the text under the `## ` section titled heading in body, without the heading, or ""."""
+    span = find_section(body, heading)
     if span is None:
-        return f"{landed.rstrip()}\n\n{block}" if landed.strip() else block
-    start, end = span
-    tail = landed[end:]
-    return landed[:start] + block + ("\n" + tail if tail else "")
-
-
-# --- feature contract ---------------------------------------------------------
-
-
-def _items(contract: dict[str, object], key: str) -> list[dict[str, object]]:
-    """Return contract[key] as a list of objects."""
-    return [_object(item, f"each contract {key} entry") for item in _list(contract.get(key))]
-
-
-def _text(item: dict[str, object], key: str) -> str:
-    """Return item[key] as text, or "" when it is missing or null."""
-    value = item.get(key)
-    return "" if value is None else str(value)
-
-
-def _joined(item: dict[str, object], key: str, *, refs: bool = False) -> str:
-    """Return item[key]'s entries joined by commas, as `#n` references when refs is set."""
-    values = [str(value) for value in _list(item.get(key))]
-    return ", ".join(f"#{value}" for value in values) if refs else ", ".join(values)
-
-
-def _bullets(lines: list[str]) -> str:
-    """Return lines as the body of a contract section, or `None.` when there are none."""
-    return "\n".join(lines) if lines else "None."
-
-
-def _existing_issues(contract: dict[str, object]) -> str:
-    """Render `### Existing issues` as its Issue / Role / Becomes table."""
-    rows = [
-        [f"#{_text(item, 'issue')}", _text(item, "role"), _text(item, "becomes") or _joined(item, "slices")]
-        for item in _items(contract, "existing_issues")
-    ]
-    return _table(["Issue", "Role", "Becomes"], rows)
-
-
-def _prerequisites(contract: dict[str, object]) -> str:
-    """Render `### Prerequisites` as one bullet per prerequisite issue."""
-    return _bullets(
-        [
-            f"- #{_text(item, 'issue')}: needed by {_joined(item, 'for')}, because {_text(item, 'makes_true')}"
-            for item in _items(contract, "prerequisites")
-        ]
-    )
-
-
-def _non_goal(item: dict[str, object]) -> str:
-    """Render one non-goal bullet with its kind and its owners or reason."""
-    kind = _text(item, "kind")
-    owners = _joined(item, "owners", refs=True)
-    detail = f", because {_text(item, 'reason')}" if kind == "excluded" else f", owned by {owners or 'nobody'}"
-    return f"- **{kind.capitalize()}:** {_text(item, 'text')}{detail}."
-
-
-def _non_goals(contract: dict[str, object]) -> str:
-    """Render `### Non-goals`."""
-    return _bullets([_non_goal(item) for item in _items(contract, "non_goals")])
-
-
-def _entry(item: dict[str, object]) -> str:
-    """Return ` (`<entry>`)` for an item that cites an architecture entry, else ""."""
-    entry = _text(item, "entry")
-    return f" (`{entry}`)" if entry else ""
-
-
-def _target(contract: dict[str, object]) -> str:
-    """Render `### Target contract`: each surface's end state, baseline and the slices touching it."""
-    lines: list[str] = []
-    for item in _items(contract, "target"):
-        baseline = item.get("baseline")
-        base = _object(baseline, "a target baseline") if baseline is not None else {}
-        lines.append(f"- **{_text(item, 'surface')}**{_entry(item)}: {_text(item, 'end_state')}")
-        lines.append(f"  - Baseline ({_text(base, 'as_of')}): {_text(base, 'text')}")
-        lines.append(f"  - Touched by: {_joined(item, 'touched_by')}.")
-    return _bullets(lines)
-
-
-def _exemplar(item: dict[str, object]) -> str:
-    """Render one exemplar bullet, saying whether it conforms and which slice fixes it."""
-    fixed_by = _text(item, "fixed_by")
-    conforms = "conforms" if item.get("conforms") is True else f"does not yet conform (fixed by {fixed_by})"
-    return f"- **Exemplar:** `{_text(item, 'path')}`, {conforms}. {_text(item, 'why')}"
-
-
-def _conventions(contract: dict[str, object]) -> str:
-    """Render `### Conventions`: each rule with its entry or the slice that writes it, then the exemplars."""
-    lines = []
-    for item in _items(contract, "conventions"):
-        new_in = _text(item, "new_in")
-        lines.append(f"- {_text(item, 'rule')}{f' (new; written by {new_in})' if new_in else _entry(item)}")
-    lines.extend(_exemplar(item) for item in _items(contract, "exemplars"))
-    return _bullets(lines)
-
-
-def _fenced(text: str, indent: str) -> str:
-    """Return text in a `text` fence one backtick longer than its longest backtick run, each line indented."""
-    fence = "`" * max(3, 1 + max((len(run) for run in re.findall(r"`+", text)), default=0))
-    return "\n".join(f"{indent}{line}" if line else line for line in [f"{fence}text", *text.split("\n"), fence])
-
-
-def _override(item: dict[str, object]) -> str:
-    """Render one override bullet, with a multi-line replacement fenced under it so its headings stay in the contract."""
-    quoted = f'- #{_text(item, "issue")}, "{_text(item, "quote")}"'
-    replacement = _text(item, "replacement").strip("\n")
-    if "\n" not in replacement:
-        return f"{quoted} → {replacement}, per {_text(item, 'per')}."
-    return f"{quoted}, per {_text(item, 'per')}, becomes:\n{_fenced(replacement, '  ')}"
-
-
-def _overrides(contract: dict[str, object]) -> str:
-    """Render `### Overrides`, quoting each sentence a contract decision makes wrong."""
-    return _bullets([_override(item) for item in _items(contract, "overrides")])
-
-
-def _settled_by(item: dict[str, object]) -> str:
-    """Return a decision's `Settled by` cell: its kind, reference and confirmation date."""
-    raw = item.get("settled_by")
-    settled = _object(raw, "a decision's settled_by") if raw is not None else {}
-    confirmed = _text(settled, "confirmed")
-    parts = [_text(settled, "kind"), _text(settled, "ref"), f"(confirmed {confirmed})" if confirmed else ""]
-    return " ".join(part for part in parts if part)
-
-
-def _recommended(item: dict[str, object]) -> str:
-    """Return the answer an open question recommends: its assumed one, or the challenge's."""
-    if _text(item, "recommendation") == "challenge" and _text(item, "challenge_answer"):
-        return _text(item, "challenge_answer")
-    return _text(item, "assumed")
-
-
-def _open_question(item: dict[str, object]) -> str:
-    """Render one open question with the slices it blocks and its recommended answer."""
-    blocks = _joined(item, "blocks")
-    blocked = f" (blocks {blocks})" if blocks else ""
-    return f"- **{_text(item, 'id')}**{blocked}: {_text(item, 'summary')} **Recommended:** {_recommended(item)}"
-
-
-def render_questions(open_questions: list[dict[str, object]]) -> str:
-    """Return the open questions block listed under `### Decisions`, or "" when there are none."""
-    if not open_questions:
         return ""
-    return "\n".join([QUESTIONS_INTRO, *(_open_question(item) for item in open_questions)])
+    _, _, rest = body[span[0] : span[1]].partition("\n")
+    return rest.strip("\n")
 
 
-def body_questions(text: str) -> str:
-    """Return the open questions block under the comment text's `## Feature contract` as `render_questions` wrote it, or ""."""
-    span = find_section(text, CONTRACT_HEADING)
-    section = lf(text[span[0] : span[1]]) if span else ""
-    block = _find_block(section, lambda line: line == QUESTIONS_INTRO, lambda line: not line.strip())
-    return section[block[0] : block[1]].rstrip("\n") if block else ""
+def _items(body: str, heading: str) -> dict[str, str]:
+    """Return the `- **<id>** <text>` items under body's section titled heading, by id."""
+    found: dict[str, str] = {}
+    for line in _section_body(body, heading).split("\n"):
+        match = ITEM_RE.fullmatch(line.rstrip())
+        if match is not None:
+            found.setdefault(match["id"], match["text"].strip())
+    return found
 
 
-def _decisions(contract: dict[str, object]) -> str:
-    """Render `### Decisions` as its table, followed by the open questions block, leaving out whichever is empty."""
-    rows = [
-        [_text(item, "id"), _text(item, "decision"), _text(item, "why"), _settled_by(item)]
-        for item in _items(contract, "decisions")
-    ]
-    parts = [_table(["ID", "Decision", "Why", "Settled by"], rows)] if rows else []
-    questions = _text(contract, OPEN_QUESTIONS)
-    if questions:
-        parts.append(questions)
-    return "\n\n".join(parts)
+def _outcome_line(entry: str, outcomes: dict[str, str], issue: int) -> tuple[str, str]:
+    """Return the outcome id a slice's outcomes entry names and its line in the slice's issue."""
+    match = OUTCOME_ENTRY.fullmatch(entry.strip())
+    ident = match["id"] if match else entry.strip()
+    part = match["part"] if match else None
+    text = outcomes.get(ident, f"Outcome {ident} of #{issue}.")
+    return ident, f"- **{ident}** {text}" + (f" This slice delivers only its {part} part." if part else "")
 
 
-def _inventory(contract: dict[str, object]) -> str:
-    """Render `### Code inventory`: one line per kind of site, then every site in a collapsed block."""
-    raw = contract.get("inventory")
-    inventory = _object(raw, "the contract inventory") if raw is not None else {}
-    items = _items(inventory, "items")
-    lines = [
-        f"- {_text(item, 'kind')}: {_text(item, 'count')}, {_text(item, 'slice')} (`{_text(item, 'command')}`)"
-        for item in items
-    ]
-    sites = [f"- `{site}`" for item in items for site in _list(item.get("sites"))]
-    if sites:
-        lines += ["", "<details><summary>Sites</summary>", "", *sites, "", "</details>"]
-    sha = _text(inventory, "sha")
-    return (f"At `{sha}`.\n" if sha else "") + _bullets(lines)
+def plan_decisions(plan: object) -> dict[str, str]:
+    """Return plan.json's `decisions` as their one-sentence text, by id."""
+    found: dict[str, str] = {}
+    for raw in _list(_object(plan, "plan.json").get("decisions")):
+        item = _object(raw, "each plan.json decision")
+        ident, text = str(item.get("id") or ""), " ".join(str(item.get("decision") or "").split())
+        if ident and text:
+            found.setdefault(ident, text)
+    return found
 
 
-def _ownership(contract: dict[str, object]) -> str:
-    """Render `### Shared-surface ownership` as its table."""
-    rows = [
-        [_text(item, "surface"), _text(item, "aspect"), _text(item, "owner"), _joined(item, "extended_by")]
-        for item in _items(contract, "ownership")
-    ]
-    return _table(["Surface", "Aspect", "Owner", "Extended by"], rows)
+def slice_issue_body(issue: int, count: int, row: Slice, description: str, decisions: dict[str, str]) -> str:
+    """Return the description of row's own issue, in the short issue format, with no hard line wraps.
 
-
-def _lint_gates(contract: dict[str, object]) -> str:
-    """Render `### Lint gates` as its table."""
-    rows = [
-        [
-            f"`{_text(item, 'check')}`" + (" (extended)" if item.get("extends") is True else " (new)"),
-            _text(item, "enforces"),
-            _text(item, "slice"),
-            f"`{_text(item, 'entry')}`" if _text(item, "entry") else "",
-        ]
-        for item in _items(contract, "lint_gates")
-    ]
-    return _table(["Check", "Enforces", "Lands with", "Cites"], rows)
-
-
-def _checkpoint(item: dict[str, object]) -> str:
-    """Render one checkpoint bullet: after the pilot, after shared-surface slices, or the baseline before a slice."""
-    kind = _text(item, "kind")
-    after = _joined(item, "after")
-    if kind == "pilot":
-        return f"- After the pilot ({after})."
-    if kind == "baseline":
-        return f"- Baseline: before {_text(item, 'before')}, across every landed slice and any open slice PR."
-    return f"- After {after}: {kind}."
-
-
-def _checkpoints(contract: dict[str, object]) -> str:
-    """Render `### Checkpoints`."""
-    return _bullets([_checkpoint(item) for item in _items(contract, "checkpoints")])
-
-
-OPEN_QUESTIONS = "open_questions"
-# Each section in template order, the contract keys it renders, and its renderer.
-CONTRACT_SECTIONS: tuple[tuple[str, tuple[str, ...], Callable[[dict[str, object]], str]], ...] = (
-    ("Problem", ("problem",), lambda contract: _text(contract, "problem")),
-    ("Existing issues", ("existing_issues",), _existing_issues),
-    ("Prerequisites", ("prerequisites",), _prerequisites),
-    ("Non-goals", ("non_goals",), _non_goals),
-    ("Target contract", ("target",), _target),
-    ("Conventions", ("conventions", "exemplars"), _conventions),
-    ("Overrides", ("overrides",), _overrides),
-    ("Decisions", ("decisions", OPEN_QUESTIONS), _decisions),
-    ("Code inventory", ("inventory",), _inventory),
-    ("Shared-surface ownership", ("ownership",), _ownership),
-    ("Lint gates", ("lint_gates",), _lint_gates),
-    ("Checkpoints", ("checkpoints",), _checkpoints),
-)
-
-
-def render_contract(contract: dict[str, object], questions: str) -> str:
-    """Return the `## Feature contract` section rendered from plan.json's contract and an open questions block.
-
-    A section whose keys are all missing, null or empty is left out, heading
-    and all, so a short contract renders only the sections it has.
-
-    Args:
-        contract: plan.json's `contract` object.
-        questions: The open questions block listed under Decisions: `render_questions` of the epic
-            plan's `open_questions`, or the block already in the comment, or "".
-
-    Returns:
-        The section text, ending with a newline.
-
-    Raises:
-        WorkplanError: When a contract field puts a `## ` heading outside a code fence, which would end the
-            section early, so the comment could never be found to render as this contract again.
+    Why is the issue's; Outcomes are the issue's outcomes the slice delivers, with their ids and text;
+    Decisions are the issue's, then those of decisions (plan.json's) it does not have; Done when names
+    the outcomes.
     """
-    fields: dict[str, object] = {**contract, OPEN_QUESTIONS: questions}
-    grounded_at = _text(contract, "grounded_at")
-    parts = [CONTRACT_HEADING, *([f"Grounded at `main@{grounded_at}`."] if grounded_at else [])]
-    for title, keys, render in CONTRACT_SECTIONS:
-        if any(fields.get(key) for key in keys):
-            parts += ["", f"### {title}", render(fields)]
-    text = "\n".join(parts) + "\n"
-    if find_section(text, CONTRACT_HEADING) != (0, len(text)):
-        raise WorkplanError("the contract renders a `## ` heading outside a code fence, which would end its section")
-    return text
+    body = lf(description)
+    why = " ".join(_section_body(body, "## Why").split()) or f"{row.title}."
+    outcomes = _items(body, "## Outcomes")
+    lines = [_outcome_line(entry, outcomes, issue) for entry in row.outcomes]
+    settled = _items(body, "## Decisions")
+    for ident, text in decisions.items():
+        settled.setdefault(ident, text)
+    parts = [
+        f"Slice {row.id} of #{issue} ({count} slices): {row.title}. The work plan comment on #{issue} tracks it.",
+        "",
+        "## Why",
+        why,
+        "",
+        "## Outcomes",
+        *([line for _, line in lines] or [f"- {row.title}."]),
+    ]
+    if settled:
+        parts += ["", "## Decisions", *(f"- **{ident}** {text}" for ident, text in settled.items())]
+    ids = list(dict.fromkeys(ident for ident, _ in lines))
+    done = f"{', '.join(ids)} hold." if ids else f"{row.title}."
+    parts += ["", "## Done when", done]
+    return "\n".join(parts) + "\n"
+
+
+def split_out_body(issue: int, plan: WorkPlan, row: Slice) -> str:
+    """Return the description `split-out` gives row's own issue: the slice it tracks and the outcomes it delivers."""
+    outcomes = ", ".join(row.outcomes) or "none listed"
+    return (
+        f"Slice {row.id} of #{issue} ({len(plan.slices)} slices), split out to its own issue.\n\n"
+        f"Delivers {outcomes} of #{issue}. The work plan comment on #{issue} tracks it.\n"
+    )
 
 
 # --- slice selection ----------------------------------------------------------
@@ -927,6 +745,11 @@ def issue_closed(issue: int) -> bool:
     return view_issue(issue, "state")["state"] == "CLOSED"
 
 
+def issue_labels(issue: int) -> set[str]:
+    """Return the names of issue's labels."""
+    return {str(_object(raw, "a label").get("name")) for raw in _list(view_issue(issue, "labels").get("labels"))}
+
+
 def pr_state(pr: int) -> str:
     """Return the pull request's state: OPEN, CLOSED or MERGED."""
     return str(_object(json.loads(run("gh", "pr", "view", str(pr), "--json", "state")), "gh pr view")["state"])
@@ -972,6 +795,8 @@ def _comment_id(url: str) -> int:
 def read_workplan(issue: int) -> WorkplanComment:
     """Return issue's work plan comment, or one with no id holding only the marker when the issue has none.
 
+    Every other comment on the issue, such as one an earlier version posted, is ignored.
+
     Raises:
         WorkplanError: When the issue has more than one work plan comment.
     """
@@ -1012,21 +837,12 @@ def update_workplan(issue: int, change: Callable[[str], str], refusal: str) -> s
         if len(new) > COMMENT_LIMIT:
             raise WorkplanError(
                 f"the work plan comment would be {len(new):,} characters, over GitHub's {COMMENT_LIMIT:,}; "
-                'shorten its "as landed" reports by hand and run the command again'
+                "shorten what a person added to it and run the command again"
             )
         if read_workplan(issue) == comment:
             write_workplan(issue, comment.id, new)
             return new
     raise WorkplanError(refusal)
-
-
-def child_body(issue: int, plan: WorkPlan, row: Slice) -> str:
-    """Return the description of row's own issue: the slice it tracks and the outcomes it delivers."""
-    outcomes = ", ".join(row.outcomes) or "none listed"
-    return (
-        f"Slice {row.id} of #{issue} ({len(plan.slices)} slices), split out to its own issue.\n\n"
-        f"Delivers {outcomes} of #{issue}. The work plan comment on #{issue} tracks it.\n"
-    )
 
 
 def create_child(row: Slice, body: str) -> int:
@@ -1056,14 +872,18 @@ def check_hand_off(row: Slice) -> None:
 
 
 def _with_child(text: str, slice_id: str, child: int, *, handed_off: bool) -> str:
-    """Return the comment text with child recorded as slice_id's own issue, and the slice handed off when asked."""
-    plan, landed = split_workplan(text)
+    """Return the comment text with child recorded as slice_id's own issue, and the slice handed off when asked.
+
+    A new child has had no ready check, so the slice's recorded one is dropped.
+    """
+    plan = split_workplan(text)
     row = find_slice(plan, slice_id)
-    row.child = child
+    if row.child != child:
+        row.child, row.ready_body_sha = child, None
     if handed_off:
         check_hand_off(row)
         row.status = HANDED_OFF
-    return with_workplan(text, plan, landed)
+    return with_workplan(text, plan)
 
 
 def record_hint(slice_id: str, child: int, handed_off: bool) -> str:
@@ -1111,6 +931,27 @@ def _after_creating(child: int, step: str, hint: str, action: Callable[[], objec
         command: list[str] = error.cmd
         stderr = str(error.stderr or "").strip()
         raise WorkplanError(f"{step} #{child} failed ({' '.join(command)}: {stderr}); {hint}") from error
+
+
+def ensure_child(issue: int, row: Slice, body: Callable[[], str], *, handed_off: bool, command: str) -> int:
+    """Return row's own issue, creating it with body() when it has none, recorded on its row and linked to issue.
+
+    The created issue is recorded on the slice's row before it is linked, so a
+    run that fails after creating it resumes by linking that issue, never by
+    creating another. It carries no label. With handed_off, the slice is also
+    marked `handed_off`. command names the subcommand to run again.
+    """
+    child = row.child
+    if child is None:
+        created = create_child(row, body())
+        hint = record_hint(row.id, created, handed_off)
+        _after_creating(created, "recording", hint, lambda: record_child(issue, row.id, created, handed_off=handed_off))
+        child = created
+    elif handed_off and row.status != HANDED_OFF:
+        hand_off(issue, row.id, child)
+    linked = child
+    _after_creating(linked, "linking", f"run {command} again to link it", lambda: link_child(issue, linked))
+    return linked
 
 
 def apply_sweep_entry(entry: dict[str, object], base: Path) -> None:
@@ -1173,11 +1014,15 @@ def _load_json(path: str) -> object:
         raise WorkplanError(f"cannot read {path}: {error}") from error
 
 
-def _rendered(text: str, plan: WorkPlan, contract: dict[str, object] | None, questions: str) -> str:
-    """Return the comment text with plan, its slices merged with the rows already there, and contract when given."""
-    rows, landed = current_rows(text, plan.slices)
-    new = with_workplan(text, replace(plan, slices=rows), landed)
-    return new if contract is None else with_contract(new, contract, questions)
+def _rendered(text: str, plan: WorkPlan, ready_body_sha: str | None) -> str:
+    """Return the comment text with plan, its slices merged with the rows already there.
+
+    Given ready_body_sha, each slice worked on the issue itself, with no issue of its own, records it.
+    """
+    rows = current_rows(text, plan.slices)
+    if ready_body_sha is not None:
+        rows = [replace(row, ready_body_sha=ready_body_sha) if row.child is None else row for row in rows]
+    return with_workplan(text, replace(plan, slices=rows))
 
 
 def phased_slices(data: object, slices: list[Slice], session: str, body_sha: str) -> list[Slice]:
@@ -1194,42 +1039,42 @@ def phased_slices(data: object, slices: list[Slice], session: str, body_sha: str
     return [replace(slices[0], phased_session=session, phased_body_sha=body_sha)]
 
 
-def cmd_render(issue: int, plan_path: str, session: str, revision: int, *, phased_body_sha: str | None) -> None:
-    """Write the feature contract and work plan from plan.json into issue's work plan comment, creating it when absent.
+def cmd_render(issue: int, args: argparse.Namespace) -> None:
+    """Write the work plan from plan.json into issue's work plan comment, creating it when absent.
 
-    Given phased_body_sha, the plan's one slice is recorded as phased in session (see `phased_slices`).
+    Given `--phased-body-sha`, the plan's one slice is recorded as phased in this session (see `phased_slices`).
+    `--body-sha` records the description the plan was written against, and `--ready-body-sha` the one the
+    ready check that labelled the issue read.
     """
-    data = _load_json(plan_path)
-    contract, slices = parse_plan(data)
-    if phased_body_sha is not None:
-        slices = phased_slices(data, slices, session, phased_body_sha)
-    raw_questions = _list(_object(data, "plan.json").get("open_questions"))
-    questions = render_questions([_object(item, "each open question") for item in raw_questions])
-    plan = WorkPlan(session, revision, slices)
+    data = _load_json(args.plan)
+    _, slices = parse_plan(data)
+    if args.phased_body_sha is not None:
+        slices = phased_slices(data, slices, args.session, args.phased_body_sha)
+    plan = WorkPlan(args.session, args.revision, slices, args.body_sha)
     refuse_v1_workplan(issue)
     refusal = f"#{issue}'s work plan comment kept changing while rendering it; run render again"
-    update_workplan(issue, lambda text: _rendered(text, plan, contract, questions), refusal)
+    update_workplan(issue, lambda text: _rendered(text, plan, args.ready_body_sha), refusal)
 
 
 def _refreshed(text: str) -> str:
     """Return the comment text with every active slice whose pull request merged marked merged."""
-    plan, landed = split_workplan(text)
-    return with_workplan(text, refresh_merged(plan, pr_state), landed)
+    return with_workplan(text, refresh_merged(split_workplan(text), pr_state))
 
 
 def cmd_next(issue: int) -> dict[str, str]:
     """Pick the next slice, after marking the merged ones, and return the step outputs; no issue is created."""
     refuse_v1_workplan(issue)
     refusal = f"#{issue}'s work plan comment kept changing while marking merged slices; run next again"
-    plan, _ = split_workplan(update_workplan(issue, _refreshed, refusal))
+    plan = split_workplan(update_workplan(issue, _refreshed, refusal))
     row = pick(plan, issue_closed)
+    landed = [f"{done.id}={done.session}" for done in plan.slices if done.status in LANDED_STATUSES and done.session]
     return {
         "slice": row.id,
-        "issue": str(issue if row.child is None else row.child),
         "plan_session": plan.plan_session,
         "plan_revision": "" if plan.plan_revision is None else str(plan.plan_revision),
+        "body_sha": plan.body_sha or "",
         "phased_session": row.phased_session or "",
-        **closing_outputs(issue, plan, row, issue_closed),
+        "landed": " ".join(landed),
     }
 
 
@@ -1259,9 +1104,32 @@ def cmd_next_or_hold(issue: int, hold: Path | None) -> dict[str, str]:
     return outputs
 
 
+def cmd_start(issue: int, slice_id: str, plan_path: str) -> dict[str, str]:
+    """Return the issue slice_id is worked on and its closing lines, giving it its own issue first on a sliced plan.
+
+    On a plan of two or more slices, a slice with no issue of its own gets one, a sub-issue of issue in the
+    short issue format (see `slice_issue_body`), built from issue's description and plan.json's decisions.
+    A slice that has its own issue keeps it, linked as a sub-issue of issue. A one-slice plan's slice is
+    worked on issue itself.
+    """
+    plan = split_workplan(read_workplan(issue).text)
+    row = find_slice(plan, slice_id)
+    if row.child is not None or len(plan.slices) >= 2:
+        decisions = plan_decisions(_load_json(plan_path))
+
+        def body() -> str:
+            return slice_issue_body(issue, len(plan.slices), row, read_body(issue), decisions)
+
+        ensure_child(issue, row, body, handed_off=False, command="start")
+        plan = split_workplan(read_workplan(issue).text)
+        row = find_slice(plan, slice_id)
+    worked_on = issue if row.child is None else row.child
+    return {"issue": str(worked_on), **closing_outputs(issue, plan, row, issue_closed)}
+
+
 def _claimed(text: str, slice_id: str, session: str) -> str:
     """Return the comment text with the slice in_progress for session, refusing a slice that is not pending."""
-    plan, landed = split_workplan(text)
+    plan = split_workplan(text)
     row = find_slice(plan, slice_id)
     if row.status == "in_progress" and row.session == session:
         return text
@@ -1271,7 +1139,7 @@ def _claimed(text: str, slice_id: str, session: str) -> str:
     if problem is not None:
         raise WorkplanError(problem)
     row.status, row.session = "in_progress", session
-    return with_workplan(text, plan, landed)
+    return with_workplan(text, plan)
 
 
 def cmd_claim(issue: int, slice_id: str, session: str) -> None:
@@ -1280,49 +1148,12 @@ def cmd_claim(issue: int, slice_id: str, session: str) -> None:
     update_workplan(issue, lambda text: _claimed(text, slice_id, session), refusal)
 
 
-def settle_questions(questions: str, contract: dict[str, object]) -> str:
-    """Return the open questions block without the questions contract's decisions now settle.
+def amend(plan: WorkPlan, args: argparse.Namespace) -> WorkPlan:
+    """Return plan following `--plan`, repointed at this session when the slice amended it.
 
-    A slice's report settles an epic open question by adding a `decisions`
-    entry whose `id` is the question's id (such as `OQ-2`). The block is ""
-    when no question is left.
-    """
-    decided = {_text(item, "id") for item in _items(contract, "decisions")}
-    lines = questions.split("\n")
-    kept = [line for line in lines[1:] if not any(line.startswith(f"- **{qid}**") for qid in decided)]
-    return "\n".join([lines[0], *kept]) if kept else ""
-
-
-def amend_contract(issue: int, text: str, base: dict[str, object] | None, contract: dict[str, object]) -> str:
-    """Return the comment text with its `## Feature contract` rendered from contract, checked three ways against base.
-
-    base is the contract this run started from. When the comment still renders
-    as base, it takes contract, dropping the open questions contract settles;
-    when it already renders as contract, it is returned unchanged.
-
-    Raises:
-        WorkplanError: When the comment renders as neither, because someone edited it during the run.
-    """
-    questions = body_questions(text)
-    amended = with_contract(text, contract, settle_questions(questions, contract))
-    if lf(amended) == lf(text):
-        return text
-    if base is not None and lf(with_contract(text, base, questions)) == lf(text):
-        return amended
-    raise WorkplanError(
-        f"#{issue}'s Feature contract was edited during this run: it is neither the contract this run started "
-        "from nor the amended one; reconcile it by hand and run land again"
-    )
-
-
-def amend(issue: int, text: str, plan: WorkPlan, args: argparse.Namespace) -> tuple[str, WorkPlan]:
-    """Return the comment text and plan following `--plan`, repointed at this session when the report amended it.
-
-    The plan is amended when its slice rows differ from the work plan's, or its
-    contract differs from `--base-plan`'s, the epic plan this run started from
-    (see `amend_contract`). The open questions the comment lists under
-    Decisions are kept, since the code session's plan.json does not carry
-    them, except those the amended contract settles.
+    The plan is amended when its slice rows differ from the work plan's, or it has a contract that differs
+    from `--base-plan`'s, the epic plan this run started from; the next slice is then planned from this
+    session's plan artifacts.
 
     Raises:
         WorkplanError: When the plan redefines a slice that has already started (see `check_started_unchanged`).
@@ -1332,41 +1163,35 @@ def amend(issue: int, text: str, plan: WorkPlan, args: argparse.Namespace) -> tu
     base = None if raw_base is None else _object(raw_base, "the epic plan.json contract")
     check_started_unchanged(plan_slices, plan.slices)
     rows = merge_rows(plan_slices, plan.slices)
-    amended = text if contract is None else amend_contract(issue, text, base, contract)
-    if rows == plan.slices and amended == text:
-        return text, plan
-    return amended, WorkPlan(args.session, None, rows)
+    if rows == plan.slices and contract in (None, base):
+        return plan
+    return replace(plan, plan_session=args.session, plan_revision=None, slices=rows)
 
 
-def _landed(issue: int, text: str, args: argparse.Namespace, report: str) -> str:
-    """Return the comment text with the slice in_review with its PR, its report added and the plan amended."""
+def _landed(text: str, args: argparse.Namespace) -> str:
+    """Return the comment text with the slice in_review with its PR and the plan amended."""
     slice_id: str = args.slice
     session: str = args.session
     pr: int = args.pr
-    plan, landed = split_workplan(text)
+    plan = split_workplan(text)
     row = find_slice(plan, slice_id)
     landable = row.status == "in_progress" or (row.status == "in_review" and row.pr == pr)
     if not landable or row.session != session:
         raise WorkplanError(f"{slice_id} is {row.status} for session {row.session}, not in_progress for {session}")
-    amended, plan = amend(issue, text, plan, args)
+    plan = amend(plan, args)
     row = find_slice(plan, slice_id)
     row.status, row.pr = "in_review", pr
-    return with_workplan(amended, plan, add_landed(landed, slice_id, pr, report))
+    return with_workplan(text, plan)
 
 
 def cmd_land(issue: int, args: argparse.Namespace) -> int:
-    """Mark the slice in_review with its PR, record its report, follow an amended plan or contract and apply the sweep.
+    """Mark the slice in_review with its PR, follow an amended plan or contract and apply the sweep.
 
     Writes `remaining` and `closing_lines` to `$DOVO_OUTPUT`, computed from the plan as landed. The sweep
     never writes issue or the slice's own issue.
     """
-    try:
-        report = Path(args.report).read_text(encoding="utf-8")
-    except OSError as error:
-        raise WorkplanError(f"cannot read {args.report}: {error}") from error
     refusal = f"#{issue}'s work plan comment kept changing while landing {args.slice}; run land again"
-    text = update_workplan(issue, lambda current: _landed(issue, current, args, report), refusal)
-    plan, _ = split_workplan(text)
+    plan = split_workplan(update_workplan(issue, lambda current: _landed(current, args), refusal))
     row = find_slice(plan, args.slice)
     write_outputs(closing_outputs(issue, plan, row, issue_closed))
     if args.sweep is None:
@@ -1380,27 +1205,17 @@ def cmd_land(issue: int, args: argparse.Namespace) -> int:
 def cmd_split_out(issue: int, slice_id: str, *, handed_off: bool) -> dict[str, str]:
     """Give one slice its own issue, linked as a sub-issue of issue, and return it as the `child` output.
 
-    A slice that already has its own issue keeps it. The created issue is
-    recorded on the slice's row before it is linked, so a run that fails after
-    creating it resumes by linking that issue, never by creating another. It
-    carries no label. With handed_off, the slice is also
-    marked `handed_off`, which only a pending slice can be.
+    A slice that already has its own issue keeps it (see `ensure_child`). With handed_off, the slice is
+    also marked `handed_off`, which only a pending slice can be.
     """
-    plan, _ = split_workplan(read_workplan(issue).text)
+    plan = split_workplan(read_workplan(issue).text)
     row = find_slice(plan, slice_id)
     if handed_off:
         check_hand_off(row)
-    child = row.child
-    if child is None:
-        created = create_child(row, child_body(issue, plan, row))
-        hint = record_hint(row.id, created, handed_off)
-        _after_creating(created, "recording", hint, lambda: record_child(issue, row.id, created, handed_off=handed_off))
-        child = created
-    elif handed_off and row.status != HANDED_OFF:
-        hand_off(issue, row.id, child)
-    linked = child
-    _after_creating(linked, "linking", "run split-out again to link it", lambda: link_child(issue, linked))
-    return {"child": str(linked)}
+    child = ensure_child(
+        issue, row, lambda: split_out_body(issue, plan, row), handed_off=handed_off, command="split-out"
+    )
+    return {"child": str(child)}
 
 
 def phased_plan(plan: WorkPlan, row: Slice, body_sha: str) -> tuple[str, str]:
@@ -1428,10 +1243,51 @@ def phased_plan(plan: WorkPlan, row: Slice, body_sha: str) -> tuple[str, str]:
 
 def cmd_phased(issue: int, slice_id: str, body_sha: str) -> dict[str, str]:
     """Return `phased_session`, the session whose phased plan the slice is coded from, or "" (see `phased_plan`)."""
-    plan, _ = split_workplan(read_workplan(issue).text)
+    plan = split_workplan(read_workplan(issue).text)
     session, reason = phased_plan(plan, find_slice(plan, slice_id), body_sha)
     sys.stdout.write(f"{reason}\n")
     return {"phased_session": session}
+
+
+def _readied(text: str, slice_id: str, body_sha: str) -> str:
+    """Return the comment text with body_sha recorded as the description the slice's issue was readied for."""
+    plan = split_workplan(text)
+    find_slice(plan, slice_id).ready_body_sha = body_sha
+    return with_workplan(text, plan)
+
+
+def cmd_ready(issue: int, slice_id: str, body_sha: str) -> None:
+    """Record body_sha as the description of the slice's issue the ready check that labelled it read."""
+    refusal = f"#{issue}'s work plan comment kept changing while recording {slice_id}'s ready check; run ready again"
+    update_workplan(issue, lambda text: _readied(text, slice_id, body_sha), refusal)
+
+
+def cmd_ready_state(issue: int, slice_id: str, body_sha: str) -> dict[str, str]:
+    """Return `ready=true` when the slice's issue is labelled dovo:ready for its description now, body_sha.
+
+    The reason is written to stdout.
+    """
+    row = find_slice(split_workplan(read_workplan(issue).text), slice_id)
+    target = issue if row.child is None else row.child
+    if READY_LABEL not in issue_labels(target):
+        reason, ready = f"Issue {target} is not labelled {READY_LABEL}; checking it.", False
+    elif row.ready_body_sha is None:
+        reason, ready = f"No ready check of issue {target} is recorded in the work plan; checking it.", False
+    elif row.ready_body_sha != body_sha:
+        reason, ready = f"Issue {target}'s description changed since the check that labelled it; checking it.", False
+    else:
+        reason, ready = f"Issue {target} is labelled {READY_LABEL} for its description as it is; not checking it.", True
+    sys.stdout.write(f"{reason}\n")
+    return {"ready": "true" if ready else "false"}
+
+
+def cmd_show(issue: int) -> dict[str, str]:
+    """Return the work plan's `plan_session` and `body_sha`, both "" when the issue has no work plan comment."""
+    comment = read_workplan(issue)
+    if comment.id is None:
+        return {"plan_session": "", "body_sha": ""}
+    plan = split_workplan(comment.text)
+    return {"plan_session": plan.plan_session, "body_sha": plan.body_sha or ""}
 
 
 def closed_issue(line: str) -> int | None:
@@ -1519,35 +1375,51 @@ def write_outputs(outputs: dict[str, str]) -> None:
         handle.write(text)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Return the parser for the render, next, claim, land, split-out, phased and pr-links subcommands."""
-    parser = argparse.ArgumentParser(description="Keep an issue's feature contract and work plan comment current.")
-    commands = parser.add_subparsers(dest="command", required=True)
-    render = commands.add_parser("render", help="Write the contract and work plan from plan.json.")
-    nxt = commands.add_parser("next", help="Pick the next slice and write its outputs to $DOVO_OUTPUT.")
-    claim = commands.add_parser("claim", help="Mark a slice in_progress with this code session.")
-    land = commands.add_parser("land", help="Mark a slice in_review, record its report and apply the sweep.")
-    split = commands.add_parser("split-out", help="Give one slice its own issue, linked as a sub-issue.")
-    phased = commands.add_parser("phased", help="Write the session whose phased plan still holds for the slice.")
-    links = commands.add_parser("pr-links", help="Make a pull request's description end with the closing lines.")
-    links.add_argument("--pr", type=int, required=True, help="The slice's pull request number.")
-    links.add_argument("--closing-lines", required=True, help="The closing lines, one per line, as land writes them.")
-    for sub in (render, nxt, claim, land, split, phased):
-        sub.add_argument("--issue", type=int, required=True, help="The issue whose work plan holds the slices.")
+def _render_options(render: argparse.ArgumentParser) -> None:
+    """Add render's options to its parser."""
     render.add_argument("--plan", required=True, help="Path to plan.json.")
     render.add_argument("--revision", type=int, required=True, help="The plan artifact's revision.")
+    render.add_argument("--body-sha", help="The body_sha of the issue's description the plan was written against.")
+    render.add_argument(
+        "--ready-body-sha",
+        help="The body_sha of the issue's description the ready check that labelled it dovo:ready read.",
+    )
     render.add_argument(
         "--phased-body-sha",
         help="Record the plan's one slice as phased and approved in this session, against this body_sha.",
     )
-    phased.add_argument("--body-sha", required=True, help="The body_sha of the slice's issue's description now.")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Return the parser for the workplan.py subcommands."""
+    parser = argparse.ArgumentParser(description="Keep an issue's work plan comment current.")
+    commands = parser.add_subparsers(dest="command", required=True)
+    render = commands.add_parser("render", help="Write the work plan from plan.json.")
+    nxt = commands.add_parser("next", help="Pick the next slice and write its outputs to $DOVO_OUTPUT.")
+    start = commands.add_parser("start", help="Write the issue the slice is worked on, giving it its own first.")
+    claim = commands.add_parser("claim", help="Mark a slice in_progress with this code session.")
+    land = commands.add_parser("land", help="Mark a slice in_review and apply the sweep.")
+    split = commands.add_parser("split-out", help="Give one slice its own issue, linked as a sub-issue.")
+    phased = commands.add_parser("phased", help="Write the session whose phased plan still holds for the slice.")
+    ready = commands.add_parser("ready", help="Record the description the slice's issue was readied for.")
+    state = commands.add_parser("ready-state", help="Write ready=true when the slice's issue is ready as it is.")
+    show = commands.add_parser("show", help="Write the work plan's plan session and the description it planned.")
+    links = commands.add_parser("pr-links", help="Make a pull request's description end with the closing lines.")
+    links.add_argument("--pr", type=int, required=True, help="The slice's pull request number.")
+    links.add_argument("--closing-lines", required=True, help="The closing lines, one per line, as land writes them.")
+    for sub in (render, nxt, start, claim, land, split, phased, ready, state, show):
+        sub.add_argument("--issue", type=int, required=True, help="The issue whose work plan holds the slices.")
+    _render_options(render)
+    for sub in (phased, ready, state):
+        sub.add_argument("--body-sha", required=True, help="The body_sha of the slice's issue's description now.")
     nxt.add_argument(
         "--hold",
         type=Path,
         help="Write the slices waiting on a person here and exit 0 without outputs, instead of refusing.",
     )
-    for sub in (claim, land, split, phased):
+    for sub in (start, claim, land, split, phased, ready, state):
         sub.add_argument("--slice", required=True, help="The slice id, such as S2.")
+    start.add_argument("--plan", required=True, help="Path to the plan.json the work plan's plan session holds.")
     split.add_argument(
         "--handed-off",
         action="store_true",
@@ -1556,7 +1428,6 @@ def build_parser() -> argparse.ArgumentParser:
     for sub in (render, claim, land):
         sub.add_argument("--session", required=True, help="This dovo session's id.")
     land.add_argument("--pr", type=int, required=True, help="The slice's pull request number.")
-    land.add_argument("--report", required=True, help="Path to slice-report.md.")
     land.add_argument("--plan", required=True, help="Path to plan.json, amended or not.")
     land.add_argument(
         "--base-plan", required=True, help="Path to the epic plan.json this run started from (.agentic/epic-plan.json)."
@@ -1565,26 +1436,41 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _dispatch_outputs(args: argparse.Namespace) -> dict[str, str] | None:
+    """Run a subcommand that only writes outputs and return them, or None for any other subcommand."""
+    issue: int = args.issue
+    if args.command == "phased":
+        return cmd_phased(issue, args.slice, args.body_sha)
+    if args.command == "ready-state":
+        return cmd_ready_state(issue, args.slice, args.body_sha)
+    if args.command == "show":
+        return cmd_show(issue)
+    if args.command == "start":
+        return cmd_start(issue, args.slice, args.plan)
+    if args.command == "split-out":
+        return cmd_split_out(issue, args.slice, handed_off=args.handed_off)
+    if args.command == "next":
+        return cmd_next_or_hold(issue, args.hold)
+    return None
+
+
 def dispatch(args: argparse.Namespace) -> int:
     """Run the parsed subcommand and return its exit code."""
     if args.command == "pr-links":
         cmd_pr_links(args.pr, args.closing_lines)
         return 0
-    issue: int = args.issue
-    if args.command == "phased":
-        write_outputs(cmd_phased(issue, args.slice, args.body_sha))
-    elif args.command == "render":
-        cmd_render(issue, args.plan, args.session, args.revision, phased_body_sha=args.phased_body_sha)
-    elif args.command == "next":
-        outputs = cmd_next_or_hold(issue, args.hold)
+    outputs = _dispatch_outputs(args)
+    if outputs is not None:
         if outputs:
             write_outputs(outputs)
+    elif args.command == "render":
+        cmd_render(args.issue, args)
     elif args.command == "claim":
-        cmd_claim(issue, args.slice, args.session)
-    elif args.command == "split-out":
-        write_outputs(cmd_split_out(issue, args.slice, handed_off=args.handed_off))
+        cmd_claim(args.issue, args.slice, args.session)
+    elif args.command == "ready":
+        cmd_ready(args.issue, args.slice, args.body_sha)
     else:
-        return cmd_land(issue, args)
+        return cmd_land(args.issue, args)
     return 0
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks the plans and phase files the issue-plan-v2 and issue-code-v2 blueprints' planning steps write, keeps their decisions on the issue, lists the issue's numbered items, and applies a legacy issue's approved rewrite.
+"""Checks the plans and phase files the issue-plan-v2 and issue-code-v2 blueprints' planning steps write, reads back the decisions of the issue's latest approved plan, lists the issue's numbered items, and applies a legacy issue's approved rewrite.
 
 `check-slices` runs after issue-plan-v2 slices an issue. It refuses a plan
 with a slice whose `size` is not `s`, `m` or `l`, naming each, since the
@@ -52,24 +52,15 @@ binding or a copied list shows the text expected, JSON-encoded. A breakdown
 that passes prints nothing, exits 0 and has .agentic/phases/index.json written
 from it.
 
-`decisions-comment` runs once the plan is approved. It posts one comment
-listing the plan's decisions to the issue, headed by a
-`<!-- dovo:decisions ... -->` marker naming the slice, the session and
-`body_sha`, the sha256 of the issue's description (`body_sha` below), as
-prior-decisions.json recorded it before planning, so
-the comment names the description the plan was written against. The comment
-is dated with the latest decision's date. Then it hides, as outdated, each
-earlier dovo:decisions comment of another session that is not hidden and whose
-every decision this plan replaces. It never edits a comment, and a plan with
-no decisions posts nothing.
-
 `prior-decisions` runs before planning. It writes to prior-decisions.json the
-description's `body_sha` and the decisions in the issue's dovo:decisions
-comments that are not hidden and that no other decision replaces (the shape is
-`PriorDecision` in plan_formats.py): each is `given` when its comment's
-body_sha matches the description now, and `to_confirm` otherwise. A hidden
-comment's own decisions are left out, but the decisions it says it replaces
-stay replaced, so hiding a comment never brings back what it replaced.
+`body_sha` of the issue's description, the sha256 of it (`body_sha` below),
+and the decisions of the issue's latest approved plan (the shape is
+`PriorDecision` in plan_formats.py): those of each `--plan`, the plan.json
+files of the session the issue's work plan names, each id kept once. Each is
+`given` when `--planned-sha`, the `body_sha` of the description that plan was
+written against, matches the description now or is empty, and `to_confirm`
+otherwise. Without `--plan` it lists no decision. Nothing is read from the
+issue's comments.
 
 `requirements` runs in the ready check. It writes to requirements.json each
 numbered item of the issue's description with its exact text (the shape is
@@ -98,21 +89,16 @@ rewrites a legacy issue to the short format first. `rewrite-apply` runs once a
 person approves that rewrite. Given the `body_sha` the rewrite was drafted
 against with `--body-sha`, it refuses, naming both shas, when the issue's
 description is no longer that one, and it refuses a draft with no
-`## Outcomes` section. Otherwise it posts the old description to the issue as
-a collapsed comment and only then replaces the description with the draft, so
-a failed edit loses nothing.
+`## Outcomes` section. Otherwise it replaces the description with the draft,
+posting no comment: GitHub keeps the old description in the issue's edit
+history.
 
 `body-sha` prints the `body_sha` of an issue's description, so the ready
-check can record the description it checked. `ready-comment` runs once a person approves the ready
-check. Given that `body_sha` with `--body-sha`, it refuses, naming both shas,
-when the issue's description is no longer the one the check read; otherwise it
-posts the check's comment to the issue, headed by a
-`<!-- dovo:ready schema_version=1 body_sha=<sha> -->` marker naming it.
-`ready-state` prints `ready=true` when the issue is labelled `dovo:ready` and
-the latest of those comments that is not hidden, and whose author is the
-repository's owner, a member or a collaborator, names the description's
-`body_sha` now, and `ready=false` otherwise, with the reason on stderr, so a
-check is skipped only for the description it checked.
+check can record the description it checked. `unchanged` runs once a person
+approves the ready check, before the label is added: given that `body_sha`
+with `--body-sha`, it refuses, naming both shas, when the issue's description
+is no longer the one the check read. The work plan, not a comment, records
+which description the check read (`workplan.py ready`).
 
 `pass-through --record FILE` writes a fingerprint of .agentic/plan.md,
 plan.json and the phase files to FILE before a stretch of steps that is to pass
@@ -132,14 +118,11 @@ import json
 import re
 import subprocess
 import sys
-import tempfile
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
-from datetime import date
 from pathlib import Path
 
 from plan_formats import (
-    SESSION_ID,
     Decision,
     FormatError,
     OpenQuestion,
@@ -175,22 +158,6 @@ LEGACY_KINDS = {"FR": "functional", "NFR": "non_functional"}
 ERROR_CASES = "## Error cases to handle"
 ERROR_CASE = re.compile(r"(?P<id>\d+)\. (?P<text>.+)")
 FENCE_OPEN = re.compile(r" {0,3}(?P<fence>`{3,}|~{3,})")
-MARKER = "<!-- dovo:decisions schema_version=1 slice={slice} session={session} body_sha={body_sha} -->"
-MARKER_RE = re.compile(
-    r"<!-- dovo:decisions schema_version=1 slice=(?P<slice>\S+) session=(?P<session>\S+)"
-    r" body_sha=(?P<body_sha>[0-9a-f]{64}) -->"
-)
-BODY_SHA = re.compile(r"[0-9a-f]{64}")
-READY_LABEL = "dovo:ready"
-READY_MARKER = "<!-- dovo:ready schema_version=1 body_sha={body_sha} -->"
-READY_MARKER_RE = re.compile(r"<!-- dovo:ready schema_version=1 body_sha=(?P<body_sha>[0-9a-f]{64}) -->")
-TRUSTED = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
-REWRITTEN = (
-    "Original description, replaced on {day} with the short issue format (why, outcomes, decisions, binding values). "
-    "Kept here so nothing is lost."
-)
-BULLET_RE = re.compile(r"- \*\*(?P<id>D-\d+)\*\* (?P<text>.+)")
-REPLACES_RE = re.compile(r"Replaces (?P<id>D-\d+) \(session (?P<session>[^\s()]+)\)\.$")
 OUTCOME_ENTRY = re.compile(r"(?P<id>O-\d+)(?: \((?P<part>[^()]+)\))?")
 SIZES = ("s", "m", "l")
 SETTLED_LABELS = {
@@ -198,23 +165,10 @@ SETTLED_LABELS = {
     "challenge_accepted": "Challenge's answer, accepted",
     "planner": "Planner, approved with the plan",
 }
-MINIMIZE = "mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { clientMutationId } }"
 
 
 class PlanError(RuntimeError):
     """Raised when a subcommand refuses; the message is the one-line reason."""
-
-
-@dataclass(frozen=True)
-class PostedComment:
-    """One of the issue's dovo:decisions comments, with its decision bullets as (id, text) and whether it is hidden."""
-
-    node_id: str
-    slice: str
-    session: str
-    body_sha: str
-    bullets: tuple[tuple[str, str], ...]
-    hidden: bool
 
 
 def run(*args: str) -> str:
@@ -227,17 +181,6 @@ def run(*args: str) -> str:
         The command's stdout with surrounding whitespace removed.
     """
     return subprocess.run(args, check=True, capture_output=True, text=True).stdout.strip()
-
-
-def _with_file(text: str, command: Callable[[str], str]) -> str:
-    """Write text to a temporary file, run command with its path and return the command's output."""
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as handle:
-        handle.write(text)
-    path = Path(handle.name)
-    try:
-        return command(str(path))
-    finally:
-        path.unlink(missing_ok=True)
 
 
 def load_plan(path: Path) -> dict[str, object]:
@@ -795,7 +738,7 @@ def check_breakdown(plan_path: Path, plan_md: Path, requirements_path: Path, fol
     (folder / "index.json").write_text(index, encoding="utf-8")
 
 
-# --- the dovo:decisions comment ------------------------------------------------
+# --- prior decisions -------------------------------------------------------------
 
 
 def body_sha(body: str) -> str:
@@ -821,40 +764,14 @@ def _label(decision: Decision) -> str:
     return SETTLED_LABELS[decision.settled_by]
 
 
-def render_bullet(decision: Decision) -> str:
-    """Return decision's one-line bullet: its text, who settled it, what it rejected and what it replaces."""
-    parts = [f"- **{decision.id}** {_sentence(decision.decision)}. *{_label(decision)}.*"]
+def decision_text(decision: Decision) -> str:
+    """Return decision on one line after its id: its text, who settled it, what it rejected and what it replaces."""
+    parts = [f"{_sentence(decision.decision)}. *{_label(decision)}.*"]
     if decision.rejected:
         parts.append(f"Rejected: {'; '.join(_sentence(text) for text in decision.rejected)}.")
     if decision.replaces is not None:
         parts.append(f"Replaces {decision.replaces.id} (session {decision.replaces.session}).")
     return " ".join(parts)
-
-
-def render_comment(decisions: list[Decision], slice_id: str, session: str, sha: str) -> str:
-    """Return the dovo:decisions comment listing decisions, dated with the latest decision's date."""
-    day = max(decision.date for decision in decisions)
-    lines = [
-        MARKER.format(slice=slice_id, session=session, body_sha=sha),
-        f"**Planning decisions** ({day}, slice {slice_id}, session {session})",
-        "",
-        *(render_bullet(decision) for decision in decisions),
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def _posted(raw: object) -> PostedComment | None:
-    """Return raw as a dovo:decisions comment, hidden or not, or None when it is another comment."""
-    if not isinstance(raw, dict):
-        return None
-    body = str(raw.get("body") or "")
-    marker = MARKER_RE.match(body)
-    if marker is None:
-        return None
-    lines = (BULLET_RE.fullmatch(line.rstrip()) for line in body.splitlines())
-    bullets = tuple((match["id"], match["text"]) for match in lines if match is not None)
-    hidden = bool(raw.get("isMinimized"))
-    return PostedComment(str(raw.get("id")), marker["slice"], marker["session"], marker["body_sha"], bullets, hidden)
 
 
 def _view(issue: int, fields: str) -> dict[str, object]:
@@ -872,109 +789,43 @@ def _view(issue: int, fields: str) -> dict[str, object]:
     return view
 
 
-def view_issue(issue: int) -> tuple[str, list[PostedComment]]:
-    """Return issue's description and its dovo:decisions comments, hidden ones included.
-
-    Raises:
-        PlanError: gh printed something other than a JSON object.
-    """
-    view = _view(issue, "body,comments")
-    comments = view.get("comments")
-    found = (_posted(raw) for raw in (comments if isinstance(comments, list) else []))
-    return str(view.get("body") or ""), [comment for comment in found if comment is not None]
-
-
-def _replaced(text: str) -> tuple[str, str] | None:
-    """Return the (id, session) a posted bullet's text says it replaces, or None."""
-    match = REPLACES_RE.search(text)
-    return (match["id"], match["session"]) if match else None
-
-
-def _token(value: str, what: str) -> str:
-    """Return value when it is one marker token: non-empty, without whitespace or parentheses.
-
-    Raises:
-        PlanError: value is empty or would break the marker.
-    """
-    if not SESSION_ID.fullmatch(value):
-        raise PlanError(f"{what} {value!r} must be non-empty, without whitespace or parentheses.")
-    return value
-
-
-def _hide(comment: PostedComment) -> None:
-    """Minimize comment as outdated, reporting on stderr rather than refusing when gh fails."""
-    try:
-        run("gh", "api", "graphql", "-f", f"query={MINIMIZE}", "-f", f"id={comment.node_id}")
-    except subprocess.CalledProcessError as error:
-        stderr = str(error.stderr or "").strip()
-        sys.stderr.write(f"plan.py: could not hide comment {comment.node_id} of session {comment.session}: {stderr}\n")
-
-
-def recorded_body_sha(path: Path) -> str:
-    """Return the description's body_sha that prior-decisions recorded in the prior-decisions.json at path.
-
-    Raises:
-        PlanError: The file cannot be read, is not a JSON object or has no body_sha.
-    """
-    sha = load_plan(path).get("body_sha")
-    if not isinstance(sha, str) or not BODY_SHA.fullmatch(sha):
-        raise PlanError(f"{path} has no body_sha; run prior-decisions before planning.")
-    return sha
-
-
-def decisions_comment(path: Path, prior: Path, issue: int, slice_id: str, session: str) -> None:
-    """Post the plan's decisions to issue, then hide the earlier comments they wholly replace.
-
-    Raises:
-        PlanError: The plan or its decisions are malformed, slice_id or session is not one token, or prior
-            records no body_sha.
-    """
-    decisions = load_decisions(load_plan(path), path)
-    _token(slice_id, "Slice")
-    _token(session, "Session")
-    if not decisions:
-        return
-    sha = recorded_body_sha(prior)
-    _, posted = view_issue(issue)
-    comment = render_comment(decisions, slice_id, session, sha)
-    _with_file(comment, lambda file: run("gh", "issue", "comment", str(issue), "--body-file", file))
-    for earlier in outdated(posted, decisions, session):
-        _hide(earlier)
-
-
-def outdated(posted: list[PostedComment], decisions: list[Decision], session: str) -> list[PostedComment]:
-    """Return the comments, not hidden, of other sessions than session whose every decision one of decisions replaces."""
-    replaced = {(item.replaces.id, item.replaces.session) for item in decisions if item.replaces is not None}
-    return [
-        earlier
-        for earlier in posted
-        if not earlier.hidden
-        and earlier.session != session
-        and earlier.bullets
-        and all((ident, earlier.session) in replaced for ident, _ in earlier.bullets)
+def _plan_slice_id(plan: dict[str, object]) -> str:
+    """Return the id of the one slice a plan phases, or `all` for a plan that phases none or several."""
+    slices = plan.get("slices")
+    phased = [
+        str(raw.get("id"))
+        for raw in (slices if isinstance(slices, list) else [])
+        if isinstance(raw, dict) and raw.get("phases")
     ]
+    return phased[0] if len(phased) == 1 else "all"
 
 
-def prior_decisions(issue: int, out: Path) -> None:
-    """Write to out the description's body_sha and the decisions of issue's dovo:decisions comments that are not hidden and that no decision replaces.
+def prior_decisions(issue: int, out: Path, plans: list[Path], session: str, planned: str) -> None:
+    """Write to out the description's body_sha and the decisions of plans, the issue's latest approved plan.
 
-    The decisions a hidden comment says it replaces stay replaced.
+    plans are plan.json files the session the issue's work plan names published; a decision id two of them
+    list is kept once, from the first. Each decision is `given` when planned, the body_sha of the description
+    the plan was written against, is the description's now or is "" (not recorded), and `to_confirm` otherwise.
+
+    Raises:
+        PlanError: A plan cannot be read or its decisions are malformed, or gh printed no JSON object.
     """
-    body, posted = view_issue(issue)
-    sha = body_sha(body)
-    replaced = {pair for comment in posted for _, text in comment.bullets if (pair := _replaced(text)) is not None}
-    decisions = [
-        PriorDecision(ident, text, comment.slice, comment.session, "given" if comment.body_sha == sha else "to_confirm")
-        for comment in posted
-        if not comment.hidden
-        for ident, text in comment.bullets
-        if (ident, comment.session) not in replaced
-    ]
+    sha = body_sha(description(issue))
+    status = "given" if planned in ("", sha) else "to_confirm"
+    decisions: dict[str, PriorDecision] = {}
+    for path in plans:
+        plan = load_plan(path)
+        slice_id = _plan_slice_id(plan)
+        for decision in load_decisions(plan, path):
+            decisions.setdefault(
+                decision.id, PriorDecision(decision.id, decision_text(decision), slice_id, session, status)
+            )
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(prior_decisions_json(issue, sha, decisions), indent=2) + "\n", encoding="utf-8")
+    document = prior_decisions_json(issue, sha, list(decisions.values()))
+    out.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 
 
-# --- the dovo:ready comment ------------------------------------------------------
+# --- the issue's description -------------------------------------------------------
 
 
 def _read_text(path: Path) -> str:
@@ -998,59 +849,18 @@ def description(issue: int) -> str:
     return str(_view(issue, "body").get("body") or "")
 
 
-def ready_comment(issue: int, path: Path, checked: str) -> None:
-    """Post the ready check's comment at path to issue, headed by a marker naming checked, the description it read.
+def check_unchanged(issue: int, checked: str) -> None:
+    """Refuse when issue's description is no longer the one whose body_sha is checked.
 
     Raises:
-        PlanError: The comment file cannot be read or is empty, or issue's description is not the one checked names.
+        PlanError: issue's description has another body_sha.
     """
-    text = _read_text(path).strip()
-    if not text:
-        raise PlanError(f"{path} is empty; the ready check writes the comment.")
     sha = body_sha(description(issue))
     if sha != checked:
         raise PlanError(
             f"Issue {issue}'s description has body_sha {sha}, not {checked}, the one the ready check read; "
             "check it again."
         )
-    comment = f"{READY_MARKER.format(body_sha=sha)}\n{text}\n"
-    _with_file(comment, lambda file: run("gh", "issue", "comment", str(issue), "--body-file", file))
-
-
-def _checked_sha(comments: object) -> str | None:
-    """Return the body_sha the latest trusted dovo:ready comment that is not hidden names, or None when there is none.
-
-    A comment is trusted when its author is the repository's owner, a member or a collaborator.
-    """
-    found: str | None = None
-    for raw in comments if isinstance(comments, list) else []:
-        if not isinstance(raw, dict) or raw.get("isMinimized") or raw.get("authorAssociation") not in TRUSTED:
-            continue
-        marker = READY_MARKER_RE.match(str(raw.get("body") or ""))
-        if marker is not None:
-            found = marker["body_sha"]
-    return found
-
-
-def ready_state(issue: int) -> str:
-    """Return `ready=true` when issue is labelled dovo:ready for its description as it is now, else `ready=false`.
-
-    The reason is written to stderr.
-    """
-    view = _view(issue, "body,labels,comments")
-    labels = view.get("labels")
-    names = {str(raw.get("name")) for raw in (labels if isinstance(labels, list) else []) if isinstance(raw, dict)}
-    checked = _checked_sha(view.get("comments"))
-    if READY_LABEL not in names:
-        reason, ready = f"Issue {issue} is not labelled {READY_LABEL}; checking it.", False
-    elif checked is None:
-        reason, ready = f"No ready comment on issue {issue} names the description it checked; checking it.", False
-    elif checked != body_sha(str(view.get("body") or "")):
-        reason, ready = f"Issue {issue}'s description changed since the check that labelled it; checking it.", False
-    else:
-        reason, ready = f"Issue {issue} is labelled {READY_LABEL} for its description as it is; not checking it.", True
-    sys.stderr.write(f"plan.py: {reason}\n")
-    return f"ready={'true' if ready else 'false'}"
 
 
 # --- the rewrite of a legacy issue ------------------------------------------------
@@ -1063,23 +873,8 @@ def issue_format(issue: int) -> str:
     return f"format={found}\nbody_sha={body_sha(body)}"
 
 
-def original_comment(body: str, day: str) -> str:
-    """Return the comment keeping body, a description replaced on day, collapsed under a line saying why."""
-    lines = [
-        REWRITTEN.format(day=day),
-        "",
-        "<details>",
-        "<summary>Original description</summary>",
-        "",
-        body.strip("\r\n"),
-        "",
-        "</details>",
-    ]
-    return "\n".join(lines) + "\n"
-
-
 def rewrite_apply(issue: int, path: Path, drafted: str) -> None:
-    """Post issue's description as a collapsed comment, then replace it with the short-format draft at path.
+    """Replace issue's description with the short-format draft at path; GitHub keeps the old one in its edit history.
 
     Raises:
         PlanError: The draft cannot be read or has no `## Outcomes` section, or issue's description is not the
@@ -1095,8 +890,6 @@ def rewrite_apply(issue: int, path: Path, drafted: str) -> None:
             f"Issue {issue}'s description has body_sha {sha}, not {drafted}, the one the rewrite was drafted "
             "against; draft it again."
         )
-    comment = original_comment(body, date.today().isoformat())
-    _with_file(comment, lambda file: run("gh", "issue", "comment", str(issue), "--body-file", file))
     run("gh", "issue", "edit", str(issue), "--body-file", str(path))
 
 
@@ -1294,7 +1087,7 @@ def pass_through_check(record: Path, agentic: Path) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser for the check-slices, check-questions, questions, check-breakdown, decisions-comment, prior-decisions, requirements, body-sha, ready-comment, ready-state, issue-format, rewrite-apply and pass-through subcommands."""
+    """Return the parser for the check-slices, check-questions, questions, check-breakdown, prior-decisions, requirements, body-sha, unchanged, issue-format, rewrite-apply and pass-through subcommands."""
     parser = argparse.ArgumentParser(description="Check the slice plan in .agentic/plan.json and keep its decisions.")
     commands = parser.add_subparsers(dest="command", required=True)
     slices = commands.add_parser("check-slices", help="Refuse slices that leave out an outcome or deliver it twice.")
@@ -1312,33 +1105,29 @@ def build_parser() -> argparse.ArgumentParser:
     breakdown.add_argument("--plan-md", type=Path, default=PLAN_MD, help="The plan.md the phase files copy from.")
     breakdown.add_argument("--requirements", type=Path, default=REQUIREMENTS_JSON, help="The requirements.json.")
     breakdown.add_argument("--phases", type=Path, default=PHASES_DIR, help="The folder holding the phase files.")
-    comment = commands.add_parser("decisions-comment", help="Post the approved plan's decisions to the issue.")
-    comment.add_argument("--plan", type=Path, default=PLAN_JSON, help="The approved plan.json.")
-    comment.add_argument(
-        "--prior", type=Path, default=PRIOR_JSON, help="The prior-decisions.json whose body_sha the comment names."
-    )
-    comment.add_argument("--issue", type=int, required=True, help="The issue to post the comment on.")
-    comment.add_argument("--slice", required=True, help="The slice the plan phases.")
-    comment.add_argument("--session", required=True, help="The planning session's id.")
-    prior = commands.add_parser("prior-decisions", help="Write the decisions earlier sessions posted to the issue.")
-    prior.add_argument("--issue", type=int, required=True, help="The issue whose comments to read.")
+    prior = commands.add_parser("prior-decisions", help="Write the decisions of the issue's latest approved plan.")
+    prior.add_argument("--issue", type=int, required=True, help="The issue whose description the plan answers.")
     prior.add_argument("--out", type=Path, default=PRIOR_JSON, help="The prior-decisions.json to write.")
+    prior.add_argument(
+        "--plan", type=Path, action="append", default=[], help="A plan.json of the plan session; repeatable."
+    )
+    prior.add_argument("--session", default="", help="The session that published the plans.")
+    prior.add_argument(
+        "--planned-sha", default="", help="The body_sha of the description the plans were written against."
+    )
     listed = commands.add_parser("requirements", help="Write the numbered items of the issue's description.")
     listed.add_argument("--issue", type=int, required=True, help="The issue whose description to read.")
     listed.add_argument("--out", type=Path, default=REQUIREMENTS_JSON, help="The requirements.json to write.")
     listed.add_argument("--slice", help="List only the items this slice delivers of the plan's issue.")
     listed.add_argument("--plan", type=Path, default=PLAN_JSON, help="The plan.json holding --slice.")
-    posted = commands.add_parser("ready-comment", help="Post the ready check's comment, naming the description.")
-    posted.add_argument("--issue", type=int, required=True, help="The issue the check labelled dovo:ready.")
-    posted.add_argument("--comment", type=Path, required=True, help="The ready check's comment file.")
-    posted.add_argument("--body-sha", required=True, help="The body_sha of the description the ready check read.")
+    unchanged = commands.add_parser("unchanged", help="Refuse when the description is not the one the check read.")
+    unchanged.add_argument("--issue", type=int, required=True, help="The issue the ready check read.")
+    unchanged.add_argument("--body-sha", required=True, help="The body_sha of the description the ready check read.")
     sha = commands.add_parser("body-sha", help="Print the body_sha of an issue's description.")
     sha.add_argument("--issue", type=int, required=True, help="The issue whose description to hash.")
-    state = commands.add_parser("ready-state", help="Print ready=true when the label holds for the description.")
-    state.add_argument("--issue", type=int, required=True, help="The issue to look at.")
     shape = commands.add_parser("issue-format", help="Print the description's format and body_sha.")
     shape.add_argument("--issue", type=int, required=True, help="The issue whose description to read.")
-    rewrite = commands.add_parser("rewrite-apply", help="Keep the old description in a comment, then replace it.")
+    rewrite = commands.add_parser("rewrite-apply", help="Replace a legacy issue's description with its rewrite.")
     rewrite.add_argument("--issue", type=int, required=True, help="The legacy issue to rewrite.")
     rewrite.add_argument("--body-file", type=Path, required=True, help="The approved short-format description.")
     rewrite.add_argument("--body-sha", required=True, help="The body_sha of the description the draft rewrites.")
@@ -1350,11 +1139,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _dispatch_ready(args: argparse.Namespace) -> bool:
-    """Run the body-sha, ready-comment or ready-state subcommand args names; return False for any other."""
-    if args.command == "ready-comment":
-        ready_comment(args.issue, args.comment, args.body_sha)
-    elif args.command == "ready-state":
-        sys.stdout.write(ready_state(args.issue) + "\n")
+    """Run the body-sha or unchanged subcommand args names; return False for any other."""
+    if args.command == "unchanged":
+        check_unchanged(args.issue, args.body_sha)
     elif args.command == "body-sha":
         sys.stdout.write(body_sha(description(args.issue)) + "\n")
     else:
@@ -1404,10 +1191,8 @@ def dispatch(args: argparse.Namespace) -> None:
         check_slices(args.plan, args.requirements)
     elif args.command == "check-breakdown":
         check_breakdown(args.plan, args.plan_md, args.requirements, args.phases, args.slice)
-    elif args.command == "decisions-comment":
-        decisions_comment(args.plan, args.prior, args.issue, args.slice, args.session)
     elif args.command == "prior-decisions":
-        prior_decisions(args.issue, args.out)
+        prior_decisions(args.issue, args.out, args.plan, args.session, args.planned_sha)
     else:
         share = None if args.slice is None else slice_outcomes(args.plan, args.slice, args.issue)
         requirements(args.issue, args.out, share)

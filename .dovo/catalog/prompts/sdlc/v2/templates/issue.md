@@ -6,7 +6,7 @@ An issue is one independently shippable set of outcomes, usually one package or 
 
 A bug, behaviour that is wrong today, uses [bug.md](bug.md) instead: it opens with what happens and the steps to reproduce it in place of **Why**, and follows this template in everything else.
 
-Use the sections below in this order. Why, Outcomes and Done when are required; write every other section only when it has something to say, and leave it out otherwise, never filled with "none". Add no other section. An issue split out for one slice keeps its opening line, `Slice <id> of #<issue> ...`, before Why, and a seeded issue keeps its marker comment as its last line; nothing else goes outside the sections.
+Use the sections below in this order. Why, Outcomes and Done when are required; write every other section only when it has something to say, and leave it out otherwise, never filled with "none". Add no other section. A slice's own issue, which the slice flow creates when the slice's work starts, keeps its opening line, `Slice <id> of #<issue> ...`, before Why, and a seeded issue keeps its marker comment as its last line; nothing else goes outside the sections.
 
 No hard line wraps: each paragraph and each list item is one line, so the text uses GitHub's full width. Write every issue reference as an explicit link, `[GH-<n>](https://github.com/devexhq/dovo/issues/<n>)`, where it fits in the prose: GitHub expands `#<n>` into the issue's full title everywhere, and a bare `GH-<n>` inside a list item, but never an explicit link.
 

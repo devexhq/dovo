@@ -1,6 +1,6 @@
 # Feature contract template
 
-Copied from the slice-flow design at `944de0ce`; the design was revised 2026-10-28 after a dry run on the milestone 35 envelope group (#925). This is the template `issue-plan` fills when it runs on an epic, followed by the `plan.json` shape that carries it. `workplan.py render` writes the contract into the issue's work plan comment, followed by the work plan, which it writes from `plan.json`; `issue-plan` writes neither.
+Copied from the slice-flow design at `944de0ce`; the design was revised 2026-10-28 after a dry run on the milestone 35 envelope group (#925). This is the template `issue-plan` fills when it runs on an epic, followed by the `plan.json` shape that carries it. The contract stays in the plan artifacts; `workplan.py render` writes only the work plan, from `plan.json`, into the issue's work plan comment, and `issue-plan` writes neither.
 
 **Where it comes from:** #1214 (run by hand), #925's "Target contract" and "Order" sections, and the dry run, which found findings F1–F14 and conflicts C1–C12 between the issues. The same rules apply to every section:
 - **Every sentence has a stated truth.** It is true on `origin/main` at the named sha, true once a named prerequisite lands (`after #n`), or a target the slices deliver.
@@ -64,8 +64,8 @@ them to each issue's body; the ready check never does.>
 |---|---|---|---|
 | D1 | <the choice> | <the concrete reason> | user <date> / plan-challenge Cn / inherited from #n (confirmed <date>) |
 
-<Open questions are not written here: they live in plan.json `open_questions`, and the work plan
-comment lists the ones still open under this section.>
+<Open questions are not written here: they live in plan.json `open_questions`, and are settled
+as decisions before the plan is approved.>
 
 ### Code inventory
 <Counts and locations of every site the feature touches, at the grounding sha. One line per
@@ -101,7 +101,7 @@ When `issue-plan` runs on an epic that already has issues (the usual case), it s
 - **A true duplicate of another work issue** is merged into the older one.
 - **Epics never nest.** An existing epic or container that belongs to another epic is never made a slice. Either it is closed as superseded, or it stays a sibling epic and its slice issues become prerequisites.
 - **An issue outside the group** that a slice needs is a prerequisite. One that shares a surface without being needed is a sibling epic.
-- **No issue is created or reparented** when the epic is published. Re-ready each kept child when its slice comes up. A slice a person hands to someone outside the flow is marked with `workplan.py split-out --handed-off`, which gives it an issue when it has none. The flow never picks it, and the epic's last PR closes the epic only once that issue is closed.
+- **No issue is created or reparented** when the epic is published. A slice with no issue of its own gets one, a sub-issue of the epic, only when its work starts (`workplan.py start`). Re-ready each kept child when its slice comes up. A slice a person hands to someone outside the flow is marked with `workplan.py split-out --handed-off`, which gives it an issue when it has none. The flow never picks it, and the epic's last PR closes the epic only once that issue is closed.
 
 In the dry run this made #925 the epic, closed #926 and #924 as superseded containers, kept #1131, #1132 and #1058 as one slice each, and split #1135 and #1060 into two slices each.
 
