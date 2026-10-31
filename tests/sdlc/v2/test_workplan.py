@@ -23,11 +23,6 @@ BODY_SHA = "3e9b42c06706d5d412cbb04e4ae8f5aebf66cf9f669aff8088c050810507209e"
 INTRO = "Intro paragraph a person wrote.\n"
 MARKER = "<!-- dovo:workplan schema_version=1 -->"
 BY_HAND = "<!-- dovo:workplan schema_version=1 maintained=by-hand -->\n**Work plan** (edited by hand)\n"
-V1_BODY = 'Intro.\n\n## Work plan\n<!-- dovo:workplan {"plan_session":"bp_v1","slices":[]} -->\n'
-V1_REFUSAL = (
-    f"workplan.py: #{EPIC} was planned with v1's description-based work plan: its description holds a "
-    "`<!-- dovo:workplan {` line, which v2 never reads; work it with the v1 blueprints\n"
-)
 
 
 def _load_script() -> ModuleType:
@@ -511,17 +506,6 @@ class RenderTests:
         assert "| S1 | Title S1 | O-1 | — | pending | #1131 | — | — |" in text
         assert (fake.created, fake.sub_issues) == ([], [])
 
-    def test_refuses_an_issue_planned_with_v1(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        fake = FakeGh({}, {EPIC: V1_BODY})
-        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
-
-        assert _render(monkeypatch, fake, plan) == 1
-
-        assert capsys.readouterr().err == V1_REFUSAL
-        assert (fake.texts(EPIC), fake.bodies[EPIC]) == ([], V1_BODY)
-
     def test_a_comment_changed_twice_refuses(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -703,18 +687,6 @@ class NextTests:
         assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
 
         assert output.read_text(encoding="utf-8").splitlines()[0] == "slice=S2"
-
-    def test_refuses_an_issue_planned_with_v1(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        output = tmp_path / "output"
-        monkeypatch.setenv("DOVO_OUTPUT", str(output))
-        fake = FakeGh({EPIC: _workplan(_row("S1"))}, {EPIC: V1_BODY})
-
-        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 1
-
-        assert capsys.readouterr().err == V1_REFUSAL
-        assert (fake.patched, output.exists()) == ([], False)
 
     @pytest.mark.parametrize(
         ("rows", "reason"),
@@ -1294,7 +1266,9 @@ class StartTests:
         assert len(fake.created) == 1
         assert fake.sub_issues == [(EPIC, "sub_issue_id=91300")]
 
-    def test_a_legacy_issue_still_gets_a_short_sub_issue(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_an_issue_without_why_or_outcomes_still_gets_a_short_sub_issue(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2", outcomes=[]))})
 
         assert self._start(tmp_path, monkeypatch, fake) == 0
@@ -1346,12 +1320,12 @@ class ReadyTests:
                 id="description-changed",
             ),
             pytest.param(
-                _row("S1", ready_body_sha=BODY_SHA, child=1300),
+                _row("S1", child=1300),
                 False,
-                BODY_SHA,
-                "false",
-                "Issue 1300 is not labelled dovo:ready; checking it.",
-                id="own-issue-not-labelled",
+                "0" * 64,
+                "true",
+                f"Issue 1300 is S1's sub-issue, ready from #{EPIC}'s plan; not checking it.",
+                id="own-sub-issue",
             ),
         ],
     )
@@ -1377,6 +1351,25 @@ class ReadyTests:
 
         assert output.read_text(encoding="utf-8") == f"ready={ready}\n"
         assert capsys.readouterr().out == f"{reason}\n"
+
+    def test_a_slice_start_that_creates_a_sub_issue_needs_no_ready_check(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        output = tmp_path / "output"
+        monkeypatch.setenv("DOVO_OUTPUT", str(output))
+        fake = FakeGh({EPIC: _workplan(_row("S1"), _row("S2"))}, {EPIC: PARENT_BODY})
+        fake.labels[EPIC] = ["dovo:ready"]
+        plan = _write_json(tmp_path / "plan.json", {"contract": CONTRACT, "slices": [], "decisions": []})
+
+        assert _main(monkeypatch, fake, "start", "--issue", str(EPIC), "--slice", "S2", "--plan", plan) == 0
+        output.unlink()
+        capsys.readouterr()
+        argv = ("ready-state", "--issue", str(EPIC), "--slice", "S2", "--body-sha", "0" * 64)
+        assert _main(monkeypatch, fake, *argv) == 0
+
+        assert output.read_text(encoding="utf-8") == "ready=true\n"
+        assert capsys.readouterr().out == f"Issue 1300 is S2's sub-issue, ready from #{EPIC}'s plan; not checking it.\n"
+        assert (len(fake.created), fake.labels[1300], fake.removed_labels) == (1, [], [])
 
     def test_ready_records_the_checked_description_on_the_slices_row(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

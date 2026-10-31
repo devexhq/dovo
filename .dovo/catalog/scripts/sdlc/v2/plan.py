@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks the plans and phase files the issue-plan-v2 and issue-code-v2 blueprints' planning steps write, reads back the decisions of the issue's latest approved plan, lists the issue's numbered items, and applies a legacy issue's approved rewrite.
+"""Checks the plans and phase files the issue-plan-v2 and issue-code-v2 blueprints' planning steps write, reads back the decisions of the issue's latest approved plan, and lists the issue's numbered items.
 
 `check-slices` runs after issue-plan-v2 slices an issue. It refuses a plan
 with a slice whose `size` is not `s`, `m` or `l`, naming each, since the
@@ -64,15 +64,11 @@ issue's comments.
 
 `requirements` runs in the ready check. It writes to requirements.json each
 numbered item of the issue's description with its exact text (the shape is
-`Requirement` in plan_formats.py). A short issue, one with an `## Outcomes`
-section, numbers its outcomes `- **O-<n>** ...` and the decisions under
-`## Decisions` `- **D-<n>** ...`. A legacy issue numbers `### FR-<n>: ...` and
-`### NFR-<n>: ...` sections, and the numbered list under
-`## Error cases to handle`, whose items become `EC-<n>` by their position
-in it, whatever number each is written with. A list item's indented
-continuation lines join its text with one space each; a section's text is its
-heading's words, a blank line, then its body. Anything inside a fenced code
-block is never read as an item. A description that numbers one id twice is
+`Requirement` in plan_formats.py): the outcomes under `## Outcomes`, numbered
+`- **O-<n>** ...`, and the decisions under `## Decisions`, numbered
+`- **D-<n>** ...`. A list item's indented continuation lines join its text
+with one space each. Anything inside a fenced code block is never read as an
+item. A description that numbers one id twice is
 refused; one with no numbered items writes an empty list. With `--slice`, it
 lists only that slice's share: when the issue is the `--plan`'s `issue` and the
 plan has two or more slices, only the outcomes the slice's `outcomes` name are
@@ -81,17 +77,6 @@ O-7 with `part` `reply`; two parts in one slice are joined by `, `). The
 issue's other items, its decisions included, bind every slice, and no phase has
 to cite them. A slice worked on its own issue, or the one slice of a plan,
 keeps every item, with no `part`.
-
-`issue-format` runs before the ready check. It prints `format=short` or
-`format=legacy`, the description's format as `requirements` reports it, and
-`body_sha=<sha>` of the description it read, one per line, so the blueprint
-rewrites a legacy issue to the short format first. `rewrite-apply` runs once a
-person approves that rewrite. Given the `body_sha` the rewrite was drafted
-against with `--body-sha`, it refuses, naming both shas, when the issue's
-description is no longer that one, and it refuses a draft with no
-`## Outcomes` section. Otherwise it replaces the description with the draft,
-posting no comment: GitHub keeps the old description in the issue's edit
-history.
 
 `body-sha` prints the `body_sha` of an issue's description, so the ready
 check can record the description it checked. `unchanged` runs once a person
@@ -148,15 +133,10 @@ TOP_ITEM = re.compile(r"(?:[-*+]|\d+\.) (?P<text>.*)")
 ATX_HEADING = re.compile(r"#{1,6}(?:[ \t]|$)")
 PRIOR_JSON = Path(".agentic/prior-decisions.json")
 REQUIREMENTS_JSON = Path(".agentic/requirements.json")
-OUTCOMES = "## Outcomes"
-SHORT_ITEMS = {
-    OUTCOMES: ("outcome", re.compile(r"- \*\*(?P<id>O-\d+)\*\* (?P<text>.+)")),
+NUMBERED_ITEMS = {
+    "## Outcomes": ("outcome", re.compile(r"- \*\*(?P<id>O-\d+)\*\* (?P<text>.+)")),
     "## Decisions": ("decision", re.compile(r"- \*\*(?P<id>D-\d+)\*\* (?P<text>.+)")),
 }
-LEGACY_HEADING = re.compile(r"### (?P<id>N?FR-\d+)\b:?[ \t]*(?P<text>.*)")
-LEGACY_KINDS = {"FR": "functional", "NFR": "non_functional"}
-ERROR_CASES = "## Error cases to handle"
-ERROR_CASE = re.compile(r"(?P<id>\d+)\. (?P<text>.+)")
 FENCE_OPEN = re.compile(r" {0,3}(?P<fence>`{3,}|~{3,})")
 OUTCOME_ENTRY = re.compile(r"(?P<id>O-\d+)(?: \((?P<part>[^()]+)\))?")
 SIZES = ("s", "m", "l")
@@ -828,18 +808,6 @@ def prior_decisions(issue: int, out: Path, plans: list[Path], session: str, plan
 # --- the issue's description -------------------------------------------------------
 
 
-def _read_text(path: Path) -> str:
-    """Return the text of the file at path.
-
-    Raises:
-        PlanError: The file cannot be read.
-    """
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise PlanError(f"Cannot read {path}: {error}.") from error
-
-
 def description(issue: int) -> str:
     """Return issue's description as it is now.
 
@@ -861,36 +829,6 @@ def check_unchanged(issue: int, checked: str) -> None:
             f"Issue {issue}'s description has body_sha {sha}, not {checked}, the one the ready check read; "
             "check it again."
         )
-
-
-# --- the rewrite of a legacy issue ------------------------------------------------
-
-
-def issue_format(issue: int) -> str:
-    """Return the `format=<short|legacy>` and `body_sha=<sha>` lines of issue's description as it is now."""
-    body = description(issue)
-    found, _ = parse_requirements(body)
-    return f"format={found}\nbody_sha={body_sha(body)}"
-
-
-def rewrite_apply(issue: int, path: Path, drafted: str) -> None:
-    """Replace issue's description with the short-format draft at path; GitHub keeps the old one in its edit history.
-
-    Raises:
-        PlanError: The draft cannot be read or has no `## Outcomes` section, or issue's description is not the
-            one drafted names.
-    """
-    draft = _read_text(path)
-    if parse_requirements(draft)[0] != "short":
-        raise PlanError(f"{path} has no {OUTCOMES} section, so it is not in the short issue format.")
-    body = description(issue)
-    sha = body_sha(body)
-    if sha != drafted:
-        raise PlanError(
-            f"Issue {issue}'s description has body_sha {sha}, not {drafted}, the one the rewrite was drafted "
-            "against; draft it again."
-        )
-    run("gh", "issue", "edit", str(issue), "--body-file", str(path))
 
 
 # --- requirements.json -----------------------------------------------------------
@@ -956,56 +894,14 @@ def _list_items(lines: list[tuple[str, bool]], pattern: re.Pattern[str]) -> list
     return [(ident, " ".join(parts)) for ident, parts in items]
 
 
-def _headed_items(lines: list[tuple[str, bool]]) -> list[tuple[str, str]]:
-    """Return the (id, text) of each `### FR-<n>` or `### NFR-<n>` section: its heading's words, then its body."""
-    items: list[tuple[str, str, list[str]]] = []
-    current: list[str] | None = None
-    for line, markup in lines:
-        match = LEGACY_HEADING.fullmatch(line) if markup else None
-        if match is not None:
-            current = []
-            items.append((match["id"], match["text"], current))
-        elif markup and line.startswith("#"):
-            current = None
-        elif current is not None:
-            current.append(line)
-    return [(ident, _section_text(title, body)) for ident, title, body in items]
-
-
-def _section_text(title: str, body: list[str]) -> str:
-    """Return a section's text: its heading's words and its body, a blank line apart, leaving out either when empty."""
-    return "\n\n".join(part for part in (title, "\n".join(body).strip()) if part)
-
-
-def _short_requirements(sections: list[tuple[str, list[tuple[str, bool]]]]) -> list[Requirement]:
-    """Return a short issue's outcomes and decisions, in the description's order."""
+def parse_requirements(body: str) -> list[Requirement]:
+    """Return a description's outcomes and decisions, in the description's order."""
     found: list[Requirement] = []
-    for heading, lines in sections:
-        if heading in SHORT_ITEMS:
-            kind, pattern = SHORT_ITEMS[heading]
+    for heading, lines in _sections(_lines(body)):
+        if heading in NUMBERED_ITEMS:
+            kind, pattern = NUMBERED_ITEMS[heading]
             found.extend(Requirement(ident, kind, text) for ident, text in _list_items(lines, pattern))
     return found
-
-
-def _legacy_requirements(sections: list[tuple[str, list[tuple[str, bool]]]]) -> list[Requirement]:
-    """Return a legacy issue's FR-<n> and NFR-<n> sections and numbered error cases, in the description's order."""
-    found: list[Requirement] = []
-    for heading, lines in sections:
-        found.extend(
-            Requirement(ident, LEGACY_KINDS[ident.split("-")[0]], text) for ident, text in _headed_items(lines)
-        )
-        if heading == ERROR_CASES:
-            cases = enumerate(_list_items(lines, ERROR_CASE), start=1)
-            found.extend(Requirement(f"EC-{position}", "error_case", text) for position, (_, text) in cases)
-    return found
-
-
-def parse_requirements(body: str) -> tuple[str, list[Requirement]]:
-    """Return a description's format, `short` when it has an `## Outcomes` section and `legacy` otherwise, and its items."""
-    sections = _sections(_lines(body))
-    if any(heading == OUTCOMES for heading, _ in sections):
-        return "short", _short_requirements(sections)
-    return "legacy", _legacy_requirements(sections)
 
 
 def _share(entries: list[tuple[str, str, str | None]]) -> dict[str, str | None]:
@@ -1046,7 +942,7 @@ def requirements(issue: int, out: Path, share: dict[str, str | None] | None = No
     Raises:
         PlanError: The description numbers one id twice.
     """
-    found_format, found = parse_requirements(description(issue))
+    found = parse_requirements(description(issue))
     seen: set[str] = set()
     for requirement in found:
         if requirement.id in seen:
@@ -1055,7 +951,7 @@ def requirements(issue: int, out: Path, share: dict[str, str | None] | None = No
     if share is not None:
         found = [replace(item, part=share[item.id]) for item in found if item.kind == "outcome" and item.id in share]
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(requirements_json(issue, found_format, found), indent=2) + "\n", encoding="utf-8")
+    out.write_text(json.dumps(requirements_json(issue, found), indent=2) + "\n", encoding="utf-8")
 
 
 def fingerprint(agentic: Path) -> str:
@@ -1087,7 +983,7 @@ def pass_through_check(record: Path, agentic: Path) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser for the check-slices, check-questions, questions, check-breakdown, prior-decisions, requirements, body-sha, unchanged, issue-format, rewrite-apply and pass-through subcommands."""
+    """Return the parser for the check-slices, check-questions, questions, check-breakdown, prior-decisions, requirements, body-sha, unchanged and pass-through subcommands."""
     parser = argparse.ArgumentParser(description="Check the slice plan in .agentic/plan.json and keep its decisions.")
     commands = parser.add_subparsers(dest="command", required=True)
     slices = commands.add_parser("check-slices", help="Refuse slices that leave out an outcome or deliver it twice.")
@@ -1125,12 +1021,6 @@ def build_parser() -> argparse.ArgumentParser:
     unchanged.add_argument("--body-sha", required=True, help="The body_sha of the description the ready check read.")
     sha = commands.add_parser("body-sha", help="Print the body_sha of an issue's description.")
     sha.add_argument("--issue", type=int, required=True, help="The issue whose description to hash.")
-    shape = commands.add_parser("issue-format", help="Print the description's format and body_sha.")
-    shape.add_argument("--issue", type=int, required=True, help="The issue whose description to read.")
-    rewrite = commands.add_parser("rewrite-apply", help="Replace a legacy issue's description with its rewrite.")
-    rewrite.add_argument("--issue", type=int, required=True, help="The legacy issue to rewrite.")
-    rewrite.add_argument("--body-file", type=Path, required=True, help="The approved short-format description.")
-    rewrite.add_argument("--body-sha", required=True, help="The body_sha of the description the draft rewrites.")
     guard = commands.add_parser("pass-through", help="Record, or check, that steps passing through change no plan.")
     mode = guard.add_mutually_exclusive_group(required=True)
     mode.add_argument("--record", type=Path, help="Write the plan's fingerprint here before the steps.")
@@ -1144,17 +1034,6 @@ def _dispatch_ready(args: argparse.Namespace) -> bool:
         check_unchanged(args.issue, args.body_sha)
     elif args.command == "body-sha":
         sys.stdout.write(body_sha(description(args.issue)) + "\n")
-    else:
-        return False
-    return True
-
-
-def _dispatch_rewrite(args: argparse.Namespace) -> bool:
-    """Run the issue-format or rewrite-apply subcommand args names; return False for any other."""
-    if args.command == "issue-format":
-        sys.stdout.write(issue_format(args.issue) + "\n")
-    elif args.command == "rewrite-apply":
-        rewrite_apply(args.issue, args.body_file, args.body_sha)
     else:
         return False
     return True
@@ -1185,7 +1064,7 @@ def _dispatch_questions(args: argparse.Namespace) -> bool:
 
 def dispatch(args: argparse.Namespace) -> None:
     """Run the subcommand args names."""
-    if _dispatch_ready(args) or _dispatch_rewrite(args) or _dispatch_pass_through(args) or _dispatch_questions(args):
+    if _dispatch_ready(args) or _dispatch_pass_through(args) or _dispatch_questions(args):
         return
     if args.command == "check-slices":
         check_slices(args.plan, args.requirements)

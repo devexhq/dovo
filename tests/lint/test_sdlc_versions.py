@@ -30,7 +30,7 @@ STATUSES: Final = frozenset({"frozen", "dev"})
 SOURCE_SUFFIXES: Final = frozenset({".md", ".py", ".json"})
 FIELDS: Final = frozenset({"schema_version", "version", "status", "blueprints", "scripts", "tests"})
 SDLC_PATH: Final = re.compile(r"\.dovo/catalog/(?:prompts|scripts)/sdlc/(?P<version>v\d+)/[\w./-]*\w")
-# Any mention of a version: a path segment (`sdlc/v1`) or a module name (`sdlc_v1_workplan`).
+# Any mention of a version: a path segment (`sdlc/v2`) or a module name (`sdlc_v2_workplan`).
 VERSION_REF: Final = re.compile(r"sdlc[/_](?P<version>v\d+)(?!\d)")
 # A version's path as a file outside the bundles names it.
 VERSION_PATH: Final = re.compile(
@@ -39,7 +39,9 @@ VERSION_PATH: Final = re.compile(
 LINK: Final = re.compile(r"\]\((?P<target>[^)\s#]+)(?:#[^)\s]*)?\)")
 EXTERNAL: Final = re.compile(r"[a-z][a-z+.-]*:", re.IGNORECASE)
 BUNDLE_ROOTS: Final = (PROMPTS_ROOT, SCRIPTS_ROOT, TESTS_ROOT, BLUEPRINTS_DIR)
-ALLOWED_OUTSIDE: Final = frozenset({".agents/skills/dovo-issue/SKILL.md"})
+ALLOWED_OUTSIDE: Final = frozenset(
+    {".agents/skills/dovo-issue/SKILL.md", "AGENTS.md", "CLAUDE.md", "docs/agents/planning.md"}
+)
 
 
 def _manifest(version: Path) -> dict[str, object]:

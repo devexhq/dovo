@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tracks which phases of a slice the issue-code blueprint's code loop has committed.
+"""Tracks which phases of a slice the issue-code-v2 blueprint's code loop has committed.
 
 The slice's phases come from `slices[].phases` in .agentic/plan.json, in the
 order the plan's Phases table lists them. .agentic/code-progress.json records

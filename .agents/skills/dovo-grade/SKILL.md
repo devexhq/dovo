@@ -29,7 +29,7 @@ The pull request is `<pr-number>`. Read `.agentic/grade-inputs.json`. If it is m
 
 - `pr`: title, description, state, base, line counts and the changed files; the diff is in `.agentic/grade-pr.diff` and the head commit's files are under `.agentic/grade-pr/`. GitHub lists at most 100 files in `pr.files`; `pr.changedFiles` is the true count and the diff holds every file.
 - `checks`: the head commit's check runs, with the failed and pending names.
-- `run`: the dovo session named by the pull request's dovo-review comment, the artifacts restored from it under `.agentic/grade-run/.agentic/` (`plan.md`, `plan.json`, `review.md`, `review.json`, `implementation-report.md`) and its step history (`process`), with `process.slice_phases` the slice's phase count for an `issue-code` session and `null` otherwise; `session` is `null` for a pull request no dovo run produced.
+- `run`: the dovo session named by the pull request's dovo-review comment, the artifacts restored from it under `.agentic/grade-run/.agentic/` (`plan.md`, `plan.json`, `review.md`, `review.json`, `implementation-report.md`) and its step history (`process`), with `process.slice_phases` the slice's phase count for an `issue-code-v2` session and `null` otherwise; `session` is `null` for a pull request no dovo run produced.
 - `review`: the restored review's verdict, counts and coverage tally; `current` is `true` only when it reviewed the head commit.
 - `gates`: the facts that cap the grade. Copy them into `grade.json` unchanged.
 
@@ -52,7 +52,7 @@ Read the diff, the changed files in `.agentic/grade-pr/` and their neighbours th
 | `reviewability` (5) | at most about 400 changed lines, or commits of that size each doing one thing, and a description that matches the diff | larger, but well structured and described | mixed concerns in one commit, or a description the diff contradicts | over 1500 lines of mixed concerns in one commit | no description and no structure | never |
 | `process_efficiency` (10) | no extra iteration in either loop, no retried or failed steps | one extra iteration in either loop | two extra iterations, or a retried step | a loop ran to its limit, or the review ended `needs_human` or `replan` | the run failed and a person finished the change | `run.process` is `null` |
 
-For `process_efficiency`, a clean run's `review_loop_iterations` is 1, and its `code_loop_iterations` is `run.process.slice_phases` when that is set (an `issue-code` session runs one code-loop iteration per phase of its slice) and 1 otherwise. Every iteration beyond the clean count is extra.
+For `process_efficiency`, a clean run's `review_loop_iterations` is 1, and its `code_loop_iterations` is `run.process.slice_phases` when that is set (an `issue-code-v2` session runs one code-loop iteration per phase of its slice) and 1 otherwise. Every iteration beyond the clean count is extra.
 
 For `correctness`, use the restored review when `review.current` is `true`: its verified findings are the evidence, and a finding it rejected does not count. Otherwise read the diff for bugs yourself, report only what you can show from the code, and say in the evidence that no current review covered the head commit. For `contract_fidelity`, the plan's Phases table and `### Tests` lines, with the requirements they cite, and the review's `coverage` are the contract when they exist; otherwise the linked issue, then the pull request description.
 

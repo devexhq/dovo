@@ -46,7 +46,7 @@ Read the code the plan changes, its callers and its nearest neighbours. Then tes
 - **Milestone fit** (`milestone_fit`): a shape this plan settles that another open issue in the milestone must undo, or a decision another issue already depends on. Cite the issue and the sentence.
 - **Simpler alternative** (`simpler_alternative`): the same contract met with fewer new symbols, files, fields or phases. Name the alternative concretely.
 - **Unverified assumptions** (`unverified_assumption`): a claim about current behaviour the plan states without a citation, or with one that does not show it. Check it against the code.
-- **Issue requirements** (`issue_requirement`): an issue change that contradicts its own goal, or a guard that freezes wording nothing relies on or excludes behaviour of the foundation the issue adopts (`.agents/skills/dovo-issue/SKILL.md` Core Principles 5). A challenge to an issue change is always routed `ask`.
+- **Issue requirements** (`issue_requirement`): an issue change that contradicts its own goal, or a guard that freezes wording nothing relies on or excludes behaviour of the foundation the issue adopts. A challenge to an issue change is always routed `ask`.
 
 ## 5. Keep only what clears the bar
 

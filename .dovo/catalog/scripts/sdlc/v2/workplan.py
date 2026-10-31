@@ -33,8 +33,7 @@ sub-issue the plan maps to it (plan.json `slices[].child`) or one `start` or
 Every write re-reads the comment first; when it changed since this run read
 it, the change is applied once more to the new text, and a second change
 refuses. A write that would make the comment longer than GitHub's 65,536
-characters refuses rather than truncating. `render` and `next` refuse an issue
-whose description holds v1's work plan.
+characters refuses rather than truncating.
 
 `next`, `start`, `land`, `show`, `phased` and `ready-state` write their outputs
 as `key=value` lines to `$DOVO_OUTPUT`. `next` writes `slice`, `plan_session`,
@@ -53,8 +52,10 @@ again, empty unless that phased plan still holds: the slice has no issue of its
 own, no landed slice has amended the plan since, and the description's body_sha
 is unchanged. `render --ready-body-sha` and `ready` record the body_sha of the
 description the ready check that labelled the slice's issue `dovo:ready` read,
-and `ready-state` writes `ready=true` only while that issue is labelled and its
-description is still that one. `land`'s `--sweep` corrects other issues'
+and `ready-state` writes `ready=true` when the slice's issue needs no ready
+check: always for a slice worked on its own sub-issue, which is ready from the
+issue's approved plan, and for a slice worked on the issue itself only while
+the issue is labelled and its description is still that one. `land`'s `--sweep` corrects other issues'
 descriptions, and skips an entry for the issue or the slice's own issue, naming
 it on stderr. `pr-links` replaces the closing lines in a pull request's
 description that name the issues the given lines name, when they differ from
@@ -90,7 +91,6 @@ READY_LABEL = "dovo:ready"
 ACTIVE_STATUSES = ("in_progress", "in_review")
 LANDED_STATUSES = ("in_review", "merged")
 HANDED_OFF = "handed_off"
-V1_WORKPLAN = "<!-- dovo:workplan {"
 HEREDOC_DELIMITER = "WORKPLAN_EOF"
 NONE_CELL = "—"
 SIZES = ("s", "m", "l")
@@ -727,19 +727,6 @@ def read_body(issue: int) -> str:
     return str(view_issue(issue, "body")["body"])
 
 
-def refuse_v1_workplan(issue: int) -> None:
-    """Refuse an issue whose description holds a `<!-- dovo:workplan {` line, the work plan v1 keeps there.
-
-    Raises:
-        WorkplanError: When the description holds that line.
-    """
-    if any(line.lstrip().startswith(V1_WORKPLAN) for line in lf(read_body(issue)).split("\n")):
-        raise WorkplanError(
-            f"#{issue} was planned with v1's description-based work plan: its description holds a "
-            f"`{V1_WORKPLAN}` line, which v2 never reads; work it with the v1 blueprints"
-        )
-
-
 def issue_closed(issue: int) -> bool:
     """Return whether issue is closed."""
     return view_issue(issue, "state")["state"] == "CLOSED"
@@ -1051,7 +1038,6 @@ def cmd_render(issue: int, args: argparse.Namespace) -> None:
     if args.phased_body_sha is not None:
         slices = phased_slices(data, slices, args.session, args.phased_body_sha)
     plan = WorkPlan(args.session, args.revision, slices, args.body_sha)
-    refuse_v1_workplan(issue)
     refusal = f"#{issue}'s work plan comment kept changing while rendering it; run render again"
     update_workplan(issue, lambda text: _rendered(text, plan, args.ready_body_sha), refusal)
 
@@ -1063,7 +1049,6 @@ def _refreshed(text: str) -> str:
 
 def cmd_next(issue: int) -> dict[str, str]:
     """Pick the next slice, after marking the merged ones, and return the step outputs; no issue is created."""
-    refuse_v1_workplan(issue)
     refusal = f"#{issue}'s work plan comment kept changing while marking merged slices; run next again"
     plan = split_workplan(update_workplan(issue, _refreshed, refusal))
     row = pick(plan, issue_closed)
@@ -1263,20 +1248,26 @@ def cmd_ready(issue: int, slice_id: str, body_sha: str) -> None:
 
 
 def cmd_ready_state(issue: int, slice_id: str, body_sha: str) -> dict[str, str]:
-    """Return `ready=true` when the slice's issue is labelled dovo:ready for its description now, body_sha.
+    """Return `ready=true` when the slice's issue needs no ready check.
 
-    The reason is written to stdout.
+    A slice's own issue, a sub-issue of issue, is ready from issue's approved plan and is never checked.
+    The issue itself is ready while it is labelled dovo:ready for its description now, body_sha. The
+    reason is written to stdout.
     """
     row = find_slice(split_workplan(read_workplan(issue).text), slice_id)
-    target = issue if row.child is None else row.child
-    if READY_LABEL not in issue_labels(target):
-        reason, ready = f"Issue {target} is not labelled {READY_LABEL}; checking it.", False
+    if row.child is not None:
+        reason, ready = (
+            f"Issue {row.child} is {slice_id}'s sub-issue, ready from #{issue}'s plan; not checking it.",
+            True,
+        )
+    elif READY_LABEL not in issue_labels(issue):
+        reason, ready = f"Issue {issue} is not labelled {READY_LABEL}; checking it.", False
     elif row.ready_body_sha is None:
-        reason, ready = f"No ready check of issue {target} is recorded in the work plan; checking it.", False
+        reason, ready = f"No ready check of issue {issue} is recorded in the work plan; checking it.", False
     elif row.ready_body_sha != body_sha:
-        reason, ready = f"Issue {target}'s description changed since the check that labelled it; checking it.", False
+        reason, ready = f"Issue {issue}'s description changed since the check that labelled it; checking it.", False
     else:
-        reason, ready = f"Issue {target} is labelled {READY_LABEL} for its description as it is; not checking it.", True
+        reason, ready = f"Issue {issue} is labelled {READY_LABEL} for its description as it is; not checking it.", True
     sys.stdout.write(f"{reason}\n")
     return {"ready": "true" if ready else "false"}
 

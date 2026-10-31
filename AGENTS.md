@@ -11,27 +11,29 @@ they are not repeated here.
 
 ## How work flows
 
-1. **Ready** the issue (`/dovo-issue ready <n>`, or `dovo run ready-issue -i <n>`
-   to apply the approved edits and label it): it is re-grounded against main
-   and re-checked against `/dovo-issue` and the rules below, and labelled
-   `dovo:ready` with the sha it was checked at. `feature-dev` pauses on an issue without the label.
-2. **Plan** (`/dovo-plan`) anything that adds surface: a command, flag, result
-   model, status enum, service, formatter, config key, schema field or table.
-   The plan sizes the work and splits it into phases. Skip it for a single-file
-   change that adds no surface. If a plan was created, review it
-   (`/dovo-plan-review`) and challenge its design (`/dovo-plan-challenge`),
-   each in a fresh session, then walk the approver through it
-   (`/dovo-plan-walkthrough`) before a human approves it. An issue labelled
-   `type:epic` is readied too, but planned with `dovo run issue-plan` (its
-   feature contract and slices) and built one slice at a time with
-   `dovo run issue-code`, never with `/dovo-plan`.
-3. **Phase the plan.** Each phase is reviewable in one sitting (roughly 400
-   changed lines or less), passes the quality gate on its own and ships
-   something. When a change replaces an internal, phase it as add, switch
-   callers, delete, with the deletion phase planned up front (see R10).
-4. **Implement** the plan (`/dovo-code`), which works through every phase in
-   order and lands them in one PR, then **review** it (`/dovo-review`) in a
-   fresh session, then a human reviews and merges the PR.
+1. **Write** the issue (`/dovo-issue`) in the short format of
+   `.dovo/catalog/prompts/sdlc/v2/templates/issue.md`, or the bug format of
+   `templates/bug.md` beside it: what a person decided, as numbered outcomes
+   and decisions, with nothing the code can tell.
+2. **Plan** it with `dovo run issue-plan-v2 -i <n>`. The run checks the issue
+   against main, labels it `dovo:ready` once a person approves, and slices it
+   into pull-request-sized slices that a person approves. The work plan, the
+   issue's only comment, tracks each slice; the plan itself stays in the run's
+   artifacts. A one-slice issue is also phased in this run. `feature-dev`
+   pauses on an issue without the `dovo:ready` label.
+3. **Build** it slice by slice with `dovo run issue-code-v2 -i <n>`, one run
+   per slice. Each slice of a multi-slice issue gets its own sub-issue when it
+   starts, ready from the approved plan. The run phases the slice, codes each
+   phase, reviews the result and opens the slice's PR; a human reviews and
+   merges it before the next slice starts.
+4. **Phase** every plan by [planning.md](docs/agents/planning.md): each phase
+   is reviewable in one sitting (roughly 400 changed lines or less), passes
+   the quality gate on its own and ships something. When a change replaces an
+   internal, phase it as add, switch callers, delete, with the deletion phase
+   planned up front (see R10). Outside the slice flow, `/dovo-plan`,
+   `/dovo-plan-review`, `/dovo-plan-challenge`, `/dovo-plan-walkthrough`,
+   `/dovo-code` and `/dovo-review` plan, check, build and review a change by
+   the same rules.
 
 ## Rules
 
