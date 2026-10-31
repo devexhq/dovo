@@ -567,9 +567,9 @@ steps:
     interaction:
       mode: multiselect
       message: >-
-        Which open questions do you want to answer instead of accepting the plan's assumed answer?
-        The attached summary gives each one's assumed answer and recommendation. A question you do
-        not tick settles to its assumed answer.
+        Which open questions do you want to answer instead of accepting the planner's recommended
+        answer? The attached summary gives each one's assumed answer and recommendation. A question
+        you do not tick settles to its recommended answer.
       artifact: plan-summary
       options_from:
         artifact: plan-questions
@@ -580,7 +580,7 @@ steps:
       comment: { policy: optional, message: "Your answers, one per selected question (e.g. OQ-1: show them)" }
 
   # Always runs its fold, ticked or not: every open question leaves as a
-  # decision, settled by the human's answer or by the plan's assumed one.
+  # decision, settled by the human's answer or by the planner's recommended one.
   - id: fold-answers
     name: Settle the slice plan's open questions as decisions
     type: agent

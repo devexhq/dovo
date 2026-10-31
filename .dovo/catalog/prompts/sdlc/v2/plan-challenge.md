@@ -41,7 +41,7 @@ A challenge states:
 - **Claim**: what is wrong with the design, in one sentence.
 - **Evidence**: the `path:line`, sha or issue that shows it.
 - **Failure**: the concrete scenario that goes wrong, or the rework it forces, if the plan ships as written.
-- **Alternative**: the design you would plan instead, concrete enough to fold.
+- **Alternative**: the design you would plan instead, concrete enough to fold, in one line of at most 200 characters. An `ask` challenge's alternative becomes the open question's `challenge_answer`.
 - **Route**: `fold` when the alternative stays within the issue's changes, is clearly better on the evidence and needs no product decision; `ask` when it is a trade-off, departs from an issue change or guard, or needs a decision only a human can make.
 
 Keep at most five, ranked by the cost of being wrong. Drop a challenge whose failure is cosmetic, whose alternative is a matter of taste, or that only restates a rule check.

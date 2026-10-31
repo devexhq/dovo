@@ -303,13 +303,14 @@ steps:
           alternative.
         - For every challenge routed "ask", add an open question to plan.json `open_questions`,
           or update the one it concerns. Keep the plan's current answer as `assumed`, set
-          `challenged` to true, put the challenge's alternative first in `alternatives`, and
+          `challenged` to true, write the challenge's alternative as `challenge_answer`, and
           write the challenger's case as `challenge_details`, one fact per item, citing the
-          challenge id and its evidence.
+          challenge id and its evidence. `alternatives` keeps only other options.
         - Before you weigh a challenge, re-read the code at every `path:line` the plan and the
           challenge cite, and the issue and its comments. Drop evidence that does not hold.
-          Set `recommendation` to "assumed" or "challenge" on what you confirmed. The plan being
-          written against its answer is no reason to recommend it.
+          Set `recommendation` to "assumed" or "challenge" on what you confirmed; a question the
+          person does not answer settles to it. The plan being written against its answer is no
+          reason to recommend it.
         - Folding a challenge may make an open question moot, change its assumed answer or raise
           a new one: remove, rewrite or add entries in `open_questions` to match.
         - Keep .agentic/plan.json in the shape the issue-plan prompt defines
@@ -347,9 +348,9 @@ steps:
     interaction:
       mode: multiselect
       message: >-
-        Which open questions do you want to answer instead of accepting the plan's assumed answer?
-        The attached summary gives each one's assumed answer and recommendation. A question you do
-        not tick settles to its assumed answer, also when the challenge is recommended.
+        Which open questions do you want to answer instead of accepting the planner's recommended
+        answer? The attached summary gives each one's assumed answer and recommendation. A question
+        you do not tick settles to its recommended answer: the assumed one, or the challenge's.
       artifact: plan-summary
       options_from:
         artifact: plan-questions
@@ -360,7 +361,7 @@ steps:
       comment: { policy: optional, message: "Your answers, one per selected question (e.g. OQ-1: show them)" }
 
   # Always runs its fold, ticked or not: every open question leaves as a
-  # decision, settled by the human's answer or by the plan's assumed one.
+  # decision, settled by the human's answer or by the planner's recommended one.
   - id: fold-answers
     name: Settle the plan's open questions as decisions
     type: agent
@@ -537,8 +538,8 @@ steps:
       mode: multiselect
       message: >-
         Which open questions of the slice's plan do you want to answer instead of accepting the
-        plan's assumed answer? The attached summary gives each one's assumed answer and
-        recommendation. A question you do not tick settles to its assumed answer.
+        planner's recommended answer? The attached summary gives each one's assumed answer and
+        recommendation. A question you do not tick settles to its recommended answer.
       artifact: plan-summary
       options_from:
         artifact: plan-questions

@@ -3,8 +3,9 @@
 A decision is one entry of `decisions` in .agentic/plan.json: a choice the plan
 is written against, and who settled it. `settled_by` is `human` for an open
 question the human answered, with `answer` holding the human's words;
-`assumed_accepted` for an open question the human left to its assumed answer;
-and `planner` for a departure from the issue the planner made, which the human
+`assumed_accepted` for an open question the human left unanswered whose
+recommendation was its assumed answer; `challenge_accepted` for one the human
+left unanswered whose recommendation was the challenge's answer; and `planner` for a departure from the issue the planner made, which the human
 approves with the plan. `was` is the id of the open question the decision
 settles, or null for a planner's departure that was never one. `replaces`, when
 present, names the decision an earlier planning session posted to the issue
@@ -15,11 +16,13 @@ only place the plan states it. `summary` is the question on one line of at most
 120 characters, `assumed` the answer the plan is written against, at most 200,
 and `details` its context and why it matters, at most 5 one-line bullets of at
 most 140 characters each. `challenged` is true when the plan challenge disputed
-the assumed answer; `challenge_details` then holds the challenger's case, in
-the same caps, and the first of `alternatives` (one line each) is the
-challenge's answer. An unchallenged question has `challenge_details` `[]`.
-`recommendation` is `assumed` or `challenge`, the answer the planner
-recommends; only a challenged question recommends the challenge. `phases` are
+the assumed answer; `challenge_answer` then holds the answer the challenge
+proposes, one line of at most 200 characters, and `challenge_details` the
+challenger's case, in the same caps as `details`. An unchallenged question has
+`challenge_answer` `""` and `challenge_details` `[]`. `alternatives` lists the
+other options, one line each. `recommendation` is `assumed` or `challenge`,
+the answer the planner recommends, which settles the question unless a person
+answers it; only a challenged question recommends the challenge. `phases` are
 the phase numbers and `blocks` the slice ids whose plan changes with the
 answer, and the optional `replaces` names the prior decision the question asks
 to confirm again. A question has no other field.
@@ -65,8 +68,8 @@ import re
 from dataclasses import dataclass
 from datetime import date
 
-SETTLED_BY = ("human", "assumed_accepted", "planner")
-FROM_QUESTION = frozenset({"human", "assumed_accepted"})
+SETTLED_BY = ("human", "assumed_accepted", "challenge_accepted", "planner")
+FROM_QUESTION = frozenset({"human", "assumed_accepted", "challenge_accepted"})
 DECISION_ID = re.compile(r"D-\d+")
 QUESTION_ID = re.compile(r"OQ-\d+")
 ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -105,6 +108,7 @@ QUESTION_FIELDS = frozenset(
         "assumed",
         "details",
         "challenged",
+        "challenge_answer",
         "challenge_details",
         "recommendation",
         "alternatives",
@@ -328,6 +332,7 @@ class OpenQuestion:
     assumed: str
     details: tuple[str, ...]
     challenged: bool
+    challenge_answer: str
     challenge_details: tuple[str, ...]
     recommendation: str
     alternatives: tuple[str, ...]
@@ -336,8 +341,8 @@ class OpenQuestion:
 
     @property
     def recommended(self) -> str:
-        """Return the answer the planner recommends: the assumed one, or the challenge's, the first alternative."""
-        return self.assumed if self.recommendation == "assumed" else self.alternatives[0]
+        """Return the answer the planner recommends: the assumed one, or the challenge's."""
+        return self.assumed if self.recommendation == "assumed" else self.challenge_answer
 
     @classmethod
     def from_json(cls, raw: object, position: int) -> OpenQuestion:
@@ -366,6 +371,7 @@ class OpenQuestion:
             assumed=_capped(_text(question, "assumed", owner), ASSUMED_CAP, owner, "assumed"),
             details=_bullets(question, "details", owner),
             challenged=challenged,
+            challenge_answer=_challenge_answer(question, challenged=challenged, owner=owner),
             challenge_details=_bullets(question, "challenge_details", owner),
             recommendation=str(recommendation),
             alternatives=tuple(
@@ -383,7 +389,7 @@ class OpenQuestion:
 
         Raises:
             FormatError: an unchallenged question has challenge details or recommends the challenge, or a
-                challenged one has no challenge details or no alternative holding the challenge's answer.
+                challenged one has no challenge details.
         """
         if not self.challenged:
             if self.challenge_details:
@@ -393,8 +399,25 @@ class OpenQuestion:
             return
         if not self.challenge_details:
             raise FormatError(f"{owner} is challenged but has no challenge_details.")
-        if not self.alternatives:
-            raise FormatError(f"{owner} is challenged but has no alternatives; the first holds the challenge's answer.")
+
+
+def _challenge_answer(raw: dict[str, object], *, challenged: bool, owner: str) -> str:
+    """Return the answer the challenge proposes: one line of at most ASSUMED_CAP characters when challenged, "" otherwise.
+
+    Raises:
+        FormatError: challenge_answer is not a string, is empty on a challenged question, is set on an
+            unchallenged one, or spans more than one line or ASSUMED_CAP characters.
+    """
+    value = raw.get("challenge_answer")
+    if not isinstance(value, str):
+        raise FormatError(f"{owner} has challenge_answer {value!r}; it must be a string.")
+    if not challenged:
+        if value:
+            raise FormatError(f'{owner} has a challenge_answer but challenged is false; it must be "".')
+        return value
+    if not value.strip():
+        raise FormatError(f"{owner} is challenged but has no challenge_answer.")
+    return _capped(value, ASSUMED_CAP, owner, "challenge_answer")
 
 
 @dataclass(frozen=True)

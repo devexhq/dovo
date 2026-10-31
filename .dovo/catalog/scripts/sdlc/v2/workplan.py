@@ -610,10 +610,9 @@ def _settled_by(item: dict[str, object]) -> str:
 
 
 def _recommended(item: dict[str, object]) -> str:
-    """Return the answer an open question recommends: its assumed one, or the challenge's, its first alternative."""
-    alternatives = _list(item.get("alternatives"))
-    if _text(item, "recommendation") == "challenge" and alternatives:
-        return str(alternatives[0])
+    """Return the answer an open question recommends: its assumed one, or the challenge's."""
+    if _text(item, "recommendation") == "challenge" and _text(item, "challenge_answer"):
+        return _text(item, "challenge_answer")
     return _text(item, "assumed")
 
 

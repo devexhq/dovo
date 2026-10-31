@@ -365,9 +365,10 @@ QUESTION = {
     "assumed": "Yes.",
     "details": ["No consumer reads v1."],
     "challenged": False,
+    "challenge_answer": "",
     "challenge_details": [],
     "recommendation": "assumed",
-    "alternatives": ["Keep v1 one more release."],
+    "alternatives": ["Drop v1 after the next release."],
     "phases": [],
     "blocks": ["S2"],
 }
@@ -434,6 +435,7 @@ class RenderTests:
         question = {
             **QUESTION,
             "challenged": True,
+            "challenge_answer": "Keep v1 one more release.",
             "challenge_details": ["A plugin reads v1."],
             "recommendation": "challenge",
         }

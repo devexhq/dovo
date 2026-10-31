@@ -103,7 +103,8 @@ class PlanCheckQuestionsTests:
     def test_check_questions_passes_a_plan_with_every_question_settled(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        _write_plan(workspace, [], [HUMAN, ASSUMED, PLANNER])
+        challenge = {**ASSUMED, "id": "D-6", "was": "OQ-6", "settled_by": "challenge_accepted"}
+        _write_plan(workspace, [], [HUMAN, ASSUMED, PLANNER, challenge])
 
         assert _check(monkeypatch) == 0
 
@@ -173,7 +174,8 @@ class PlanCheckQuestionsTests:
             ),
             pytest.param(
                 {**HUMAN, "settled_by": "reviewer"},
-                "Decision D-3 has settled_by 'reviewer'; it must be one of human, assumed_accepted, planner.",
+                "Decision D-3 has settled_by 'reviewer'; it must be one of human, assumed_accepted, "
+                "challenge_accepted, planner.",
                 id="unknown-settled-by",
             ),
             pytest.param(
@@ -291,6 +293,7 @@ QUESTION = {
     "assumed": "No: discarded sessions are hidden unless `--all` is passed.",
     "details": ["`dovo worktree list` hides removed worktrees (worktree_list.py:41)."],
     "challenged": False,
+    "challenge_answer": "",
     "challenge_details": [],
     "recommendation": "assumed",
     "alternatives": ["Show them with a `discarded` status column."],
@@ -302,9 +305,10 @@ CHALLENGED = {
     "id": "OQ-2",
     "summary": "Who owns | the filter?",
     "challenged": True,
+    "challenge_answer": "Filter in Sessions.list.",
     "challenge_details": ["JSON output skips the formatter (session_list.py:12).", "C1 cites it."],
     "recommendation": "challenge",
-    "alternatives": ["Filter in Sessions.list.", "Filter in the formatter."],
+    "alternatives": ["Filter in the formatter."],
     "replaces": {"id": "D-1", "session": "blueprint_plan01"},
 }
 
@@ -328,7 +332,8 @@ class PlanQuestionsTests:
     def test_questions_writes_the_summary_of_questions_and_decisions(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        _write_plan(workspace, [QUESTION, CHALLENGED], [HUMAN, PLANNER])
+        challenge = {**ASSUMED, "id": "D-6", "was": "OQ-6", "settled_by": "challenge_accepted"}
+        _write_plan(workspace, [QUESTION, CHALLENGED], [HUMAN, PLANNER, challenge])
 
         assert _questions(monkeypatch, "--summary", ".agentic/plan-summary.md") == 0
 
@@ -338,7 +343,7 @@ class PlanQuestionsTests:
             "\n"
             "## Open questions\n"
             "\n"
-            "A question you do not tick settles to its assumed answer.\n"
+            "A question you do not tick settles to its recommended answer.\n"
             "\n"
             "| ID | Question | Assumed answer | Challenged | Recommended |\n"
             "|---|---|---|---|---|\n"
@@ -355,15 +360,17 @@ class PlanQuestionsTests:
             "### OQ-2\n"
             "\n"
             "- `dovo worktree list` hides removed worktrees (worktree_list.py:41).\n"
+            "- Challenge answer: Filter in Sessions.list.\n"
             "- Challenge: JSON output skips the formatter (session_list.py:12).\n"
             "- Challenge: C1 cites it.\n"
-            "- Other answers: Filter in Sessions.list.; Filter in the formatter.\n"
+            "- Other answers: Filter in the formatter.\n"
             "\n"
             "## Decisions\n"
             "\n"
             "- **D-3** Required config's ConfigError carries the load's diagnostic records. "
             "*Answered: accept challenge.*\n"
             "- **D-5** The list reuses worktree_list's empty-state line. *Planner, approved with the plan.*\n"
+            "- **D-6** Discarded sessions stay hidden unless --all is passed. *Challenge's answer, accepted.*\n"
         )
 
     def test_questions_summarises_a_plan_with_nothing_open_or_decided(
@@ -450,9 +457,24 @@ class PlanQuestionsTests:
                 id="challenge-without-details",
             ),
             pytest.param(
-                {**CHALLENGED, "alternatives": []},
-                "Open question OQ-2 is challenged but has no alternatives; the first holds the challenge's answer.",
+                {**CHALLENGED, "challenge_answer": " "},
+                "Open question OQ-2 is challenged but has no challenge_answer.",
                 id="challenge-without-answer",
+            ),
+            pytest.param(
+                {**CHALLENGED, "challenge_answer": None},
+                "Open question OQ-2 has challenge_answer None; it must be a string.",
+                id="challenge-answer-not-text",
+            ),
+            pytest.param(
+                {**CHALLENGED, "challenge_answer": "x" * 201},
+                "Open question OQ-2 challenge_answer is 201 characters long; at most 200.",
+                id="challenge-answer-too-long",
+            ),
+            pytest.param(
+                {**QUESTION, "challenge_answer": "Show them."},
+                'Open question OQ-1 has a challenge_answer but challenged is false; it must be "".',
+                id="answer-without-challenge",
             ),
             pytest.param(
                 {**QUESTION, "alternatives": ["Show them\nin a column."]},
@@ -507,7 +529,7 @@ class PlanQuestionsTests:
 
         assert capsys.readouterr().err == (
             "plan.py: .agentic/plan.json: Decision D-5 has settled_by 'reviewer'; "
-            "it must be one of human, assumed_accepted, planner.\n"
+            "it must be one of human, assumed_accepted, challenge_accepted, planner.\n"
         )
 
     def test_questions_refuses_a_plan_without_open_questions(

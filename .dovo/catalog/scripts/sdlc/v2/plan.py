@@ -193,7 +193,11 @@ BULLET_RE = re.compile(r"- \*\*(?P<id>D-\d+)\*\* (?P<text>.+)")
 REPLACES_RE = re.compile(r"Replaces (?P<id>D-\d+) \(session (?P<session>[^\s()]+)\)\.$")
 OUTCOME_ENTRY = re.compile(r"(?P<id>O-\d+)(?: \((?P<part>[^()]+)\))?")
 SIZES = ("s", "m", "l")
-SETTLED_LABELS = {"assumed_accepted": "Assumed answer, accepted", "planner": "Planner, approved with the plan"}
+SETTLED_LABELS = {
+    "assumed_accepted": "Assumed answer, accepted",
+    "challenge_accepted": "Challenge's answer, accepted",
+    "planner": "Planner, approved with the plan",
+}
 MINIMIZE = "mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { clientMutationId } }"
 
 
@@ -346,6 +350,8 @@ def _question_row(question: OpenQuestion) -> str:
 def _question_details(question: OpenQuestion) -> list[str]:
     """Return question's heading and bullets: its details, the challenger's case and the other answers."""
     lines = ["", f"### {question.id}", "", *(f"- {item}" for item in question.details)]
+    if question.challenged:
+        lines.append(f"- Challenge answer: {question.challenge_answer}")
     lines += [f"- Challenge: {item}" for item in question.challenge_details]
     if question.alternatives:
         lines.append(f"- Other answers: {'; '.join(question.alternatives)}")
@@ -363,7 +369,7 @@ def render_summary(plan: dict[str, object], questions: list[OpenQuestion], decis
     ]
     if questions:
         lines += [
-            "A question you do not tick settles to its assumed answer.",
+            "A question you do not tick settles to its recommended answer.",
             "",
             "| ID | Question | Assumed answer | Challenged | Recommended |",
             "|---|---|---|---|---|",
