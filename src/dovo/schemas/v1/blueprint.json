@@ -210,6 +210,7 @@
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "type": { "type": "string", "const": "loop" },
+        "name": { "type": "string" },
         "max_iterations": { "type": "integer", "minimum": 1, "default": 5 },
         "until": {
           "type": "array",

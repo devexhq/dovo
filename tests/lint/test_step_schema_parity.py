@@ -11,7 +11,7 @@ import typer.core
 import typer.main
 
 from dovo.cli.session.app import session_app
-from dovo.core.catalog.definitions.step import ArtifactPublishSpec, InteractionSpec, StepDefinition
+from dovo.core.catalog.definitions.step import ArtifactPublishSpec, InteractionSpec, LoopStepBlock, StepDefinition
 from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
 from tests.lint.astlib import REPO_ROOT
 
@@ -19,6 +19,7 @@ STEP_SCHEMA_DOC: Final = REPO_ROOT / "docs" / "reference" / "step-schema.md"
 SESSION_DOC: Final = REPO_ROOT / "docs" / "cli" / "session.md"
 _STEP_HEADING: Final = "## `StepDefinition` Fields"
 _HEADING: Final = "## `artifacts` Entries"
+_LOOP_HEADING: Final = "## `LoopStepBlock`"
 _INTERACTION_HEADING: Final = "## `interaction` Block"
 _OUTPUTS_HEADING: Final = "### Ask step outputs"
 _RESUME_HEADING: Final = "## `dovo session resume`"
@@ -97,6 +98,14 @@ class StepSchemaParityTests:
         documented = _standard_step_rows()
 
         assert "max_files" in documented
+        assert documented == expected
+
+    def test_documented_loop_fields_match_loop_step_block_fields(self) -> None:
+        expected = {name: field.is_required() for name, field in LoopStepBlock.model_fields.items()}
+
+        documented = _field_rows(_section(STEP_SCHEMA_DOC, _LOOP_HEADING, "\n---"))
+
+        assert "name" in documented
         assert documented == expected
 
 

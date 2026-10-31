@@ -152,6 +152,17 @@ steps:
           exit_code: 0
 ```
 
+Steps inside `do` take the same shorthands as top-level steps:
+
+- A step without `id` gets the slug of its `name`, or `<loop id>-step-<n>` when it has no `name`, where `<n>` is its 1-based position in `do`. In the example above, an unnamed second step would get `tdd-loop-step-2`.
+- `command:` without `run`, `uses` or `type` is read as `run:`.
+- A step without `on_failure` inherits the blueprint's `defaults.on_failure`.
+
+A loop block accepts only `id`, `type`, `name`, `max_iterations`, `until`, `do` and `on_max_iterations`.
+
+!!! warning
+    Any other key on a loop block, such as a misspelled `untill:`, fails `dovo blueprint validate` and `dovo run` with `CATALOG_SCHEMA_INVALID`, naming the loop and every unknown key.
+
 ---
 
 ## Runtime Execution Metadata & Environment Variables

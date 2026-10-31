@@ -562,21 +562,37 @@ class CatalogValidateAskTests:
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
         assert "Step 'approve'" in result.errors[0]
 
-    def test_ask_blueprint_reports_every_schema_error(self, isolated_workspace: Path) -> None:
-        _write_yaml(isolated_workspace / "ask.yml", {"name": "ask", "steps": [{"id": "approve", "type": "ask"}]})
+    @pytest.mark.parametrize(
+        ("step", "error"),
+        [
+            pytest.param(
+                {"id": "approve", "type": "ask"},
+                "steps.0: Value error, Step 'approve': 'type: ask' requires 'interaction'.",
+                id="ask_without_interaction",
+            ),
+            pytest.param(
+                {"id": "fix", "type": "agent"},
+                "steps.0: Value error, Agent steps must specify a non-empty 'prompt' string.",
+                id="agent_without_prompt",
+            ),
+            pytest.param(
+                {"id": "phases", "type": "loop", "do": [{"id": "check", "run": "true"}]},
+                "steps.0.until: Field required.",
+                id="loop_without_until",
+            ),
+        ],
+    )
+    def test_step_schema_error_lists_only_the_declared_step_kind(
+        self, isolated_workspace: Path, step: dict[str, object], error: str
+    ) -> None:
+        _write_yaml(isolated_workspace / "bp.yml", {"name": "bp", "steps": [step]})
 
-        result = _validate("ask.yml", path=isolated_workspace)
+        result = _validate("bp.yml", path=isolated_workspace)
 
         assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
-        assert result.errors == [
-            "steps.0.function-after[validate_step_shape(), StepDefinition]: Value error, "
-            "Step 'approve': 'type: ask' requires 'interaction'.",
-            "steps.0.function-after[validate_on_max_iterations_context(), LoopStepBlock].type: Input should be 'loop'.",
-            "steps.0.function-after[validate_on_max_iterations_context(), LoopStepBlock].until: Field required.",
-            "steps.0.function-after[validate_on_max_iterations_context(), LoopStepBlock].do: Field required.",
-        ]
+        assert result.errors == [error]
         assert result.warnings == []
-        assert result.remediations == [Remediation(message="Fix the reported schema error for target 'ask'.")] * 4
+        assert result.remediations == [Remediation(message="Fix the reported schema error for target 'bp'.")]
 
     def test_ask_step_conflict_reports_one_schema_error(self, isolated_workspace: Path) -> None:
         _write_yaml(isolated_workspace / "ask_step.yml", {"id": "approve", "type": "ask", "run": "x"})
@@ -587,6 +603,60 @@ class CatalogValidateAskTests:
         assert result.item_type == "step"
         assert result.errors == ["<root>: Value error, Step 'approve': 'type: ask' cannot be combined with run."]
         assert result.remediations == [Remediation(message="Fix the reported schema error for target 'ask_step'.")]
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_SHIPPED_BLUEPRINTS = sorted(
+    [
+        *(_REPO_ROOT / ".dovo" / "catalog" / "blueprints").rglob("*.yml"),
+        *(_REPO_ROOT / "src" / "dovo" / "core" / "catalog" / "templates" / "blueprints").rglob("*.yml"),
+    ]
+)
+
+
+class CatalogValidateLoopBlockTests:
+    """Loop blocks reject unknown keys, and derived `do` step ids take part in the duplicate-id check."""
+
+    def test_loop_with_unknown_keys_fails_naming_the_loop_and_sorted_keys(self, isolated_workspace: Path) -> None:
+        loop = {
+            "id": "phases",
+            "type": "loop",
+            "until": ["steps.check.exit_code == 0"],
+            "untill": ["steps.check.exit_code == 0"],
+            "for_each": {"artifact": "plan", "file": "plan.json", "items_path": "phases"},
+            "do": [{"id": "check", "run": "true"}],
+        }
+        _write_yaml(isolated_workspace / "loop.yml", {"name": "loop", "steps": [loop]})
+
+        result = _validate("loop.yml", path=isolated_workspace)
+
+        assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
+        assert result.errors == ["steps.0: Value error, Loop 'phases' has unknown keys: for_each, untill."]
+
+    def test_derived_do_id_colliding_with_a_step_id_reports_duplicate(self, isolated_workspace: Path) -> None:
+        steps = [
+            {
+                "id": "fix",
+                "type": "loop",
+                "until": ["steps.check.exit_code == 0"],
+                "do": [{"id": "check", "run": "a"}, {"run": "b"}],
+            },
+            {"id": "fix-step-2", "run": "c"},
+        ]
+        _write_yaml(isolated_workspace / "dup.yml", {"name": "dup", "steps": steps})
+
+        result = _validate("dup.yml", path=isolated_workspace)
+
+        assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
+        assert result.errors == ["Step id 'fix-step-2' is used by more than one step."]
+
+    @pytest.mark.parametrize(
+        "blueprint", [pytest.param(path, id=path.relative_to(_REPO_ROOT).as_posix()) for path in _SHIPPED_BLUEPRINTS]
+    )
+    def test_shipped_blueprint_validates(self, isolated_workspace: Path, blueprint: Path) -> None:
+        result = _validate(str(blueprint), path=isolated_workspace)
+
+        assert (result.error_code, result.errors) == (None, [])
 
 
 class _ExplodingBlueprintDefinition(BlueprintDefinition):

@@ -14,6 +14,7 @@ from pydantic_core import ErrorDetails
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
 from dovo.common.models import Remediation
+from dovo.core.catalog.definitions.blueprint import STEP_KIND_TAGS
 from dovo.core.catalog.exceptions import CatalogError, CatalogValidateFindings
 from dovo.core.catalog.models import CatalogItemType
 
@@ -163,8 +164,11 @@ def _extract_validation_error(exc: Exception) -> ValidationError | None:
 
 
 def _format_pydantic_error(error: ErrorDetails) -> str:
-    """Format one Pydantic error entry as '<dotted.location>: <message>.'."""
-    location = ".".join(str(part) for part in error["loc"]) or "<root>"
+    """Format one Pydantic error entry as '<dotted.location>: <message>.', without the step-kind tag of a steps entry."""
+    loc = list(error["loc"])
+    if len(loc) > 2 and loc[0] == "steps" and isinstance(loc[1], int) and loc[2] in STEP_KIND_TAGS:
+        del loc[2]
+    location = ".".join(str(part) for part in loc) or "<root>"
     return _sentence(f"{location}: {error['msg']}")
 
 

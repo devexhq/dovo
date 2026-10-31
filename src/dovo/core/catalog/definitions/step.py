@@ -333,15 +333,26 @@ class StepDefinition(BaseModel):
 class LoopStepBlock(BaseModel):
     """Loop block step execution definition."""
 
-    # Hand-authored YAML loop blocks permit forward-compatible extra keys.
-    model_config = {"extra": "ignore", "populate_by_name": True}
+    model_config = {"extra": "forbid", "populate_by_name": True}
 
     id: str = Field(min_length=1)
     type: Literal["loop"]
+    name: str | None = None
     max_iterations: int = Field(default=5, ge=1)
     until: list[str] = Field(min_length=1)
     do: list[StepDefinition] = Field(min_length=1)
     on_max_iterations: FailurePolicy = FailurePolicy.PROMPT_USER
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_unknown_keys(cls, data: object) -> object:
+        """Reject every key the loop does not define, naming the loop and the keys in sorted order."""
+        if not isinstance(data, dict):
+            return data
+        unknown = sorted(str(key) for key in data if key not in cls.model_fields)
+        if unknown:
+            raise ValueError(f"Loop '{data.get('id', '')}' has unknown keys: {', '.join(unknown)}.")
+        return data
 
     @field_validator("on_max_iterations", mode="before")
     @classmethod
