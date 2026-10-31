@@ -23,11 +23,6 @@ BODY_SHA = "3e9b42c06706d5d412cbb04e4ae8f5aebf66cf9f669aff8088c050810507209e"
 INTRO = "Intro paragraph a person wrote.\n"
 MARKER = "<!-- dovo:workplan schema_version=1 -->"
 BY_HAND = "<!-- dovo:workplan schema_version=1 maintained=by-hand -->\n**Work plan** (edited by hand)\n"
-V1_BODY = 'Intro.\n\n## Work plan\n<!-- dovo:workplan {"plan_session":"bp_v1","slices":[]} -->\n'
-V1_REFUSAL = (
-    f"workplan.py: #{EPIC} was planned with v1's description-based work plan: its description holds a "
-    "`<!-- dovo:workplan {` line, which v2 never reads; work it with the v1 blueprints\n"
-)
 
 
 def _load_script() -> ModuleType:
@@ -511,17 +506,6 @@ class RenderTests:
         assert "| S1 | Title S1 | O-1 | — | pending | #1131 | — | — |" in text
         assert (fake.created, fake.sub_issues) == ([], [])
 
-    def test_refuses_an_issue_planned_with_v1(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        fake = FakeGh({}, {EPIC: V1_BODY})
-        plan = _write_json(tmp_path / "plan.json", {"contract": None, "slices": [_slice("S1")]})
-
-        assert _render(monkeypatch, fake, plan) == 1
-
-        assert capsys.readouterr().err == V1_REFUSAL
-        assert (fake.texts(EPIC), fake.bodies[EPIC]) == ([], V1_BODY)
-
     def test_a_comment_changed_twice_refuses(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -703,18 +687,6 @@ class NextTests:
         assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 0
 
         assert output.read_text(encoding="utf-8").splitlines()[0] == "slice=S2"
-
-    def test_refuses_an_issue_planned_with_v1(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        output = tmp_path / "output"
-        monkeypatch.setenv("DOVO_OUTPUT", str(output))
-        fake = FakeGh({EPIC: _workplan(_row("S1"))}, {EPIC: V1_BODY})
-
-        assert _main(monkeypatch, fake, "next", "--issue", str(EPIC)) == 1
-
-        assert capsys.readouterr().err == V1_REFUSAL
-        assert (fake.patched, output.exists()) == ([], False)
 
     @pytest.mark.parametrize(
         ("rows", "reason"),

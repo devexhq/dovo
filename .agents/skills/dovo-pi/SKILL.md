@@ -84,7 +84,7 @@ Write `.agentic/pi/<id>.json`, overwriting any earlier one:
 ```json
 {
   "session": "715fe088769e459dab6065f2eb7237fb",
-  "summary": { "blueprint": "issue-code", "status": "failed", "wall_seconds": 4333.0, "resumes": 3, "total_cost_usd": 29.65 },
+  "summary": { "blueprint": "issue-code-v2", "status": "failed", "wall_seconds": 4333.0, "resumes": 3, "total_cost_usd": 29.65 },
   "findings": [
     {
       "id": "F1",
@@ -153,6 +153,6 @@ If no candidates remain, say so and stop. Otherwise make ONE `AskUserQuestion` c
 File nothing unless the person selects it. For each selected finding:
 
 1. Write `.agentic/pi/seed-F<n>.md` with these sections: **Observed** and **Expected**; **Repro** (the blueprint, the step and the command, e.g. `uv run dovo run <blueprint> ...`); **Evidence** (excerpts with their file paths relative to the session's log directory, redacted per the hard boundaries); **Session** (the id); and, as the last line, `<!-- dovo-pi:fp=<fingerprint> -->`. Fold in the person's comment.
-2. Invoke `/dovo-issue` with the seed and say that the ticket comes from a dovo-pi seed, so it takes the `found:dogfooding` label and keeps the marker (its Pre-Publish Checklist, item 4).
+2. Invoke `/dovo-issue` with the seed and say that the ticket comes from a dovo-pi seed, so it takes the `found:dogfooding` label and keeps the marker.
 
 Report the issue numbers it creates under the findings in `.agentic/pi/<id>.md`.

@@ -13,12 +13,12 @@ inputs:
 
 steps:
   # Pauses rather than refusing: a person can continue on an issue that has not
-  # been through the ready-issue blueprint.
+  # been through the issue-plan-v2 blueprint's ready check.
   - id: ready
     name: Check the issue is labelled dovo:ready
     run: |
       gh issue view ${{ inputs.issue }} --json labels --jq '.labels[].name' | grep -qx 'dovo:ready' || {
-        echo "Issue ${{ inputs.issue }} is not labelled dovo:ready. Run: dovo run ready-issue -i ${{ inputs.issue }}"
+        echo "Issue ${{ inputs.issue }} is not labelled dovo:ready. Run: dovo run issue-plan-v2 -i ${{ inputs.issue }}"
         exit 1
       }
     timeout_seconds: 120

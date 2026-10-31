@@ -1,11 +1,10 @@
-# The in-development v2 of `issue-plan.yml`, run on sdlc v2's prompts and
-# scripts (`.dovo/catalog/prompts/sdlc/v2/VERSION.json`). Never run it on an
-# issue a v1 run touches: v2 keeps the work plan in a comment v1 never reads.
+# The slice flow's planning blueprint, run on sdlc v2's prompts and scripts
+# (`.dovo/catalog/prompts/sdlc/v2/VERSION.json`): it readies an issue in the
+# short or bug format and slices it into the work plan that issue-code-v2
+# builds slice by slice.
 #
-# Forked from `ready-issue.yml` and `feature-dev.yml` at `944de0ce`.
-# Temporary: an experimental copy for the slice flow, which replaces
-# ready-issue's use before planning, feature-dev and the dovo-* skills once it
-# works. Compare fixes to either source against this copy and carry them over.
+# Its planning half was forked from `feature-dev.yml` at `944de0ce`. Compare
+# fixes to feature-dev against this copy and carry them over.
 version: 1
 name: issue-plan-v2
 id: issue-plan-v2
@@ -109,7 +108,7 @@ steps:
       uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py rewrite-apply --issue ${{ inputs.issue }} --body-file .agentic/issue-rewrite.md --body-sha "{{ steps.rewrite-format.outputs.body_sha }}"
     timeout_seconds: 300
 
-  # --- ready-issue's steps, inlined: a blueprint cannot call another one. ---
+  # --- The ready check, then the dovo:ready label once a person approves. ---
 
   # A not_ready issue needs a person: a size label, a split, a decision or a
   # closed blocker, which no edit here can supply. Rather than failing, the run

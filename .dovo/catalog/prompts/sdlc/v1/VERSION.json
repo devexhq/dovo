@@ -1,8 +1,0 @@
-{
-  "schema_version": 1,
-  "version": "v1",
-  "status": "frozen",
-  "blueprints": ["issue-code", "issue-plan"],
-  "scripts": ".dovo/catalog/scripts/sdlc/v1",
-  "tests": "tests/sdlc/v1"
-}

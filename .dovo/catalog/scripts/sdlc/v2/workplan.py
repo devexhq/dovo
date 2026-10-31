@@ -33,8 +33,7 @@ sub-issue the plan maps to it (plan.json `slices[].child`) or one `start` or
 Every write re-reads the comment first; when it changed since this run read
 it, the change is applied once more to the new text, and a second change
 refuses. A write that would make the comment longer than GitHub's 65,536
-characters refuses rather than truncating. `render` and `next` refuse an issue
-whose description holds v1's work plan.
+characters refuses rather than truncating.
 
 `next`, `start`, `land`, `show`, `phased` and `ready-state` write their outputs
 as `key=value` lines to `$DOVO_OUTPUT`. `next` writes `slice`, `plan_session`,
@@ -90,7 +89,6 @@ READY_LABEL = "dovo:ready"
 ACTIVE_STATUSES = ("in_progress", "in_review")
 LANDED_STATUSES = ("in_review", "merged")
 HANDED_OFF = "handed_off"
-V1_WORKPLAN = "<!-- dovo:workplan {"
 HEREDOC_DELIMITER = "WORKPLAN_EOF"
 NONE_CELL = "—"
 SIZES = ("s", "m", "l")
@@ -727,19 +725,6 @@ def read_body(issue: int) -> str:
     return str(view_issue(issue, "body")["body"])
 
 
-def refuse_v1_workplan(issue: int) -> None:
-    """Refuse an issue whose description holds a `<!-- dovo:workplan {` line, the work plan v1 keeps there.
-
-    Raises:
-        WorkplanError: When the description holds that line.
-    """
-    if any(line.lstrip().startswith(V1_WORKPLAN) for line in lf(read_body(issue)).split("\n")):
-        raise WorkplanError(
-            f"#{issue} was planned with v1's description-based work plan: its description holds a "
-            f"`{V1_WORKPLAN}` line, which v2 never reads; work it with the v1 blueprints"
-        )
-
-
 def issue_closed(issue: int) -> bool:
     """Return whether issue is closed."""
     return view_issue(issue, "state")["state"] == "CLOSED"
@@ -1051,7 +1036,6 @@ def cmd_render(issue: int, args: argparse.Namespace) -> None:
     if args.phased_body_sha is not None:
         slices = phased_slices(data, slices, args.session, args.phased_body_sha)
     plan = WorkPlan(args.session, args.revision, slices, args.body_sha)
-    refuse_v1_workplan(issue)
     refusal = f"#{issue}'s work plan comment kept changing while rendering it; run render again"
     update_workplan(issue, lambda text: _rendered(text, plan, args.ready_body_sha), refusal)
 
@@ -1063,7 +1047,6 @@ def _refreshed(text: str) -> str:
 
 def cmd_next(issue: int) -> dict[str, str]:
     """Pick the next slice, after marking the merged ones, and return the step outputs; no issue is created."""
-    refuse_v1_workplan(issue)
     refusal = f"#{issue}'s work plan comment kept changing while marking merged slices; run next again"
     plan = split_workplan(update_workplan(issue, _refreshed, refusal))
     row = pick(plan, issue_closed)

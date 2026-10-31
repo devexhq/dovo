@@ -5,7 +5,7 @@ Reads the pull request and its check runs on the head commit. When the
 authenticated `gh` user's dovo-review comment names a dovo session, downloads
 that session's plan, plan-questions, review and implementation-report artifacts
 into .agentic/grade-run/ and reads the session's step history and, for an
-issue-code session, its slice's phase count from the plan. Extracts the
+issue-code-v2 session, its slice's phase count from the plan. Extracts the
 head commit's files into .agentic/grade-pr/ and its diff into
 .agentic/grade-pr.diff, so the grader reads the pull request without checking
 it out and nothing from it runs. Writes .agentic/grade-inputs.json.
@@ -78,12 +78,12 @@ def _steps(payload: dict[str, object]) -> list[dict[str, object]]:
 
 
 def _slice_phases(blueprint: object, plan: dict[str, object] | None) -> int | None:
-    """Return the phase count of an issue-code session's slice plan, or None for another blueprint or no plan.
+    """Return the phase count of an issue-code-v2 session's slice plan, or None for another blueprint or no plan.
 
-    An issue-code session runs one code-loop iteration per phase of its slice,
+    An issue-code-v2 session runs one code-loop iteration per phase of its slice,
     and its slice plan's top-level `phases` is that slice's phase count.
     """
-    phases = plan.get("phases") if blueprint == "issue-code" and plan is not None else None
+    phases = plan.get("phases") if blueprint == "issue-code-v2" and plan is not None else None
     return phases if isinstance(phases, int) and not isinstance(phases, bool) else None
 
 

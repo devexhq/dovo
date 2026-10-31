@@ -1,11 +1,9 @@
-# The in-development v2 of `issue-code.yml`, run on sdlc v2's prompts and
-# scripts (`.dovo/catalog/prompts/sdlc/v2/VERSION.json`). Never run it on an
-# issue a v1 run touches: v2 keeps the work plan in a comment v1 never reads.
+# The slice flow's coding blueprint, run on sdlc v2's prompts and scripts
+# (`.dovo/catalog/prompts/sdlc/v2/VERSION.json`): it plans, builds and reviews
+# the next slice of the work plan issue-plan-v2 wrote.
 #
-# Forked from `feature-dev.yml` and `ready-issue.yml` at `944de0ce`.
-# Temporary: an experimental copy for the slice flow, which replaces
-# feature-dev and the dovo-* skills once it works. Compare fixes to either
-# source against this copy and carry them over. Step ids, timeouts, failure
+# Forked from `feature-dev.yml` at `944de0ce`. Compare fixes to feature-dev
+# against this copy and carry them over. Step ids, timeouts, failure
 # policies and artifact names match feature-dev's wherever the slice flow does
 # not change them, so commit-fixes, post-review and pr_feedback.py work on
 # slice PRs unchanged, and grade_inputs.py only adds the slice's phase count,
@@ -268,7 +266,7 @@ steps:
       uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py rewrite-apply --issue {{ steps.start.outputs.issue }} --body-file .agentic/issue-rewrite.md --body-sha "{{ steps.rewrite-format.outputs.body_sha }}"
     timeout_seconds: 300
 
-  # --- ready-issue's gate steps, run on the issue the slice is worked on. A
+  # --- The ready check's gate steps, run on the issue the slice is worked on. A
   # step cannot be skipped, so each of them passes straight through when that
   # issue is already labelled dovo:ready for its description as it is: the
   # check that labelled it recorded the description's body_sha on the slice's
@@ -430,7 +428,7 @@ steps:
         --slice {{ steps.next.outputs.slice }} --body-sha "$checked"
     timeout_seconds: 300
 
-  # --- issue-plan.yml's planning half (feature-dev's), scoped to the slice:
+  # --- feature-dev's planning half, scoped to the slice:
   # the slice is phased just in time, against main as it is now and the "as
   # landed" reports of the slices before it. The plan artifacts this session
   # publishes hold the slice's plan, with the epic's contract and slices kept

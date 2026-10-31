@@ -37,7 +37,7 @@ FEEDBACK = _load_script("pr_feedback", "pr_feedback")
 INPUTS = _load_script("grade_inputs", "grade_inputs_under_test")
 
 SHOWN_SESSION = {
-    "session": {"blueprint_name": "issue-code", "status": "completed"},
+    "session": {"blueprint_name": "issue-code-v2", "status": "completed"},
     "steps": [
         {"kind": "step", "step_id": "plan", "state": "completed", "attempts": 1},
         {"kind": "loop", "step_id": "code-loop", "iterations": 2},
@@ -49,7 +49,7 @@ SHOWN_SESSION = {
 }
 SLICE_PLAN = {"issue": 1259, "phases": 3, "slices": [{"id": "S3", "phases": [1, 2, 3]}]}
 PROCESS = {
-    "blueprint": "issue-code",
+    "blueprint": "issue-code-v2",
     "status": "completed",
     "slice_phases": 3,
     "code_loop_iterations": 2,
@@ -123,7 +123,7 @@ class GradeInputsSummaryTests:
     @pytest.mark.parametrize(
         ("blueprint", "plan"),
         [
-            pytest.param("issue-code", None, id="issue-code-without-plan"),
+            pytest.param("issue-code-v2", None, id="issue-code-v2-without-plan"),
             pytest.param("feature-dev", {"phases": 3}, id="feature-dev"),
         ],
     )
