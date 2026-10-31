@@ -84,3 +84,9 @@ class BlueprintSchemaRequiredParityTests:
         rejected_without = {key for key in entry if not _loads_without(entry, key)}
 
         assert set(defs[definition]["required"]) == rejected_without
+
+    def test_standard_step_id_is_optional_because_the_loader_derives_it(self) -> None:
+        defs = json.loads((files("dovo.schemas.v1") / "blueprint.json").read_text(encoding="utf-8"))["$defs"]
+
+        assert _loads_without({"id": "ship", "run": "true"}, "id")
+        assert "id" not in defs["standard_step"].get("required", [])
