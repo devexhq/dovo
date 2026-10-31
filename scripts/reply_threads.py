@@ -10,11 +10,11 @@ HEAD), not changed or deferred, with its note; fixed and dismissed threads are
 then resolved, and deferred ones stay open. Comments and failed checks get no
 reply. Out-of-diff findings from the dovo review get one pull request comment,
 headed `<!-- dovo-pr-fix-outcomes -->`, with one line per finding giving its id,
-location, the reviewed commit on the dovo-review comment and its outcome; a
-retry that finds the viewer's comment with that exact body posts none. A thread
-that already holds this exact reply from the authenticated `gh` user gets no
-second one, and a resolved thread is not resolved again, so a retry posts only
-what is missing. Nothing is posted unless every item has a valid action and
+location, the reviewed commit the first `R#` item carries and its outcome, so
+the pull request needs no dovo-review comment; a retry that finds the viewer's
+comment with that exact body posts none. A thread that already holds this exact
+reply from the authenticated `gh` user gets no second one, and a resolved thread
+is not resolved again, so a retry posts only what is missing. Nothing is posted unless every item has a valid action and
 every fix item a valid outcome.
 
 With --render-triage it only checks .agentic/triage.json against
@@ -39,7 +39,6 @@ from publish_review import (
     RESOLVE_MUTATION,
     PublishReviewError,
     already_replied,
-    find_own_comment,
     list_comments,
     pr_repository,
     run,
@@ -53,7 +52,6 @@ NO_FEEDBACK_LINE = "No open feedback."
 OUTCOMES_JSON = AGENTIC_DIR / "feedback-outcomes.json"
 REPLY_MARKER = "<!-- dovo-pr-fix -->"
 OUTCOMES_MARKER = "<!-- dovo-pr-fix-outcomes -->"
-REVIEWED_COMMIT_LABEL = "Reviewed commit: "  # the dovo-review comment header line publish_review.comment_body writes
 REVIEWED_COMMIT_CHARS = 7
 ACTIONS = ("fix", "dismiss", "defer")
 FIX_OUTCOMES = ("fixed", "deferred")
@@ -112,6 +110,7 @@ class Inputs(NamedTuple):
     number: int  # feedback.json `pr`
     replies: list[ThreadReply]  # one per review_thread item, in feedback.json order
     findings: list[FindingOutcome]  # one per review_finding item, in feedback.json order
+    reviewed: str | None  # the first review_finding item's `commit`, None without one
 
 
 def outcome_line(outcome: Outcome, commit: str) -> str:
@@ -337,14 +336,22 @@ def heading_location(body: str) -> str | None:
     return location[1] if location is not None else None
 
 
-def reviewed_commit(body: str) -> str | None:
-    """Return the sha on the header's ``Reviewed commit: `<sha>` `` line, or None; only lines before the first blank line are read."""
-    for line in body.splitlines():
-        if not line.strip():
-            return None
-        if line.startswith(REVIEWED_COMMIT_LABEL):
-            return line.removeprefix(REVIEWED_COMMIT_LABEL).strip().strip("`") or None
-    return None
+def finding_commit(items: list[dict[str, object]]) -> str | None:
+    """Return the first `review_finding` item's `commit`, or None when there is no such item.
+
+    Raises:
+        ReplyThreadsError: `.agentic/feedback.json item <id> names no reviewed commit` when a `review_finding`
+            item's `commit` is not a string.
+    """
+    reviewed: str | None = None
+    for item in items:
+        if item.get("source") != "review_finding":
+            continue
+        commit = item.get("commit")
+        if not isinstance(commit, str):
+            raise ReplyThreadsError(f"{FEEDBACK_JSON} item {item['id']} names no reviewed commit")
+        reviewed = commit if reviewed is None else reviewed
+    return reviewed
 
 
 def finding_outcomes(items: list[dict[str, object]], outcomes: dict[str, Outcome]) -> list[FindingOutcome]:
@@ -389,7 +396,8 @@ def read_inputs() -> Inputs:
     """Read and check feedback.json, triage.json, the outcomes of its fix items and pr-url, running no command.
 
     Raises:
-        ReplyThreadsError: For errors 1-4 of issue #1259, or a thread item naming no review thread.
+        ReplyThreadsError: For errors 1-4 of issue #1259, or a thread item naming no review thread or a
+            finding item no reviewed commit.
     """
     feedback, items, triage = _read_triage()
     fix_ids = [item_id for item_id, entry in _entries(triage).items() if entry["action"] == "fix"]
@@ -404,8 +412,9 @@ def read_inputs() -> Inputs:
     by_id = item_outcomes(triage, _object(outcomes))
     replies = thread_replies(items, by_id)
     findings = finding_outcomes(items, by_id)
+    reviewed = finding_commit(items)
     url = PR_URL.read_text(encoding="utf-8").splitlines()[0].strip()
-    return Inputs(url, int(str(feedback.get("pr"))), replies, findings)
+    return Inputs(url, int(str(feedback.get("pr"))), replies, findings, reviewed)
 
 
 def post_reply(host: str, viewer: str, reply: ThreadReply, commit: str) -> tuple[bool, bool]:
@@ -455,14 +464,9 @@ def _checked_comment(inputs: Inputs, comments: list[dict[str, object]], viewer: 
     """Return the outcome comment for inputs.findings and whether the viewer already posted it exactly.
 
     Raises:
-        ReplyThreadsError: When the dovo-review comment names no reviewed commit, or the comment is too long.
+        ReplyThreadsError: When the comment is too long.
     """
-    comment_id = find_own_comment(comments, viewer)
-    review = next((comment for comment in comments if comment_id is not None and comment.get("id") == comment_id), None)
-    reviewed = reviewed_commit(str(review.get("body") or "")) if review is not None else None
-    if reviewed is None:
-        raise ReplyThreadsError(f"the dovo-review comment on pull request #{inputs.number} names no reviewed commit")
-    body = outcome_comment(inputs.findings, reviewed[:REVIEWED_COMMIT_CHARS], commit)
+    body = outcome_comment(inputs.findings, str(inputs.reviewed)[:REVIEWED_COMMIT_CHARS], commit)
     problem = comment_problem(body)
     if problem is not None:
         raise ReplyThreadsError(problem)

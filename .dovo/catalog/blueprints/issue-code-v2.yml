@@ -7,9 +7,9 @@
 # feature-dev and the dovo-* skills once it works. Compare fixes to either
 # source against this copy and carry them over. Step ids, timeouts, failure
 # policies and artifact names match feature-dev's wherever the slice flow does
-# not change them, so commit-fixes, post-review and pr_feedback.py work on
-# slice PRs unchanged, and grade_inputs.py only adds the slice's phase count,
-# since the code loop runs one iteration per phase.
+# not change them, so commit-fixes and post-review work on slice PRs
+# unchanged, and grade_inputs.py only adds the slice's phase count, since the
+# code loop runs one iteration per phase.
 version: 1
 name: issue-code-v2
 id: issue-code-v2

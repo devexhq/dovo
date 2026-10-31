@@ -1,7 +1,7 @@
 version: 1
 name: pr-fix
 id: pr-fix
-description: Restore a pull request's last dovo run state and collect its open feedback, draft a fix, dismiss or defer triage of every item for you to approve, fix the approved fix items, then gate, commit, push, reply on and resolve the addressed review threads, post the outcomes of the review's findings outside the diff, re-review and post the review with this run's session
+description: Collect the open feedback of any open pull request in this repository, draft a fix, dismiss or defer triage of every item for you to approve, fix the approved fix items, then gate, commit, push, reply on and resolve the addressed review threads, post the outcomes of the review's findings outside the diff, re-review and post the review with this run's session
 summary: One fix round on a pull request
 
 inputs:
@@ -12,26 +12,28 @@ inputs:
     aliases: ["-p", "--pr"]
 
 steps:
-  # Stops the run (errors 2-5) before anything is collected. Runs from the
-  # run's base, then leaves the worktree detached at the pull request's head,
-  # so every later step runs the pull request's own code.
-  - id: restore
-    name: Restore the run's state and collect feedback
+  # Stops a closed or cross-repository pull request (error 2) before anything
+  # is collected. Copies the pr-fix scripts and dovo-code rules from the run's
+  # base into .agentic/pr-fix/, then leaves the worktree detached at the pull
+  # request's head. Every later Dovo script and prompt runs those copies, except
+  # the head's own quality gate, the commit-message check in commit-fixes and
+  # the review step's /dovo-review.
+  - id: collect
+    name: Collect feedback
     run: uv run python scripts/pr_feedback.py --pr "$PR"
     env: { PR: "${{ inputs.pr }}" }
     timeout_seconds: 300
     artifacts:
-      - { name: plan, path: .agentic/plan.md }
-      - { name: plan-questions, path: .agentic/plan.json }
       - { name: feedback, path: .agentic/feedback.json }
+      - { name: pr-context, path: .agentic/pr-context.md }
 
   - id: triage
     name: Draft the triage of the feedback
     type: agent
     prompt: |
-      /dovo-code feedback --triage
-
-      Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
+      Follow the feedback mode's triage (--triage) in .agentic/pr-fix/dovo-code.md,
+      the dovo-code rules copied from the run's base. Its relative links resolve from
+      .agents/skills/dovo-code/ in the checkout.
       Write .agentic/triage.json for every item in .agentic/feedback.json.
       Do not edit any other file, commit, stage or push.
     tools: { allow_all: true }
@@ -44,7 +46,7 @@ steps:
   # act on. An invalid triage fails this step and stops the run before the approval.
   - id: render-triage
     name: Check the triage and render it for approval
-    run: uv run python scripts/reply_threads.py --render-triage
+    run: uv run python .agentic/pr-fix/reply_threads.py --render-triage
     timeout_seconds: 300
     artifacts:
       - { name: triage, path: .agentic/triage.md }
@@ -59,7 +61,7 @@ steps:
       artifact: triage
       comment: { policy: optional, message: Notes for the fixer }
 
-  # Installed at the pull request's head, which restore checked out, before
+  # Installed at the pull request's head, which collect checked out, before
   # the fixer writes code, so its first test run finds every project dependency.
   - id: sync
     name: Install the project's dependencies
@@ -87,9 +89,9 @@ steps:
         name: Fix the approved fix items
         type: agent
         prompt: |
-          /dovo-code feedback
-
-          Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
+          Follow the feedback mode's fix (no flag) in .agentic/pr-fix/dovo-code.md, the
+          dovo-code rules copied from the run's base. Its relative links resolve from
+          .agents/skills/dovo-code/ in the checkout.
           Fix the fix items of the approved triage in .agentic/triage.json.
           Do not commit, stage or push.
           Notes: {{ steps.approve-triage.outputs.comment }}
@@ -123,7 +125,7 @@ steps:
   # posts only what is missing.
   - id: reply
     name: Reply on and resolve the addressed review threads
-    run: uv run python scripts/reply_threads.py
+    run: uv run python .agentic/pr-fix/reply_threads.py
     timeout_seconds: 300
     on_failure: prompt_user
 
@@ -140,5 +142,10 @@ steps:
     timeout_seconds: 1800
     artifacts: [{ name: review, path: ".agentic/review.*" }]
 
+  # pr-fix's own step, not the shared post-review: it runs the base's copy of
+  # publish_review.py.
   - id: post-review
-    uses: post-review
+    name: Post the review to the PR
+    run: uv run python .agentic/pr-fix/publish_review.py --pr "$(head -n 1 .agentic/pr-url)" --session "$DOVO_SESSION_ID"
+    timeout_seconds: 120
+    on_failure: prompt_user
