@@ -30,7 +30,7 @@ class ArtifactStore:
         retention_days: int | None,
         provenance: ArtifactProvenance,
     ) -> ArtifactUploadResult:
-        """Publish a named bundle as the next revision for this session."""
+        """Publish a named bundle as the next revision for this session, or keep the latest one when the bundle is unchanged."""
         return self._artifacts.publish(
             self._session_id,
             name,

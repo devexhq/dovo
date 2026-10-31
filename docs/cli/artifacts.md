@@ -2,7 +2,7 @@
 
 The `dovo artifacts` command group inspects and manages session artifacts: named file bundles published from a running blueprint's worktree into persistent storage, so they can be listed, downloaded, and eventually pruned once expired.
 
-Artifacts live under the global storage root: `~/.dovo/storage/projects/<project_id>/artifacts/<session_id>/<name>/<revision>/` (the root honors `DOVO_HOME`). Every publish of the same `<name>` in a session adds a new, immutable revision (1, 2, 3, ...); earlier revisions are never rewritten. Each revision carries a `manifest.json` listing its revision number, bundle digest, the publishing step's `step_id`, `attempt` and `loop_iteration`, and every file's relative path, SHA256 checksum, and size.
+Artifacts live under the global storage root: `~/.dovo/storage/projects/<project_id>/artifacts/<session_id>/<name>/<revision>/` (the root honors `DOVO_HOME`). Every publish of the same `<name>` in a session adds a new, immutable revision (1, 2, 3, ...); earlier revisions are never rewritten. A publish whose files are identical to the latest revision's (same bundle digest) adds nothing: the latest revision stays current, so `{{ artifacts.<name>.revision }}` and `dovo artifacts list` still show it. A latest revision that has expired is not reused. Each revision carries a `manifest.json` listing its revision number, bundle digest, the publishing step's `step_id`, `attempt` and `loop_iteration`, and every file's relative path, SHA256 checksum, and size.
 
 There is no `dovo artifacts upload` command. Publishing happens two ways, both driven from inside a running blueprint:
 

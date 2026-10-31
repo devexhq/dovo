@@ -98,6 +98,25 @@ def _write_manifest_and_move(
     )
 
 
+def _unchanged_latest(db: ArtifactsRepository, manifest: ArtifactManifest) -> ArtifactUploadResult | None:
+    """Return the latest revision as the publish's result when it holds the same bundle digest and has not expired."""
+    latest = db.get(manifest.session_id, manifest.name)
+    if latest is None or latest.digest != manifest.digest:
+        return None
+    if latest.expires_at is not None and latest.expires_at <= manifest.created_at:
+        return None
+    return ArtifactUploadResult(
+        status=ArtifactUploadStatus.OK,
+        name=latest.name,
+        session_id=latest.session_id,
+        revision=latest.revision,
+        digest=latest.digest,
+        size_bytes=latest.size_bytes,
+        file_count=latest.file_count,
+        expires_at=latest.expires_at,
+    )
+
+
 def publish_artifact(
     worktree_path: Path,
     artifacts_dir: Path,
@@ -109,7 +128,10 @@ def publish_artifact(
     retention_days: int | None,
     provenance: ArtifactProvenance,
 ) -> ArtifactUploadResult:
-    """Stage matching files, claim the next revision, write manifest.json, and move the bundle into <name>/<revision>/."""
+    """Stage matching files, claim the next revision, write manifest.json, and move the bundle into <name>/<revision>/.
+
+    A bundle whose digest equals the latest unexpired revision's adds no revision: the result names that revision.
+    """
     name_dir = artifacts_dir / session_id / name
     temp_dir = artifacts_dir / session_id / f".tmp-{name}-{uuid4().hex}"
 
@@ -131,6 +153,10 @@ def publish_artifact(
             retention_days=retention_days,
             provenance=provenance,
         )
+        kept = _unchanged_latest(db, manifest)
+        if kept is not None:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return kept
         claimed = _claim_revision(db, manifest, name_dir)
         if claimed is None:
             shutil.rmtree(temp_dir, ignore_errors=True)

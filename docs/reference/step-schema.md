@@ -42,7 +42,7 @@ Each entry of a step's `artifacts:` list publishes the files matching `path` (a 
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `name` | `string` | **Yes** | - | Artifact name, unique per session; each publish adds a new revision. |
+| `name` | `string` | **Yes** | - | Artifact name, unique per session; each publish adds a new revision, unless its files are identical to the latest revision's, which then stays current. |
 | `path` | `string` | **Yes** | - | Glob of files to publish. Not interpolated. |
 | `retention_days` | `integer` | No | `null` | Days until the revision expires; `0` or omitted never expires. |
 | `required` | `boolean` | No | `true` | When `true`, a glob that matches nothing or any other publish failure fails the step and its `on_failure` policy applies. When `false`, the failure is a warning. |
