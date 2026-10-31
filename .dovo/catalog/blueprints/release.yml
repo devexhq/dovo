@@ -1,7 +1,7 @@
 version: 1
 name: release
 id: release
-description: Tag the green main commit for a closed milestone, draft release notes for approval, then publish, draft or only push the tag
+description: Tag a closed milestone's green main commit and publish its release notes after approval.
 summary: Closed milestone to tagged GitHub release with a human gate
 
 inputs:

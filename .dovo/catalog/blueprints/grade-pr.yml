@@ -1,7 +1,7 @@
 version: 1
 name: grade-pr
 id: grade-pr
-description: Collect a pull request's checks, its dovo run's plan, review and step history, and its head commit's files, grade it against the dovo-grade rubric, publish the report and record as artifacts, and post or update the pull request's one dovo-grade comment unless post is false
+description: Grade a pull request against the dovo-grade rubric and post the result as a comment.
 summary: Grade a pull request against the dovo-grade rubric
 
 inputs:

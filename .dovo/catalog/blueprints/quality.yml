@@ -1,7 +1,7 @@
 version: 1
 name: quality
 id: quality
-description: Run the repository quality gates against the working tree, cheapest checks first
+description: Run every quality gate against the working tree, cheapest first.
 summary: Format, lint, typecheck, docs build, complexity and tests with coverage
 use_worktree: false
 

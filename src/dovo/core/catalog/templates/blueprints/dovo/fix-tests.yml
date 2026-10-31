@@ -1,7 +1,7 @@
 version: "1.0"
 name: "fix-tests"
 id: "fix-tests"
-description: "Iteratively fix failing tests until they pass or attempts are exhausted"
+description: "Fix failing tests in a loop until they pass or the attempts run out."
 timeout_seconds: 600
 
 steps:
