@@ -266,6 +266,29 @@ class Catalog:
             warnings=[*resolution_warnings, *item_warnings],
         )
 
+    def validate_file(
+        self,
+        path: Path,
+        *,
+        key: str,
+        script_root: Path,
+        blueprint_cls: type[_PydanticModel],
+        step_cls: type[_PydanticModel],
+    ) -> CatalogValidateResult:
+        """Validate the blueprint file at path, such as a run's snapshot, as catalog item key, without touching the index.
+
+        The checks, messages and remediations are those ``validate`` reports for key; each ``script_path`` is
+        looked up under script_root instead of the repository root.
+        """
+        item_type = CatalogItemType.BLUEPRINT.value
+        with catch_failure("catalog.validate_file", key=key) as caught:
+            warnings = validate_catalog_item(
+                path, item_type, key, repo_root=script_root, blueprint_cls=blueprint_cls, step_cls=step_cls
+            )
+        if caught.failure is not None:
+            return _definition_failure(key, (path, item_type, key, []), caught.failure)
+        return CatalogValidateResult(valid=True, target=key, resolved_path=path, item_type=item_type, warnings=warnings)
+
     def _resolve_validate_target(
         self,
         target: str,

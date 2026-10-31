@@ -562,21 +562,15 @@ class CatalogValidateAskTests:
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
         assert "Step 'approve'" in result.errors[0]
 
-    def test_ask_blueprint_reports_every_schema_error(self, isolated_workspace: Path) -> None:
+    def test_ask_blueprint_reports_only_the_declared_step_kind_error(self, isolated_workspace: Path) -> None:
         _write_yaml(isolated_workspace / "ask.yml", {"name": "ask", "steps": [{"id": "approve", "type": "ask"}]})
 
         result = _validate("ask.yml", path=isolated_workspace)
 
         assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
-        assert result.errors == [
-            "steps.0.function-after[validate_step_shape(), StepDefinition]: Value error, "
-            "Step 'approve': 'type: ask' requires 'interaction'.",
-            "steps.0.function-after[validate_on_max_iterations_context(), LoopStepBlock].type: Input should be 'loop'.",
-            "steps.0.function-after[validate_on_max_iterations_context(), LoopStepBlock].until: Field required.",
-            "steps.0.function-after[validate_on_max_iterations_context(), LoopStepBlock].do: Field required.",
-        ]
+        assert result.errors == ["steps.0.step: Value error, Step 'approve': 'type: ask' requires 'interaction'."]
         assert result.warnings == []
-        assert result.remediations == [Remediation(message="Fix the reported schema error for target 'ask'.")] * 4
+        assert result.remediations == [Remediation(message="Fix the reported schema error for target 'ask'.")]
 
     def test_ask_step_conflict_reports_one_schema_error(self, isolated_workspace: Path) -> None:
         _write_yaml(isolated_workspace / "ask_step.yml", {"id": "approve", "type": "ask", "run": "x"})
@@ -587,6 +581,76 @@ class CatalogValidateAskTests:
         assert result.item_type == "step"
         assert result.errors == ["<root>: Value error, Step 'approve': 'type: ask' cannot be combined with run."]
         assert result.remediations == [Remediation(message="Fix the reported schema error for target 'ask_step'.")]
+
+
+class CatalogValidateBlockTests:
+    """Loop and if blocks: unknown loop keys, derived ids inside blocks, and duplicate ids across branches."""
+
+    def test_loop_with_unknown_key_fails_validation(self, isolated_workspace: Path) -> None:
+        """Regression for GH-1084 step 1-2: a loop with `for_each:` used to validate with the key dropped."""
+        loop = {
+            "id": "phases",
+            "type": "loop",
+            "until": ["steps.check.exit_code == 0"],
+            "for_each": {"artifact": "plan", "file": "plan.json", "items_path": "phases"},
+            "do": [{"id": "check", "run": "true"}],
+        }
+        _write_yaml(isolated_workspace / "loop.yml", {"name": "loop", "steps": [loop]})
+
+        result = _validate("loop.yml", path=isolated_workspace)
+
+        assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
+        assert result.errors == ["steps.0.loop: Value error, Loop 'phases' has unknown key(s): for_each."]
+
+    def test_unnamed_do_steps_validate_with_derived_ids(self, isolated_workspace: Path) -> None:
+        """Regression for GH-1084 step 3: `do` steps without `id` used to fail validation."""
+        loop = {
+            "id": "phases",
+            "type": "loop",
+            "until": ["steps.run-tests.exit_code == 0"],
+            "do": [{"name": "Run tests", "run": "uv run pytest"}, {"command": "echo fix"}],
+        }
+        _write_yaml(isolated_workspace / "loop.yml", {"name": "loop", "steps": [loop]})
+
+        result = _validate("loop.yml", path=isolated_workspace)
+
+        assert (result.ok, result.errors) == (True, [])
+
+    @pytest.mark.parametrize(
+        ("steps", "duplicate"),
+        [
+            pytest.param(
+                [
+                    {"id": "phases-step-1", "run": "true"},
+                    {"id": "phases", "type": "loop", "until": ["iteration.index == 1"], "do": [{"run": "true"}]},
+                ],
+                "phases-step-1",
+                id="derived-do-id",
+            ),
+            pytest.param(
+                [
+                    {"id": "check", "run": "true"},
+                    {
+                        "id": "route",
+                        "type": "if",
+                        "condition": ["steps.check.exit_code == 0"],
+                        "then": [{"id": "check", "run": "true"}],
+                    },
+                ],
+                "check",
+                id="branch-step",
+            ),
+        ],
+    )
+    def test_repeated_id_inside_a_block_fails_duplicate_check(
+        self, isolated_workspace: Path, steps: list[object], duplicate: str
+    ) -> None:
+        _write_yaml(isolated_workspace / "dup.yml", {"name": "dup", "steps": steps})
+
+        result = _validate("dup.yml", path=isolated_workspace)
+
+        assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
+        assert result.errors == [f"Step id '{duplicate}' is used by more than one step."]
 
 
 class _ExplodingBlueprintDefinition(BlueprintDefinition):

@@ -1,4 +1,4 @@
-"""Condition expression parsing and authoring-time validation for loop 'until' clauses."""
+"""Condition expression parsing and authoring-time validation shared by loop 'until', step 'when' and 'if' block 'condition' lists."""
 
 from __future__ import annotations
 
@@ -58,11 +58,17 @@ def _is_dynamic_operand(operand: str) -> bool:
     return operand.startswith("steps.") or operand.startswith("iteration.") or operand in ("iteration",)
 
 
-def _validate_step_operand(
-    operand: str,
-    expression: str,
-    known_step_ids: set[str] | None,
-) -> list[str]:
+@dataclass(frozen=True)
+class ConditionScope:
+    """Where a condition list sits: its clause name, the step ids it may reference, and whether 'iteration' resolves."""
+
+    clause: str = "until"
+    known_step_ids: frozenset[str] | None = None
+    scope_label: str = "loop 'do' steps"
+    allow_iteration: bool = True
+
+
+def _validate_step_operand(operand: str, expression: str, scope: ConditionScope) -> list[str]:
     """Validate step reference syntax and verify step ID against known IDs."""
     parts = operand.split(".")
     if len(parts) < 3:
@@ -70,11 +76,12 @@ def _validate_step_operand(
 
     step_id, field = parts[1], parts[2]
     errors: list[str] = []
-    if known_step_ids is not None and step_id not in known_step_ids:
-        allowed = ", ".join(sorted(known_step_ids)) or "none"
+    known = scope.known_step_ids
+    if known is not None and step_id not in known:
+        allowed = ", ".join(sorted(known)) or "none"
         errors.append(
-            f"Step id '{step_id}' referenced in until condition '{expression}' "
-            f"not found in loop 'do' steps (allowed: {allowed})."
+            f"Step id '{step_id}' referenced in {scope.clause} condition '{expression}' "
+            f"not found in {scope.scope_label} (allowed: {allowed})."
         )
     if field not in _VALID_STEP_FIELDS:
         errors.append(
@@ -83,25 +90,32 @@ def _validate_step_operand(
     return errors
 
 
-def _validate_operand(
-    operand: str,
-    expression: str,
-    known_step_ids: set[str] | None,
-) -> list[str]:
+def _validate_operand(operand: str, expression: str, scope: ConditionScope) -> list[str]:
     """Validate condition operand syntax and reference integrity."""
     if operand.startswith("steps."):
-        return _validate_step_operand(operand, expression, known_step_ids)
+        return _validate_step_operand(operand, expression, scope)
+    if not scope.allow_iteration and _is_dynamic_operand(operand):
+        return [
+            f"Operand '{operand}' in {scope.clause} condition '{expression}' is only available inside a loop's 'do'."
+        ]
     return []
 
 
 def validate_condition_expression(
     expression: str,
     known_step_ids: set[str] | None = None,
+    *,
+    scope: ConditionScope | None = None,
 ) -> list[str]:
-    """Validate syntax and step reference of an until condition expression.
+    """Validate the syntax and operand references of one condition expression.
+
+    known_step_ids alone checks a loop 'until' expression against its loop's 'do' step ids; scope, when given,
+    names the clause and the step ids a 'when' or 'condition' expression may reference instead.
 
     Returns a list of error message strings (empty if valid).
     """
+    if scope is None:
+        scope = ConditionScope(known_step_ids=None if known_step_ids is None else frozenset(known_step_ids))
     parsed = parse_condition_expression(expression)
     if parsed is None:
         return [
@@ -110,8 +124,8 @@ def validate_condition_expression(
         ]
 
     errors: list[str] = []
-    errors.extend(_validate_operand(parsed.left, expression, known_step_ids))
-    errors.extend(_validate_operand(parsed.right, expression, known_step_ids))
+    errors.extend(_validate_operand(parsed.left, expression, scope))
+    errors.extend(_validate_operand(parsed.right, expression, scope))
 
     if not _is_dynamic_operand(parsed.left) and not _is_dynamic_operand(parsed.right):
         errors.append(

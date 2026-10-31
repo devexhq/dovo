@@ -287,6 +287,7 @@ class StepDefinition(BaseModel):
     artifacts: list[ArtifactPublishSpec] = Field(default_factory=list)
     interaction: InteractionSpec | None = None
     max_files: int | None = Field(default=None, ge=1)
+    when: list[str] | None = None
 
     @field_validator("type", mode="before")
     @classmethod
@@ -315,7 +316,9 @@ class StepDefinition(BaseModel):
 
     @model_validator(mode="after")
     def validate_step_shape(self) -> "StepDefinition":
-        """Enforce exactly one of run/uses/inline-type mode."""
+        """Enforce exactly one of run/uses/inline-type mode and a non-empty 'when' list."""
+        if self.when is not None and not self.when:
+            raise ValueError(f"Step '{self.id}': 'when' must list at least one condition.")
         _validate_ask_shape(self)
         if self.type == StepType.ASK:
             return self
@@ -330,18 +333,55 @@ class StepDefinition(BaseModel):
         return self
 
 
+_BLOCK_TYPES = frozenset({"loop", "if"})
+
+
+def _nested_block_errors(owner: str, list_name: str, items: object) -> list[str]:
+    """Return one error per loop or if block found in a block's step list, which holds only steps."""
+    if not isinstance(items, list):
+        return []
+    return [
+        f"{owner}: '{list_name}' entry '{item.get('id', position)}' is a '{item['type']}' block; "
+        f"'{list_name}' holds only steps."
+        for position, item in enumerate(items, start=1)
+        if isinstance(item, dict) and item.get("type") in _BLOCK_TYPES
+    ]
+
+
+def _raise_block_errors(errors: list[str]) -> None:
+    """Raise one ValueError joining errors, when there are any."""
+    if errors:
+        raise ValueError(" ".join(errors))
+
+
 class LoopStepBlock(BaseModel):
     """Loop block step execution definition."""
 
-    # Hand-authored YAML loop blocks permit forward-compatible extra keys.
-    model_config = {"extra": "ignore", "populate_by_name": True}
+    model_config = {"extra": "forbid", "populate_by_name": True}
 
     id: str = Field(min_length=1)
     type: Literal["loop"]
+    name: str | None = None
     max_iterations: int = Field(default=5, ge=1)
     until: list[str] = Field(min_length=1)
     do: list[StepDefinition] = Field(min_length=1)
     on_max_iterations: FailurePolicy = FailurePolicy.PROMPT_USER
+    when: list[str] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_unknown_keys_and_nested_blocks(cls, data: object) -> object:
+        """Reject keys the loop does not define, sorted, and loop or if blocks inside 'do', naming the loop."""
+        if not isinstance(data, dict):
+            return data
+        owner = f"Loop '{data.get('id', '')}'"
+        errors: list[str] = []
+        unknown = sorted(str(key) for key in data if key not in cls.model_fields)
+        if unknown:
+            errors.append(f"{owner} has unknown key(s): {', '.join(unknown)}.")
+        errors.extend(_nested_block_errors(owner, "do", data.get("do")))
+        _raise_block_errors(errors)
+        return data
 
     @field_validator("on_max_iterations", mode="before")
     @classmethod
@@ -356,8 +396,67 @@ class LoopStepBlock(BaseModel):
 
     @model_validator(mode="after")
     def validate_on_max_iterations_context(self) -> "LoopStepBlock":
-        """Reject FailurePolicy values not valid for the terminal context (e.g. RETRY)."""
+        """Reject FailurePolicy values not valid for the terminal context (e.g. RETRY) and an empty 'when' list."""
+        if self.when is not None and not self.when:
+            raise ValueError(f"Loop '{self.id}': 'when' must list at least one condition.")
         allowed = FailurePolicy.context("terminal")
         if self.on_max_iterations not in allowed:
             raise ValueError(f"Loop '{self.id}': on_max_iterations must be one of {sorted(allowed)}.")
         return self
+
+
+class IfStepBlock(BaseModel):
+    """Top-level block that runs its 'then' steps when every condition holds, and its 'else' steps otherwise."""
+
+    model_config = {"extra": "forbid", "strict": True, "populate_by_name": True}
+
+    id: str = Field(min_length=1)
+    type: Literal["if"]
+    name: str | None = None
+    condition: list[str]
+    then: list[StepDefinition]
+    else_: list[StepDefinition] | None = Field(default=None, validation_alias="else", serialization_alias="else")
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_nested_blocks(cls, data: object) -> object:
+        """Reject loop or if blocks inside 'then' or 'else', naming the if block."""
+        if not isinstance(data, dict):
+            return data
+        owner = f"If block '{data.get('id', '')}'"
+        _raise_block_errors(
+            [
+                *_nested_block_errors(owner, "then", data.get("then")),
+                *_nested_block_errors(owner, "else", data.get("else")),
+            ]
+        )
+        return data
+
+    @model_validator(mode="after")
+    def validate_lists_not_empty(self) -> "IfStepBlock":
+        """Require at least one condition and one 'then' step, and at least one 'else' step when 'else' is set."""
+        if not self.condition:
+            raise ValueError(f"If block '{self.id}': 'condition' must list at least one condition.")
+        if not self.then:
+            raise ValueError(f"If block '{self.id}': 'then' must list at least one step.")
+        if self.else_ is not None and not self.else_:
+            raise ValueError(f"If block '{self.id}': 'else' must list at least one step when set.")
+        return self
+
+    def branch(self, name: str) -> list[StepDefinition]:
+        """Return the steps of branch name: 'then', 'else' (none when absent), or none for any other name."""
+        if name == "then":
+            return self.then
+        return list(self.else_ or []) if name == "else" else []
+
+
+BlueprintStep = StepDefinition | LoopStepBlock | IfStepBlock
+
+
+def entry_steps(entry: BlueprintStep) -> list[StepDefinition]:
+    """Return the steps one blueprint entry holds: a loop's 'do', an if block's 'then' and 'else', or the step itself."""
+    if isinstance(entry, LoopStepBlock):
+        return list(entry.do)
+    if isinstance(entry, IfStepBlock):
+        return [*entry.branch("then"), *entry.branch("else")]
+    return [entry]

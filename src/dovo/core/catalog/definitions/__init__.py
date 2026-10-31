@@ -2,6 +2,7 @@
 
 from dovo.core.catalog.definitions.blueprint import BlueprintDefaults, BlueprintDefinition
 from dovo.core.catalog.definitions.conditions import (
+    ConditionScope,
     ParsedCondition,
     parse_condition_expression,
     parse_literal,
@@ -11,7 +12,9 @@ from dovo.core.catalog.definitions.step import (
     DEFAULT_STEP_TIMEOUT_SECONDS,
     OPTION_VALUE_RE,
     ArtifactPublishSpec,
+    BlueprintStep,
     CommentPolicy,
+    IfStepBlock,
     InteractionComment,
     InteractionMode,
     InteractionOption,
@@ -21,6 +24,7 @@ from dovo.core.catalog.definitions.step import (
     StepAssert,
     StepDefinition,
     StepType,
+    entry_steps,
 )
 
 __all__ = [
@@ -29,7 +33,10 @@ __all__ = [
     "ArtifactPublishSpec",
     "BlueprintDefaults",
     "BlueprintDefinition",
+    "BlueprintStep",
     "CommentPolicy",
+    "ConditionScope",
+    "IfStepBlock",
     "InteractionComment",
     "InteractionMode",
     "InteractionOption",
@@ -40,6 +47,7 @@ __all__ = [
     "StepAssert",
     "StepDefinition",
     "StepType",
+    "entry_steps",
     "parse_condition_expression",
     "parse_literal",
     "validate_condition_expression",

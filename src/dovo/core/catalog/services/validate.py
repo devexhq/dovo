@@ -169,13 +169,14 @@ def _format_pydantic_error(error: ErrorDetails) -> str:
 
 
 def _iter_all_steps(steps: list[object]) -> list[object]:
-    """Flatten top-level steps and any nested loop 'do' steps into one list, duck-typed."""
+    """Flatten top-level entries with the steps of each loop's 'do' and each if block's 'then' and 'else', duck-typed."""
     flattened: list[object] = []
     for step in steps:
         flattened.append(step)
-        nested = getattr(step, "do", None)
-        if isinstance(nested, list):
-            flattened.extend(_iter_all_steps(nested))
+        for list_name in ("do", "then", "else_"):
+            nested = getattr(step, list_name, None)
+            if isinstance(nested, list):
+                flattened.extend(_iter_all_steps(nested))
     return flattened
 
 
