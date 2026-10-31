@@ -81,4 +81,4 @@ Write `.agentic/plan-challenge.json`, overwriting any earlier one, and echo the 
 
 ## 7. Hand off
 
-Report the file path and the number of challenges by route. Do not edit the plan: the blueprint folds `fold` challenges and turns `ask` challenges into Open Questions for a human.
+Report the file path and the number of challenges by route. Do not edit the plan: the blueprint folds `fold` challenges and turns `ask` challenges into open questions in `plan.json` for a human.
