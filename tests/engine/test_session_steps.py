@@ -13,9 +13,10 @@ from dovo.core.db import SessionRecord, SessionsRepository
 from dovo.core.sessions import StepRunSummary
 from dovo.engine.exceptions import EngineError
 from dovo.engine.executors.models import StepResult
-from dovo.engine.models import DefinitionRef, DefinitionsManifest
+from dovo.engine.models import DefinitionRef, DefinitionsManifest, IfBranch, SkipCause
 from dovo.engine.session_steps import NO_STEP_DATA_WARNING, summarize_session_steps
 from dovo.engine.state_models import (
+    ExecutionIfNode,
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,
@@ -23,6 +24,7 @@ from dovo.engine.state_models import (
     ExecutionStateTree,
     NodeState,
     StepAttemptRecord,
+    StepSkip,
 )
 from tests.harness.sessions import SEEDED_FAILURE, SEEDED_SPAN, seed_failed_session
 
@@ -154,6 +156,52 @@ class SummarizeSessionStepsTests:
             None,
             None,
         )
+
+    def test_skipped_step_and_loop_report_their_cause_and_a_skipped_loop_has_no_body_rows(self) -> None:
+        skip = StepSkip(cause=SkipCause.WHEN_UNRESOLVED, expression="steps.a.exit_code == 0")
+        loop = ExecutionLoopNode(
+            id="repair",
+            max_iterations=2,
+            state=NodeState.SKIPPED,
+            skip=skip,
+            iterations=[ExecutionIterationRecord(number=1, steps=[ExecutionLeafNode(id="fix")])],
+        )
+        leaf = ExecutionLeafNode(id="fold", state=NodeState.SKIPPED, skip=skip)
+
+        steps = summarize_session_steps(_record([leaf, loop]), _REDACTOR)
+
+        assert steps == [
+            StepRunSummary(kind="step", step_id="fold", state="skipped", attempts=0, skip_cause="when_unresolved"),
+            StepRunSummary(kind="loop", step_id="repair", state="skipped", iterations=0, skip_cause="when_unresolved"),
+        ]
+
+    def test_if_block_reports_its_branch_followed_by_the_steps_of_that_branch(self) -> None:
+        block = ExecutionIfNode(
+            id="route",
+            name="Route",
+            state=NodeState.COMPLETED,
+            branch=IfBranch.ELSE,
+            steps=[
+                ExecutionLeafNode(
+                    id="fix", state=NodeState.COMPLETED, attempts=[_attempt(1, exit_code=0, duration_seconds=1.0)]
+                )
+            ],
+        )
+
+        steps = summarize_session_steps(_record([block]), _REDACTOR)
+
+        assert steps == [
+            StepRunSummary(kind="if", step_id="route", name="Route", state="completed", branch="else"),
+            StepRunSummary(
+                kind="step",
+                step_id="fix",
+                state="completed",
+                attempts=1,
+                exit_code=0,
+                duration_seconds=1.0,
+                if_id="route",
+            ),
+        ]
 
     def test_error_message_is_redacted_and_streams_are_dropped(self) -> None:
         redactor = SecretRedactor.from_environment(env={"DB_PIN": "1234"}, credential_envs=("DB_PIN",))

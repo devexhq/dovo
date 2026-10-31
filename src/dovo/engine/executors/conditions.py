@@ -1,4 +1,4 @@
-"""Condition expression evaluator for loop 'until' clauses."""
+"""Condition expression evaluator shared by loop 'until', step 'when' and if block 'condition' lists."""
 
 from __future__ import annotations
 
@@ -142,10 +142,15 @@ def evaluate_condition(
     )
     passed = _compare_values(actual, expected, parsed.operator)
     detail = _format_condition_detail(passed, actual)
+    unresolved = any(
+        operand.strip().startswith("steps.") and value is None
+        for operand, value in ((parsed.left, actual), (parsed.right, expected))
+    )
 
     return ConditionEvaluationResult(
         expression=expression,
         passed=passed,
+        resolved=not unresolved,
         actual=actual,
         expected=expected,
         detail=detail,

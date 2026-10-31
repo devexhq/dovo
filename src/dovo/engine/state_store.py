@@ -9,12 +9,13 @@ from pydantic import ValidationError
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog.blueprint import Blueprint
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import BlueprintStep, IfStepBlock, LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionsRepository
 from dovo.engine.exceptions import EngineError
 from dovo.engine.models import DefinitionsManifest, LifecycleUpdate
 from dovo.engine.projection import build_session_json_payload
 from dovo.engine.state_models import (
+    ExecutionIfNode,
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,
@@ -45,9 +46,18 @@ def _loop_node(loop: LoopStepBlock) -> ExecutionLoopNode:
     )
 
 
-def _plan_nodes(steps: list[StepDefinition | LoopStepBlock]) -> list[ExecutionLeafNode | ExecutionLoopNode]:
+def _plan_node(step: BlueprintStep) -> ExecutionLeafNode | ExecutionLoopNode | ExecutionIfNode:
+    """Build the PENDING plan node of one top-level entry; an if block gets its branch steps when it starts."""
+    if isinstance(step, LoopStepBlock):
+        return _loop_node(step)
+    if isinstance(step, IfStepBlock):
+        return ExecutionIfNode(id=step.id, name=step.name)
+    return _leaf_node(step)
+
+
+def _plan_nodes(steps: list[BlueprintStep]) -> list[ExecutionLeafNode | ExecutionLoopNode | ExecutionIfNode]:
     """Build the ordered top-level plan nodes for a blueprint's steps."""
-    return [_loop_node(step) if isinstance(step, LoopStepBlock) else _leaf_node(step) for step in steps]
+    return [_plan_node(step) for step in steps]
 
 
 def _missing_snapshot_paths(session_dir: Path, manifest: DefinitionsManifest) -> list[Path]:

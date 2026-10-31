@@ -6,7 +6,9 @@ from collections.abc import Sequence
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
-from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError
+from dovo.core.catalog import Catalog
+from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
+from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError, CatalogValidateFindings
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.interaction import HeadlessAnswerInput, Interaction, InteractionAnswer
 from dovo.core.sessions import STALE_RUN_ERROR_MESSAGE
@@ -19,8 +21,8 @@ from dovo.engine.state_models import (
     NodeState,
 )
 from dovo.engine.state_store import SessionStateStore
-from dovo.engine.state_validation import validate_loop_structure
-from dovo.engine.writer import get_session_dir, load_blueprint_from_snapshot
+from dovo.engine.state_validation import validate_block_structure
+from dovo.engine.writer import get_session_dir, load_blueprint_from_snapshot, snapshot_blueprint_path
 
 _FINISHED_NODE_STATES = frozenset({NodeState.COMPLETED, NodeState.IGNORED})
 
@@ -34,12 +36,16 @@ class EngineLoader:
         sessions: SessionsRepository,
         paths: WorkspacePaths,
         session_id: str,
+        warnings: list[str],
     ) -> tuple[SessionRecord, ExecutionStateTree, DefinitionsManifest]:
         """Return the paused run's row, state tree, and manifest, or raise EngineError with the failure's ErrorCode.
 
         The caller holds the workspace lock. A run whose every top-level node is completed or ignored loads like
         any other, so the coordinator ends it completed. A run whose every top-level node is terminal with one not
         completed or ignored has no step left: its row is written failed before SESSION_STATE_CORRUPT is raised.
+        The blueprint snapshot is checked as `dovo blueprint validate` checks the blueprint, each script_path under
+        the run's worktree: its warnings are appended to warnings, and its failure is raised with the code, first
+        message and remediations validation reports, every error and warning in CatalogValidateFindings.
         """
         row = sessions.get(session_id)
         if row is None:
@@ -68,6 +74,7 @@ class EngineLoader:
 
         cls._validate_paused_leaves(session_id, state)
         cls._check_retained_worktree(session_id, paths, row)
+        warnings.extend(cls._validate_snapshot(session_id, paths, row, state))
         cls._check_definitions(session_id, paths, state)
         return row, state, state.manifest
 
@@ -148,6 +155,29 @@ class EngineLoader:
         )
 
     @classmethod
+    def _validate_snapshot(
+        cls, session_id: str, paths: WorkspacePaths, row: SessionRecord, state: ExecutionStateTree
+    ) -> list[str]:
+        """Return the snapshot blueprint's validation warnings, or raise its validation failure as an EngineError."""
+        blueprint_key = state.manifest.blueprint.ref.split(":", 2)[-1]
+        worktree_id = row.worktree_id if row.use_worktree else None
+        validation = Catalog(paths).validate_file(
+            snapshot_blueprint_path(paths.session_dir(session_id), blueprint_key),
+            key=blueprint_key,
+            script_root=paths.root_dir if worktree_id is None else paths.worktree_dir(worktree_id),
+            blueprint_cls=BlueprintDefinition,
+            step_cls=StepDefinition,
+        )
+        if validation.ok:
+            return list(validation.warnings)
+        raise EngineError(
+            ErrorCode(validation.error_code or ErrorCode.SESSION_SNAPSHOT_INVALID),
+            validation.errors[0],
+            validation.remediations,
+            data=CatalogValidateFindings(errors=tuple(validation.errors), warnings=tuple(validation.warnings)),
+        )
+
+    @classmethod
     def _check_definitions(cls, session_id: str, paths: WorkspacePaths, state: ExecutionStateTree) -> None:
         """Raise SESSION_SNAPSHOT_MISSING or SESSION_SNAPSHOT_INVALID when the snapshot blueprint cannot be rebuilt, SESSION_STATE_CORRUPT when a loop's persisted structure differs from it."""
         try:
@@ -165,7 +195,7 @@ class EngineLoader:
                 f"Cannot resume session '{session_id}': {exc}",
             ) from exc
 
-        structure_errors = validate_loop_structure(state, blueprint)
+        structure_errors = validate_block_structure(state, blueprint)
         if structure_errors:
             raise EngineError(
                 ErrorCode.SESSION_STATE_CORRUPT,

@@ -14,7 +14,7 @@ from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.catalog import Catalog
-from dovo.core.catalog.definitions import BlueprintDefinition
+from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions import Reconciliation
@@ -144,13 +144,13 @@ class BlueprintRunServiceLoadTests:
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With BlueprintDefinition.from_document raising TypeError("bad"), return INTERNAL_ERROR with the message alone and its record in diagnostics, one engine.run event naming the blueprint, and no session row."""
+        """With Blueprint.load raising TypeError("bad") after validation passes, return INTERNAL_ERROR with the message alone and its record in diagnostics, one engine.run event naming the blueprint, and no session row."""
         write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
 
-        def _explode(cls: type[BlueprintDefinition], raw: dict[str, object], *, key: str) -> BlueprintDefinition:
+        def _explode(cls: type[Blueprint], key: str, *, catalog: Catalog) -> Blueprint:
             raise TypeError("bad")
 
-        monkeypatch.setattr(BlueprintDefinition, "from_document", classmethod(_explode))
+        monkeypatch.setattr(Blueprint, "load", classmethod(_explode))
 
         result = BlueprintRunService(
             name="lint",
@@ -233,10 +233,10 @@ class BlueprintRunServiceLoadTests:
         )
         fail_reconciliation_list(monkeypatch)
 
-        def _explode(cls: type[BlueprintDefinition], raw: dict[str, object], *, key: str) -> BlueprintDefinition:
+        def _explode(cls: type[Blueprint], key: str, *, catalog: Catalog) -> Blueprint:
             raise TypeError("bad")
 
-        monkeypatch.setattr(BlueprintDefinition, "from_document", classmethod(_explode))
+        monkeypatch.setattr(Blueprint, "load", classmethod(_explode))
 
         result = BlueprintRunService(
             name="lint",

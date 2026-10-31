@@ -6,11 +6,12 @@ from dataclasses import dataclass, field
 
 from dovo.common.clock import Clock
 from dovo.common.diagnostic_log import DiagnosticRecord, error_diagnostics
-from dovo.common.exceptions import catch_failure
+from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.catalog import Catalog
+from dovo.core.catalog.exceptions import CatalogValidateFindings
 from dovo.core.db import SessionsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import HeadlessAnswerInput
@@ -72,13 +73,17 @@ class BlueprintResumeService:
         with catch_failure("engine.resume", session_id=target_session_id) as caught:
             run_outcome = self._resume(Catalog(self.paths), target_session_id, env_overrides)
         if caught.failure is not None:
-            return BlueprintRunResult(
-                session_record=None,
-                warnings=self.warnings,
-                **caught.failure.result_fields(prior_diagnostics=self.diagnostics),
-            )
+            return self._resume_failure(caught.failure)
 
         return finalize(self.db, self.warnings, self.diagnostics, run_outcome, target_session_id)
+
+    def _resume_failure(self, failure: Failure) -> BlueprintRunResult:
+        """Build the failed result; a snapshot validation failure lists every error and warning its findings carry."""
+        fields = failure.result_fields(prior_diagnostics=self.diagnostics)
+        if isinstance(failure.data, CatalogValidateFindings):
+            fields["errors"] = list(failure.data.errors)
+            self.warnings.extend(failure.data.warnings)
+        return BlueprintRunResult(session_record=None, warnings=self.warnings, **fields)
 
     def _target_session_id(self) -> str | None:
         """Return session_id after loading its record, or the latest paused session's id, or None when nothing is paused."""

@@ -18,6 +18,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
 from dovo.engine import BlueprintResumeService
 from dovo.engine.models import BlueprintRunResult
+from dovo.engine.writer import snapshot_blueprint_path
 from tests.harness import FakeAgentRunner
 from tests.harness.catalog import write_runnable_step
 from tests.harness.diagnostic_log import details_line, diagnostic_record, unwrapped
@@ -101,6 +102,31 @@ class SessionResumeCliIntegrationTests:
 
         assert result.exit_code == 1
         assert "Resume Failed" in result.stdout
+
+    def test_resume_cli_invalid_snapshot_exits_one_and_leaves_the_session_paused(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        """A snapshot that `dovo blueprint validate` rejects stops the resume before any step runs (GH-1096)."""
+        _seed_paused_session(
+            cli_workspace, session_id="deploy", steps=[{"id": "a", "run": "touch a.marker"}], paused_step_id="a"
+        )
+        paths = initialized_workspace_paths(cli_workspace)
+        snapshot = snapshot_blueprint_path(paths.session_dir("deploy"), "deploy")
+        snapshot.write_text(
+            "name: deploy\nsteps:\n  - {id: a, run: touch a.marker}\n  - {id: a, run: touch b.marker}\n",
+            encoding="utf-8",
+        )
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "resume", "deploy"])
+
+        record = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.get("deploy")
+        assert result.exit_code == 1
+        assert "Blueprint Invalid" in result.stdout
+        assert "The blueprint of session 'deploy' failed validation; no steps ran." in result.stdout
+        assert "Step id 'a' is used by more than one step." in result.stdout
+        assert record is not None
+        assert record.status == SessionStatus.PAUSED
+        assert not (cli_workspace / "a.marker").exists()
 
     def test_resume_cli_json_failure_emits_error_panel_and_exits_one(
         self, cli_runner: CliRunner, cli_workspace: Path

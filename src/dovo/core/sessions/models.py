@@ -153,11 +153,15 @@ class HistoryShowStatus(StrEnum):
 
 
 class StepRunSummary(BaseModel):
-    """One step or loop row summarising a session's persisted execution state."""
+    """One step, loop or if-block row summarising a session's persisted execution state.
+
+    skip_cause is set on a row a `when` guard skipped; branch is set on an if-block row that started; if_id is
+    set on each row of a step the chosen branch holds.
+    """
 
     model_config = {"extra": "forbid", "strict": True}
 
-    kind: Literal["step", "loop"]
+    kind: Literal["step", "loop", "if"]
     step_id: str
     name: str | None = None
     state: str
@@ -169,6 +173,9 @@ class StepRunSummary(BaseModel):
     loop_id: str | None = None
     iteration: int | None = None
     iterations: int | None = None
+    skip_cause: str | None = None
+    branch: str | None = None
+    if_id: str | None = None
 
 
 class HistoryShowResult(BaseResult):

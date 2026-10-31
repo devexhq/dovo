@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from dovo.cli.context import CliContext
-from dovo.cli.run.commands.root import _dispatch_paused_prompt, _first_error
+from dovo.cli.run.commands.root import _dispatch_paused_prompt, _first_error, invalid_blueprint_panel
 from dovo.cli.run.observer import resolve_cli_observer
 from dovo.cli.run.prompter import DispatcherFailurePrompter, DispatcherInteractionPrompter
 from dovo.cli.ui import (
@@ -68,7 +68,11 @@ def _dispatch_resume_outcome(
     session_id: str | None,
 ) -> None:
     """Dispatch the appropriate UI event for a completed resume operation."""
-    if result.ok and record is not None:
+    subject = f"The blueprint of session '{session_id}'" if session_id else "The paused session's blueprint"
+    invalid = invalid_blueprint_panel(result, subject)
+    if invalid is not None:
+        ui_dispatcher.dispatch(invalid)
+    elif result.ok and record is not None:
         ui_dispatcher.dispatch(
             RunSuccessEvent(
                 session_id=record.session_id,

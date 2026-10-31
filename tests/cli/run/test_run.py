@@ -74,6 +74,47 @@ class RunCliTests:
         ]
 
 
+class RunCliValidationTests:
+    """Typer runner tests for dovo run over blueprints that `dovo blueprint validate` rejects (GH-1096)."""
+
+    def test_duplicate_step_ids_exit_one_before_any_step_runs(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        """Regression for GH-1096 steps 1-3: the run used to print `one` twice and never run `echo two`."""
+        steps: list[dict[str, object]] = [{"id": "a", "run": "echo one"}, {"id": "a", "run": "echo two"}]
+        write_runnable_blueprint(cli_workspace, key="deploy", steps=steps)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "deploy", "--no-worktree"])
+
+        paths = initialized_workspace_paths(cli_workspace)
+        assert result.exit_code == 1
+        assert "Blueprint Invalid" in result.stdout
+        assert "Blueprint 'deploy' failed validation; no steps ran." in result.stdout
+        assert "Step id 'a' is used by more than one step." in result.stdout
+        assert "[STEP" not in result.stdout
+        assert DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list() == []
+
+    def test_schema_error_json_lists_the_declared_step_kind_error_without_a_raw_dump(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        """Regression for GH-1096 step 4: an agent step without `prompt` used to print the raw validation dump."""
+        steps: list[dict[str, object]] = [{"id": "a", "run": "echo one"}, {"id": "b", "type": "agent"}]
+        write_runnable_blueprint(cli_workspace, key="deploy", steps=steps)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "deploy", "--format", "json"])
+
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+        panels = [event["payload"] for event in events if event["event_type"] == "ErrorPanelEvent"]
+        assert result.exit_code == 1
+        assert panels == [
+            {
+                "title": "Blueprint Invalid",
+                "message": "Blueprint 'deploy' failed validation; no steps ran.\n\n"
+                "• steps.1.step: Value error, Agent steps must specify a non-empty 'prompt' string.",
+                "border_style": "red",
+            }
+        ]
+        assert "errors.pydantic.dev" not in result.stdout
+
+
 class RunCliIntegrationTests:
     """Typer runner integration tests for dovo run."""
 
@@ -866,3 +907,172 @@ class RunAskCliIntegrationTests:
         assert result.exit_code == 0
         assert prompt["payload"]["step_id"] == "approve"
         assert [option["decision"] for option in prompt["payload"]["options"]] == ["approve", "revise", "deny"]
+
+
+_PICKED = "steps.pick.outputs.selected_count > 0"
+
+
+def _guarded_blueprint(workspace: Path) -> None:
+    """Write `guarded`: a multiselect ask, a step and a loop guarded on a non-empty selection, then a plain step."""
+    write_runnable_blueprint(
+        workspace,
+        key="guarded",
+        steps=[
+            {
+                "id": "pick",
+                "type": "ask",
+                "interaction": {
+                    "mode": "multiselect",
+                    "message": "Pick the fixes to apply",
+                    "options": [{"value": "lint", "label": "Lint"}, {"value": "types", "label": "Types"}],
+                },
+            },
+            {"id": "fold", "name": "Fold the answers into the plan", "run": "touch fold.marker", "when": [_PICKED]},
+            {
+                "id": "apply",
+                "type": "loop",
+                "when": [_PICKED],
+                "until": ["steps.fix.exit_code == 0"],
+                "do": [{"id": "fix", "run": "touch fix.marker"}],
+            },
+            {"id": "done", "run": "touch done.marker"},
+        ],
+    )
+
+
+def _routed_blueprint(workspace: Path) -> None:
+    """Write `routed`: a check reporting `not_ready`, then an if block whose `else` branch asks before it fixes."""
+    write_runnable_blueprint(
+        workspace,
+        key="routed",
+        steps=[
+            {"id": "check", "run": 'echo \'{"verdict": "not_ready"}\''},
+            {
+                "id": "route",
+                "type": "if",
+                "condition": ['steps.check.outputs.verdict == "ready"'],
+                "then": [{"id": "ship", "run": "touch ship.marker"}],
+                "else": [
+                    {"id": "approve", "type": "ask", "interaction": {"mode": "confirm", "message": "Fix it first?"}},
+                    {"id": "fix", "run": "touch fix.marker"},
+                ],
+            },
+        ],
+    )
+
+
+def _latest_session_id(workspace: Path) -> str:
+    paths = initialized_workspace_paths(workspace)
+    return DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list(limit=1)[0].session_id
+
+
+class RunGuardCliIntegrationTests:
+    """Typer runner tests for `when` guards and `if` blocks across a pause at an ask and `dovo resume --answer`."""
+
+    def test_no_tty_empty_selection_skips_the_guarded_step_and_loop_and_completes(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        _guarded_blueprint(cli_workspace)
+        paused = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "guarded", "--no-tty", "--no-worktree"])
+        session_id = _latest_session_id(cli_workspace)
+
+        resumed = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "resume", session_id, "--no-tty", "--answer", "pick="]
+        )
+        shown = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", session_id, "--format", "json"])
+
+        steps = json.loads(shown.stdout.splitlines()[-1])["payload"]["steps"]
+        assert (paused.exit_code, resumed.exit_code) == (0, 0)
+        assert unwrapped(f"[2/4] Fold the answers into the plan — skipped (when: {_PICKED} → FALSE)") in unwrapped(
+            resumed.stdout
+        )
+        assert unwrapped(f"[3/4] apply — skipped (when: {_PICKED} → FALSE)") in unwrapped(resumed.stdout)
+        assert "Blueprint Run Completed:" in resumed.stdout
+        assert [(step["step_id"], step["state"], step["skip_cause"]) for step in steps] == [
+            ("pick", "completed", None),
+            ("fold", "skipped", "when_false"),
+            ("apply", "skipped", "when_false"),
+            ("done", "completed", None),
+        ]
+        assert not (cli_workspace / "fold.marker").exists()
+        assert not (cli_workspace / "fix.marker").exists()
+        assert (cli_workspace / "done.marker").exists()
+
+    def test_json_format_emits_the_step_skipped_event(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        _guarded_blueprint(cli_workspace)
+        cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "guarded", "--no-tty", "--no-worktree"])
+
+        resumed = cli_runner.invoke(
+            app,
+            [
+                "-p",
+                str(cli_workspace),
+                "resume",
+                _latest_session_id(cli_workspace),
+                "--answer",
+                "pick=",
+                "--format",
+                "json",
+            ],
+        )
+
+        envelopes = [json.loads(line) for line in resumed.stdout.splitlines() if line.startswith("{")]
+        skipped = [envelope["payload"] for envelope in envelopes if envelope["event_type"] == "StepSkippedEvent"]
+        assert skipped[0] == {
+            "idx": 2,
+            "total": 4,
+            "step_id": "fold",
+            "name": "Fold the answers into the plan",
+            "cause": "when_false",
+            "expression": _PICKED,
+        }
+
+    def test_no_tty_else_branch_pauses_at_its_ask_and_resumes_without_the_then_steps(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        _routed_blueprint(cli_workspace)
+        paused = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "routed", "--no-tty", "--no-worktree"])
+        session_id = _latest_session_id(cli_workspace)
+
+        resumed = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "resume", session_id, "--no-tty", "--answer", "approve=approve"]
+        )
+        shown = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", session_id, "--format", "json"])
+
+        steps = json.loads(shown.stdout.splitlines()[-1])["payload"]["steps"]
+        assert (paused.exit_code, resumed.exit_code) == (0, 0)
+        assert unwrapped('[2/2] route — else (if: steps.check.outputs.verdict == "ready" → FALSE)') in unwrapped(
+            paused.stdout
+        )
+        assert "route — else" not in resumed.stdout
+        assert "Blueprint Run Completed:" in resumed.stdout
+        assert [(step["step_id"], step["state"], step["branch"], step["if_id"]) for step in steps] == [
+            ("check", "completed", None, None),
+            ("route", "completed", "else", None),
+            ("approve", "completed", None, "route"),
+            ("fix", "completed", None, "route"),
+        ]
+        assert (cli_workspace / "fix.marker").exists()
+        assert not (cli_workspace / "ship.marker").exists()
+
+    def test_json_format_emits_the_if_branch_event(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        _routed_blueprint(cli_workspace)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "run", "routed", "--no-tty", "--no-worktree", "--format", "json"]
+        )
+
+        envelopes = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+        branches = [envelope["payload"] for envelope in envelopes if envelope["event_type"] == "IfBranchEvent"]
+        assert branches == [
+            {
+                "idx": 2,
+                "total": 2,
+                "block_id": "route",
+                "name": None,
+                "branch": "else",
+                "conditions": [
+                    {"expression": 'steps.check.outputs.verdict == "ready"', "passed": False, "resolved": True}
+                ],
+            }
+        ]

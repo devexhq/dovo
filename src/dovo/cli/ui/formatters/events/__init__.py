@@ -5,6 +5,7 @@ from __future__ import annotations
 from .agent_progress import AgentProgressFormatter
 from .diagnostics import DiagnosticsFormatter
 from .error_panel import ErrorPanelFormatter
+from .guard import IfBranchFormatter, StepSkippedFormatter
 from .lock_wait import LockWaitFormatter
 from .loop import LoopLifecycleFormatter
 from .message import MessageFormatter
@@ -20,6 +21,7 @@ __all__ = [
     "AgentProgressFormatter",
     "DiagnosticsFormatter",
     "ErrorPanelFormatter",
+    "IfBranchFormatter",
     "LockWaitFormatter",
     "LoopLifecycleFormatter",
     "MessageFormatter",
@@ -27,6 +29,7 @@ __all__ = [
     "RunSuccessFormatter",
     "StepDoneFormatter",
     "StepOutputFormatter",
+    "StepSkippedFormatter",
     "StepStartFormatter",
     "WarningFormatter",
     "WorktreeLifecycleFormatter",

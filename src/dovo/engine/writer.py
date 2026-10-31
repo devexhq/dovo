@@ -15,7 +15,14 @@ from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.redact import SecretRedactor
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
-from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import (
+    BlueprintDefinition,
+    BlueprintStep,
+    IfStepBlock,
+    LoopStepBlock,
+    StepDefinition,
+    entry_steps,
+)
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError, StepValidationError
 from dovo.core.catalog.models import CatalogItemType, CatalogRecord
 from dovo.core.catalog.services.resolve_step import merge_uses_step, resolve_step_definition
@@ -24,13 +31,12 @@ from dovo.engine.models import DefinitionRef, DefinitionsManifest
 from dovo.engine.state_models import SessionJsonPayload
 
 
-def _collect_uses_refs(steps: list[StepDefinition | LoopStepBlock]) -> list[str]:
+def _collect_uses_refs(steps: list[BlueprintStep]) -> list[str]:
     """Return the distinct uses: literal values referenced directly in steps, in first-encounter order."""
     refs: list[str] = []
     seen: set[str] = set()
     for step in steps:
-        candidates = step.do if isinstance(step, LoopStepBlock) else [step]
-        for candidate in candidates:
+        for candidate in entry_steps(step):
             if candidate.uses is not None and candidate.uses not in seen:
                 seen.add(candidate.uses)
                 refs.append(candidate.uses)
@@ -198,20 +204,26 @@ def _resolve_step_from_snapshot(step: StepDefinition, step_snapshots: dict[str, 
     return merged
 
 
+def _resolve_snapshot_entry(step: BlueprintStep, step_snapshots: dict[str, StepDefinition]) -> BlueprintStep:
+    """Return step, or each step of a loop or if block, with its uses: reference replaced by the merged snapshot step."""
+
+    def resolve_all(items: list[StepDefinition]) -> list[StepDefinition]:
+        return [_resolve_step_from_snapshot(item, step_snapshots) for item in items]
+
+    if isinstance(step, LoopStepBlock):
+        return step.model_copy(update={"do": resolve_all(step.do)})
+    if isinstance(step, IfStepBlock):
+        else_steps = None if step.else_ is None else resolve_all(step.else_)
+        return step.model_copy(update={"then": resolve_all(step.then), "else_": else_steps})
+    return _resolve_step_from_snapshot(step, step_snapshots)
+
+
 def _resolve_snapshot_steps(
-    steps: list[StepDefinition | LoopStepBlock],
+    steps: list[BlueprintStep],
     step_snapshots: dict[str, StepDefinition],
-) -> list[StepDefinition | LoopStepBlock]:
+) -> list[BlueprintStep]:
     """Return steps with every uses: reference replaced by its merged snapshot-resolved StepDefinition."""
-    resolved: list[StepDefinition | LoopStepBlock] = []
-    for step in steps:
-        if isinstance(step, LoopStepBlock):
-            resolved.append(
-                step.model_copy(update={"do": [_resolve_step_from_snapshot(s, step_snapshots) for s in step.do]})
-            )
-        else:
-            resolved.append(_resolve_step_from_snapshot(step, step_snapshots))
-    return resolved
+    return [_resolve_snapshot_entry(step, step_snapshots) for step in steps]
 
 
 def load_blueprint_from_snapshot(session_dir: Path, manifest: DefinitionsManifest) -> Blueprint:

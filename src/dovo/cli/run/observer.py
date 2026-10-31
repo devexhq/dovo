@@ -12,18 +12,22 @@ from dovo.cli.ui.dispatcher import UiDispatcher
 from dovo.cli.ui.events import (
     AgentProgressEvent,
     AgentSummaryView,
+    ConditionOutcomeView,
+    IfBranchEvent,
     LoopConditionView,
     LoopLifecycleEvent,
     StepDoneEvent,
     StepOutputEvent,
+    StepSkippedEvent,
     StepStartEvent,
     WorktreeLifecycleEvent,
 )
 from dovo.common.models import DisplayFormatOptions, OutputFormatOptions, Remediation
 from dovo.common.utils import display_path
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition, StepType
+from dovo.core.catalog.definitions import BlueprintStep, StepDefinition, StepType
 from dovo.engine import RunObserver, RunOutcome
 from dovo.engine.executors.models import AgentProgressUpdate, AgentStepSummary, ConditionEvaluationResult, StepResult
+from dovo.engine.models import IfBranchNotice, StepSkipNotice
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -139,6 +143,35 @@ class DispatcherRunObserver(RunObserver):
             )
         )
 
+    def on_step_skipped(self, idx: int, total: int, step: StepSkipNotice) -> None:
+        """Dispatch the skip of a step or loop by its `when` guard."""
+        self._dispatcher.dispatch(
+            StepSkippedEvent(
+                idx=idx,
+                total=total,
+                step_id=step.step_id,
+                name=step.name,
+                cause=step.cause.value,
+                expression=step.expression,
+            )
+        )
+
+    def on_if_branch(self, idx: int, total: int, block: IfBranchNotice) -> None:
+        """Dispatch the branch an `if` block chose with every condition it evaluated."""
+        self._dispatcher.dispatch(
+            IfBranchEvent(
+                idx=idx,
+                total=total,
+                block_id=block.block_id,
+                name=block.name,
+                branch=block.branch.value,
+                conditions=[
+                    ConditionOutcomeView(expression=result.expression, passed=result.passed, resolved=result.resolved)
+                    for result in block.conditions
+                ],
+            )
+        )
+
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
         """Dispatch loop start event."""
         self._dispatcher.dispatch(LoopLifecycleEvent(loop_id=loop_id, action="start", max_iterations=max_iterations))
@@ -210,7 +243,7 @@ class DispatcherRunObserver(RunObserver):
             )
         )
 
-    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+    def on_run_started(self, steps: Sequence[BlueprintStep]) -> None:
         """Ignore run start; the CLI renders step and loop events as they happen."""
 
     def on_run_completed(self, outcome: RunOutcome) -> None:

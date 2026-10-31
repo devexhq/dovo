@@ -34,8 +34,29 @@ class ConditionExpressionEvaluatorTests:
         assert result.actual == 85
         assert result.expected == 80
         assert result.detail == "TRUE"
+        assert result.resolved is True
         assert result.errors == []
         assert result.warnings == []
+
+    @pytest.mark.parametrize(
+        ("expression", "passed", "resolved"),
+        [
+            pytest.param("steps.build.exit_code == 1", False, True, id="false"),
+            pytest.param("steps.ghost.exit_code == 0", False, False, id="unknown-step"),
+            pytest.param("steps.build.outputs.missing == 0", False, False, id="missing-field"),
+            pytest.param("steps.ghost.exit_code != 0", False, False, id="unresolved-never-passes"),
+        ],
+    )
+    def test_evaluate_condition_reports_whether_step_operands_resolved(
+        self, expression: str, passed: bool, resolved: bool
+    ) -> None:
+        build = StepResult(
+            step_id="build", status="completed", exit_code=0, stdout="{}", stderr="", duration_seconds=0.1
+        )
+
+        result = evaluate_condition(expression, step_results={"build": build})
+
+        assert (result.passed, result.resolved) == (passed, resolved)
 
     @pytest.mark.parametrize(
         ("literal", "passed", "detail"),

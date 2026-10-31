@@ -15,7 +15,7 @@ from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import BlueprintStep, LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.git.runner import GitRunner
@@ -24,9 +24,11 @@ from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluatio
 from dovo.engine.models import (
     FailurePromptDecision,
     FailurePrompter,
+    IfBranchNotice,
     LifecycleUpdate,
     LoopPromptDecision,
     RunContext,
+    StepSkipNotice,
 )
 from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
 from dovo.engine.state_store import SessionStateStore
@@ -80,6 +82,12 @@ class NoOpRunObserver(RunObserver):
     def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
         pass
 
+    def on_step_skipped(self, idx: int, total: int, step: StepSkipNotice) -> None:
+        pass
+
+    def on_if_branch(self, idx: int, total: int, block: IfBranchNotice) -> None:
+        pass
+
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
         pass
 
@@ -108,7 +116,7 @@ class NoOpRunObserver(RunObserver):
     ) -> None:
         pass
 
-    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+    def on_run_started(self, steps: Sequence[BlueprintStep]) -> None:
         pass
 
     def on_run_completed(self, outcome: RunOutcome) -> None:
@@ -164,6 +172,12 @@ class RecordingRunObserver(NoOpRunObserver):
     def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
         self._record("step_done", idx, total, step, result)
 
+    def on_step_skipped(self, idx: int, total: int, step: StepSkipNotice) -> None:
+        self._record("step_skipped", idx, total, step)
+
+    def on_if_branch(self, idx: int, total: int, block: IfBranchNotice) -> None:
+        self._record("if_branch", idx, total, block)
+
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
         self._record("loop_start", loop_id, max_iterations)
 
@@ -192,7 +206,7 @@ class RecordingRunObserver(NoOpRunObserver):
     ) -> None:
         self._record("worktree_cleanup", kept, path, worktree_id, branch, list(remediations))
 
-    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+    def on_run_started(self, steps: Sequence[BlueprintStep]) -> None:
         self._record("run_started", steps)
 
     def on_run_completed(self, outcome: RunOutcome) -> None:

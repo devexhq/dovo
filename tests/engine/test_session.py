@@ -19,7 +19,7 @@ from dovo.core.agents.models import (
     AgentResponseStatus,
     ResolvedAgentSettings,
 )
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import BlueprintStep
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions.services.read_logs import read_session_log_events
@@ -54,7 +54,7 @@ from tests.harness.workspace_paths import initialized_workspace_paths
 class _RaisingRunLevelObserver(NoOpRunObserver):
     """RunObserver raising from both run-level callbacks."""
 
-    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+    def on_run_started(self, steps: Sequence[BlueprintStep]) -> None:
         raise RuntimeError("observer run started")
 
     def on_run_completed(self, outcome: RunOutcome) -> None:

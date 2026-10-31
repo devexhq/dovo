@@ -46,6 +46,8 @@ def _event_formatters(console: Console | None) -> FormatterTable:
         models.RunSuccessEvent: formatters.RunSuccessFormatter(),
         models.StepStartEvent: formatters.StepStartFormatter(),
         models.StepDoneEvent: formatters.StepDoneFormatter(),
+        models.StepSkippedEvent: formatters.StepSkippedFormatter(),
+        models.IfBranchEvent: formatters.IfBranchFormatter(),
         models.StepOutputEvent: formatters.StepOutputFormatter(),
         models.AgentProgressEvent: formatters.AgentProgressFormatter(),
         models.WorktreeLifecycleEvent: formatters.WorktreeLifecycleFormatter(),

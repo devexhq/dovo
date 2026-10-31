@@ -6,12 +6,15 @@ from dataclasses import dataclass, field
 
 from dovo.common.clock import Clock
 from dovo.common.diagnostic_log import DiagnosticRecord, error_diagnostics
+from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
+from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
+from dovo.core.catalog.models import CatalogItemType
 from dovo.core.db import SessionsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions import reconcile_stale_sessions
@@ -69,6 +72,10 @@ class BlueprintRunService:
         self.diagnostics.extend(error_diagnostics(reconciliation.diagnostic))
 
         catalog = Catalog(self.paths)
+        invalid = self._validation_failure(catalog)
+        if invalid is not None:
+            return invalid
+
         with catch_failure("engine.run", blueprint=self.name) as caught:
             blueprint = Blueprint.load(self.name, catalog=catalog)
             run_outcome = self._run(catalog, blueprint, env_overrides)
@@ -80,6 +87,29 @@ class BlueprintRunService:
             )
 
         return finalize(self.sessions_db, self.warnings, self.diagnostics, run_outcome, run_outcome.session_id or "")
+
+    def _validation_failure(self, catalog: Catalog) -> BlueprintRunResult | None:
+        """Check the blueprint as `dovo blueprint validate` does, keeping its warnings; return its failure, or None.
+
+        A name that matches no blueprint returns None, so loading it reports the not-found failure every run does.
+        """
+        validation = catalog.validate(
+            self.name, item_type=CatalogItemType.BLUEPRINT, blueprint_cls=BlueprintDefinition, step_cls=StepDefinition
+        )
+        if validation.error_code == ErrorCode.CATALOG_NOT_FOUND:
+            return None
+
+        self.warnings.extend(validation.warnings)
+        if validation.ok:
+            return None
+        return BlueprintRunResult(
+            session_record=None,
+            error_code=validation.error_code,
+            errors=list(validation.errors),
+            warnings=self.warnings,
+            remediations=list(validation.remediations),
+            diagnostics=[*self.diagnostics, *validation.diagnostics],
+        )
 
     def _run(self, catalog: Catalog, blueprint: Blueprint, env_overrides: AgentEnvOverrides | None) -> RunOutcome:
         """Execute blueprint through Engine with this service's run request."""

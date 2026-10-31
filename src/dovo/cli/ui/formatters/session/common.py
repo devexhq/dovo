@@ -172,20 +172,35 @@ def build_steps_table(steps: Sequence[StepRunSummary]) -> Table:
 
     position = 0
     for row in steps:
-        if row.loop_id is None:
+        if row.loop_id is None and row.if_id is None:
             position += 1
 
         table.add_row(*_step_cells(row, position))
     return table
 
 
+def _step_label(row: StepRunSummary) -> str:
+    """Return the Step cell: the id, indented under its loop with the iteration or under its if block."""
+    if row.loop_id is not None:
+        return f"  {row.step_id} (iter {row.iteration})"
+    if row.if_id is not None:
+        return f"  {row.step_id}"
+    return row.step_id
+
+
+def _step_state(row: StepRunSummary) -> str:
+    """Return the State cell: the state, followed by the skip cause or the branch an if block took."""
+    detail = row.skip_cause or row.branch
+    return f"{row.state} ({detail})" if detail else row.state
+
+
 def _step_cells(row: StepRunSummary, position: int) -> tuple[str, ...]:
-    """Return the table cells for one step row; body rows of a loop get no position and an indented label."""
-    is_body_row = row.loop_id is not None
+    """Return the table cells for one step row; body rows of a loop or if block get no position and an indented label."""
+    is_body_row = row.loop_id is not None or row.if_id is not None
     return (
         "" if is_body_row else str(position),
-        f"  {row.step_id} (iter {row.iteration})" if is_body_row else row.step_id,
-        row.state,
+        _step_label(row),
+        _step_state(row),
         "-" if row.attempts is None else str(row.attempts),
         "-" if row.exit_code is None else str(row.exit_code),
         format_step_duration(row.duration_seconds),

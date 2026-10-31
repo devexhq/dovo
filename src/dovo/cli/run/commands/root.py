@@ -13,15 +13,28 @@ from dovo.cli.ui import (
     WarningEvent,
     ui_dispatcher,
 )
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
 from dovo.core.db import SessionRecord, SessionStatus
 from dovo.engine import BlueprintRunService
 from dovo.engine.models import BlueprintRunResult
 
+_VALIDATION_ERROR_CODES = frozenset(
+    {ErrorCode.CATALOG_SCHEMA_INVALID, ErrorCode.CATALOG_SYNTAX_INVALID, ErrorCode.CATALOG_FILE_UNREADABLE}
+)
+
 
 def _first_error(result: BlueprintRunResult, fallback: str) -> str:
     """Return the first error message or a fallback string."""
     return result.errors[0] if result.errors else fallback
+
+
+def invalid_blueprint_panel(result: BlueprintRunResult, subject: str) -> ErrorPanelEvent | None:
+    """Return the Blueprint Invalid panel listing every validation error when the run stopped on one, else None."""
+    if result.error_code not in _VALIDATION_ERROR_CODES:
+        return None
+    lines = "\n".join(f"• {error}" for error in result.errors)
+    return ErrorPanelEvent(title="Blueprint Invalid", message=f"{subject} failed validation; no steps ran.\n\n{lines}")
 
 
 def _dispatch_paused_prompt(result: BlueprintRunResult, record: SessionRecord | None, *, non_interactive: bool) -> bool:
@@ -37,9 +50,13 @@ def _dispatch_paused_prompt(result: BlueprintRunResult, record: SessionRecord | 
 def _dispatch_run_outcome(
     result: BlueprintRunResult,
     record: SessionRecord | None,
+    name: str,
 ) -> None:
     """Dispatch the appropriate UI event for a completed blueprint run."""
-    if result.ok and record is not None:
+    invalid = invalid_blueprint_panel(result, f"Blueprint '{name}'")
+    if invalid is not None:
+        ui_dispatcher.dispatch(invalid)
+    elif result.ok and record is not None:
         ui_dispatcher.dispatch(
             RunSuccessEvent(
                 session_id=record.session_id,
@@ -117,7 +134,7 @@ def run_command(
 
     record = result.session_record
     if not _dispatch_paused_prompt(result, record, non_interactive=not interaction_prompter.is_interactive):
-        _dispatch_run_outcome(result, record)
+        _dispatch_run_outcome(result, record, name)
     if output_format is OutputFormatOptions.TERMINAL and result.diagnostics:
         ui_dispatcher.dispatch(DiagnosticsEvent(diagnostics=list(result.diagnostics)))
     return result
