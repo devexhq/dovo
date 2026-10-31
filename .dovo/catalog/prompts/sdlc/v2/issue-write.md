@@ -8,6 +8,8 @@ In rewrite mode, the input is an existing issue written before the short format,
 
 Read the person's description and anything they point to. Separate what they decided (the problem, the behaviour they want, trade-offs they settled, values they chose) from what they guessed about the code. Only the first goes into the issue.
 
+Then size it against the template's rule that an issue is one independently shippable set of outcomes. When the description covers parts that would each ship on their own, such as the same rule applied to several packages, propose one issue per part to the person before drafting. When the parts share a rule or shared code, the first issue is the foundation: the rule in the architecture docs, the shared code and checks, and one part converted as the pilot. Write the issues in that order, each later one depending on the foundation.
+
 ## 2. Ground lightly
 
 Ground against `origin/main` (`git fetch origin main`), reading only; never edit code or run tooling that mutates or validates.
@@ -23,12 +25,12 @@ Record none of what the grounding finds in the code: paths, symbols, revision nu
 Write the title and body to the template, its sections in order:
 
 - **Why** in the person's terms.
-- One **Outcome** per observable behaviour, numbered from `O-1`.
-- One **Decision** per trade-off the person settled, numbered from `D-1`, with its cost. Never invent one. When the description leaves a trade-off open, ask the person, and when they leave it open, leave it out for planning to raise as an open question.
+- One **Outcome** per observable behaviour, numbered from `O-1`, stated as a rule that holds wherever it applies. Where the grounding found many places it applies today, state what they share, with one or two as examples, and leave finding the rest to planning.
+- One **Decision** per trade-off the person settled, numbered from `D-1`, with its cost. Never invent one, and leave how the work is done (which field, a check's scope, a doc's wording) to planning. When the description leaves a trade-off open, ask the person, and when they leave it open, leave it out for planning to raise as an open question.
 - **Binding values** only for literals the person chose.
 - **Done when** naming the outcomes by id, plus any check beyond them.
 
-No hard line wraps: each paragraph and list item is one line. The same holds for every comment and pull request text that sdlc v2 posts.
+No hard line wraps: each paragraph and list item is one line, and every issue reference is an explicit `[GH-<n>](https://github.com/devexhq/dovo/issues/<n>)` link. The same holds for every comment and pull request text that sdlc v2 posts, except a `Closes #<n>` line, which GitHub needs as written.
 
 ## 4. Check
 
@@ -42,7 +44,7 @@ Given an existing issue's number, and any overlapping issues you were asked to c
 2. **Ground lightly,** as in step 2, only enough to drop what already shipped and to name overlaps: check each functional requirement and error case against `main`, and search open issues for the same work (`gh issue list --state open --search "<terms>"`).
 3. **Draft** `.agentic/issue-rewrite.md`, the whole description, to the template as in step 3:
    - **Keep every decision a person made.** A choice the old text settles (in its scope, a requirement, a guard, its Pre-determined data or a note) becomes a decision with its cost, or, for a literal a person chose (a name, a message, an exit code, a key), a Binding values line with the exact value. When unsure whether a person decided something, keep it.
-   - **Outcomes** from the functional requirements and error cases: the behaviour a user or caller observes, one item each, numbered from `O-1`. Leave out what has already shipped.
+   - **Outcomes** from the functional requirements and error cases: the behaviour a user or caller observes, one item each, numbered from `O-1`. Leave out what has already shipped. Requirements that repeat one rule across a list of sites become that one rule.
    - **Why** from the goal or user story; **Depends on** from the blockers and the issues the old text says must land first, each with its assumption; **Out of scope** from the items another issue owns, naming that issue; **Done when** naming the outcomes by id, plus any doc check the old definition of done holds.
    - **Drop what the code can tell:** paths, symbols, revision numbers, column lists, test names, counts, inventories, implementation steps, restated `AGENTS.md` rules and grep bars.
    - Keep an opening `Slice <id> of #<issue> ...` line and any marker comment verbatim. The title stays as it is: the rewrite replaces only the description.

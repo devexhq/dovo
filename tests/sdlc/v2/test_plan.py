@@ -850,7 +850,10 @@ class PlanRequirementsTests:
             {
                 "id": "O-1",
                 "kind": "outcome",
-                "text": "<Behaviour a user or caller can observe once the issue is done: what they run, see or get.>",
+                "text": (
+                    "<A rule a user or caller can observe once the issue is done: what they run, see or get, "
+                    "wherever it applies.>"
+                ),
             },
             {"id": "D-1", "kind": "decision", "text": "<A trade-off a person settled, and what it costs. Accepted.>"},
         ]
