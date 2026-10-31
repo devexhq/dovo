@@ -15,7 +15,7 @@ Plan when the issue adds or changes a command, DTO/`*Result` model, status enum,
 | `/issue-plan [<issue-number>]` | the issue | **Issue mode.** On an epic, write the feature contract and the slice table; on a plain issue, write one slice. Every slice gets its scope, dependencies, outcomes, ownership, estimate and size, and **no phases**. Steps 1, 2, 2a, 3, 3a, 4, 5 and 6. |
 | `/issue-plan --slice <id>` | `.agentic/epic-plan.md` and `.agentic/epic-plan.json`, the epic plan as downloaded from the work plan's plan session, or as the same `issue-plan-v2` run settled it for a plan of one slice; the earlier slices' "as landed" reports; the slice's issue | **Slice mode.** Phase that one slice, against `origin/main` as it is now, and nothing else. Steps 1b, 2, 3, 4, 5 and 6. |
 
-Detail is written just in time: a slice's phases are planned when its `issue-code` run starts, after the slices before it have landed and their "as landed" reports have updated the contract, never when the issue is sliced. A phase written early goes stale as slices land. The one exception is a plan of one slice: no slice lands before it, so the `issue-plan-v2` run that sliced the issue phases it in slice mode straight away, and asks for one approval of both plans.
+Detail is written just in time: a slice's phases are planned when its `issue-code-v2` run starts, after the slices before it have landed and their "as landed" reports have updated the contract, never when the issue is sliced. A phase written early goes stale as slices land. The one exception is a plan of one slice: no slice lands before it, so the `issue-plan-v2` run that sliced the issue phases it in slice mode straight away, and asks for one approval of both plans.
 
 ## Slices and epics
 
