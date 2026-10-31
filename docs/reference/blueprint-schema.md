@@ -33,7 +33,7 @@ Values here apply to any step that does not set its own:
 
 ## Location
 
-Blueprints live in `.dovo/catalog/blueprints/` and can contain steps and loop blocks (`type: loop`).
+Blueprints live in `.dovo/catalog/blueprints/` and can contain steps and loop blocks (`type: loop`). Any step or loop can carry a `when` list that skips it when a condition is false; see [`when` Guards](step-schema.md#when-guards).
 
 ---
 

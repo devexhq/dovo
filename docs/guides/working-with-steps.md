@@ -124,6 +124,7 @@ Properties every step accepts:
 | `env` | `map[string, string]` | `{}` | Environment variables specific to this step (supports `${{ inputs.* }}`). |
 | `assert` | `StepAssert` | `null` | Declarative quality assertions (exit code, output matchers, file checks). |
 | `on_failure` | `string \| FailureSpec` | `abort` | Failure policy (`abort`, `continue`, `retry`, `prompt_user`). |
+| `when` | `list[string]` | `null` | Conditions that must all be true for the step to run. See [Run a step only when a condition holds](#run-a-step-only-when-a-condition-holds-when). |
 
 ---
 
@@ -164,6 +165,39 @@ A loop block accepts only `id`, `type`, `name`, `max_iterations`, `until`, `do` 
     Any other key on a loop block, such as a misspelled `untill:`, fails `dovo blueprint validate` and `dovo run` with `CATALOG_SCHEMA_INVALID`, naming the loop and every unknown key.
 
 ---
+
+## Run a Step Only When a Condition Holds (`when`)
+
+Add a `when` list to a step or loop to skip it unless every condition is true. Conditions use the same syntax as a loop's `until`:
+
+```yaml
+steps:
+  - id: answer-questions
+    type: ask
+    interaction:
+      mode: multiselect
+      message: Which open questions should change the plan?
+      options:
+        - {value: scope, label: Scope}
+        - {value: naming, label: Naming}
+
+  - id: fold-answers
+    name: Fold the answers into the plan
+    type: agent
+    prompt: "Update PLAN.md with the chosen answers."
+    when:
+      - steps.answer-questions.outputs.selected_count > 0
+```
+
+When the person picks nothing, the run skips the agent step and prints one line naming the condition:
+
+```text
+[2/2] Fold the answers into the plan — skipped (when: steps.answer-questions.outputs.selected_count > 0 → FALSE)
+```
+
+A skipped step runs nothing and counts as successful. `dovo session show` lists it as `skipped (when_false)`, or `skipped (when_unresolved)` when a condition referenced a step that did not run or a field it does not have. A later condition that references a skipped step is false.
+
+A `when` list may reference earlier steps only. Inside a loop's `do`, it may also reference earlier steps of the same iteration and `iteration.index`, and it is evaluated again on every iteration. See [`when` Guards](../reference/step-schema.md#when-guards) for the full rules.
 
 ## Runtime Execution Metadata & Environment Variables
 

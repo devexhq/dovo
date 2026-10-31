@@ -121,6 +121,16 @@ class SkipCause(StrEnum):
     WHEN_UNRESOLVED = "when_unresolved"
 
 
+@dataclass(frozen=True, slots=True)
+class StepSkipNotice:
+    """A step or loop a `when` guard skipped, with the first failing expression and why it failed."""
+
+    step_id: str
+    name: str | None
+    cause: SkipCause
+    expression: str
+
+
 class StepAction(StrEnum):
     """Orchestration action chosen after a terminal step failure; distinct from user prompt decisions and persisted node transitions."""
 
@@ -266,6 +276,10 @@ class RunObserver(Protocol):
 
     def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
         """Called immediately after a step finishes."""
+        ...
+
+    def on_step_skipped(self, idx: int, total: int, step: StepSkipNotice) -> None:
+        """Called when a `when` guard skips a step or loop, instead of on_step_start and on_step_done."""
         ...
 
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:

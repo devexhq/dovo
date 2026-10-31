@@ -10,7 +10,14 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import InteractionAnswer, InteractionRequest
 from dovo.engine import EngineLoader, RunCoordinator, SessionStateStore
 from dovo.engine.executors.models import StepResult
-from dovo.engine.models import FailurePromptDecision, InteractionPrompter, RunContext, RunOutcome, SkipCause
+from dovo.engine.models import (
+    FailurePromptDecision,
+    InteractionPrompter,
+    RunContext,
+    RunOutcome,
+    SkipCause,
+    StepSkipNotice,
+)
 from dovo.engine.state_models import (
     ExecutionLeafNode,
     ExecutionLoopNode,
@@ -128,6 +135,29 @@ class WhenGuardTests:
         assert isinstance(fix, ExecutionLeafNode) and fix.attempts == []
         assert _step_events(engine_paths, "fix") == []
         assert not (engine_workspace / "fix.marker").exists()
+
+    def test_skip_notifies_the_observer_once_with_its_position(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        observer = RecordingRunObserver()
+        steps: list[dict[str, object]] = [
+            {"id": "check", "run": "true"},
+            {"id": "fix", "name": "Fix it", "run": "true", "when": [_FAILED_CHECK]},
+            {
+                "id": "loop",
+                "type": "loop",
+                "max_iterations": 1,
+                "until": ["iteration.index >= 1"],
+                "do": [{"id": "probe", "run": "true"}, {"id": "redo", "run": "true", "when": [_FAILED_CHECK]}],
+            },
+        ]
+
+        _run(engine_paths, sessions_repo, steps, observer=observer)
+
+        assert [call for call in observer.calls if call[0] == "step_skipped"] == [
+            ("step_skipped", 2, 3, StepSkipNotice("fix", "Fix it", SkipCause.WHEN_FALSE, _FAILED_CHECK)),
+            ("step_skipped", 2, 2, StepSkipNotice("redo", None, SkipCause.WHEN_FALSE, _FAILED_CHECK)),
+        ]
 
     def test_passing_guard_runs_the_step(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
@@ -288,12 +318,17 @@ class WhenGuardTests:
         _mark_check_ignored(engine_paths, sessions_repo)
         (engine_workspace / "allow").touch()
 
+        observer = RecordingRunObserver()
         resumed = _coordinator(
-            engine_paths, sessions_repo, prompter=ScriptedFailurePrompter([FailurePromptDecision.RETRY])
+            engine_paths,
+            sessions_repo,
+            observer=observer,
+            prompter=ScriptedFailurePrompter([FailurePromptDecision.RETRY]),
         ).execute()
 
         assert (paused.status, resumed.status) == (SessionStatus.PAUSED, SessionStatus.COMPLETED)
         assert _node(_state(engine_paths, sessions_repo), "fix").state is NodeState.SKIPPED
+        assert [call for call in observer.calls if call[0] == "step_skipped"] == []
         assert not (engine_workspace / "fix.marker").exists()
 
     def test_resume_of_a_run_whose_every_node_is_skipped_completes(

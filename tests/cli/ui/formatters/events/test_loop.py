@@ -67,11 +67,19 @@ LOOP_DONE = FormatterCase.identity(
     render_expectations=["loop_1"],
 )
 
+NAMED_ITERATION_START = FormatterCase.identity(
+    data=LoopLifecycleEvent(
+        loop_id="loop_1", name="Fix the tests", action="iteration_start", iteration=1, max_iterations=3
+    ),
+    render_expectations=["Fix the tests"],
+)
+
 LOOP_CASES = [
     pytest.param(LOOP_START, id="loop_start"),
     pytest.param(ITERATION_START, id="iteration_start"),
     pytest.param(CONDITIONS_EVALUATED, id="conditions_evaluated"),
     pytest.param(LOOP_DONE, id="loop_done"),
+    pytest.param(NAMED_ITERATION_START, id="named_iteration_start"),
 ]
 
 LOOP_PAYLOAD_CASES = [
@@ -79,6 +87,7 @@ LOOP_PAYLOAD_CASES = [
         LOOP_START,
         {
             "loop_id": "loop_1",
+            "name": None,
             "action": "start",
             "iteration": None,
             "max_iterations": 5,
@@ -93,6 +102,7 @@ LOOP_PAYLOAD_CASES = [
         CONDITIONS_EVALUATED,
         {
             "loop_id": "loop_1",
+            "name": None,
             "action": "conditions_evaluated",
             "iteration": None,
             "max_iterations": None,

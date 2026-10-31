@@ -47,8 +47,10 @@ def summarize_session_steps(record: SessionRecord, redactor: SecretRedactor) -> 
 
 
 def _loop_rows(loop: ExecutionLoopNode, redactor: SecretRedactor) -> list[StepRunSummary]:
-    """Build the loop row followed by one row per body step of each iteration, in order."""
+    """Build the loop row followed by one row per body step of each iteration, in order; a skipped loop has no body rows."""
     rows = [_loop_summary(loop)]
+    if loop.skip is not None:
+        return rows
     for iteration in loop.iterations:
         rows.extend(
             _leaf_summary(leaf, redactor, loop_id=loop.id, iteration=iteration.number) for leaf in iteration.steps
@@ -75,12 +77,19 @@ def _leaf_summary(
         rejected_patch_path=_last_rejected_patch_path(leaf.attempts, redactor),
         loop_id=loop_id,
         iteration=iteration,
+        skip_cause=None if leaf.skip is None else leaf.skip.cause.value,
     )
 
 
 def _loop_summary(loop: ExecutionLoopNode) -> StepRunSummary:
-    """Build the kind="loop" row: iterations set, attempt-derived fields None."""
-    return StepRunSummary(kind="loop", step_id=loop.id, state=loop.state.value, iterations=len(loop.iterations))
+    """Build the kind="loop" row: iterations set (none for a skipped loop), attempt-derived fields None."""
+    return StepRunSummary(
+        kind="loop",
+        step_id=loop.id,
+        state=loop.state.value,
+        iterations=0 if loop.skip is not None else len(loop.iterations),
+        skip_cause=None if loop.skip is None else loop.skip.cause.value,
+    )
 
 
 def _last_error_message(attempts: list[StepAttemptRecord], redactor: SecretRedactor) -> str | None:

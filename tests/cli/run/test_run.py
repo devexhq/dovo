@@ -964,3 +964,101 @@ class RunAskCliIntegrationTests:
         assert result.exit_code == 0
         assert prompt["payload"]["step_id"] == "approve"
         assert [option["decision"] for option in prompt["payload"]["options"]] == ["approve", "revise", "deny"]
+
+
+_PICKED = "steps.pick.outputs.selected_count > 0"
+
+
+def _guarded_blueprint(workspace: Path) -> None:
+    """Write `guarded`: a multiselect ask, a step and a loop guarded on a non-empty selection, then a plain step."""
+    write_runnable_blueprint(
+        workspace,
+        key="guarded",
+        steps=[
+            {
+                "id": "pick",
+                "type": "ask",
+                "interaction": {
+                    "mode": "multiselect",
+                    "message": "Pick the fixes to apply",
+                    "options": [{"value": "lint", "label": "Lint"}, {"value": "types", "label": "Types"}],
+                },
+            },
+            {"id": "fold", "name": "Fold the answers into the plan", "run": "touch fold.marker", "when": [_PICKED]},
+            {
+                "id": "apply",
+                "type": "loop",
+                "when": [_PICKED],
+                "until": ["steps.fix.exit_code == 0"],
+                "do": [{"id": "fix", "run": "touch fix.marker"}],
+            },
+            {"id": "done", "run": "touch done.marker"},
+        ],
+    )
+
+
+def _latest_session_id(workspace: Path) -> str:
+    paths = initialized_workspace_paths(workspace)
+    return DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list(limit=1)[0].session_id
+
+
+class RunGuardCliIntegrationTests:
+    """Typer runner tests for `when` guards across a pause at an ask and `dovo resume --answer`."""
+
+    def test_no_tty_empty_selection_skips_the_guarded_step_and_loop_and_completes(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        _guarded_blueprint(cli_workspace)
+        paused = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "guarded", "--no-tty", "--no-worktree"])
+        session_id = _latest_session_id(cli_workspace)
+
+        resumed = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "resume", session_id, "--no-tty", "--answer", "pick="]
+        )
+        shown = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", session_id, "--format", "json"])
+
+        steps = json.loads(shown.stdout.splitlines()[-1])["payload"]["steps"]
+        assert (paused.exit_code, resumed.exit_code) == (0, 0)
+        assert unwrapped(f"[2/4] Fold the answers into the plan — skipped (when: {_PICKED} → FALSE)") in unwrapped(
+            resumed.stdout
+        )
+        assert unwrapped(f"[3/4] apply — skipped (when: {_PICKED} → FALSE)") in unwrapped(resumed.stdout)
+        assert "Blueprint Run Completed:" in resumed.stdout
+        assert [(step["step_id"], step["state"], step["skip_cause"]) for step in steps] == [
+            ("pick", "completed", None),
+            ("fold", "skipped", "when_false"),
+            ("apply", "skipped", "when_false"),
+            ("done", "completed", None),
+        ]
+        assert not (cli_workspace / "fold.marker").exists()
+        assert not (cli_workspace / "fix.marker").exists()
+        assert (cli_workspace / "done.marker").exists()
+
+    def test_json_format_emits_the_step_skipped_event(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        _guarded_blueprint(cli_workspace)
+        cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "guarded", "--no-tty", "--no-worktree"])
+
+        resumed = cli_runner.invoke(
+            app,
+            [
+                "-p",
+                str(cli_workspace),
+                "resume",
+                _latest_session_id(cli_workspace),
+                "--answer",
+                "pick=",
+                "--format",
+                "json",
+            ],
+        )
+
+        envelopes = [json.loads(line) for line in resumed.stdout.splitlines() if line.startswith("{")]
+        skipped = [envelope["payload"] for envelope in envelopes if envelope["event_type"] == "StepSkippedEvent"]
+        assert skipped[0] == {
+            "idx": 2,
+            "total": 4,
+            "step_id": "fold",
+            "name": "Fold the answers into the plan",
+            "cause": "when_false",
+            "expression": _PICKED,
+        }

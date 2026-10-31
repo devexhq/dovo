@@ -53,6 +53,7 @@ from dovo.engine.models import (
     RunSettings,
     StepAction,
     StepInvocation,
+    StepSkipNotice,
 )
 from dovo.engine.notify import safe_notify
 from dovo.engine.projection import (
@@ -172,12 +173,13 @@ class RunCoordinator:
             loop=None,
         )
 
-    def _advance_loop(self, loop: ExecutionLoopNode, loop_block: LoopStepBlock) -> NodeTransitionKind:
+    def _advance_loop(self, loop: ExecutionLoopNode, loop_block: LoopStepBlock, position: int) -> NodeTransitionKind:
         """Orchestrates loop iterations and child steps driven by LoopPolicy; a failing `when` skips every iteration."""
         if loop.state is NodeState.PENDING and loop_block.when:
             skip = self._guard_skip(loop_block.when, None)
             if skip is not None:
-                return self._skip_node(loop, skip)
+                total = len(self._run.state.nodes)
+                return self._skip_node(loop, skip, loop_block.name, idx=position + 1, total=total)
 
         events = LoopEventEmitter(loop.id, self._context.session_log_dir, self._observer)
         if loop.state is NodeState.PENDING:
@@ -208,7 +210,7 @@ class RunCoordinator:
         if leaf.state is NodeState.PENDING and step_def.when:
             skip = self._guard_skip(step_def.when, loop)
             if skip is not None:
-                return self._skip_node(leaf, skip)
+                return self._skip_node(leaf, skip, step_def.name, idx=idx, total=total)
 
         if step_def.type is StepType.ASK:
             return self._advance_ask(leaf, step_def, index=idx, total=total, loop=loop)
@@ -568,7 +570,7 @@ class RunCoordinator:
         if isinstance(node, ExecutionLeafNode) and isinstance(definition, StepDefinition):
             return self._advance_leaf(node, definition, position)
         if isinstance(node, ExecutionLoopNode) and isinstance(definition, LoopStepBlock):
-            return self._advance_loop(node, definition)
+            return self._advance_loop(node, definition, position)
 
         self._errors.append(f"Step '{node.id}' has no matching definition in the run snapshot.")
         return NodeTransitionKind.FAILED
@@ -581,12 +583,22 @@ class RunCoordinator:
             results.update(iteration_results(iteration))
         return guard_skip(evaluate_guard(expressions, results, iteration.number if iteration is not None else 1))
 
-    def _skip_node(self, node: ExecutionLeafNode | ExecutionLoopNode, skip: StepSkip) -> NodeTransitionKind:
-        """Persist node as SKIPPED with its skip; a skip counts as success."""
+    def _skip_node(
+        self,
+        node: ExecutionLeafNode | ExecutionLoopNode,
+        skip: StepSkip,
+        name: str | None,
+        *,
+        idx: int,
+        total: int,
+    ) -> NodeTransitionKind:
+        """Persist node as SKIPPED with its skip, then notify the observer at 1-based idx of total; a skip counts as success."""
         node.state = NodeState.SKIPPED
         node.skip = skip
         if not self._commit(f"after step '{node.id}' skipped"):
             return NodeTransitionKind.FAILED
+        notice = StepSkipNotice(step_id=node.id, name=name, cause=skip.cause, expression=skip.expression)
+        safe_notify(self._observer, "on_step_skipped", idx, total, notice)
         return NodeTransitionKind.COMPLETED
 
     def _begin_iteration(

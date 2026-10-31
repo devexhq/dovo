@@ -185,7 +185,7 @@ def _step_cells(row: StepRunSummary, position: int) -> tuple[str, ...]:
     return (
         "" if is_body_row else str(position),
         f"  {row.step_id} (iter {row.iteration})" if is_body_row else row.step_id,
-        row.state,
+        f"{row.state} ({row.skip_cause})" if row.skip_cause else row.state,
         "-" if row.attempts is None else str(row.attempts),
         "-" if row.exit_code is None else str(row.exit_code),
         format_step_duration(row.duration_seconds),

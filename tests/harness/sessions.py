@@ -27,6 +27,7 @@ from dovo.engine.models import (
     LifecycleUpdate,
     LoopPromptDecision,
     RunContext,
+    StepSkipNotice,
 )
 from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
 from dovo.engine.state_store import SessionStateStore
@@ -81,6 +82,9 @@ class NoOpRunObserver(RunObserver):
         pass
 
     def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
+        pass
+
+    def on_step_skipped(self, idx: int, total: int, step: StepSkipNotice) -> None:
         pass
 
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
@@ -169,6 +173,9 @@ class RecordingRunObserver(NoOpRunObserver):
 
     def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
         self._record("step_done", idx, total, step, result)
+
+    def on_step_skipped(self, idx: int, total: int, step: StepSkipNotice) -> None:
+        self._record("step_skipped", idx, total, step)
 
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
         self._record("loop_start", loop_id, max_iterations)

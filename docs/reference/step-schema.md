@@ -153,10 +153,20 @@ A `when` list holds condition expressions written exactly as loop `until` condit
 - an expression references a step that is not an earlier step in the same or an enclosing scope. A top-level step sees the top-level steps before it. A step inside `do` also sees the steps before it in the same `do`. A loop's own id cannot be referenced, and the steps inside its `do` are not visible after the loop;
 - an expression uses `iteration.index` outside a loop's `do`.
 
+The list is evaluated just before the step or loop would start. A `when` inside `do` is evaluated again on every iteration, against the steps of the current iteration. When every expression is true the step runs normally. Otherwise it is skipped: it runs nothing and has no attempt, outputs, artifacts or step logs, a skipped `ask` shows no prompt and does not pause, and a skipped loop runs no iteration. A skip counts as successful, so a run whose remaining steps are all skipped ends `completed`. A step skipped before a run paused stays skipped when the run resumes.
+
+The skip records the first failing expression, in the order written, and its cause:
+
+| Cause | Meaning |
+|---|---|
+| `when_false` | Every operand resolved and the expression was false. |
+| `when_unresolved` | A step operand had no value. |
+
+!!! note
+    A step operand has no value when its step was skipped or has not run, or when the step's result lacks the field or `outputs` key, such as a misspelled one; an `outputs` value that is JSON `null` is a value. A later condition that references a skipped step is false, and a placeholder that references one interpolates to an empty string, as for a step that never ran.
+
 !!! warning
     A step catalog file cannot set `when`: its step references can only be checked in the blueprint that uses it. Set `when` on the blueprint step that `uses` the catalog step instead.
-
----
 
 ## Agent step outcomes
 
