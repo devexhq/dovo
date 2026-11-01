@@ -1,29 +1,40 @@
-"""The expression grammar: tokens, the syntax tree and the parser shared by conditions and placeholders."""
+"""The expression grammar: tokens, the syntax tree, the parser and the evaluator shared by conditions and placeholders."""
 
 from dovo.core.expressions.models import (
+    ABSENT,
+    Absent,
     Comparison,
     ComparisonOperator,
+    Evaluation,
     Expression,
     InvalidExpression,
     Literal,
     Operand,
     Path,
+    Resolver,
     Token,
     TokenKind,
 )
+from dovo.core.expressions.services.evaluator import evaluate_expression, is_truthy
 from dovo.core.expressions.services.parser import parse_expression
 from dovo.core.expressions.services.tokenizer import tokenize
 
 __all__ = [
+    "ABSENT",
+    "Absent",
     "Comparison",
     "ComparisonOperator",
+    "Evaluation",
     "Expression",
     "InvalidExpression",
     "Literal",
     "Operand",
     "Path",
+    "Resolver",
     "Token",
     "TokenKind",
+    "evaluate_expression",
+    "is_truthy",
     "parse_expression",
     "tokenize",
 ]
