@@ -136,7 +136,7 @@ Repeats the steps in `do` until an `until` condition is met:
 | `type` | `string` | **Yes** | `loop` | Must be `loop`. |
 | `name` | `string` | No | — | Human-readable label for the loop block. |
 | `max_iterations` | `integer` | No | `5` | Maximum number of iterations (at least 1). |
-| `until` | `list[string]` | **Yes** | — | Termination condition expressions (e.g. `['steps.test.exit_code == 0']`). |
+| `until` | `list[string]` | **Yes** | — | Termination condition expressions (e.g. `['steps.test.exit_code == 0']`), checked like [`when`](#when-guards) expressions. |
 | `do` | `list[StepDefinition]` | **Yes** | — | List of steps to execute sequentially on each iteration. |
 | `on_max_iterations` | `string` | No | `prompt_user` | Terminal policy (`abort`, `continue`, `prompt_user`) if loop reaches `max_iterations` without terminating. |
 | `when` | `list[string]` | No | `null` | Conditions that must all be true for the loop to start. See [`when` Guards](#when-guards). |
@@ -151,7 +151,11 @@ A `when` list holds condition expressions written exactly as loop `until` condit
 
 - a `when` list is empty or holds an invalid expression;
 - an expression references a step that is not an earlier step in the same or an enclosing scope. A top-level step sees the top-level steps before it. A step inside `do` also sees the steps before it in the same `do`. A step after an `if` block also sees the steps of either branch, and a step inside a branch sees the steps before the block and the steps before it in the same branch. A loop's or `if` block's own id cannot be referenced, and the steps inside a loop's `do` are not visible after the loop;
-- an expression uses `iteration.index` outside a loop's `do`.
+- an expression uses `iteration.index` outside a loop's `do`;
+- a value of more than one word is not quoted, as in `steps.a.status == needs edits`;
+- an operand reads anything but `steps.<id>.<field>`, or `iteration.index` inside a loop's `do`, as `inputs.<name>` does;
+- a path uses a bracket key, as in `steps.a.outputs['x.y']`;
+- a quoted value on the left of the operator holds an operator, as in `"a == b" == steps.a.stdout`.
 
 The list is evaluated just before the step or loop would start. A `when` inside `do` is evaluated again on every iteration, against the steps of the current iteration. When every expression is true the step runs normally. Otherwise it is skipped: it runs nothing and has no attempt, outputs, artifacts or step logs, a skipped `ask` shows no prompt and does not pause, and a skipped loop runs no iteration. A skip counts as successful, so a run whose remaining steps are all skipped ends `completed`. A step skipped before a run paused stays skipped when the run resumes.
 

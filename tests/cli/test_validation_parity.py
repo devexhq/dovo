@@ -45,6 +45,21 @@ FIXTURES = [
         [{"id": "build", "type": "script", "script_path": "scripts/build.sh"}],
         id="missing_script_warning",
     ),
+    pytest.param(
+        [
+            {
+                "id": "fix",
+                "type": "loop",
+                "until": ["steps.check.exit_code =="],
+                "do": [{"id": "check", "run": "true"}],
+            }
+        ],
+        id="until_syntax_error",
+    ),
+    pytest.param(
+        [{"id": "a", "run": "true"}, {"id": "b", "run": "true", "when": ["steps.a.status == inputs.mode"]}],
+        id="when_inputs_root",
+    ),
 ]
 
 
