@@ -32,10 +32,7 @@ steps:
     type: loop
     max_iterations: 5
     until:
-      # Workaround for #1141: a failed settled is recorded as ignored with exit
-      # code 0, so only its status shows the failure. Revert to
-      # `steps.settled.exit_code == 0` when #1141 lands.
-      - steps.settled.status == "completed"
+      - steps.settled.exit_code == 0
     on_max_iterations: prompt_user
     do:
       # The session's own worktree, so moving it loses nothing: each check
@@ -522,10 +519,7 @@ steps:
     type: loop
     max_iterations: 3
     until:
-      # Workaround for #1141: a failed check-breakdown is recorded as ignored
-      # with exit code 0, so only its status shows the failure. Revert to
-      # `steps.check-breakdown.exit_code == 0` when #1141 lands.
-      - steps.check-breakdown.status == "completed"
+      - steps.check-breakdown.exit_code == 0
     on_max_iterations: prompt_user
     do:
       - id: breakdown

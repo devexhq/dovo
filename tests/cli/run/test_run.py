@@ -1137,3 +1137,34 @@ class RunIfBlockCliIntegrationTests:
                 ],
             }
         ]
+
+
+class RunContinueExitCodeCliIntegrationTests:
+    """Typer runner tests for the exit code a continued failure records (#1141)."""
+
+    def test_issue_1141_loop_over_a_continued_failure_runs_every_iteration(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        check: dict[str, object] = {"id": "check", "run": "exit 1", "on_failure": "continue"}
+        loop: dict[str, object] = {
+            "id": "loop",
+            "type": "loop",
+            "max_iterations": 3,
+            "until": ["steps.check.exit_code == 0"],
+            "on_max_iterations": "continue",
+            "do": [check],
+        }
+        write_runnable_blueprint(cli_workspace, key="continued-loop", steps=[loop])
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "run", "continued-loop", "--no-tty", "--no-worktree"]
+        )
+        session_id = _latest_session_id(cli_workspace)
+        shown = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", session_id, "--format", "json"])
+
+        steps = json.loads(shown.stdout.splitlines()[-1])["payload"]["steps"]
+        assert result.exit_code == 0
+        assert [step["iterations"] for step in steps if step["kind"] == "loop"] == [3]
+        assert [(step["state"], step["exit_code"]) for step in steps if step["step_id"] == "check"] == [
+            ("ignored", 1)
+        ] * 3

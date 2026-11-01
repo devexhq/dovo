@@ -679,7 +679,6 @@ class StepExecution:
                 outcome,
                 duration,
                 status="ignored",
-                exit_code=0,
                 outputs=outputs,
                 warnings=warnings,
             )

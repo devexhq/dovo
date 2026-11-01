@@ -79,7 +79,7 @@ See the [Assertions Schema](../reference/assertions-schema.md) for all operators
 
 A failed agent attempt records exit code `201` (`unfixable`), `202` (`timeout`), `203` (`provider_error`), or `204` (`blocked`) together with its JSON summary on stdout, and both are kept across `dovo resume`. See [Agent step outcomes](../reference/step-schema.md#agent-step-outcomes) for the full mapping.
 
-- `on_failure: continue` records the step as `ignored` with exit code `0`, so `steps.<id>.exit_code` no longer shows the failure. The stdout summary keeps the original status, so branch on `steps.<id>.outputs.status`.
+- `on_failure: continue` records the step as `ignored` and keeps the failed attempt's exit code, so an `unfixable` attempt still records `201`. `exit_code` is the process's own code: a step failed by an `assert:` check or a missing required artifact keeps `0` when its process exited cleanly, and only `status` shows that failure. The stdout summary keeps the original status, so branch on `steps.<id>.outputs.status`.
 - Retries follow the authored `on_failure` policy only. A `no_op` completes the step and is never retried.
 - A failed `assert:` fails the step but leaves the JSON status unchanged.
 
