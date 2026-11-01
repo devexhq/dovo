@@ -149,12 +149,15 @@ class Resolver(Protocol):
 class Evaluation:
     """How one expression evaluated.
 
-    passed is the truthiness of the expression's value. resolved, actual and expected come from the comparison or
-    lone operand that decided it: for '&&' and '||' the side whose value the expression took, and for '!' its
-    operand's. resolved is False when a path that comparison read was ABSENT, so a negated unresolved comparison
-    passes unresolved. actual is the left (or lone) operand's value and expected the right operand's, or the list of
-    a ValueList's item values, each None when absent; expected is also None for a lone operand. detail is 'TRUE', 'FALSE (not found)' when actual is None, else
-    "FALSE (was <actual!r>)".
+    - passed is the truthiness of the expression's value.
+    - resolved, actual and expected come from the comparison or lone operand that decided it: for '&&' and '||' the
+      side whose value the expression took, and for '!' its operand's.
+    - resolved is False when a path that comparison read was ABSENT, so a negated unresolved comparison passes
+      unresolved.
+    - actual is the left (or lone) operand's value, None when absent.
+    - expected is the right operand's value, or the list of a ValueList's item values, each None when absent; it is
+      also None for a lone operand.
+    - detail is 'TRUE', 'FALSE (not found)' when actual is None, else "FALSE (was <actual!r>)".
     """
 
     passed: bool

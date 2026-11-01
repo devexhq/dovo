@@ -27,6 +27,13 @@ AND = LogicalOperator.AND
 OR = LogicalOperator.OR
 
 
+def _negated(expression: Expression, times: int) -> Expression:
+    """Return expression wrapped in times negations."""
+    for _ in range(times):
+        expression = Negation(expression)
+    return expression
+
+
 class ExpressionParserTests:
     """parse_expression reads comparisons, operands, '!', '&&', '||' and parentheses and names why a source is invalid."""
 
@@ -435,3 +442,39 @@ class ExpressionParserTests:
 
         assert isinstance(result, InvalidExpression)
         assert result.message == message
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            pytest.param("(" * 32 + "steps.a.exit_code == 0" + ")" * 32, A, id="parentheses"),
+            pytest.param("!" * 32 + "steps.a.stdout", _negated(STDOUT, 32), id="negations"),
+            pytest.param("(!" * 16 + "steps.a.stdout" + ")" * 16, _negated(STDOUT, 16), id="mixed"),
+        ],
+    )
+    def test_nesting_at_the_limit_parses(self, source: str, expected: Expression) -> None:
+        assert parse_expression(source) == expected
+
+    @pytest.mark.parametrize(
+        ("source", "reason"),
+        [
+            pytest.param(
+                "(" * 200 + "steps.a.exit_code == 0" + ")" * 200,
+                "'(' at column 33 nests too deeply; nest at most 32 levels",
+                id="parentheses",
+            ),
+            pytest.param(
+                "!" * 1000 + "steps.a.stdout",
+                "'!' at column 33 nests too deeply; nest at most 32 levels",
+                id="negations",
+            ),
+            pytest.param(
+                "(!" * 17 + "steps.a.stdout" + ")" * 17,
+                "'(' at column 33 nests too deeply; nest at most 32 levels",
+                id="mixed",
+            ),
+        ],
+    )
+    def test_nesting_past_the_limit_reports_its_reason(self, source: str, reason: str) -> None:
+        result = parse_expression(source)
+
+        assert result == InvalidExpression(source, reason)

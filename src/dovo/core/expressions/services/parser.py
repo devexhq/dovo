@@ -28,6 +28,8 @@ from dovo.core.expressions.services.tokenizer import tokenize
 
 _BOOLEANS: dict[str, bool] = {"true": True, "false": False}
 _MEMBERSHIP_OPERATORS: frozenset[ComparisonOperator] = frozenset({ComparisonOperator.IN, ComparisonOperator.NOT_IN})
+# The deepest run of '(' and '!' a source may nest, well inside the interpreter's recursion limit.
+_MAX_NESTING = 32
 
 _Parsed = Expression | InvalidExpression
 
@@ -36,7 +38,7 @@ def parse_expression(source: str) -> Expression | InvalidExpression:
     """Parse source into its syntax tree, or describe the first reason it is not an expression.
 
     '!' binds tighter than a comparison, a comparison tighter than '&&', and '&&' tighter than '||'; '&&' and '||'
-    group to the left, parentheses leave no node, and a comparison does not chain.
+    group to the left, parentheses leave no node, and a comparison does not chain. '(' and '!' nest at most 32 deep.
     """
     if not source.strip():
         return InvalidExpression(source, "empty expression")
@@ -54,6 +56,7 @@ class _Parser:
         self._source = source
         self._tokens = tokens
         self._index = 0
+        self._depth = 0
 
     def parse(self) -> _Parsed:
         """Parse every token as one expression; a token left over is unexpected."""
@@ -142,10 +145,10 @@ class _Parser:
 
     def _unary(self) -> _Parsed:
         """Parse any number of '!' before a primary."""
-        if not self._at_symbol("!"):
+        token = self._peek()
+        if token is None or not self._at_symbol("!"):
             return self._primary()
-        self._index += 1
-        operand = self._unary()
+        operand = self._nested(token, self._unary)
         return operand if isinstance(operand, InvalidExpression) else Negation(operand)
 
     def _primary(self) -> _Parsed:
@@ -160,10 +163,22 @@ class _Parser:
         self._index += 1
         return _operand(token)
 
+    def _nested(self, opening: Token, parse: Callable[[], _Parsed]) -> _Parsed:
+        """Read the '(' or '!' at opening and parse what it nests, unless it nests deeper than _MAX_NESTING."""
+        if self._depth == _MAX_NESTING:
+            return InvalidExpression(
+                self._source,
+                f"'{opening.text}' at column {opening.column} nests too deeply; nest at most {_MAX_NESTING} levels",
+            )
+        self._index += 1
+        self._depth += 1
+        parsed = parse()
+        self._depth -= 1
+        return parsed
+
     def _group(self, opening: Token) -> _Parsed:
         """Parse the expression inside the '(' at opening and its closing ')'."""
-        self._index += 1
-        inner = self._or()
+        inner = self._nested(opening, self._or)
         if isinstance(inner, InvalidExpression):
             return inner
         if self._at_symbol(")"):
