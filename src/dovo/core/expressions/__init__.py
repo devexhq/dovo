@@ -17,6 +17,7 @@ from dovo.core.expressions.models import (
     Resolver,
     Token,
     TokenKind,
+    ValueList,
 )
 from dovo.core.expressions.services.evaluator import evaluate_expression, is_truthy
 from dovo.core.expressions.services.parser import parse_expression
@@ -39,6 +40,7 @@ __all__ = [
     "Resolver",
     "Token",
     "TokenKind",
+    "ValueList",
     "evaluate_expression",
     "is_truthy",
     "parse_expression",

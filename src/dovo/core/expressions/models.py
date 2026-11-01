@@ -23,8 +23,8 @@ class Token:
     """One token: its kind, its source text, its 1-based column and its value.
 
     The value is the unescaped text of a string, the int or float of a number, the (root, *segments) tuple of a
-    name, the text of a word, the ComparisonOperator of an operator, or the text of a symbol: '&&', '||', '!', '('
-    or ')'.
+    name, the text of a word, the ComparisonOperator of an operator, or the text of a symbol: '&&', '||', '!', '(',
+    ')', '[', ']' or ','.
     """
 
     kind: TokenKind
@@ -43,6 +43,8 @@ class ComparisonOperator(StrEnum):
     GT = ">"
     GE = ">="
     CONTAINS = "contains"
+    IN = "in"
+    NOT_IN = "not in"
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,12 +94,22 @@ class Logical:
 
 
 @dataclass(frozen=True, slots=True)
+class ValueList:
+    """The bracketed items after 'in' or 'not in'."""
+
+    items: tuple[Operand, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class Comparison:
-    """Two expressions and the operator comparing them; each side is an operand, a negation or a parenthesised one."""
+    """Two expressions and the operator comparing them; each side is an operand, a negation or a parenthesised one.
+
+    The right side is a ValueList exactly when the operator is 'in' or 'not in'.
+    """
 
     left: Expression
     operator: ComparisonOperator
-    right: Expression
+    right: Expression | ValueList
 
 
 Expression = Logical | Negation | Comparison | Operand
@@ -140,8 +152,8 @@ class Evaluation:
     passed is the truthiness of the expression's value. resolved, actual and expected come from the comparison or
     lone operand that decided it: for '&&' and '||' the side whose value the expression took, and for '!' its
     operand's. resolved is False when a path that comparison read was ABSENT, so a negated unresolved comparison
-    passes unresolved. actual is the left (or lone) operand's value and expected the right operand's, each None when
-    absent; expected is also None for a lone operand. detail is 'TRUE', 'FALSE (not found)' when actual is None, else
+    passes unresolved. actual is the left (or lone) operand's value and expected the right operand's, or the list of
+    a ValueList's item values, each None when absent; expected is also None for a lone operand. detail is 'TRUE', 'FALSE (not found)' when actual is None, else
     "FALSE (was <actual!r>)".
     """
 

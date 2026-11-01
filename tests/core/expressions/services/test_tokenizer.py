@@ -38,3 +38,23 @@ class ExpressionTokenizerTests:
             Token(TokenKind.WORD, "a&b", 5, "a&b"),
             Token(TokenKind.WORD, "a|b", 9, "a|b"),
         )
+
+    def test_membership_tokens(self) -> None:
+        assert tokenize('steps.a.stdout not  in ["x",1]') == (
+            Token(TokenKind.NAME, "steps.a.stdout", 1, ("steps", "a", "stdout")),
+            Token(TokenKind.OPERATOR, "not  in", 16, ComparisonOperator.NOT_IN),
+            Token(TokenKind.SYMBOL, "[", 24, "["),
+            Token(TokenKind.STRING, '"x"', 25, "x"),
+            Token(TokenKind.SYMBOL, ",", 28, ","),
+            Token(TokenKind.NUMBER, "1", 29, 1),
+            Token(TokenKind.SYMBOL, "]", 30, "]"),
+        )
+        assert tokenize('steps.a.stdout in["x"]') == (
+            Token(TokenKind.NAME, "steps.a.stdout", 1, ("steps", "a", "stdout")),
+            Token(TokenKind.OPERATOR, "in", 16, ComparisonOperator.IN),
+            Token(TokenKind.SYMBOL, "[", 18, "["),
+            Token(TokenKind.STRING, '"x"', 19, "x"),
+            Token(TokenKind.SYMBOL, "]", 22, "]"),
+        )
+        assert tokenize("steps.in.status") == (Token(TokenKind.NAME, "steps.in.status", 1, ("steps", "in", "status")),)
+        assert tokenize('steps.a["in"]') == (Token(TokenKind.NAME, 'steps.a["in"]', 1, ("steps", "a", "in")),)

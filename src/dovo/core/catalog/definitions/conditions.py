@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from dovo.core.expressions import Comparison, Expression, InvalidExpression, Path, parse_expression
+from dovo.core.expressions import Comparison, Expression, InvalidExpression, Path, ValueList, parse_expression
 
 _VALID_OPERATORS = frozenset({"==", "!=", ">=", "<=", ">", "<", "contains"})
 _VALID_STEP_FIELDS = frozenset({"exit_code", "outputs", "status", "stdout"})
@@ -40,14 +40,14 @@ def _malformed_message(expression: str) -> str:
     )
 
 
-def _is_dynamic_operand(operand: Expression) -> bool:
+def _is_dynamic_operand(operand: Expression | ValueList) -> bool:
     """Return whether an operand reads step or iteration state; a lone 'steps' is a bare word."""
     if not isinstance(operand, Path):
         return False
     return operand.root == _ITERATION_ROOT or (operand.root == _STEPS_ROOT and bool(operand.segments))
 
 
-def _is_unreadable_root(operand: Expression) -> bool:
+def _is_unreadable_root(operand: Expression | ValueList) -> bool:
     """Return whether an operand is a dotted path whose root a condition cannot read."""
     return isinstance(operand, Path) and bool(operand.segments) and operand.root not in (_STEPS_ROOT, _ITERATION_ROOT)
 
@@ -74,7 +74,7 @@ def _validate_step_operand(operand: Path, expression: str, scope: ConditionScope
     return errors
 
 
-def _validate_operand(operand: Expression, expression: str, scope: ConditionScope) -> list[str]:
+def _validate_operand(operand: Expression | ValueList, expression: str, scope: ConditionScope) -> list[str]:
     """Validate one operand's reference: a step, the iteration, or a root a condition cannot read."""
     if not isinstance(operand, Path):
         return []

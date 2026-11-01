@@ -12,8 +12,14 @@ _ESCAPES: Final[frozenset[str]] = frozenset({"\\", "'", '"'})
 # Longest first, so '<=' is read before '<'.
 _SYMBOL_OPERATORS: Final[tuple[str, ...]] = ("<=", ">=", "==", "!=", "<", ">")
 # Longest first, so '&&' is read whole; a '!' here is never followed by '=', which reads as '!=' first.
-_SYMBOLS: Final[tuple[str, ...]] = ("&&", "||", "(", ")", "!")
-_RUN_STOPS: Final[tuple[str, ...]] = ("==", "!=", "<", ">", "&&", "||", "(", ")")
+_SYMBOLS: Final[tuple[str, ...]] = ("&&", "||", "(", ")", "[", "]", ",", "!")
+_RUN_STOPS: Final[tuple[str, ...]] = ("==", "!=", "<", ">", "&&", "||", "(", ")", "[", "]", ",")
+# A run that is one of these lone names is the operator, not a name.
+_NAME_OPERATORS: Final[dict[tuple[str, ...], ComparisonOperator]] = {
+    (ComparisonOperator.CONTAINS.value,): ComparisonOperator.CONTAINS,
+    (ComparisonOperator.IN.value,): ComparisonOperator.IN,
+}
+_NOT: Final[tuple[str, ...]] = ("not",)
 NUMBER_RE: Final[re.Pattern[str]] = re.compile(r"-?[0-9]+(\.[0-9]+)?")
 _UNSUPPORTED_NUMBER_RE: Final[re.Pattern[str]] = re.compile(r"[0-9]|[+\-.][0-9]")
 _ROOT_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
@@ -104,7 +110,7 @@ def _read_run(source: str, start: int) -> Token | InvalidExpression:
     if NUMBER_RE.fullmatch(text):
         return Token(TokenKind.NUMBER, text, column, float(text) if "." in text else int(text))
     if parts and name_end == end:
-        return _name_token(parts, text, column)
+        return _name_token(source, parts, start, end)
     if _UNSUPPORTED_NUMBER_RE.match(text):
         return InvalidExpression(source, f"unsupported number '{text}' at column {column}")
     if len(parts) > 1:
@@ -113,12 +119,17 @@ def _read_run(source: str, start: int) -> Token | InvalidExpression:
 
 
 def _read_name(source: str, start: int) -> tuple[tuple[str, ...], int] | InvalidExpression:
-    """Return the parts of the name at start and the index where it stops; no parts when no name starts there."""
+    """Return the parts of the name at start and the index where it stops; no parts when no name starts there.
+
+    A root of exactly 'in' reads no bracket key, so 'in["x"]' is the operator 'in' and a list.
+    """
     root = _ROOT_RE.match(source, start)
     if root is None:
         return (), start
     parts = [root.group()]
     position = root.end()
+    if parts == [ComparisonOperator.IN.value] and source.startswith("[", position):
+        return tuple(parts), position
     while (suffix := _read_suffix(source, position)) is not None:
         if isinstance(suffix, InvalidExpression):
             return suffix
@@ -153,18 +164,36 @@ def _run_end(source: str, position: int) -> int:
 def _stops_run(source: str, position: int) -> bool:
     """Return whether the character at position ends a run: whitespace, a quote, an operator or a symbol but '!'.
 
-    The stops are '<', '>', '==', '!=', '&&', '||', '(' and ')'; a '!' not followed by '=', a lone '&' and a lone '|'
-    stay inside a run.
+    The stops are '<', '>', '==', '!=', '&&', '||', '(', ')', '[', ']' and ','; a '!' not followed by '=', a lone
+    '&' and a lone '|' stay inside a run.
     """
     char = source[position]
     return char.isspace() or char in _QUOTES or source.startswith(_RUN_STOPS, position)
 
 
-def _name_token(parts: tuple[str, ...], text: str, column: int) -> Token:
-    """Return the token of a run that is a whole name; a lone 'contains' is the operator."""
-    if parts == (ComparisonOperator.CONTAINS.value,):
-        return Token(TokenKind.OPERATOR, text, column, ComparisonOperator.CONTAINS)
-    return Token(TokenKind.NAME, text, column, parts)
+def _name_token(source: str, parts: tuple[str, ...], start: int, end: int) -> Token:
+    """Return the token of the run from start to end, which is a whole name.
+
+    A lone 'contains' or 'in' is the operator, and a lone 'not' followed, after whitespace only, by the operator 'in'
+    is one 'not in' operator token whose text runs from 'not' to 'in'.
+    """
+    text = source[start:end]
+    operator = _NAME_OPERATORS.get(parts)
+    if operator is not None:
+        return Token(TokenKind.OPERATOR, text, start + 1, operator)
+    not_in = _read_not_in(source, start, end) if parts == _NOT else None
+    return not_in or Token(TokenKind.NAME, text, start + 1, parts)
+
+
+def _read_not_in(source: str, start: int, end: int) -> Token | None:
+    """Return the 'not in' token whose 'not' runs from start to end, when the next token is the operator 'in'."""
+    following = _skip_whitespace(source, end)
+    if following >= len(source):
+        return None
+    token = _read_token(source, following)
+    if isinstance(token, InvalidExpression) or token.value is not ComparisonOperator.IN:
+        return None
+    return Token(TokenKind.OPERATOR, source[start : following + len(token.text)], start + 1, ComparisonOperator.NOT_IN)
 
 
 def _unexpected_character(source: str, position: int) -> InvalidExpression:

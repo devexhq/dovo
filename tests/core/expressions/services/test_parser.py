@@ -14,6 +14,7 @@ from dovo.core.expressions import (
     LogicalOperator,
     Negation,
     Path,
+    ValueList,
     parse_expression,
 )
 
@@ -207,6 +208,52 @@ class ExpressionParserTests:
         assert parse_expression(source) == expected
 
     @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            pytest.param(
+                "steps.a.stdout in [\"x\", 'y']",
+                Comparison(STDOUT, ComparisonOperator.IN, ValueList((Literal("x", '"x"'), Literal("y", "'y'")))),
+                id="in_strings",
+            ),
+            pytest.param(
+                "steps.a.stdout not in [1, true, done]",
+                Comparison(
+                    STDOUT,
+                    ComparisonOperator.NOT_IN,
+                    ValueList((Literal(1, "1"), Literal(True, "true"), Path("done", (), "done"))),
+                ),
+                id="not_in_mixed",
+            ),
+            pytest.param(
+                "steps.a.stdout in []",
+                Comparison(STDOUT, ComparisonOperator.IN, ValueList(())),
+                id="empty_list",
+            ),
+            pytest.param(
+                "steps.a.stdout in [steps.b.stdout]",
+                Comparison(
+                    STDOUT, ComparisonOperator.IN, ValueList((Path("steps", ("b", "stdout"), "steps.b.stdout"),))
+                ),
+                id="path_item",
+            ),
+            pytest.param(
+                'steps.a.stdout in ["x"] && steps.a.exit_code == 0',
+                Logical(Comparison(STDOUT, ComparisonOperator.IN, ValueList((Literal("x", '"x"'),))), AND, A),
+                id="binds_tighter_than_and",
+            ),
+            pytest.param(
+                'steps.in.status == "x"',
+                Comparison(
+                    Path("steps", ("in", "status"), "steps.in.status"), ComparisonOperator.EQ, Literal("x", '"x"')
+                ),
+                id="step_named_in",
+            ),
+        ],
+    )
+    def test_membership_parses(self, source: str, expected: Expression) -> None:
+        assert parse_expression(source) == expected
+
+    @pytest.mark.parametrize(
         "word",
         [
             pytest.param("a/b", id="slash"),
@@ -334,6 +381,52 @@ class ExpressionParserTests:
                 "steps.a.stdout == f(x)",
                 "Invalid expression 'steps.a.stdout == f(x)': unexpected '(' at column 20.",
                 id="call_syntax",
+            ),
+            pytest.param(
+                'steps.a.stdout in "x"',
+                "Invalid expression 'steps.a.stdout in \"x\"': expected a list after 'in' at column 19.",
+                id="in_without_list",
+            ),
+            pytest.param(
+                "steps.a.stdout in",
+                "Invalid expression 'steps.a.stdout in': missing value after 'in'.",
+                id="dangling_in",
+            ),
+            pytest.param(
+                'steps.a.stdout in ["x"',
+                "Invalid expression 'steps.a.stdout in [\"x\"': missing ']' to close '[' at column 19.",
+                id="unclosed_list",
+            ),
+            pytest.param(
+                'steps.a.stdout in ["x",]',
+                "Invalid expression 'steps.a.stdout in [\"x\",]': unexpected ']' at column 24.",
+                id="trailing_comma",
+            ),
+            pytest.param(
+                "steps.a.stdout in [!x]",
+                "Invalid expression 'steps.a.stdout in [!x]': unexpected '!' at column 20.",
+                id="negation_item",
+            ),
+            pytest.param(
+                'steps.a.stdout == ["x"]',
+                "Invalid expression 'steps.a.stdout == [\"x\"]': unexpected '[' at column 19.",
+                id="list_after_equals",
+            ),
+            pytest.param(
+                "steps.a.stdout in [needs edits]",
+                "Invalid expression 'steps.a.stdout in [needs edits]': "
+                "unquoted text 'needs edits' at column 20; quote a value of more than one word.",
+                id="unquoted_item_text",
+            ),
+            pytest.param(
+                "steps.a.stdout == a,b",
+                "Invalid expression 'steps.a.stdout == a,b': unexpected ',' at column 20.",
+                id="comma_in_a_word",
+            ),
+            pytest.param(
+                "steps.a.stdout == in",
+                "Invalid expression 'steps.a.stdout == in': unexpected 'in' at column 19.",
+                id="lone_in_as_value",
             ),
         ],
     )

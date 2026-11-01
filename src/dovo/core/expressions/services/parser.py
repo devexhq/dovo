@@ -1,6 +1,7 @@
 """Parse an expression source into its syntax tree.
 
-expression := and ("||" and)*; and := comparison ("&&" comparison)*; comparison := unary [<operator> unary];
+expression := and ("||" and)*; and := comparison ("&&" comparison)*;
+comparison := unary [<operator> unary | ("in" | "not in") list]; list := "[" [operand ("," operand)*] "]";
 unary := "!" unary | primary; primary := operand | "(" expression ")".
 """
 
@@ -21,10 +22,12 @@ from dovo.core.expressions.models import (
     Path,
     Token,
     TokenKind,
+    ValueList,
 )
 from dovo.core.expressions.services.tokenizer import tokenize
 
 _BOOLEANS: dict[str, bool] = {"true": True, "false": False}
+_MEMBERSHIP_OPERATORS: frozenset[ComparisonOperator] = frozenset({ComparisonOperator.IN, ComparisonOperator.NOT_IN})
 
 _Parsed = Expression | InvalidExpression
 
@@ -80,16 +83,62 @@ class _Parser:
         return left
 
     def _comparison(self) -> _Parsed:
-        """Parse one unary, compared with a second when a comparison operator follows it."""
+        """Parse one unary, compared with a second, or with a list after 'in' and 'not in', when an operator follows."""
         left = self._unary()
         token = self._peek()
         if isinstance(left, InvalidExpression) or token is None or token.kind is not TokenKind.OPERATOR:
             return left
         self._index += 1
-        right = self._unary()
+        operator = ComparisonOperator(token.value)
+        right = self._list(token) if operator in _MEMBERSHIP_OPERATORS else self._unary()
         if isinstance(right, InvalidExpression):
             return right
-        return Comparison(left, ComparisonOperator(token.text), right)
+        return Comparison(left, operator, right)
+
+    def _list(self, operator: Token) -> ValueList | InvalidExpression:
+        """Parse the bracketed list of operands after the operator 'in' or 'not in'."""
+        opening = self._peek()
+        if opening is None:
+            return InvalidExpression(self._source, f"missing value after '{operator.text}'")
+        if not self._at_symbol("["):
+            return InvalidExpression(
+                self._source, f"expected a list after '{operator.text}' at column {opening.column}"
+            )
+        self._index += 1
+        items = () if self._at_symbol("]") else self._items(opening)
+        if isinstance(items, InvalidExpression):
+            return items
+        return self._close_list(opening, items)
+
+    def _items(self, opening: Token) -> tuple[Operand, ...] | InvalidExpression:
+        """Parse one or more operands separated by ',' inside the list opened at opening."""
+        items: list[Operand] = []
+        while True:
+            item = self._item(opening)
+            if isinstance(item, InvalidExpression):
+                return item
+            items.append(item)
+            if not self._at_symbol(","):
+                return tuple(items)
+            self._index += 1
+
+    def _item(self, opening: Token) -> Operand | InvalidExpression:
+        """Parse one list item, which is any operand."""
+        token = self._peek()
+        if token is None:
+            return _unclosed_list(self._source, opening)
+        if token.kind in (TokenKind.OPERATOR, TokenKind.SYMBOL):
+            return self._unexpected(token)
+        self._index += 1
+        return _operand(token)
+
+    def _close_list(self, opening: Token, items: tuple[Operand, ...]) -> ValueList | InvalidExpression:
+        """Read the ']' that closes the list opened at opening."""
+        if self._at_symbol("]"):
+            self._index += 1
+            return ValueList(items)
+        token = self._peek()
+        return _unclosed_list(self._source, opening) if token is None else self._unexpected(token)
 
     def _unary(self) -> _Parsed:
         """Parse any number of '!' before a primary."""
@@ -137,6 +186,11 @@ class _Parser:
     def _unexpected(self, token: Token) -> InvalidExpression:
         """Describe token as one that cannot stand where it is."""
         return InvalidExpression(self._source, f"unexpected '{token.text}' at column {token.column}")
+
+
+def _unclosed_list(source: str, opening: Token) -> InvalidExpression:
+    """Describe the list opened at opening as missing its ']'."""
+    return InvalidExpression(source, f"missing ']' to close '[' at column {opening.column}")
 
 
 def _unquoted_text(source: str, tokens: tuple[Token, ...]) -> InvalidExpression | None:

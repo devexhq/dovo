@@ -49,6 +49,9 @@ class _RecordingResolver(_MappingResolver):
 _X_OR_Y = 'steps.a.stdout == "x" || steps.b.stdout == "y"'
 _X_AND_Y = 'steps.a.stdout == "x" && steps.b.stdout == "y"'
 
+_S = "steps.a.outputs.s"
+_XY = '["x", "y"]'
+
 _COMPARED_PATHS = ("steps.a.stdout", "steps.a.outputs.x", "steps.a.outputs.ok", "steps.a.outputs.files")
 """The paths the comparison cases read; each case reads one of them, mapped to its value."""
 
@@ -335,6 +338,72 @@ class ExpressionEvaluatorTests:
     def test_logical_expression_reports_the_deciding_comparison(
         self, source: str, values: Mapping[str, object], expected: Evaluation
     ) -> None:
+        assert _evaluate(source, values) == expected
+
+    @pytest.mark.parametrize(
+        ("source", "values", "expected"),
+        [
+            pytest.param(f"{_S} in {_XY}", {_S: "y"}, Evaluation(True, True, "y", ["x", "y"], "TRUE"), id="in_hit"),
+            pytest.param(
+                f"{_S} in {_XY}",
+                {_S: "z"},
+                Evaluation(False, True, "z", ["x", "y"], "FALSE (was 'z')"),
+                id="in_miss",
+            ),
+            pytest.param(
+                f"{_S} in [1, 3]", {_S: "3"}, Evaluation(True, True, "3", [1, 3], "TRUE"), id="numeric_string_in"
+            ),
+            pytest.param(
+                f"{_S} not in {_XY}",
+                {_S: "z"},
+                Evaluation(True, True, "z", ["x", "y"], "TRUE"),
+                id="not_in_hit",
+            ),
+            pytest.param(
+                f"{_S} not in {_XY}",
+                {_S: "x"},
+                Evaluation(False, True, "x", ["x", "y"], "FALSE (was 'x')"),
+                id="not_in_miss",
+            ),
+            pytest.param(
+                f"{_S} not in [3]",
+                {_S: "3"},
+                Evaluation(False, True, "3", [3], "FALSE (was '3')"),
+                id="numeric_string_not_in",
+            ),
+            pytest.param(
+                f"{_S} in {_XY}",
+                {},
+                Evaluation(False, False, None, ["x", "y"], "FALSE (not found)"),
+                id="in_absent",
+            ),
+            pytest.param(
+                f"{_S} not in {_XY}",
+                {},
+                Evaluation(False, False, None, ["x", "y"], "FALSE (not found)"),
+                id="not_in_absent",
+            ),
+            pytest.param(
+                f'!({_S} in ["x"])',
+                {},
+                Evaluation(True, False, None, ["x"], "TRUE"),
+                id="not_of_an_absent_in",
+            ),
+            pytest.param(
+                f'{_S} not in ["x"]',
+                {_S: None},
+                Evaluation(False, True, None, ["x"], "FALSE (not found)"),
+                id="null_not_in",
+            ),
+            pytest.param(
+                f"{_S} in [done]",
+                {_S: "done", "done": "done"},
+                Evaluation(True, True, "done", ["done"], "TRUE"),
+                id="bare_word_item",
+            ),
+        ],
+    )
+    def test_membership(self, source: str, values: Mapping[str, object], expected: Evaluation) -> None:
         assert _evaluate(source, values) == expected
 
     @pytest.mark.parametrize(
