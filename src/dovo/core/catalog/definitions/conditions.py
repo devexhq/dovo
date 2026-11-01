@@ -1,14 +1,12 @@
-"""Condition expression parsing and authoring-time validation shared by loop 'until' and step 'when' lists."""
+"""Authoring-time validation of condition expressions, shared by loop 'until' and step 'when' lists."""
 
 from __future__ import annotations
 
-import ast
 import re
 from dataclasses import dataclass
 
 from dovo.core.expressions import Comparison, InvalidExpression, Operand, Path, parse_expression
 
-_CONDITION_RE = re.compile(r"^\s*(?P<left>.+?)\s*(?P<op>==|!=|>=|<=|>|<|\bcontains\b)\s*(?P<right>.+?)\s*$")
 _VALID_OPERATORS = frozenset({"==", "!=", ">=", "<=", ">", "<", "contains"})
 _VALID_STEP_FIELDS = frozenset({"exit_code", "outputs", "status", "stdout"})
 # A quoted run, its escapes included; an unterminated one runs to the end of the source.
@@ -16,48 +14,6 @@ _QUOTED_RUN_RE = re.compile(r""""(?:\\.|[^"\\])*"?|'(?:\\.|[^'\\])*'?""")
 _OPERATOR_RE = re.compile(r"==|!=|<|>|(?<!\S)contains(?!\S)")
 _STEPS_ROOT = "steps"
 _ITERATION_ROOT = "iteration"
-
-
-@dataclass(frozen=True)
-class ParsedCondition:
-    """Structured representation of a parsed comparison condition."""
-
-    raw: str
-    left: str
-    operator: str
-    right: str
-
-
-def parse_condition_expression(expression: str) -> ParsedCondition | None:
-    """Parse a condition expression string into a ParsedCondition, or None if malformed."""
-    match = _CONDITION_RE.match(expression.strip())
-    if not match:
-        return None
-    left = match.group("left").strip()
-    op = match.group("op").strip()
-    right = match.group("right").strip()
-    if not left or not right or op not in _VALID_OPERATORS or right.startswith("="):
-        return None
-    return ParsedCondition(raw=expression, left=left, operator=op, right=right)
-
-
-def parse_literal(raw: str) -> bool | int | float | str:
-    """Parse a literal value from a condition operand string."""
-    token = raw.strip()
-    lower = token.lower()
-    if lower == "true":
-        return True
-    if lower == "false":
-        return False
-
-    try:
-        val = ast.literal_eval(token)
-        if isinstance(val, (int, float, str, bool)):
-            return val
-    except (ValueError, SyntaxError):
-        pass
-
-    return token
 
 
 @dataclass(frozen=True)
@@ -82,20 +38,6 @@ def _malformed_message(expression: str) -> str:
         f"Invalid condition expression '{expression}'. "
         f"Expected '<operand> <operator> <operand>' with operators: {', '.join(sorted(_VALID_OPERATORS))}."
     )
-
-
-def _run_time_misreads(expression: str, comparison: Comparison) -> str | None:
-    """Describe a form the run-time evaluator would misread: a bracket key, or an operator inside the left operand."""
-    for operand in (comparison.left, comparison.right):
-        if isinstance(operand, Path) and "[" in operand.text:
-            return f"Invalid expression '{expression}': bracket key in '{operand.text}' is not supported in a condition yet."
-    split = parse_condition_expression(expression)
-    if split is None or split.operator != comparison.operator.value or split.left.strip() != comparison.left.text:
-        return (
-            f"Invalid expression '{expression}': the operand '{comparison.left.text}' holds an operator, "
-            "which a condition does not support yet."
-        )
-    return None
 
 
 def _is_dynamic_operand(operand: Operand) -> bool:
@@ -173,8 +115,8 @@ def validate_condition_expression(
     known_step_ids alone checks a loop 'until' expression against its loop's 'do' step ids; scope, when given,
     names the clause and the step ids a 'when' or 'condition' expression may reference instead.
 
-    Returns a list of error message strings (empty if valid). An expression with no operator outside quotes, a
-    syntax error and a form the run-time evaluator would misread each return their one error.
+    Returns a list of error message strings (empty if valid). An expression with no operator outside quotes and a
+    syntax error each return their one error.
     """
     if scope is None:
         scope = ConditionScope(known_step_ids=None if known_step_ids is None else frozenset(known_step_ids))
@@ -185,7 +127,4 @@ def validate_condition_expression(
         return [parsed.message]
     if not isinstance(parsed, Comparison):
         return [_malformed_message(expression)]
-    misread = _run_time_misreads(expression, parsed)
-    if misread is not None:
-        return [misread]
     return _operand_errors(expression, parsed, scope)

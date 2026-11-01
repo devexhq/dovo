@@ -1,9 +1,10 @@
-"""Tokens and the syntax tree of one expression, and the reason a source is not one."""
+"""Tokens and the syntax tree of one expression, the reason a source is not one, and how one evaluated."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum, StrEnum
+from typing import Final, Protocol
 
 
 class TokenKind(StrEnum):
@@ -88,3 +89,36 @@ class InvalidExpression:
     def message(self) -> str:
         """Return the message `Invalid expression '<source>': <reason>.`, naming the source and the reason."""
         return f"Invalid expression '{self.source}': {self.reason}."
+
+
+class Absent(Enum):
+    """The value of a path that names nothing, as opposed to a JSON null."""
+
+    ABSENT = "absent"
+
+
+ABSENT: Final = Absent.ABSENT
+
+
+class Resolver(Protocol):
+    """Supplies the value of each path an expression reads."""
+
+    def resolve(self, path: Path) -> object:
+        """Return the value path names, or ABSENT when it names none."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class Evaluation:
+    """How one expression evaluated.
+
+    resolved is False when a path the expression read was ABSENT. actual is the left (or lone) operand's value and
+    expected the right operand's, each None when absent; expected is also None for a lone operand. detail is 'TRUE',
+    'FALSE (not found)' when actual is None, else "FALSE (was <actual!r>)".
+    """
+
+    passed: bool
+    resolved: bool
+    actual: object
+    expected: object
+    detail: str

@@ -153,9 +153,7 @@ A `when` list holds condition expressions written exactly as loop `until` condit
 - an expression references a step that is not an earlier step in the same or an enclosing scope. A top-level step sees the top-level steps before it. A step inside `do` also sees the steps before it in the same `do`. A step after an `if` block also sees the steps of either branch, and a step inside a branch sees the steps before the block and the steps before it in the same branch. A loop's or `if` block's own id cannot be referenced, and the steps inside a loop's `do` are not visible after the loop;
 - an expression uses `iteration.index` outside a loop's `do`;
 - a value of more than one word is not quoted, as in `steps.a.status == needs edits`;
-- an operand is a dotted name whose root is neither `steps` nor `iteration`, as `inputs.<name>` and `artifacts.<name>` are;
-- a path uses a bracket key, as in `steps.a.outputs['x.y']`;
-- a quoted value on the left of the operator holds an operator, as in `"a == b" == steps.a.stdout`.
+- an operand is a dotted name whose root is neither `steps` nor `iteration`, as `inputs.<name>` and `artifacts.<name>` are.
 
 The list is evaluated just before the step or loop would start. A `when` inside `do` is evaluated again on every iteration, against the steps of the current iteration. When every expression is true the step runs normally. Otherwise it is skipped: it runs nothing and has no attempt, outputs, artifacts or step logs, a skipped `ask` shows no prompt and does not pause, and a skipped loop runs no iteration. A skip counts as successful, so a run whose remaining steps are all skipped ends `completed`. A step skipped before a run paused stays skipped when the run resumes.
 

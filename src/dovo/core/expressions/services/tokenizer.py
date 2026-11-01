@@ -12,7 +12,7 @@ _ESCAPES: Final[frozenset[str]] = frozenset({"\\", "'", '"'})
 # Longest first, so '<=' is read before '<'.
 _SYMBOL_OPERATORS: Final[tuple[str, ...]] = ("<=", ">=", "==", "!=", "<", ">")
 _RUN_STOPS: Final[tuple[str, ...]] = ("==", "!=", "<", ">")
-_NUMBER_RE: Final[re.Pattern[str]] = re.compile(r"-?[0-9]+(\.[0-9]+)?")
+NUMBER_RE: Final[re.Pattern[str]] = re.compile(r"-?[0-9]+(\.[0-9]+)?")
 _UNSUPPORTED_NUMBER_RE: Final[re.Pattern[str]] = re.compile(r"[0-9]|[+\-.][0-9]")
 _ROOT_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 _SEGMENT_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_-]+")
@@ -96,7 +96,7 @@ def _read_run(source: str, start: int) -> Token | InvalidExpression:
     end = _run_end(source, name_end)
     text = source[start:end]
     column = start + 1
-    if _NUMBER_RE.fullmatch(text):
+    if NUMBER_RE.fullmatch(text):
         return Token(TokenKind.NUMBER, text, column, float(text) if "." in text else int(text))
     if parts and name_end == end:
         return _name_token(parts, text, column)

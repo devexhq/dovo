@@ -9,6 +9,7 @@ from dovo.engine.executors import evaluate_condition
 from dovo.engine.executors.models import (
     AGENT_OUTCOME_EXIT_CODES,
     AgentStepSummary,
+    ConditionEvaluationResult,
     StepResult,
 )
 
@@ -131,6 +132,98 @@ class ConditionExpressionEvaluatorTests:
 
         assert (result.resolved, result.passed) == (True, True)
 
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            pytest.param("steps.build.exit_code ==", id="dangling_operator"),
+            pytest.param("", id="empty"),
+            pytest.param("steps.build.exit_code", id="lone_operand"),
+        ],
+    )
+    def test_entry_without_a_comparison_is_a_syntax_error(self, expression: str) -> None:
+        result = evaluate_condition(expression, step_results={"build": _build_result()})
+
+        assert result == ConditionEvaluationResult(
+            expression=expression,
+            passed=False,
+            resolved=True,
+            actual=None,
+            expected=None,
+            detail="FALSE (syntax error)",
+        )
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            pytest.param("steps.build.outputs['x.y'] == 1", id="bracket_output_key"),
+            pytest.param("steps['build'].exit_code == 0", id="bracket_step_id"),
+            pytest.param('"a == b" == steps.build.stdout', id="quoted_operator_on_the_left"),
+            pytest.param('steps.contains.status == "completed"', id="contains_step_id"),
+        ],
+    )
+    def test_form_load_validation_used_to_reject_evaluates(self, expression: str) -> None:
+        step_results = {
+            "build": _build_result(stdout="a == b", outputs={"x.y": "1"}),
+            "contains": _build_result(step_id="contains"),
+        }
+
+        result = evaluate_condition(expression, step_results=step_results)
+
+        assert (result.passed, result.detail) == (True, "TRUE")
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            pytest.param("steps.build.status == completed", id="bare_word"),
+            pytest.param("steps.build.stdout == steps", id="lone_steps_word"),
+            pytest.param("iteration == 2", id="lone_iteration"),
+            pytest.param("iteration.attempt == 2", id="iteration_attempt"),
+            pytest.param('steps.build.status.any == "completed"', id="field_with_a_further_segment"),
+        ],
+    )
+    def test_lone_name_and_iteration_operands_resolve(self, expression: str) -> None:
+        result = evaluate_condition(
+            expression, iteration_index=2, step_results={"build": _build_result(stdout="steps")}
+        )
+
+        assert result.passed is True
+
+    @pytest.mark.parametrize(
+        ("expression", "passed", "expected", "detail"),
+        [
+            pytest.param("steps.build.outputs.n == 007", True, 7, "TRUE", id="leading_zero_integer"),
+            pytest.param("steps.build.exit_code == (1)", False, "(1)", "FALSE (was 1)", id="parenthesised_number"),
+        ],
+    )
+    def test_right_operand_reads_by_the_grammar(
+        self, expression: str, passed: bool, expected: object, detail: str
+    ) -> None:
+        build = _build_result(exit_code=1, outputs={"n": "7"})
+
+        result = evaluate_condition(expression, step_results={"build": build})
+
+        assert (result.passed, result.expected, result.detail) == (passed, expected, detail)
+
+    def test_unknown_iteration_field_is_not_found(self) -> None:
+        result = evaluate_condition("iteration.foo == 1", iteration_index=1)
+
+        assert (result.resolved, result.passed, result.detail) == (False, False, "FALSE (not found)")
+
+
+def _build_result(
+    *, step_id: str = "build", exit_code: int = 0, stdout: str = "", outputs: dict[str, str] | None = None
+) -> StepResult:
+    """Build a completed command result with the given exit code, stdout and recorded outputs."""
+    return StepResult(
+        step_id=step_id,
+        status="completed",
+        exit_code=exit_code,
+        stdout=stdout,
+        stderr="",
+        duration_seconds=0.1,
+        outputs=outputs or {},
+    )
+
 
 def _gate_result(**outputs: str) -> StepResult:
     """Build a `gate` command result with recorded outputs and plain stdout."""
@@ -144,59 +237,6 @@ def _gate_result(**outputs: str) -> StepResult:
         duration_seconds=0.1,
         outputs=recorded,
     )
-
-
-class NumericStringComparisonTests:
-    @pytest.mark.parametrize(
-        "expression",
-        [
-            pytest.param("steps.gate.outputs.count == 3", id="equals"),
-            pytest.param("steps.gate.outputs.count != 4", id="not_equals"),
-            pytest.param("steps.gate.outputs.count > 2", id="greater"),
-            pytest.param("steps.gate.outputs.count < 4", id="less"),
-            pytest.param("steps.gate.outputs.count >= 3", id="greater_or_equal"),
-            pytest.param("steps.gate.outputs.count <= 3", id="less_or_equal"),
-            pytest.param("steps.gate.outputs.ratio < 3", id="decimal"),
-            pytest.param("3 == steps.gate.outputs.count", id="number_on_the_left"),
-        ],
-    )
-    def test_numeric_string_compares_numerically(self, expression: str) -> None:
-        result = evaluate_condition(expression, step_results={"gate": _gate_result(ratio="2.5")})
-
-        assert (result.passed, result.detail) == (True, "TRUE")
-
-    @pytest.mark.parametrize(
-        "operator",
-        [
-            pytest.param(">", id="greater"),
-            pytest.param("<", id="less"),
-            pytest.param(">=", id="greater_or_equal"),
-            pytest.param("<=", id="less_or_equal"),
-        ],
-    )
-    def test_non_numeric_string_against_a_number_is_false(self, operator: str) -> None:
-        result = evaluate_condition(
-            f"steps.gate.outputs.verdict {operator} 2", step_results={"gate": _gate_result(verdict="abc")}
-        )
-
-        assert (result.passed, result.actual, result.detail) == (False, "abc", "FALSE (was 'abc')")
-
-    @pytest.mark.parametrize(
-        ("value", "expression"),
-        [
-            pytest.param("nan", "steps.gate.outputs.value == 0", id="nan"),
-            pytest.param("inf", "steps.gate.outputs.value > 0", id="infinity"),
-            pytest.param("1e3", "steps.gate.outputs.value == 1000", id="exponent"),
-            pytest.param("1_000", "steps.gate.outputs.value == 1000", id="underscore"),
-            pytest.param(" 3", "steps.gate.outputs.value == 3", id="padded"),
-            pytest.param("3\n", "steps.gate.outputs.value == 3", id="trailing_newline"),
-            pytest.param("٣", "steps.gate.outputs.value == 3", id="unicode_digit"),
-        ],
-    )
-    def test_other_number_forms_stay_strings(self, value: str, expression: str) -> None:
-        result = evaluate_condition(expression, step_results={"gate": _gate_result(value=value)})
-
-        assert (result.passed, result.actual) == (False, value)
 
 
 def _agent_result(status: AgentResponseStatus) -> StepResult:
