@@ -34,12 +34,27 @@ def _evaluate(source: str, values: Mapping[str, object]) -> Evaluation:
     return evaluate_expression(expression, _MappingResolver(values))
 
 
+class _RecordingResolver(_MappingResolver):
+    """A mapping resolver that records the text of each path it resolves."""
+
+    def __init__(self, values: Mapping[str, object]) -> None:
+        super().__init__(values)
+        self.read: list[str] = []
+
+    def resolve(self, path: Path) -> object:
+        self.read.append(path.text)
+        return super().resolve(path)
+
+
+_X_OR_Y = 'steps.a.stdout == "x" || steps.b.stdout == "y"'
+_X_AND_Y = 'steps.a.stdout == "x" && steps.b.stdout == "y"'
+
 _COMPARED_PATHS = ("steps.a.stdout", "steps.a.outputs.x", "steps.a.outputs.ok", "steps.a.outputs.files")
 """The paths the comparison cases read; each case reads one of them, mapped to its value."""
 
 
 class ExpressionEvaluatorTests:
-    """evaluate_expression compares two operands, or reads a lone one by truthiness, through the caller's resolver."""
+    """evaluate_expression passes on its value's truthiness, reporting the comparison that decided it."""
 
     @pytest.mark.parametrize(
         ("source", "value", "expected"),
@@ -245,3 +260,95 @@ class ExpressionEvaluatorTests:
         self, source: str, values: Mapping[str, object], expected: Evaluation
     ) -> None:
         assert _evaluate(source, values) == expected
+
+    @pytest.mark.parametrize(
+        ("source", "values", "expected"),
+        [
+            pytest.param(
+                _X_OR_Y,
+                {"steps.a.stdout": "x", "steps.b.stdout": "n"},
+                Evaluation(True, True, "x", "x", "TRUE"),
+                id="or_left_decides",
+            ),
+            pytest.param(
+                _X_OR_Y,
+                {"steps.a.stdout": "n", "steps.b.stdout": "y"},
+                Evaluation(True, True, "y", "y", "TRUE"),
+                id="or_right_decides",
+            ),
+            pytest.param(
+                _X_OR_Y,
+                {"steps.a.stdout": "n", "steps.b.stdout": "m"},
+                Evaluation(False, True, "m", "y", "FALSE (was 'm')"),
+                id="or_both_false",
+            ),
+            pytest.param(
+                _X_OR_Y,
+                {"steps.b.stdout": "y"},
+                Evaluation(True, True, "y", "y", "TRUE"),
+                id="or_left_absent",
+            ),
+            pytest.param(
+                _X_AND_Y,
+                {"steps.a.stdout": "n", "steps.b.stdout": "y"},
+                Evaluation(False, True, "n", "x", "FALSE (was 'n')"),
+                id="and_left_false",
+            ),
+            pytest.param(
+                _X_AND_Y,
+                {"steps.b.stdout": "y"},
+                Evaluation(False, False, None, "x", "FALSE (not found)"),
+                id="and_left_absent",
+            ),
+            pytest.param(
+                _X_AND_Y,
+                {"steps.a.stdout": "x", "steps.b.stdout": "y"},
+                Evaluation(True, True, "y", "y", "TRUE"),
+                id="and_both_true",
+            ),
+            pytest.param(
+                '!(steps.a.stdout == "completed")',
+                {},
+                Evaluation(True, False, None, "completed", "TRUE"),
+                id="not_of_an_absent_comparison",
+            ),
+            pytest.param(
+                '!(steps.a.stdout == "completed")',
+                {"steps.a.stdout": "completed"},
+                Evaluation(False, True, "completed", "completed", "FALSE (was 'completed')"),
+                id="not_of_a_true_comparison",
+            ),
+            pytest.param(
+                "!steps.a.stdout == false",
+                {"steps.a.stdout": ""},
+                Evaluation(False, True, True, False, "FALSE (was True)"),
+                id="not_binds_tighter",
+            ),
+            pytest.param(
+                "steps.a.stdout || steps.b.stdout",
+                {"steps.a.stdout": "", "steps.b.stdout": "ok"},
+                Evaluation(True, True, "ok", None, "TRUE"),
+                id="lone_operands_in_or",
+            ),
+        ],
+    )
+    def test_logical_expression_reports_the_deciding_comparison(
+        self, source: str, values: Mapping[str, object], expected: Evaluation
+    ) -> None:
+        assert _evaluate(source, values) == expected
+
+    @pytest.mark.parametrize(
+        ("source", "value"),
+        [
+            pytest.param(_X_AND_Y, "n", id="and_left_false"),
+            pytest.param(_X_OR_Y, "x", id="or_left_true"),
+        ],
+    )
+    def test_short_circuit_leaves_the_right_side_unread(self, source: str, value: str) -> None:
+        expression = parse_expression(source)
+        assert not isinstance(expression, InvalidExpression)
+        resolver = _RecordingResolver({"steps.a.stdout": value, "steps.b.stdout": "y"})
+
+        evaluate_expression(expression, resolver)
+
+        assert resolver.read == ["steps.a.stdout"]

@@ -15,6 +15,7 @@ class TokenKind(StrEnum):
     NAME = "name"
     WORD = "word"
     OPERATOR = "operator"
+    SYMBOL = "symbol"
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +23,8 @@ class Token:
     """One token: its kind, its source text, its 1-based column and its value.
 
     The value is the unescaped text of a string, the int or float of a number, the (root, *segments) tuple of a
-    name, the text of a word, or the ComparisonOperator of an operator.
+    name, the text of a word, the ComparisonOperator of an operator, or the text of a symbol: '&&', '||', '!', '('
+    or ')'.
     """
 
     kind: TokenKind
@@ -66,16 +68,39 @@ class Path:
 Operand = Literal | Path
 
 
+class LogicalOperator(StrEnum):
+    """An operator that combines two expressions."""
+
+    AND = "&&"
+    OR = "||"
+
+
+@dataclass(frozen=True, slots=True)
+class Negation:
+    """'!' applied to an expression."""
+
+    operand: Expression
+
+
+@dataclass(frozen=True, slots=True)
+class Logical:
+    """Two expressions joined by '&&' or '||'."""
+
+    left: Expression
+    operator: LogicalOperator
+    right: Expression
+
+
 @dataclass(frozen=True, slots=True)
 class Comparison:
-    """Two operands and the operator comparing them."""
+    """Two expressions and the operator comparing them; each side is an operand, a negation or a parenthesised one."""
 
-    left: Operand
+    left: Expression
     operator: ComparisonOperator
-    right: Operand
+    right: Expression
 
 
-Expression = Comparison | Operand
+Expression = Logical | Negation | Comparison | Operand
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,9 +137,12 @@ class Resolver(Protocol):
 class Evaluation:
     """How one expression evaluated.
 
-    resolved is False when a path the expression read was ABSENT. actual is the left (or lone) operand's value and
-    expected the right operand's, each None when absent; expected is also None for a lone operand. detail is 'TRUE',
-    'FALSE (not found)' when actual is None, else "FALSE (was <actual!r>)".
+    passed is the truthiness of the expression's value. resolved, actual and expected come from the comparison or
+    lone operand that decided it: for '&&' and '||' the side whose value the expression took, and for '!' its
+    operand's. resolved is False when a path that comparison read was ABSENT, so a negated unresolved comparison
+    passes unresolved. actual is the left (or lone) operand's value and expected the right operand's, each None when
+    absent; expected is also None for a lone operand. detail is 'TRUE', 'FALSE (not found)' when actual is None, else
+    "FALSE (was <actual!r>)".
     """
 
     passed: bool

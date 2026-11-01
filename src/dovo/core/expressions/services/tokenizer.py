@@ -11,7 +11,9 @@ _QUOTES: Final[frozenset[str]] = frozenset({"'", '"'})
 _ESCAPES: Final[frozenset[str]] = frozenset({"\\", "'", '"'})
 # Longest first, so '<=' is read before '<'.
 _SYMBOL_OPERATORS: Final[tuple[str, ...]] = ("<=", ">=", "==", "!=", "<", ">")
-_RUN_STOPS: Final[tuple[str, ...]] = ("==", "!=", "<", ">")
+# Longest first, so '&&' is read whole; a '!' here is never followed by '=', which reads as '!=' first.
+_SYMBOLS: Final[tuple[str, ...]] = ("&&", "||", "(", ")", "!")
+_RUN_STOPS: Final[tuple[str, ...]] = ("==", "!=", "<", ">", "&&", "||", "(", ")")
 NUMBER_RE: Final[re.Pattern[str]] = re.compile(r"-?[0-9]+(\.[0-9]+)?")
 _UNSUPPORTED_NUMBER_RE: Final[re.Pattern[str]] = re.compile(r"[0-9]|[+\-.][0-9]")
 _ROOT_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
@@ -45,6 +47,9 @@ def _read_token(source: str, position: int) -> Token | InvalidExpression:
     operator = _match_operator(source, position)
     if operator is not None:
         return Token(TokenKind.OPERATOR, operator.value, position + 1, operator)
+    symbol = next((symbol for symbol in _SYMBOLS if source.startswith(symbol, position)), None)
+    if symbol is not None:
+        return Token(TokenKind.SYMBOL, symbol, position + 1, symbol)
     if source[position] == "=":
         return _unexpected_character(source, position)
     return _read_run(source, position)
@@ -146,7 +151,11 @@ def _run_end(source: str, position: int) -> int:
 
 
 def _stops_run(source: str, position: int) -> bool:
-    """Return whether the character at position ends a run: whitespace, a quote, '<', '>', '==' or '!='."""
+    """Return whether the character at position ends a run: whitespace, a quote, an operator or a symbol but '!'.
+
+    The stops are '<', '>', '==', '!=', '&&', '||', '(' and ')'; a '!' not followed by '=', a lone '&' and a lone '|'
+    stay inside a run.
+    """
     char = source[position]
     return char.isspace() or char in _QUOTES or source.startswith(_RUN_STOPS, position)
 

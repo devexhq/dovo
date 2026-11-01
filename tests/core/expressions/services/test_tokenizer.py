@@ -19,3 +19,22 @@ class ExpressionTokenizerTests:
             Token(TokenKind.OPERATOR, "==", 15, ComparisonOperator.EQ),
             Token(TokenKind.WORD, "a/b", 17, "a/b"),
         )
+
+    def test_logical_symbols_are_tokens(self) -> None:
+        assert tokenize("!(steps.a.exit_code==0)&&x||y") == (
+            Token(TokenKind.SYMBOL, "!", 1, "!"),
+            Token(TokenKind.SYMBOL, "(", 2, "("),
+            Token(TokenKind.NAME, "steps.a.exit_code", 3, ("steps", "a", "exit_code")),
+            Token(TokenKind.OPERATOR, "==", 20, ComparisonOperator.EQ),
+            Token(TokenKind.NUMBER, "0", 22, 0),
+            Token(TokenKind.SYMBOL, ")", 23, ")"),
+            Token(TokenKind.SYMBOL, "&&", 24, "&&"),
+            Token(TokenKind.NAME, "x", 26, ("x",)),
+            Token(TokenKind.SYMBOL, "||", 27, "||"),
+            Token(TokenKind.NAME, "y", 29, ("y",)),
+        )
+        assert tokenize("ok! a&b a|b") == (
+            Token(TokenKind.WORD, "ok!", 1, "ok!"),
+            Token(TokenKind.WORD, "a&b", 5, "a&b"),
+            Token(TokenKind.WORD, "a|b", 9, "a|b"),
+        )

@@ -1,4 +1,7 @@
-"""Evaluate an expression: a comparison, or a lone operand by its truthiness."""
+"""Evaluate an expression by its value's truthiness, reporting the comparison or operand that decided it.
+
+'&&' and '||' short-circuit: the side not taken is never evaluated, so its paths are never resolved.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +16,9 @@ from dovo.core.expressions.models import (
     Evaluation,
     Expression,
     Literal,
+    Logical,
+    LogicalOperator,
+    Negation,
     Operand,
     Resolver,
 )
@@ -33,14 +39,14 @@ _EQUALITY_OPERATORS: Final[dict[ComparisonOperator, Callable[[object, object], b
 
 
 def evaluate_expression(expression: Expression, resolver: Resolver) -> Evaluation:
-    """Evaluate a comparison, or a lone operand by its truthiness, reading each path through resolver."""
-    if isinstance(expression, Comparison):
-        return _evaluate_comparison(expression, resolver)
-    value = _operand_value(expression, resolver)
-    resolved = value is not ABSENT
-    actual = None if value is ABSENT else value
-    passed = resolved and is_truthy(value)
-    return Evaluation(passed, resolved, actual, None, _detail(passed, actual))
+    """Evaluate expression, reading each path through resolver; it passes when its value is truthy.
+
+    resolved, actual and expected come from the comparison or lone operand that decided the value, and detail is
+    recomputed from passed and that actual.
+    """
+    value, deciding = _evaluate(expression, resolver)
+    passed = is_truthy(value)
+    return Evaluation(passed, deciding.resolved, deciding.actual, deciding.expected, _detail(passed, deciding.actual))
 
 
 def is_truthy(value: object) -> bool:
@@ -52,10 +58,40 @@ def is_truthy(value: object) -> bool:
     return True
 
 
+def _evaluate(expression: Expression, resolver: Resolver) -> tuple[object, Evaluation]:
+    """Return expression's value and the Evaluation of the comparison or lone operand that decided it."""
+    if isinstance(expression, Logical):
+        return _evaluate_logical(expression, resolver)
+    if isinstance(expression, Negation):
+        value, deciding = _evaluate(expression.operand, resolver)
+        return not is_truthy(value), deciding
+    if isinstance(expression, Comparison):
+        evaluation = _evaluate_comparison(expression, resolver)
+        return evaluation.passed, evaluation
+    return _evaluate_operand(expression, resolver)
+
+
+def _evaluate_logical(logical: Logical, resolver: Resolver) -> tuple[object, Evaluation]:
+    """Take the left side when it decides ('&&' falsy, '||' truthy) without evaluating the right, else the right."""
+    left = _evaluate(logical.left, resolver)
+    if is_truthy(left[0]) is (logical.operator is LogicalOperator.OR):
+        return left
+    return _evaluate(logical.right, resolver)
+
+
+def _evaluate_operand(operand: Operand, resolver: Resolver) -> tuple[object, Evaluation]:
+    """Return a lone operand's value and its Evaluation by truthiness; an absent path is unresolved."""
+    value = _operand_value(operand, resolver)
+    resolved = value is not ABSENT
+    actual = value if resolved else None
+    passed = is_truthy(value)
+    return value, Evaluation(passed, resolved, actual, None, _detail(passed, actual))
+
+
 def _evaluate_comparison(comparison: Comparison, resolver: Resolver) -> Evaluation:
-    """Compare both operands of comparison; an absent operand leaves it unresolved and false."""
-    left = _operand_value(comparison.left, resolver)
-    right = _operand_value(comparison.right, resolver)
+    """Compare the values of both sides of comparison; an absent value leaves it unresolved and false."""
+    left, _ = _evaluate(comparison.left, resolver)
+    right, _ = _evaluate(comparison.right, resolver)
     resolved = left is not ABSENT and right is not ABSENT
     actual = None if left is ABSENT else left
     expected = None if right is ABSENT else right

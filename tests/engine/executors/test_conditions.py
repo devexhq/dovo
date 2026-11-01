@@ -192,7 +192,7 @@ class ConditionExpressionEvaluatorTests:
         ("expression", "passed", "expected", "detail"),
         [
             pytest.param("steps.build.outputs.n == 007", True, 7, "TRUE", id="leading_zero_integer"),
-            pytest.param("steps.build.exit_code == (1)", False, "(1)", "FALSE (was 1)", id="parenthesised_number"),
+            pytest.param("steps.build.exit_code == (1)", True, 1, "TRUE", id="parenthesised_number"),
         ],
     )
     def test_right_operand_reads_by_the_grammar(
