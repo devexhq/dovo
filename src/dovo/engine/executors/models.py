@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -132,6 +133,9 @@ class StepDispatchOutcome(BaseModel):
     diagnostics: list[DiagnosticRecord] = Field(
         default_factory=list
     )  # Records for the run's diagnostics; never persisted.
+    outputs: dict[str, str] = Field(
+        default_factory=dict
+    )  # Outputs the primitive records itself; they win over $DOVO_OUTPUT.
 
 
 class StepPostcondition(Protocol):
@@ -262,6 +266,15 @@ class AgentStepSummary(BaseModel):
     def succeeded(self) -> bool:
         """Whether the status maps to a zero step exit code."""
         return AGENT_OUTCOME_EXIT_CODES[self.status] == 0
+
+    def as_outputs(self) -> dict[str, str]:
+        """Return the summary as step outputs: status, summary and unfixable_reason ('' when null), touched_files as a JSON array string."""
+        return {
+            "status": self.status.value,
+            "summary": self.summary or "",
+            "unfixable_reason": self.unfixable_reason or "",
+            "touched_files": json.dumps(self.touched_files),
+        }
 
 
 class StepResult(BaseResult):

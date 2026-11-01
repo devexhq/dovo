@@ -221,7 +221,8 @@ steps.agent.exit_code == 202
 ```
 
 - `no_op` succeeds with `0`. A planning or review step that finds nothing to change therefore completes, and `steps.<id>.outputs.status` is what tells `proposed_patch` from `no_op`.
-- `outputs.status` reads the step's recorded `status` output when it has one, and otherwise the `status` key of the JSON summary in the step's stdout, as every `steps.<id>.outputs.<key>` does (see [Step Outputs](#step-outputs-dovo_output)).
+- The step also records the four summary fields as outputs, so `steps.<id>.outputs.status`, `summary`, `unfixable_reason` and `touched_files` read the same values in conditions and placeholders (see [Step Outputs](#step-outputs-dovo_output)). A `null` `summary` or `unfixable_reason` is recorded as an empty string, and `touched_files` as a JSON array string such as `["a.py", "b.py"]`.
+- These four outputs take precedence over a `$DOVO_OUTPUT` line with the same key: the step drops that line and records a warning naming the step and the key.
 - These codes are step outcomes recorded per attempt. `dovo run` keeps its own exit contract, and command and script step exit codes are unchanged.
 
 ---
@@ -275,7 +276,7 @@ echo "greeting=hello" >> "$DOVO_OUTPUT"
 
 Blank lines and lines starting with `#` are ignored. A line missing `=` is skipped with a warning rather than failing the step. `$DOVO_OUTPUT` is truncated before each attempt, so only the final attempt's writes are kept.
 
-`steps.<id>.outputs.<key>` has one meaning in conditions and placeholders: the value the step recorded for `<key>` (written to `$DOVO_OUTPUT`, or an ask step's answer), else the `<key>` of the step's stdout when that stdout is one JSON object. A recorded value wins over a stdout key of the same name. Stdout that is not a JSON object has no keys.
+`steps.<id>.outputs.<key>` has one meaning in conditions and placeholders: the value the step recorded for `<key>` (written to `$DOVO_OUTPUT`, an ask step's answer, or an agent step's summary field), else the `<key>` of the step's stdout when that stdout is one JSON object. A recorded value wins over a stdout key of the same name. Stdout that is not a JSON object has no keys.
 
 - In a placeholder, a stdout value renders the way recorded outputs hold values: a string as is, `null` as an empty string, a boolean as `true` or `false`, and a list or object as JSON. A dotted key such as `{{ steps.x.outputs.a.b }}` reads the key `a.b`.
 - In a condition, `steps.<id>.outputs.<key>.<path>` parses the value as JSON and follows the path, so `steps.gate.outputs.report.score >= 80` reads `score` from a recorded `report` of `{"score": 85}`. A value that is not JSON or a missing path has no value. `steps.<id>.outputs` with no key has no value.

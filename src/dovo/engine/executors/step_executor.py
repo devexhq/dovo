@@ -175,7 +175,8 @@ class StepExecution:
         watch.stop()
         duration = watch.elapsed_seconds
         outputs, output_warnings = self._collect_step_outputs()
-        output_warnings = [*self.log_warnings, *output_warnings]
+        outputs, dropped_warnings = self._merge_dispatch_outputs(outcome, outputs)
+        output_warnings = [*self.log_warnings, *output_warnings, *dropped_warnings]
 
         if outcome.status == "completed":
             return _step_result(
@@ -659,6 +660,19 @@ class StepExecution:
         while i < len(lines):
             i = _process_step_output_line(lines, i, outputs, warnings)
         return outputs, warnings
+
+    def _merge_dispatch_outputs(
+        self, outcome: StepDispatchOutcome, outputs: dict[str, str]
+    ) -> tuple[dict[str, str], list[str]]:
+        """Lay the outcome's masked outputs over the $DOVO_OUTPUT outputs, with one warning per $DOVO_OUTPUT key dropped."""
+        warnings = [
+            f"Step '{self.step.id}': $DOVO_OUTPUT line for '{key}' was dropped; "
+            f"an agent step records '{key}' from its summary."
+            for key in outcome.outputs
+            if key in outputs
+        ]
+        masked = {key: self.redactor.redact_text(value) for key, value in outcome.outputs.items()}
+        return {**outputs, **masked}, warnings
 
     def _finalize_failure(
         self,
