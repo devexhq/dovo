@@ -44,6 +44,16 @@ class BlueprintDefinitionValidatorTests:
         with pytest.raises(BlueprintValidationError, match="Step id 'ghost' referenced in until condition"):
             BlueprintDefinition.from_document(raw, key="bp")
 
+    def test_loop_until_syntax_error_raises_blueprint_validation_error(self) -> None:
+        raw: dict[str, object] = {"steps": [_loop(until=["steps.check.exit_code =="])]}
+
+        with pytest.raises(BlueprintValidationError) as caught:
+            BlueprintDefinition.from_document(raw, key="bp")
+
+        assert "Loop 'fix': Invalid expression 'steps.check.exit_code ==': missing value after '=='." in str(
+            caught.value
+        )
+
     def test_step_without_id_or_mode_gets_default_id_and_command_maps_to_run(self) -> None:
         raw: dict[str, object] = {"steps": [{"name": "Run Lint", "command": "ruff check ."}]}
 

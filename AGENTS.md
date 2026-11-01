@@ -43,7 +43,7 @@ ID, with the `path:line` that breaks it.
 ### Architecture
 
 - **R1. Imports flow one way: common → core → engine → cli.** Within `core/`,
-  packages follow `core/{project,db,git,inputs} → core/{agents,catalog,sessions} → core/config → core/{worktree,status,artifacts} → core/interaction → core/{bootstrap,diagnostics}`.
+  packages follow `core/expressions → core/{project,db,git,inputs} → core/{agents,catalog,sessions} → core/config → core/{worktree,status,artifacts} → core/interaction → core/{bootstrap,diagnostics}`.
   *Why:* each layer can be tested and changed without the ones above it.
   `tests/lint/test_layer_direction.py` enforces the table; design with it rather
   than discovering it at the gate.

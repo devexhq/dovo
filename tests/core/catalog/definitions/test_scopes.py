@@ -91,6 +91,25 @@ class ConditionScopeTests:
                 "Allowed fields: exit_code, outputs, status, stdout.",
                 id="unknown_field",
             ),
+            pytest.param(
+                [{"id": "a", "run": "x"}, {"id": "b", "run": "y", "when": ["steps.a.exit_code =="]}],
+                "Step 'b': Invalid expression 'steps.a.exit_code ==': missing value after '=='.",
+                id="when_syntax_error",
+            ),
+            pytest.param(
+                [
+                    {"id": "a", "run": "x"},
+                    {
+                        "id": "gate",
+                        "type": "if",
+                        "condition": ["steps.a.status == inputs.mode"],
+                        "then": [{"id": "go", "run": "y"}],
+                    },
+                ],
+                "If block 'gate': Operand 'inputs.mode' in if condition 'steps.a.status == inputs.mode' "
+                "reads 'inputs', which a condition cannot read. Readable roots: steps.",
+                id="if_inputs_root",
+            ),
         ],
     )
     def test_invalid_reference_reports_one_message_naming_the_owner(
