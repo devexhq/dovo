@@ -153,7 +153,7 @@ A `when` list holds condition expressions written exactly as loop `until` condit
 - an expression references a step that is not an earlier step in the same or an enclosing scope. A top-level step sees the top-level steps before it. A step inside `do` also sees the steps before it in the same `do`. A step after an `if` block also sees the steps of either branch, and a step inside a branch sees the steps before the block and the steps before it in the same branch. A loop's or `if` block's own id cannot be referenced, and the steps inside a loop's `do` are not visible after the loop;
 - an expression uses `iteration.index` outside a loop's `do`;
 - a value of more than one word is not quoted, as in `steps.a.status == needs edits`;
-- an operand reads anything but `steps.<id>.<field>`, or `iteration.index` inside a loop's `do`, as `inputs.<name>` does;
+- an operand is a dotted name whose root is neither `steps` nor `iteration`, as `inputs.<name>` and `artifacts.<name>` are;
 - a path uses a bracket key, as in `steps.a.outputs['x.y']`;
 - a quoted value on the left of the operator holds an operator, as in `"a == b" == steps.a.stdout`.
 
