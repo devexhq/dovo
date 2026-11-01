@@ -73,6 +73,36 @@ class AgentStepSummaryTests:
     ) -> None:
         assert AgentStepSummary(status=status).succeeded is expected
 
+    @pytest.mark.parametrize(
+        ("summary", "expected"),
+        [
+            pytest.param(
+                AgentStepSummary(status=AgentResponseStatus.NO_OP),
+                {"status": "no_op", "summary": "", "unfixable_reason": "", "touched_files": "[]"},
+                id="no_op_with_nulls",
+            ),
+            pytest.param(
+                AgentStepSummary(status=AgentResponseStatus.UNFIXABLE, unfixable_reason="no access"),
+                {"status": "unfixable", "summary": "", "unfixable_reason": "no access", "touched_files": "[]"},
+                id="unfixable_with_reason",
+            ),
+            pytest.param(
+                AgentStepSummary(
+                    status=AgentResponseStatus.PROPOSED_PATCH, summary="Edited", touched_files=["a.py", "b.py"]
+                ),
+                {
+                    "status": "proposed_patch",
+                    "summary": "Edited",
+                    "unfixable_reason": "",
+                    "touched_files": '["a.py", "b.py"]',
+                },
+                id="touched_files",
+            ),
+        ],
+    )
+    def test_as_outputs(self, summary: AgentStepSummary, expected: dict[str, str]) -> None:
+        assert summary.as_outputs() == expected
+
 
 class StepExecutionContextTests:
     def test_agent_step_without_runner_raises_naming_step_id(self, tmp_path: Path) -> None:

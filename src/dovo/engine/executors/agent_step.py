@@ -252,15 +252,14 @@ def _provider_error(*errors: str) -> AgentAttempt:
     return AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, errors=list(errors))
 
 
-def _summary_line(attempt: AgentAttempt, *, status: AgentResponseStatus | None = None) -> str:
-    """Serialize the attempt as exactly one compact JSON object followed by a newline."""
-    summary = AgentStepSummary(
+def _summary(attempt: AgentAttempt, *, status: AgentResponseStatus | None = None) -> AgentStepSummary:
+    """Build the attempt's step summary, under status when given."""
+    return AgentStepSummary(
         status=status or attempt.status,
         summary=attempt.summary,
         unfixable_reason=attempt.unfixable_reason,
         touched_files=attempt.touched_files,
     )
-    return summary.model_dump_json() + "\n"
 
 
 def _failure_text(attempt: AgentAttempt) -> str:
@@ -293,7 +292,8 @@ def _to_outcome(
     attempt: AgentAttempt, on_output: OutputCallback | None, *, context: DiagnosticContext
 ) -> StepDispatchOutcome:
     """Convert an attempt into its dispatch outcome carrying the attempt's records; a failing summary callback is recorded and downgrades success."""
-    line = _summary_line(attempt)
+    summary = _summary(attempt)
+    line = summary.model_dump_json() + "\n"
     callback_error = _emit_output(on_output, "stdout", line)
     callback_records = (
         error_diagnostics(
@@ -308,18 +308,15 @@ def _to_outcome(
 
     if not attempt.completed:
         return _failed_outcome(
-            attempt.status,
-            line,
+            summary,
             _failure_text(attempt),
             rejected_patch_path=attempt.rejected_patch_path,
             diagnostics=diagnostics,
         )
 
     if callback_error is not None:
-        downgraded = _summary_line(attempt, status=AgentResponseStatus.PROVIDER_ERROR)
         return _failed_outcome(
-            AgentResponseStatus.PROVIDER_ERROR,
-            downgraded,
+            _summary(attempt, status=AgentResponseStatus.PROVIDER_ERROR),
             f"Agent output callback error: {callback_error}",
             diagnostics=diagnostics,
         )
@@ -331,24 +328,25 @@ def _to_outcome(
         stderr="",
         error_message=None,
         diagnostics=diagnostics,
+        outputs=summary.as_outputs(),
     )
 
 
 def _failed_outcome(
-    status: AgentResponseStatus,
-    line: str,
+    summary: AgentStepSummary,
     message: str,
     *,
     rejected_patch_path: str | None = None,
     diagnostics: list[DiagnosticRecord],
 ) -> StepDispatchOutcome:
-    """Build the failed dispatch outcome carrying the mapped exit code for status, the summary line, the diagnostic, any saved rejected-edit path, and the attempt's records."""
+    """Build the failed dispatch outcome carrying the summary status's mapped exit code, its line and outputs, the diagnostic, any saved rejected-edit path, and the attempt's records."""
     return StepDispatchOutcome(
         status="failed",
-        exit_code=AGENT_OUTCOME_EXIT_CODES[status],
-        stdout=line,
+        exit_code=AGENT_OUTCOME_EXIT_CODES[summary.status],
+        stdout=summary.model_dump_json() + "\n",
         stderr=message,
         error_message=message,
         rejected_patch_path=rejected_patch_path,
         diagnostics=diagnostics,
+        outputs=summary.as_outputs(),
     )

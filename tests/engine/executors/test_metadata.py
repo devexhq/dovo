@@ -64,7 +64,7 @@ class ResolveStepLogPathsTests:
 
 
 class MetadataToEnvExcludesOutputsFromStepsJsonTests:
-    def test_dovo_steps_json_omits_outputs_key_even_when_previous_step_outputs_is_non_empty(self) -> None:
+    def test_dovo_steps_json_omits_outputs_and_stdout(self) -> None:
         step = StepDefinition(id="s2", type=StepType.COMMAND, command="echo hi")
         historical = PreviousStepMetadata(
             id="step_a",
@@ -73,6 +73,7 @@ class MetadataToEnvExcludesOutputsFromStepsJsonTests:
             status="completed",
             exit_code="0",
             outputs={"greeting": "hello"},
+            stdout='{"greeting": "hello"}\n',
         )
 
         metadata = build_execution_metadata(step, steps=[historical])
@@ -80,6 +81,7 @@ class MetadataToEnvExcludesOutputsFromStepsJsonTests:
 
         parsed = json.loads(env["DOVO_STEPS_JSON"])
         assert "outputs" not in parsed[0]
+        assert "stdout" not in parsed[0]
 
 
 class MetadataSessionIdEnvTests:

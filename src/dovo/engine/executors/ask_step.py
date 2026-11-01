@@ -90,7 +90,7 @@ def _redactor(context: StepExecutionContext) -> SecretRedactor:
 
 
 def _stdout_json(outputs: dict[str, str]) -> str:
-    """Serialize outputs as one JSON object with `selected_count` as an integer so `until` conditions compare numerically."""
+    """Serialize outputs as one JSON object for stdout, with `selected_count` as an integer."""
     return json.dumps({**outputs, "selected_count": int(outputs["selected_count"])})
 
 

@@ -9,9 +9,10 @@ from dovo.core.inputs.interpolate import (
     interpolate_step_fields,
     interpolate_string,
 )
-from dovo.core.inputs.models import InputResolveResult, InputType, ParameterInput
+from dovo.core.inputs.models import InputResolveResult, InputType, ParameterInput, StepOutputValue
 from dovo.core.inputs.parser import coerce_input_value, parse_cli_input_args
 from dovo.core.inputs.renderer import format_input_error_message, format_missing_inputs_error
+from dovo.core.inputs.step_outputs import render_step_output, resolve_step_output
 
 __all__ = [
     "ExecutionMetadataView",
@@ -20,6 +21,7 @@ __all__ = [
     "NamespaceProvider",
     "NamespaceResolutionError",
     "ParameterInput",
+    "StepOutputValue",
     "build_providers",
     "coerce_input_value",
     "format_input_error_message",
@@ -27,5 +29,7 @@ __all__ = [
     "interpolate_step_fields",
     "interpolate_string",
     "parse_cli_input_args",
+    "render_step_output",
     "resolve_inputs",
+    "resolve_step_output",
 ]

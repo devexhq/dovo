@@ -160,9 +160,10 @@ class AskStepExecutorTests:
             pytest.param('steps.approve.outputs.selected == "approve"', ["approve"], True, id="approved"),
             pytest.param('steps.approve.outputs.selected == "approve"', ["revise"], False, id="revised"),
             pytest.param("steps.approve.outputs.selected_count == 1", ["approve"], True, id="count_one"),
+            pytest.param("steps.approve.outputs.selected_count > 0", ["approve"], True, id="count_above_zero"),
         ],
     )
-    def test_stdout_json_drives_until_conditions(
+    def test_recorded_outputs_drive_until_conditions(
         self, ask_context: StepExecutionContext, expression: str, selected: list[str], expected: bool
     ) -> None:
         request = resolve_ask_request(ask_context).request

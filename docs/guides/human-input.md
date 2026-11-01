@@ -64,7 +64,7 @@ Put the producer and the ask in a loop. Each iteration sees the previous answer'
           - { value: deny, label: Deny, fail: true }
 ```
 
-The `until` condition reads the ask step's stdout, a JSON object with the same keys as its outputs. `selected_count` is a JSON integer there, so numeric comparisons work.
+The `until` condition reads the ask step's recorded outputs. `selected_count` is recorded as a string such as `1`, and a string holding a number compares numerically against a number, so `selected_count == 0` and `selected_count > 0` work.
 
 ---
 

@@ -19,8 +19,11 @@ from dovo.core.agents import (
     default_tool_policy,
 )
 from dovo.core.catalog.definitions import StepAssert, StepDefinition
+from dovo.core.inputs import build_providers, interpolate_string
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
+from dovo.engine.executors import evaluate_condition
 from dovo.engine.executors.agent_step import build_agent_step_runner
+from dovo.engine.executors.metadata import previous_step_metadata_from_result
 from dovo.engine.executors.models import (
     AgentProgressSink,
     AgentProgressUpdate,
@@ -29,6 +32,7 @@ from dovo.engine.executors.models import (
     OutputCallback,
     StepDispatchOutcome,
     StepExecutionContext,
+    StepMetadata,
     StepResult,
 )
 from dovo.engine.executors.step_executor import StepExecution
@@ -156,6 +160,93 @@ class AgentStepRunnerTests:
         assert result.exit_code == 201
         assert json.loads(result.stdout)["status"] == "unfixable"
 
+    @pytest.mark.parametrize(
+        ("response", "step_builder", "status", "expected_outputs"),
+        [
+            pytest.param(
+                AgentResponse(status=AgentResponseStatus.NO_OP, summary="Reviewed"),
+                StepBuilder.agent("plan"),
+                "completed",
+                {"status": "no_op", "summary": "Reviewed", "unfixable_reason": "", "touched_files": "[]"},
+                id="completed_no_op",
+            ),
+            pytest.param(
+                AgentResponse(status=AgentResponseStatus.UNFIXABLE),
+                StepBuilder.agent("plan").with_on_failure(FailurePolicy.CONTINUE),
+                "ignored",
+                {"status": "unfixable", "summary": "", "unfixable_reason": "", "touched_files": "[]"},
+                id="continued_unfixable",
+            ),
+        ],
+    )
+    def test_agent_step_records_its_summary_as_outputs(
+        self,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        response: AgentResponse,
+        step_builder: StepBuilder,
+        status: str,
+        expected_outputs: dict[str, str],
+    ) -> None:
+        _use_provider(monkeypatch, FakeAgentProvider(response))
+
+        result = _run_agent_step(git_repo, step_builder)
+
+        assert result.status == status
+        assert result.outputs == expected_outputs
+
+    def test_no_op_status_resolves_in_a_condition_and_a_placeholder(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _use_provider(monkeypatch, FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP)))
+        result = _run_agent_step(git_repo, StepBuilder.agent("plan").with_id("code"))
+        code = previous_step_metadata_from_result(result, step_index=1)
+        metadata = ExecutionMetadata(step=StepMetadata(id="report", index=2), steps=[code])
+
+        condition = evaluate_condition('steps.code.outputs.status == "no_op"', step_results={"code": result})
+        rendered = interpolate_string("{{ steps.code.outputs.status }}", build_providers(metadata=metadata))
+
+        assert condition.passed is True
+        assert rendered == "no_op"
+
+
+class AgentOutputPrecedenceTests:
+    def test_dovo_output_line_reusing_a_summary_key_is_dropped_with_a_warning(
+        self, git_repo: Path, tmp_path: Path
+    ) -> None:
+        def _runner(
+            step: StepDefinition,
+            worktree: Path,
+            on_output: OutputCallback | None,
+            on_agent_line: OutputCallback | None,
+            progress: AgentProgressSink,
+            metadata: ExecutionMetadata,
+        ) -> StepDispatchOutcome:
+            Path(metadata.tmp.output_file).write_text("status=done\nextra=1\n", encoding="utf-8")
+            return StepDispatchOutcome(
+                status="completed",
+                exit_code=0,
+                stdout="",
+                stderr="",
+                outputs={"status": "no_op", "summary": "", "unfixable_reason": "", "touched_files": "[]"},
+            )
+
+        context = StepExecutionContext(
+            step=StepBuilder.agent("plan").with_id("code").build(),
+            worktree_path=git_repo,
+            agent_runner=_runner,
+            session_tmp_dir=tmp_path / "session-tmp",
+            diagnostics=[],
+        )
+
+        result = StepExecution(context).run()
+
+        assert result.outputs["status"] == "no_op"
+        assert result.outputs["extra"] == "1"
+        assert result.warnings == [
+            "Step 'code': $DOVO_OUTPUT line for 'status' was dropped; an agent step records 'status' from its summary."
+        ]
+
 
 class StepExecutionAgentRunnerTests:
     def test_uses_step_resolving_to_agent_without_runner_raises(
@@ -224,6 +315,7 @@ class AgentStepRedactionTests:
         assert len(streamed) == 1
         assert "[REDACTED:SVC_SECRET]" in streamed[0]
         assert "s3cr3t-value" not in streamed[0]
+        assert result.outputs["summary"] == "token [REDACTED:SVC_SECRET]"
 
     def test_agent_step_failure_diagnostic_is_masked_in_stderr_and_error_message(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch

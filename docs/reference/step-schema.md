@@ -109,7 +109,7 @@ All values are strings.
 
 Read them with `{{ steps.<id>.outputs.<key> }}`. In a loop, `steps.<id>.outputs.*` resolves to the most recent finished instance of that step, so iteration 2 sees iteration 1's answer and iteration 1 sees an empty string.
 
-`until` conditions read an ask step's stdout, which is one JSON object with the same keys; `selected_count` is a JSON integer there, so `steps.triage.outputs.selected_count == 0` compares numerically. This is pinned by [`tests/engine/executors/test_ask_step.py`](https://github.com/devexhq/dovo/blob/main/tests/engine/executors/test_ask_step.py).
+`until` and `when` conditions read the same recorded outputs. `selected_count` is a string, and a string holding an integer or a decimal compares numerically against a number, so `steps.triage.outputs.selected_count == 0` and `steps.triage.outputs.selected_count > 0` work as written.
 
 ---
 
@@ -221,7 +221,8 @@ steps.agent.exit_code == 202
 ```
 
 - `no_op` succeeds with `0`. A planning or review step that finds nothing to change therefore completes, and `steps.<id>.outputs.status` is what tells `proposed_patch` from `no_op`.
-- `outputs.status` reads the JSON summary in the step's stdout. It does not read `$DOVO_OUTPUT` values.
+- The step also records the four summary fields as outputs, so `steps.<id>.outputs.status`, `summary`, `unfixable_reason` and `touched_files` read the same values in conditions and placeholders (see [Step Outputs](#step-outputs-dovo_output)). A `null` `summary` or `unfixable_reason` is recorded as an empty string, and `touched_files` as a JSON array string such as `["a.py", "b.py"]`. A `contains` condition on `touched_files` therefore matches text inside that string, so `contains "a.py"` also matches `ba.py`.
+- These four outputs take precedence over a `$DOVO_OUTPUT` line with the same key: the step drops that line and records a warning naming the step and the key.
 - These codes are step outcomes recorded per attempt. `dovo run` keeps its own exit contract, and command and script step exit codes are unchanged.
 
 ---
@@ -262,7 +263,7 @@ Steps receive run context through `DOVO_*` environment variables and template pl
   - `{{ steps[-1].<field> }}`: Python-style negative index (`-1` is the last finished step; matches `previous_step`).
   - `{{ steps.<id>.<field> }}` / `{{ steps['<id>'].<field> }}`: Keyed access by completed step ID.
   - Valid historical fields: `id`, `name`, `index` (1-based ordinal), `status`, `exit_code`.
-  - `{{ steps.<id>.outputs.<key> }}` / `{{ steps['<id>'].outputs.<key> }}`: A specific output value a completed step wrote to `$DOVO_OUTPUT`. An unknown step ID or output key resolves to an empty string.
+  - `{{ steps.<id>.outputs.<key> }}` / `{{ steps['<id>'].outputs.<key> }}`: The value of output `<key>` of a completed step, as [Step Outputs](#step-outputs-dovo_output) defines it. An unknown step ID or output key resolves to an empty string.
   - The in-flight current step is never present in `steps`. Out-of-range indices or unknown step IDs safely resolve to empty strings.
 
 ### Step Outputs (`$DOVO_OUTPUT`)
@@ -274,6 +275,12 @@ echo "greeting=hello" >> "$DOVO_OUTPUT"
 ```
 
 Blank lines and lines starting with `#` are ignored. A line missing `=` is skipped with a warning rather than failing the step. `$DOVO_OUTPUT` is truncated before each attempt, so only the final attempt's writes are kept.
+
+`steps.<id>.outputs.<key>` has one meaning in conditions and placeholders: the value the step recorded for `<key>` (written to `$DOVO_OUTPUT`, an ask step's answer, or an agent step's summary field), else the `<key>` of the step's stdout when that stdout is one JSON object. A recorded value wins over a stdout key of the same name. Stdout that is not a JSON object has no keys.
+
+- In a placeholder, a stdout value renders the way recorded outputs hold values: a string as is, `null` as an empty string, a boolean as `true` or `false`, and a list or object as JSON. A dotted key such as `{{ steps.x.outputs.a.b }}` reads the key `a.b`.
+- In a condition, `steps.<id>.outputs.<key>.<path>` parses the value as JSON and follows the path, so `steps.gate.outputs.report.score >= 80` reads `score` from a recorded `report` of `{"score": 85}`. A value that is not JSON or a missing path has no value. `steps.<id>.outputs` with no key has no value.
+- In a condition, a string holding an integer or a decimal (`3`, `-2`, `2.5`) compares numerically against a number with every operator, so a recorded `count=3` passes `steps.gate.outputs.count > 2` and `steps.gate.outputs.count == 3`. Other strings, including `nan`, `1e3` and ` 3`, stay strings: `==` against a number is false, and `>`, `<`, `>=` or `<=` against a number is false.
 
 For a multi-line value, use the heredoc form (mirrors GitHub Actions' `$GITHUB_OUTPUT`):
 
