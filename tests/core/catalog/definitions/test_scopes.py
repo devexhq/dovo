@@ -81,8 +81,8 @@ class ConditionScopeTests:
             ),
             pytest.param(
                 [{"id": "a", "run": "x", "when": ["not a condition"]}],
-                "Step 'a': Invalid condition expression 'not a condition'. "
-                "Expected '<operand> <operator> <operand>' with operators: !=, <, <=, ==, >, >=, contains.",
+                "Step 'a': Invalid expression 'not a condition': unquoted text 'not a condition' at column 1; "
+                "quote a value of more than one word.",
                 id="malformed",
             ),
             pytest.param(

@@ -125,6 +125,40 @@ class ConditionExpressionEvaluatorTests:
 
         assert (result.resolved, result.passed, result.detail) == (False, False, "FALSE (not found)")
 
+    @pytest.mark.parametrize(
+        ("expression", "stdout", "outcome"),
+        [
+            pytest.param("steps.build.stdout", "x", (True, True, "TRUE"), id="non_empty_stdout"),
+            pytest.param("steps.build.stdout", "", (False, True, "FALSE (was '')"), id="empty_stdout"),
+            pytest.param("steps.other.stdout", "x", (False, False, "FALSE (not found)"), id="step_without_result"),
+        ],
+    )
+    def test_bare_value_entry_passes_when_truthy(
+        self, expression: str, stdout: str, outcome: tuple[bool, bool, str]
+    ) -> None:
+        result = evaluate_condition(expression, step_results={"build": _build_result(stdout=stdout)})
+
+        assert (result.passed, result.resolved, result.detail) == outcome
+
+    @pytest.mark.parametrize(
+        ("expression", "outcome"),
+        [
+            pytest.param(
+                'steps.a.status == "completed" || steps.b.exit_code == 0', (True, True, "TRUE"), id="either_holds"
+            ),
+            pytest.param('!(steps.a.status == "completed")', (True, False, "TRUE"), id="negated_unrun_step"),
+            pytest.param(
+                'steps.a.outputs.status in ["x", "y"]',
+                (False, False, "FALSE (not found)"),
+                id="membership_on_unrun_step",
+            ),
+        ],
+    )
+    def test_compound_entry_reads_step_results(self, expression: str, outcome: tuple[bool, bool, str]) -> None:
+        result = evaluate_condition(expression, step_results={"b": _build_result(step_id="b", exit_code=0)})
+
+        assert (result.passed, result.resolved, result.detail) == outcome
+
     def test_contains_on_a_recorded_json_array_matches_text_inside_it(self) -> None:
         gate = _gate_result(touched_files='["ba.py"]')
 
@@ -137,7 +171,6 @@ class ConditionExpressionEvaluatorTests:
         [
             pytest.param("steps.build.exit_code ==", id="dangling_operator"),
             pytest.param("", id="empty"),
-            pytest.param("steps.build.exit_code", id="lone_operand"),
         ],
     )
     def test_entry_without_a_comparison_is_a_syntax_error(self, expression: str) -> None:

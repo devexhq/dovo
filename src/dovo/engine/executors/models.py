@@ -27,8 +27,9 @@ class AssertionResult(BaseResult):
 class ConditionEvaluationResult(BaseResult):
     """Result of evaluating one condition expression of a loop's until or a step's when.
 
-    resolved is False when an operand that references a step found no value: the step was skipped or has not run,
-    or its result lacks the field or output key. Such an expression never passes. A JSON null output is resolved.
+    resolved is False when an operand of the comparison that decided the expression found no value: the step was
+    skipped or has not run, or its result lacks the field or output key. That comparison is false, but '!' of it
+    passes. A JSON null output is resolved.
     """
 
     expression: str

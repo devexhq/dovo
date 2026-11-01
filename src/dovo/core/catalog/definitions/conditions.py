@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
-import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 
-from dovo.core.expressions import Comparison, Expression, InvalidExpression, Path, ValueList, parse_expression
+from dovo.core.expressions import (
+    Comparison,
+    Expression,
+    InvalidExpression,
+    Logical,
+    Negation,
+    Operand,
+    Path,
+    ValueList,
+    parse_expression,
+)
 
-_VALID_OPERATORS = frozenset({"==", "!=", ">=", "<=", ">", "<", "contains"})
 _VALID_STEP_FIELDS = frozenset({"exit_code", "outputs", "status", "stdout"})
-# A quoted run, its escapes included; an unterminated one runs to the end of the source.
-_QUOTED_RUN_RE = re.compile(r""""(?:\\.|[^"\\])*"?|'(?:\\.|[^'\\])*'?""")
-_OPERATOR_RE = re.compile(r"==|!=|<|>|(?<!\S)contains(?!\S)")
 _STEPS_ROOT = "steps"
 _ITERATION_ROOT = "iteration"
 
@@ -24,20 +30,6 @@ class ConditionScope:
     known_step_ids: frozenset[str] | None = None
     scope_label: str = "loop 'do' steps"
     allow_iteration: bool = True
-
-
-def _missing_operator(expression: str) -> bool:
-    """Return whether a non-blank expression has no comparison operator outside its quoted runs."""
-    unquoted = _QUOTED_RUN_RE.sub(" ", expression)
-    return bool(expression.strip()) and _OPERATOR_RE.search(unquoted) is None
-
-
-def _malformed_message(expression: str) -> str:
-    """Return the message of an expression that is not '<operand> <operator> <operand>'."""
-    return (
-        f"Invalid condition expression '{expression}'. "
-        f"Expected '<operand> <operator> <operand>' with operators: {', '.join(sorted(_VALID_OPERATORS))}."
-    )
 
 
 def _is_dynamic_operand(operand: Expression | ValueList) -> bool:
@@ -93,10 +85,42 @@ def _validate_operand(operand: Expression | ValueList, expression: str, scope: C
     return []
 
 
-def _operand_errors(expression: str, comparison: Comparison, scope: ConditionScope) -> list[str]:
-    """Return the operand errors of a comparison, and the dynamic-operand error unless a root is unreadable."""
-    operands = (comparison.left, comparison.right)
-    errors = [error for operand in operands for error in _validate_operand(operand, expression, scope)]
+def _list_item_errors(item: Operand, expression: str, scope: ConditionScope) -> list[str]:
+    """Reject a list item that reads a value: a dotted path, or one rooted at 'iteration'."""
+    if not isinstance(item, Path) or not (item.segments or item.root == _ITERATION_ROOT):
+        return []
+    return [
+        f"List item '{item.text}' in {scope.clause} condition '{expression}' is not a literal. "
+        "Items after 'in' and 'not in' are quoted strings, numbers, booleans or single words."
+    ]
+
+
+def _leaves(node: Expression | ValueList) -> Iterator[tuple[Operand, bool]]:
+    """Yield every operand of a tree, left to right, with whether it is an item of a list after 'in' or 'not in'."""
+    if isinstance(node, Logical):
+        yield from _leaves(node.left)
+        yield from _leaves(node.right)
+    elif isinstance(node, Negation):
+        yield from _leaves(node.operand)
+    elif isinstance(node, Comparison):
+        yield from _leaves(node.left)
+        yield from _leaves(node.right)
+    elif isinstance(node, ValueList):
+        yield from ((item, True) for item in node.items)
+    else:
+        yield node, False
+
+
+def _tree_errors(expression: str, parsed: Expression, scope: ConditionScope) -> list[str]:
+    """Return the operand and list-item errors of a parsed entry, and the dynamic-operand error unless one reads state."""
+    errors: list[str] = []
+    operands: list[Operand] = []
+    for operand, is_item in _leaves(parsed):
+        if is_item:
+            errors.extend(_list_item_errors(operand, expression, scope))
+            continue
+        operands.append(operand)
+        errors.extend(_validate_operand(operand, expression, scope))
     if not any(_is_unreadable_root(operand) or _is_dynamic_operand(operand) for operand in operands):
         errors.append(
             f"Condition '{expression}' must reference at least one dynamic operand ('steps.<id>.<field>' or 'iteration.index')."
@@ -110,21 +134,19 @@ def validate_condition_expression(
     *,
     scope: ConditionScope | None = None,
 ) -> list[str]:
-    """Validate the syntax and operand references of one condition expression.
+    """Validate the syntax and operand references of one condition entry.
 
     known_step_ids alone checks a loop 'until' expression against its loop's 'do' step ids; scope, when given,
     names the clause and the step ids a 'when' or 'condition' expression may reference instead.
 
-    Returns a list of error message strings (empty if valid). An expression with no operator outside quotes and a
-    syntax error each return their one error.
+    Returns a list of error message strings (empty if valid). A syntax error returns its one error. Otherwise every
+    operand of the entry, through '&&', '||', '!', parentheses and comparisons, is checked as a reference, every item
+    of a list after 'in' or 'not in' must not read a value, and the entry as a whole needs one operand outside a list
+    that reads step or iteration state.
     """
     if scope is None:
         scope = ConditionScope(known_step_ids=None if known_step_ids is None else frozenset(known_step_ids))
-    if _missing_operator(expression):
-        return [_malformed_message(expression)]
     parsed = parse_expression(expression)
     if isinstance(parsed, InvalidExpression):
         return [parsed.message]
-    if not isinstance(parsed, Comparison):
-        return [_malformed_message(expression)]
-    return _operand_errors(expression, parsed, scope)
+    return _tree_errors(expression, parsed, scope)
