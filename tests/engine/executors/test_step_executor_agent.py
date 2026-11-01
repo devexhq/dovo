@@ -153,7 +153,7 @@ class AgentStepRunnerTests:
         result = _run_agent_step(git_repo, StepBuilder.agent("plan").with_on_failure(FailurePolicy.CONTINUE))
 
         assert result.status == "ignored"
-        assert result.exit_code == 0
+        assert result.exit_code == 201
         assert json.loads(result.stdout)["status"] == "unfixable"
 
 

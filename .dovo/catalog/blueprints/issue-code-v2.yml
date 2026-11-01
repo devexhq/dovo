@@ -43,10 +43,7 @@ steps:
     type: loop
     max_iterations: 5
     until:
-      # Workaround for #1141: a failed picked is recorded as ignored with exit
-      # code 0, so only its status shows the failure. Revert to
-      # `steps.picked.exit_code == 0` when #1141 lands.
-      - steps.picked.status == "completed"
+      - steps.picked.exit_code == 0
     on_max_iterations: prompt_user
     do:
       - id: next
@@ -201,10 +198,7 @@ steps:
     type: loop
     max_iterations: 5
     until:
-      # Workaround for #1141: a failed settled is recorded as ignored with exit
-      # code 0, so only its status shows the failure. Revert to
-      # `steps.settled.exit_code == 0` when #1141 lands.
-      - steps.settled.status == "completed"
+      - steps.settled.exit_code == 0
     on_max_iterations: prompt_user
     do:
       # Each check grounds against main as it is now, including a blocker
@@ -581,10 +575,7 @@ steps:
     type: loop
     max_iterations: 3
     until:
-      # Workaround for #1141: a failed check-breakdown is recorded as ignored
-      # with exit code 0, so only its status shows the failure. Revert to
-      # `steps.check-breakdown.exit_code == 0` when #1141 lands.
-      - steps.check-breakdown.status == "completed"
+      - steps.check-breakdown.exit_code == 0
     on_max_iterations: prompt_user
     do:
       - id: breakdown
@@ -738,10 +729,7 @@ steps:
       - steps.code.outputs.status != "blocked"
       # Read from phase's stdout JSON; its $DOVO_OUTPUT lines feed the templates.
       - steps.phase.outputs.remaining == 0
-      # Workaround for #1141: a failed verify is recorded as ignored with exit
-      # code 0, so only its status shows the failure. Revert to
-      # `steps.verify.exit_code == 0` when #1141 lands.
-      - steps.verify.status == "completed"
+      - steps.verify.exit_code == 0
     on_max_iterations: prompt_user
     do:
       # Fails, and stops the run before code, when the slice has no phases, the
@@ -853,13 +841,10 @@ steps:
     type: loop
     max_iterations: 3
     until:
-      # Workaround for #1141: a failed remaining is recorded as ignored with
-      # exit code 0, so only its status shows the failure. Revert to
-      # `steps.remaining.exit_code == 0` when #1141 lands.
-      - steps.remaining.status == "completed"
+      - steps.remaining.exit_code == 0
       # A round whose fixer changed files, a gate repair included, needs a fresh
       # review: post-review refuses a review of a commit that is no longer the head.
-      - steps.fix-verify.status == "completed"
+      - steps.fix-verify.exit_code == 0
       - steps.fix-verify.outputs.changed == "false"
     on_max_iterations: continue
     do:

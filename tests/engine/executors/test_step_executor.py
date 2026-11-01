@@ -10,6 +10,7 @@ import pytest
 from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
+from dovo.common.models import FailurePolicy
 from dovo.core.artifacts.models import ArtifactUploadResult
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
@@ -325,3 +326,40 @@ class StepExecutionDiagnosticLogTests:
 
         assert (result.error_message, result.warnings) == ("Command execution error: exec format error", [])
         assert sink == []
+
+
+class StepExecutionContinueTests:
+    @pytest.mark.parametrize(
+        ("builder", "attempts"),
+        [
+            pytest.param(StepBuilder.command("exit 3").with_on_failure(FailurePolicy.CONTINUE), 1, id="direct"),
+            pytest.param(
+                StepBuilder.command("exit 3").with_retry(
+                    max_retries=2, backoff_ms=0, on_max_retries=FailurePolicy.CONTINUE
+                ),
+                2,
+                id="retry-exhausted",
+            ),
+        ],
+    )
+    def test_continued_failure_keeps_exit_code(self, tmp_path: Path, builder: StepBuilder, attempts: int) -> None:
+        """Record a continued `exit 3` as ignored with exit code 3, directly and after retries are exhausted."""
+        step = builder.with_id("s1").build()
+
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
+
+        assert (result.status, result.exit_code, result.error_message) == (
+            "ignored",
+            3,
+            "Command failed with exit code 3.",
+        )
+        assert result.attempts == attempts
+
+    def test_timed_out_continued_step_records_124(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Record a continued timeout as ignored with exit code 124, the code a timeout records without continue."""
+        monkeypatch.setattr("dovo.engine.executors.step_executor.subprocess.Popen", _TimingOutPopen)
+        step = StepBuilder.command("true").with_id("s1").with_timeout(1).with_on_failure(FailurePolicy.CONTINUE).build()
+
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
+
+        assert (result.status, result.exit_code) == ("ignored", 124)

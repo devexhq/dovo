@@ -761,7 +761,7 @@ class CoordinatorMetadataTests:
             == "PREV_ID=setup_step PREV_NAME=Setup Step PREV_IDX=1 PREV_STATUS=completed PREV_EXIT=0\n"
         )
 
-    def test_continue_on_failure_previous_step_status_is_ignored_with_exit_code_zero(
+    def test_continue_on_failure_previous_step_keeps_its_exit_code(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         outcome = _run_new(
@@ -779,7 +779,29 @@ class CoordinatorMetadataTests:
         )
 
         assert outcome.step_results[0].error_message == "Command failed with exit code 3."
-        assert outcome.step_results[1].stdout == "PREV_ID=failing_step PREV_STATUS=ignored PREV_EXIT=0\n"
+        assert outcome.step_results[1].stdout == "PREV_ID=failing_step PREV_STATUS=ignored PREV_EXIT=3\n"
+
+    def test_continued_step_exit_code_reaches_templates_and_steps_json(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        outcome = _run_new(
+            engine_paths,
+            sessions_repo,
+            "meta-continue-readers",
+            [
+                _step("failing_step", "exit 3", on_failure="continue"),
+                _step(
+                    "next_step",
+                    'echo "P={{ previous_step.exit_code }} S={{ steps.failing_step.exit_code }} J=$DOVO_STEPS_JSON"',
+                ),
+            ],
+        )
+
+        assert outcome.step_results[1].stdout == (
+            'P=3 S=3 J=[{"id": "failing_step", "name": "", "index": "1", "status": "ignored", "exit_code": "3"}]\n'
+        )
+        leaf = _leaf(_state(engine_paths, sessions_repo, "meta-continue-readers"), "failing_step")
+        assert (leaf.state, _last_result(leaf).exit_code) == (NodeState.IGNORED, 3)
 
     def test_prompt_user_retry_increments_step_attempt_env_var_from_one_to_two(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
@@ -873,6 +895,34 @@ class CoordinatorMetadataTests:
 
         assert len(outcome.step_results) == 4
         assert outcome.step_results[-1].stdout == "First|Tick|Tick\n"
+
+
+class CoordinatorContinueParityTests:
+    @pytest.mark.parametrize(
+        ("on_failure", "decisions"),
+        [
+            pytest.param("continue", [], id="automatic"),
+            pytest.param("prompt_user", [FailurePromptDecision.CONTINUE], id="prompted"),
+        ],
+    )
+    def test_auto_and_prompted_continue_record_the_same_exit_code(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        on_failure: str,
+        decisions: list[FailurePromptDecision],
+    ) -> None:
+        outcome = _run_new(
+            engine_paths,
+            sessions_repo,
+            "parity",
+            [_step("a", "exit 3", on_failure=on_failure)],
+            prompter=ScriptedFailurePrompter(decisions),
+        )
+
+        assert outcome.status == SessionStatus.COMPLETED
+        result = _last_result(_leaf(_state(engine_paths, sessions_repo, "parity"), "a"))
+        assert (result.status, result.exit_code) == ("ignored", 3)
 
 
 class CoordinatorLeafTransitionTests:
@@ -1336,8 +1386,48 @@ class CoordinatorLoopResumeTests:
         assert events.count("loop_start") == 1
         assert events.count("loop_iteration_start") == 1
 
+    def test_resume_reads_a_persisted_ignored_exit_code_zero_as_written(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
+    ) -> None:
+        body = [_step("check", "echo ran >> check.count; exit 1", on_failure="continue"), _step("after", "true")]
+        steps = [_loop("loop", body, max_iterations=3, until=["steps.check.exit_code == 0"])]
+        seed_new_session(engine_paths, sessions_repo, session_id="loop-legacy", steps=steps)
+        state = _state(engine_paths, sessions_repo, "loop-legacy")
+        loop = _loop_node(state)
+        check, after = loop.iterations[0].steps
+        _complete(check)
+        check.state = NodeState.IGNORED
+        check.attempts[0].result = _last_result(check).model_copy(update={"status": "ignored"})
+        _interrupt(after)
+        loop.iterations[0].state = loop.state = NodeState.RUNNING
+        (engine_workspace / "check.count").write_text("ran\n", encoding="utf-8")
+        SessionStateStore(sessions_repo, engine_paths, "loop-legacy").save(state, [])
+
+        outcome = _coordinator(engine_paths, sessions_repo, "loop-legacy").execute()
+
+        assert outcome.status == SessionStatus.COMPLETED
+        loop = _loop_node(_state(engine_paths, sessions_repo, "loop-legacy"))
+        assert [(it.number, it.until_passed) for it in loop.iterations] == [(1, True)]
+        assert _runs(engine_workspace, "check") == 1
+        result = _last_result(loop.iterations[0].steps[0])
+        assert (result.status, result.exit_code) == ("ignored", 0)
+
 
 class CoordinatorLoopUntilTests:
+    def test_until_on_continued_check_repeats_until_it_passes(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        check = _step("check", '[ "$DOVO_ITERATION_INDEX" -ge 3 ]', on_failure="continue")
+        steps = [_loop("loop", [check], max_iterations=5, until=["steps.check.exit_code == 0"])]
+
+        outcome = _run_new(engine_paths, sessions_repo, "loop-continued", steps)
+
+        assert outcome.status == SessionStatus.COMPLETED
+        loop = _loop_node(_state(engine_paths, sessions_repo, "loop-continued"))
+        assert [(it.number, it.until_passed) for it in loop.iterations] == [(1, False), (2, False), (3, True)]
+        results = [_last_result(it.steps[0]) for it in loop.iterations]
+        assert [(r.status, r.exit_code) for r in results] == [("ignored", 1), ("ignored", 1), ("completed", 0)]
+
     def test_until_after_resume_sees_results_persisted_before_the_pause(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
