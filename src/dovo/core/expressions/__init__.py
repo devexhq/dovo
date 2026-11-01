@@ -11,8 +11,8 @@ from dovo.core.expressions.models import (
     Token,
     TokenKind,
 )
-from dovo.core.expressions.parser import parse_expression
-from dovo.core.expressions.tokenizer import tokenize
+from dovo.core.expressions.services.parser import parse_expression
+from dovo.core.expressions.services.tokenizer import tokenize
 
 __all__ = [
     "Comparison",

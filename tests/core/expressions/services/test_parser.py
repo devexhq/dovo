@@ -220,6 +220,16 @@ class ExpressionParserTests:
                 id="value_after_comparison",
             ),
             pytest.param(
+                "steps.a.stdout contains <none>",
+                "Invalid expression 'steps.a.stdout contains <none>': unexpected '<' at column 25.",
+                id="misplaced_operator_before_trailing_operator",
+            ),
+            pytest.param(
+                'steps.a.stdout == "x"contains',
+                "Invalid expression 'steps.a.stdout == \"x\"contains': unexpected 'contains' at column 22.",
+                id="trailing_operator_after_comparison",
+            ),
+            pytest.param(
                 "steps.a.exit_code = 0",
                 "Invalid expression 'steps.a.exit_code = 0': unexpected character '=' at column 19.",
                 id="lone_equals",

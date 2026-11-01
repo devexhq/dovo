@@ -13,7 +13,7 @@ from dovo.core.expressions.models import (
     Token,
     TokenKind,
 )
-from dovo.core.expressions.tokenizer import tokenize
+from dovo.core.expressions.services.tokenizer import tokenize
 
 _BOOLEANS: dict[str, bool] = {"true": True, "false": False}
 
@@ -25,7 +25,7 @@ def parse_expression(source: str) -> Expression | InvalidExpression:
     tokens = tokenize(source)
     if isinstance(tokens, InvalidExpression):
         return tokens
-    failure = _unquoted_text(source, tokens) or _missing_value(source, tokens) or _unexpected_token(source, tokens)
+    failure = _unquoted_text(source, tokens) or _unexpected_token(source, tokens) or _missing_value(source, tokens)
     if failure is not None:
         return failure
     left = _operand(tokens[0])
@@ -58,7 +58,7 @@ def _is_bare_word(token: Token) -> bool:
 
 
 def _missing_value(source: str, tokens: tuple[Token, ...]) -> InvalidExpression | None:
-    """Describe an operator that ends the source."""
+    """Describe an operator that ends an otherwise well-placed '<operand> <operator>' source."""
     if tokens[-1].kind is not TokenKind.OPERATOR:
         return None
     return InvalidExpression(source, f"missing value after '{tokens[-1].text}'")
