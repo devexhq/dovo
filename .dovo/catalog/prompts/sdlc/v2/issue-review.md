@@ -73,7 +73,7 @@ A plan decision is not evidence of correctness. When code that follows the plan 
 - **Contract coverage.** Give every outcome (`O-n`) of the slice and every decision of the issue that bears on it a row, naming a description decision by its id (`D-2`) and one from `.agentic/prior-decisions.json` with its session (`D-2 (session blueprint_ab12cd34)`), and check each row obligation by obligation (each sentence a test could observe) against the slice's phases and the test lines that cite it. For an outcome whose entry in `.agentic/requirements.json` has a `part`, check only the obligations of the part named in `part`, and name the part in the row (`O-7 (reply)`); the outcome's other parts belong to other slices and are never a finding. A row is `met` only when every obligation is. Give each row a verdict against the whole change at the reviewed commit: `met` with the evidence (the test and the assertion that proves it, read from the assertion, not the test name, or the code path), `unmet` with what is missing, or `deferred` with the later step that owns it, such as CI. A row whose cited test stubs out what the requirement names is `unmet`. So is a row whose observable contract landed differently from the literal the slice's issue's Binding values or a phase's `### Code` pins: CLI behaviour and output, flags and help text, exit codes, `error_code` and status values, JSON fields, persisted formats, entrypoint signatures and result model fields, with their types and defaults ([planning.md](../../../../../docs/agents/planning.md) Step 1). There a "better" name than the plan's is still `unmet`. Every `unmet` row is also a BLOCKER finding with `rule` `null`, citing the requirement id. An internal shape the plan writes as code (a helper, private type or module name, a module's placement, a private signature) is the planner's best guess, not the contract: when it landed differently and the requirement's observable contract is met, the row is `met`, and the difference is a deviation (below), never a Blocking or Warning finding on its own.
 - The change meets the slice's outcomes, the issue's decisions and the epic contract; contract coverage above records each one. Later slices' work is not a finding.
 - Nothing landed that an issue the plan lists under `## Owned elsewhere` owns, unless the plan names it as a departure, or it is a sentence the change made false (R17). The same holds for work another slice owns or an outcome another slice's `outcomes` lists, and for what the slice's issue names under **Out of scope** or **Owned elsewhere**.
-- Unrequested surface is surface that serves no FR, NFR, guard or Definition of done item. It gets no finding when a rule requires it (R10 callers, R17 sentences) or the plan names it as a departure with an Open Question; otherwise it is a Warning when public and a Suggestion when internal.
+- Unrequested surface is surface that serves no outcome, decision or Done when item. It gets no finding when a rule requires it (R10 callers, R17 sentences) or the plan names it as a departure with an Open Question; otherwise it is a Warning when public and a Suggestion when internal.
 - Each test line in every phase of the slice names a test that exists and asserts the outcome the line states, and every new test file traces back to a test line or is a characterization test of behaviour the slice must leave unchanged.
 - Every deletion ledger entry of the slice's phases is executed.
 - Judge each difference from the slice's phases on its own merits, without the author's account of it. One that breaks a rule, an observable contract or the epic contract is a finding: a Warning when it changes observable behaviour or lands outside the slice, unless it is already a Blocking coverage row. One that changes only an internal shape is not a finding; list it under `Documented deviations` as accepted.
@@ -117,7 +117,7 @@ Write `.agentic/review.md` (create `.agentic/` if needed), overwriting the previ
 
 | Requirement | Verdict | Evidence |
 |---|---|---|
-| FR-1 <short name> | met | `tests/cli/x/test_y.py::test_z` asserts exit 2 and `{"status": "not_found"}` |
+| O-1 <short name> | met | `tests/cli/x/test_y.py::test_z` asserts exit 2 and `{"status": "not_found"}` |
 
 ### Blocking
 
@@ -193,7 +193,7 @@ Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, 
     { "id": "B1", "severity": "BLOCKER", "path": "src/dovo/core/sessions/sessions.py", "start_line": null, "line": 146, "rule": "R4", "summary": "Session.details lets SessionNotFound escape instead of returning a NOT_FOUND result.", "issue": "`Session.details` lets `SessionNotFound` propagate, so `dovo session show <unknown id>` exits with a traceback instead of exit 2.", "fix": "Catch the failure once with `catch_failure` in `Session.details` and return a result whose `error_code` is `NOT_FOUND`.", "also_affects": [] }
   ],
   "coverage": [
-    { "requirement": "FR-1", "verdict": "met", "evidence": "tests/cli/session/test_session_show.py::test_missing asserts exit 2" }
+    { "requirement": "O-1", "verdict": "met", "evidence": "tests/cli/session/test_session_show.py::test_missing asserts exit 2" }
   ],
   "history": [
     { "round": 1, "id": "B1", "summary": "Lock not held around the state write.", "outcome": "fixed", "now": null }

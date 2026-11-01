@@ -60,16 +60,16 @@ A miss is Blocking when implementing the plan as written produces a bug, data lo
 
 ## 5. Check coverage
 
-- Every obligation of every FR, NFR and numbered error case (each sentence a test could observe) is covered by a phase's FRs cell in the Phases table and by at least one test line under that phase's `### Tests`; an id that appears somewhere is not enough. A requirement with an uncovered part is a Warning that quotes the issue sentence and names the phase that should carry it. List the gaps.
+- Every obligation of every outcome (`O-n`) and decision (`D-n`) of the issue (each sentence a test could observe) is covered by a phase's Requirements cell in the Phases table and by at least one test line under that phase's `### Tests`; an id that appears somewhere is not enough. A requirement with an uncovered part is a Warning that quotes the issue sentence and names the phase that should carry it. List the gaps.
 - Every command the plan adds or changes has the R13 runner matrix: success, a failure path, `--format json` and each option it binds.
 - Nothing an issue under `## Owned elsewhere` owns is planned, unless the plan names it as a departure under What you're approving with an Open Question, or it is a sentence the change makes false (R17).
-- Unrequested surface is surface that serves no FR, NFR, guard or Definition of done item. It gets no finding when a rule requires it (R10 callers, R17 sentences) or the plan names it as a departure with an Open Question; otherwise it is a Warning when public and a Suggestion when internal.
+- Unrequested surface is surface that serves no outcome, decision or Done when item. It gets no finding when a rule requires it (R10 callers, R17 sentences) or the plan names it as a departure with an Open Question; otherwise it is a Warning when public and a Suggestion when internal.
 - Each planned test pins a contract no other test pins (R12), and sibling cases are planned as one parametrized test, on one line.
 - Each Open Question states the answer the plan assumes, and `.agentic/plan.json` lists the same Open Questions with the same ids and assumed answers. A missing or disagreeing `plan.json` is a Warning: the blueprint asks the human from it. A Decision that changes public surface or a persisted format without an Open Question is a finding.
 
 ## 6. Check shape and rules
 
-- The plan follows the template in [planning.md](../../../docs/agents/planning.md) Step 4, including the Phases table. That template has no Traceability, GWT Scenarios, per-phase Instructions, Edge cases or **Unchanged:** section, so their absence is never a finding. A phase's `### Code` that copies a literal the issue's Pre-determined data already holds, or stubs a private helper, is a Suggestion whose Fix is to cite the issue section or drop the stub.
+- The plan follows the template in [planning.md](../../../docs/agents/planning.md) Step 4, including the Phases table. That template has no Traceability, GWT Scenarios, per-phase Instructions, Edge cases or **Unchanged:** section, so their absence is never a finding. A phase's `### Code` that copies a literal the issue's binding values already hold, or stubs a private helper, is a Suggestion whose Fix is to cite the issue section or drop the stub.
 - Each phase is one concern, roughly 400 changed lines or less, passes the gate on its own and ships something. A phase over budget states why it cannot be split.
 - The phases together serve one responsibility, since they land in one PR. A plan whose phases mix kinds of change (a foundation and its adoption, or a behaviour change and a refactor), not flagged under What you're approving with a recommendation to split the issue, is a Warning.
 - Phases are ordered by dependency, lower layers first, and replacing an internal is phased add, switch callers, delete, with the deletion phase in the ledger (R10).
@@ -91,7 +91,7 @@ Write `.agentic/plan-review.md`, overwriting any earlier one, and echo the verdi
 
 | ID | Plan section | Evidence | Issue | Fix |
 |---|---|---|---|---|
-| B1 | Phase 2 Code | `path:line` or FR-n | What goes wrong if implemented as written. | The concrete change to the plan. |
+| B1 | Phase 2 Code | `path:line` or O-n | What goes wrong if implemented as written. | The concrete change to the plan. |
 
 ### Warnings
 
@@ -104,7 +104,7 @@ Write `.agentic/plan-review.md`, overwriting any earlier one, and echo the verdi
 |---|---|---|---|---|
 
 ### Coverage
-- Unmapped requirements: <FR/NFR/error/DoD IDs, or "none">
+- Unmapped requirements: <O-n and D-n ids or Done when items, or "none">
 - Commands missing R13 cases: <command: case, or "none">
 
 ### For the human

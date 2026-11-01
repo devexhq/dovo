@@ -17,12 +17,12 @@ An issue is written in the short format of [templates/issue.md](../../.dovo/cata
 gh issue view <number> --json number,title,body
 ```
 
-- Link the issue; do not copy its prose. Every outcome (`O-n`) and decision (`D-n`) appears by ID in the FRs column of the `## Phases` table instead, and is cited by at least one test line. A requirement whose parts land in different phases is listed in each of those phases' FRs cells with the part it covers in parentheses (`O-7 (reply)`, `O-7 (fixer)`), and each part is cited by at least one test line.
+- Link the issue; do not copy its prose. Every outcome (`O-n`) and decision (`D-n`) appears by ID in the Requirements column of the `## Phases` table instead, and is cited by at least one test line. A requirement whose parts land in different phases is listed in each of those phases' Requirements cells with the part it covers in parentheses (`O-7 (reply)`, `O-7 (fixer)`), and each part is cited by at least one test line.
 - Do not copy the issue's **literal** contracts (its binding values: names, flags, JSON, and exact error and output strings) into the plan: cite the issue section that holds them (`#<n>, Binding values`). The implementing agent reads the issue alongside the plan. A phase's `### Code` holds only new public surface the issue does not pin literally (Step 4).
 - Copy each **Out of scope** item that names the issue owning it into `## Owned elsewhere` as a collision check (`#n owns <X>`): the plan does not do that work. It is not a ban, so a line the change would otherwise leave false is still fixed (R17). Never derive a `## Traps` bullet from the issue's scope.
 - The issue's observable contracts bind the plan: CLI behaviour and output, exit codes, persisted formats, entrypoint signatures, result models and the literal values tests assert. The issue names no internal shapes; the plan chooses them in Step 2. When grounding shows that an outcome or decision cannot hold as written, plan the better design: add an Open Question whose assumed answer is that design, cite the `path:line` that shows why, and name the departure under **What you're approving**. Never write a Trap that tells the implementer to work around the issue.
 - The issue's outcomes and decisions bind the plan as written. When following one literally would exclude behaviour of a foundation the change adopts (an `OSError` on Dovo's own state that `catch_failure` records, and the `diagnostics` entry that follows; see [architecture/exceptions.md](architecture/exceptions.md) and [architecture/diagnostics.md](architecture/diagnostics.md)), or would freeze wording nothing relies on, plan the better behaviour as a departure in the same way.
-- Absent an issue, quote the request in the opening paragraph and number the requirements you derive from it (`FR-1`, …) in a `## Requirements` list after `## What you're approving`.
+- Absent an issue, quote the request in the opening paragraph and number the requirements you derive from it as outcomes (`O-1`, …) in a `## Requirements` list after `## What you're approving`.
 - Do not open or consult sibling or parent issues. An issue that needs more than one pull request is sliced by `issue-plan-v2`, never planned whole with `/dovo-plan`. Any other parent issue (one with sub-issues) is never planned itself; plan its sub-issues one at a time.
 - Plan zero backwards-compatibility shims, aliases, or dual code paths unless the issue explicitly demands them (R10).
 - If a detail is unspecified, choose the option matching the nearest existing pattern from Step 2, and add a numbered Open Question stating the assumed answer and the rejected alternative.
@@ -109,7 +109,7 @@ Write one fact per bullet. **Challenged**, **Turns on** and **Recommended** appe
 
 ## Phases
 
-| Phase | Ships | FRs | Depends on | Est. changed lines | Risk, and where to look |
+| Phase | Ships | Requirements | Depends on | Est. changed lines | Risk, and where to look |
 |---|---|---|---|---|---|
 | 1 | <what a reviewer can check after this phase> | O-1, O-2, D-1 | none | <n> | **Low/Med/High.** <what to check> |
 
@@ -158,7 +158,7 @@ Not needed: <surfaces checked and left alone, e.g. migration, result model, conf
 
 ## Step 5: Save and hand off
 
-1. Verify all planned paths, imports, public surface and phases against R1–R18 in [AGENTS.md](../../AGENTS.md). Then split every outcome and decision into its separate obligations, each sentence a test could observe, and check that each obligation lands in a phase's FRs cell and is cited by at least one test line.
+1. Verify all planned paths, imports, public surface and phases against R1–R18 in [AGENTS.md](../../AGENTS.md). Then split every outcome and decision into its separate obligations, each sentence a test could observe, and check that each obligation lands in a phase's Requirements cell and is cited by at least one test line.
 2. Write `.agentic/plan.md` (and `.agentic/evidence.md` when used) and its open questions to `.agentic/plan.json` (schema in the `dovo-plan` skill), deleting any stale `.agentic/review*`, `.agentic/plan-review*`, `.agentic/plan-challenge*` and `.agentic/plan-walkthrough*`.
 3. Report the plan path, the Phases table, and every numbered Open Question.
 

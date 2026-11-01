@@ -31,8 +31,8 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 ## Hard boundaries
 
 - **Never commit, stage, push, or touch PR state.** `/dovo-push` owns that.
-- **All phases, one at a time.** Finish a phase (its FRs, tests and deletion ledger, with its scoped tests green) before starting the next, and never interleave FRs across phases. The phases still order the work and bound each step; they all land in this one run and one PR.
-- **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes and message strings in the issue's Pre-determined data, or written as code in a phase's `### Code`, are normative. Do not rename or extend them.
+- **All phases, one at a time.** Finish a phase (its requirements, tests and deletion ledger, with its scoped tests green) before starting the next, and never interleave requirements across phases. The phases still order the work and bound each step; they all land in this one run and one PR.
+- **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes and message strings in the issue's binding values, or written as code in a phase's `### Code`, are normative. Do not rename or extend them.
 - **Implement only what the plan's phases ask for.** Never do work the plan's `## Owned elsewhere` says another issue owns unless a phase plans it as a named departure. A sentence your change makes false is fixed regardless (R17), and listed under Plan deviations if unplanned. Do not add test files the plan's `### Tests` lines do not name.
 - **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, `.agentic/verdict.txt`, `.agentic/feedback.json` or `.agentic/triage.json` (except with `--triage`).** This skill writes only `.agentic/implementation-report.md` and, in review and feedback mode, `.agentic/fix-commit-msg`, and in feedback mode `.agentic/feedback-outcomes.json`; with `--triage` it writes only `.agentic/triage.json`.
 
@@ -40,16 +40,16 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 
 Read [AGENTS.md](../../../AGENTS.md): its rules R1–R18 are what the reviewer will check, and its exemplars are what new code should look like. Then read the code you are about to change and its nearest exemplar. The plan's `.agentic/evidence.md`, when present, holds citations behind the plan; consult it to verify a claim, not as required reading.
 
-The plan does not repeat the issue's contract, so read the issue it plans (`gh issue view <n> --json number,title,body`, `<n>` being `plan.json` `issue`) and keep its FRs, NFRs, error cases and Pre-determined data in view for the whole run. When `issue` is `null`, the plan's `## Requirements` list is the contract.
+The plan does not repeat the issue's contract, so read the issue it plans (`gh issue view <n> --json number,title,body`, `<n>` being `plan.json` `issue`) and keep its outcomes (`O-n`), decisions (`D-n`) and binding values in view for the whole run. When `issue` is `null`, the plan's `## Requirements` list is the contract.
 
 ## Implementation loop
 
-Work phase by phase, in the Phases table's order. Within a phase, work one FR at a time, in the plan's order. For each FR:
+Work phase by phase, in the Phases table's order. Within a phase, work one requirement at a time, in the plan's order. For each requirement:
 
 1. Re-read the plan section, then the current contents of every file you are about to touch.
 2. Write the production code at the paths the plan names.
 3. Write the tests the plan's test lines name, asserting the outcome each line states for the requirements it cites (R12–R16, [testing.md](../../../docs/agents/testing.md)).
-4. Run only the scoped tests for what you touched, and fix failures before the next FR:
+4. Run only the scoped tests for what you touched, and fix failures before the next requirement:
 
    ```bash
    uv run dovo run tests --path tests/<mirrored-path> --fast-fail
@@ -65,7 +65,7 @@ A check you add under `tests/lint/` must be able to fail: assert its input set i
 
 ### When the plan is wrong
 
-If a contract cannot be implemented as written, or a cited symbol has moved or does not exist, stop that FR, report what the plan says against what the tree shows, flag it 🚨 and implement the rest. Never redesign a contract on your own or widen scope to make one fit.
+If a contract cannot be implemented as written, or a cited symbol has moved or does not exist, stop that requirement, report what the plan says against what the tree shows, flag it 🚨 and implement the rest. Never redesign a contract on your own or widen scope to make one fit.
 
 ## Completion gate
 
