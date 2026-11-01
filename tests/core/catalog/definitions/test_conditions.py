@@ -2,68 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from dovo.core.catalog.definitions import ParsedCondition, parse_condition_expression, validate_condition_expression
+from dovo.core.catalog.definitions import validate_condition_expression
 from dovo.core.catalog.definitions.conditions import ConditionScope
 
 _UNTIL_SCOPE = ConditionScope(known_step_ids=frozenset({"a"}))
 _WHEN_SCOPE = ConditionScope(
     clause="when", known_step_ids=frozenset({"a"}), scope_label="earlier steps", allow_iteration=False
 )
-
-PARSER_OPERATOR_CASES = [
-    pytest.param(
-        "iteration.index == 1",
-        ParsedCondition(raw="iteration.index == 1", left="iteration.index", operator="==", right="1"),
-        id="eq",
-    ),
-    pytest.param(
-        "iteration.index != 1",
-        ParsedCondition(raw="iteration.index != 1", left="iteration.index", operator="!=", right="1"),
-        id="ne",
-    ),
-    pytest.param(
-        "iteration.index >= 1",
-        ParsedCondition(raw="iteration.index >= 1", left="iteration.index", operator=">=", right="1"),
-        id="ge",
-    ),
-    pytest.param(
-        "iteration.index <= 1",
-        ParsedCondition(raw="iteration.index <= 1", left="iteration.index", operator="<=", right="1"),
-        id="le",
-    ),
-    pytest.param(
-        "iteration.index > 1",
-        ParsedCondition(raw="iteration.index > 1", left="iteration.index", operator=">", right="1"),
-        id="gt",
-    ),
-    pytest.param(
-        "iteration.index < 1",
-        ParsedCondition(raw="iteration.index < 1", left="iteration.index", operator="<", right="1"),
-        id="lt",
-    ),
-    pytest.param(
-        "steps.build.stdout contains success",
-        ParsedCondition(
-            raw="steps.build.stdout contains success",
-            left="steps.build.stdout",
-            operator="contains",
-            right="success",
-        ),
-        id="contains",
-    ),
-]
-
-
-class ConditionExpressionParserTests:
-    """Unit tests verifying parser behavior across all supported comparison operators."""
-
-    @pytest.mark.parametrize(("expression", "expected"), PARSER_OPERATOR_CASES)
-    def test_parse_condition_expression_supports_all_comparison_operators(
-        self,
-        expression: str,
-        expected: ParsedCondition,
-    ) -> None:
-        assert parse_condition_expression(expression) == expected
 
 
 class ConditionExpressionValidatorTests:
@@ -123,36 +68,16 @@ class ConditionExpressionValidatorTests:
         ]
 
     @pytest.mark.parametrize(
-        ("expression", "message"),
+        "expression",
         [
-            pytest.param(
-                "steps.a.outputs['x.y'] == 1",
-                "Invalid expression 'steps.a.outputs['x.y'] == 1': "
-                "bracket key in 'steps.a.outputs['x.y']' is not supported in a condition yet.",
-                id="bracket_key",
-            ),
-            pytest.param(
-                "steps['a'].exit_code == 0",
-                "Invalid expression 'steps['a'].exit_code == 0': "
-                "bracket key in 'steps['a'].exit_code' is not supported in a condition yet.",
-                id="bracket_step_id",
-            ),
-            pytest.param(
-                '"a == b" == steps.a.stdout',
-                "Invalid expression '\"a == b\" == steps.a.stdout': "
-                "the operand '\"a == b\"' holds an operator, which a condition does not support yet.",
-                id="quoted_operator_on_the_left",
-            ),
-            pytest.param(
-                'steps.contains.status == "x"',
-                "Invalid expression 'steps.contains.status == \"x\"': "
-                "the operand 'steps.contains.status' holds an operator, which a condition does not support yet.",
-                id="contains_step_id",
-            ),
+            pytest.param("steps.a.outputs['x.y'] == 1", id="bracket_key"),
+            pytest.param("steps['a'].exit_code == 0", id="bracket_step_id"),
+            pytest.param('"a == b" == steps.a.stdout', id="quoted_operator_on_the_left"),
+            pytest.param('steps.contains.status == "x"', id="contains_step_id"),
         ],
     )
-    def test_form_the_run_time_evaluator_misreads_is_rejected(self, expression: str, message: str) -> None:
-        assert validate_condition_expression(expression, known_step_ids={"a", "contains"}) == [message]
+    def test_form_the_grammar_reads_reports_no_errors(self, expression: str) -> None:
+        assert validate_condition_expression(expression, known_step_ids={"a", "contains"}) == []
 
     @pytest.mark.parametrize(
         ("expression", "message"),
