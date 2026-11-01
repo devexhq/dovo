@@ -125,4 +125,5 @@ def previous_step_metadata_from_result(
         status=result.status,
         exit_code=str(result.exit_code),
         outputs=result.outputs,
+        stdout=result.stdout,
     )

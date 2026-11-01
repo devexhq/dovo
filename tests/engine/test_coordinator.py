@@ -879,6 +879,31 @@ class CoordinatorMetadataTests:
         assert outcome.status == SessionStatus.COMPLETED
         assert outcome.step_results[1].stdout == expected
 
+    def test_resumed_run_resolves_a_pre_change_agent_summary_from_stdout(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        report = _step(
+            "report",
+            "echo '{{ steps.code.outputs.status }} {{ steps.code.outputs.touched_files }}'",
+            when=['steps.code.outputs.status == "no_op"'],
+        )
+        seed_new_session(
+            engine_paths, sessions_repo, session_id="resume-summary", steps=[_step("code", "false"), report]
+        )
+        state = _state(engine_paths, sessions_repo, "resume-summary")
+        code = _leaf(state, "code")
+        _complete(code)
+        summary = '{"status":"no_op","summary":null,"unfixable_reason":null,"touched_files":["a.py","b.py"]}\n'
+        code.attempts[0].result = _last_result(code).model_copy(update={"stdout": summary})
+        SessionStateStore(sessions_repo, engine_paths, "resume-summary").save(state, [])
+
+        outcome = _coordinator(engine_paths, sessions_repo, "resume-summary").execute()
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert _last_result(_leaf(_state(engine_paths, sessions_repo, "resume-summary"), "report")).stdout == (
+            'no_op ["a.py", "b.py"]\n'
+        )
+
     def test_final_step_sees_correctly_named_steps_for_prior_step_and_both_loop_iterations(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
@@ -1414,6 +1439,22 @@ class CoordinatorLoopResumeTests:
 
 
 class CoordinatorLoopUntilTests:
+    def test_until_on_a_dovo_output_value_ends_the_loop_on_the_matching_iteration(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        gate = _step(
+            "gate",
+            'if [ "$DOVO_ITERATION_INDEX" -ge 2 ]; then echo verdict=done > "$DOVO_OUTPUT"; '
+            'else echo verdict=again > "$DOVO_OUTPUT"; fi',
+        )
+        steps = [_loop("loop", [gate], max_iterations=3, until=['steps.gate.outputs.verdict == "done"'])]
+
+        outcome = _run_new(engine_paths, sessions_repo, "loop-dovo-output", steps)
+
+        assert outcome.status == SessionStatus.COMPLETED
+        loop = _loop_node(_state(engine_paths, sessions_repo, "loop-dovo-output"))
+        assert [(it.number, it.until_passed) for it in loop.iterations] == [(1, False), (2, True)]
+
     def test_until_on_continued_check_repeats_until_it_passes(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:

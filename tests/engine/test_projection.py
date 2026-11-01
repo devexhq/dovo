@@ -118,6 +118,20 @@ class ProjectionTests:
             ("lint", "2", "", "failed"),
         ]
 
+    def test_terminal_step_metadata_carries_each_result_outputs_and_stdout(self) -> None:
+        code = _result("code").model_copy(update={"stdout": '{"status": "no_op"}\n', "outputs": {"verdict": "ok"}})
+        tree = _tree(
+            _leaf("code", NodeState.COMPLETED, [code]),
+            _leaf("lint", NodeState.COMPLETED, [_result("lint")]),
+        )
+
+        metadata = terminal_step_metadata(tree)
+
+        assert [(item.id, item.stdout, item.outputs) for item in metadata] == [
+            ("code", '{"status": "no_op"}\n', {"verdict": "ok"}),
+            ("lint", "", {}),
+        ]
+
     def test_terminal_step_metadata_returns_empty_list_when_no_leaf_is_terminal(self) -> None:
         tree = _tree(_leaf("a", NodeState.PENDING), _leaf("b", NodeState.PENDING))
 

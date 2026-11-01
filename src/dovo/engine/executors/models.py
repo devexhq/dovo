@@ -69,6 +69,7 @@ class PreviousStepMetadata(BaseModel):
     status: str = ""
     exit_code: str = ""
     outputs: dict[str, str] = Field(default_factory=dict, exclude=True)
+    stdout: str = Field(default="", exclude=True)
 
 
 @dataclass(frozen=True, slots=True)

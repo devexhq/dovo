@@ -8,6 +8,8 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel
 
+from dovo.core.inputs.step_outputs import render_step_output, resolve_step_output
+
 _PLACEHOLDER_RE = re.compile(r"\$?\{\{\s*([^}]+?)\s*\}\}")
 _INTERPOLATED_FIELDS = ("command", "prompt", "script_path", "run")
 _STEP_ENTRY_FIELDS = {"id", "name", "index", "status", "exit_code"}
@@ -158,7 +160,7 @@ class StepsProvider:
         self._steps: list[object] = list(metadata.steps or [])
 
     def resolve(self, path: str) -> str | None:
-        """Return the step field or output value, '' for an unknown step/key, or None for a non-steps expression."""
+        """Return the step field or output value (recorded, else the stdout JSON key), '' for an unknown step/key, or None for a non-steps expression."""
         if not path.startswith(("steps[", "steps.")):
             return None
 
@@ -166,8 +168,10 @@ class StepsProvider:
         if outputs_selector is not None:
             step_id, output_key = outputs_selector
             entry = _find_step_by_id(self._steps, step_id)
-            outputs = getattr(entry, "outputs", None) if entry is not None else None
-            return str((outputs or {}).get(output_key, ""))
+            outputs = getattr(entry, "outputs", None) or {}
+            stdout = getattr(entry, "stdout", None) or ""
+            found = resolve_step_output(outputs, stdout, output_key)
+            return "" if found is None else render_step_output(found.value)
 
         return self._resolve_entry_field(path)
 

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import operator
+import re
 from collections.abc import Callable
 from typing import Final, TypeIs
 
 from dovo.core.catalog.definitions import parse_condition_expression, parse_literal
+from dovo.core.inputs import resolve_step_output
 from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
 
 _NUMERIC_COMPARISON_OPERATORS: dict[str, Callable[[float, float], bool]] = {
@@ -29,36 +30,41 @@ def _is_numeric(val: object) -> TypeIs[int | float]:
     return isinstance(val, (int, float)) and not isinstance(val, bool)
 
 
+_NUMERIC_STRING_RE: Final = re.compile(r"-?[0-9]+(\.[0-9]+)?")
+"""An integer or a decimal written as a string; compared numerically against a number."""
+
+
+def _numeric_string(value: object) -> int | float | None:
+    """Convert a string that is an integer or a decimal to its number, or None for any other value."""
+    if not isinstance(value, str) or _NUMERIC_STRING_RE.fullmatch(value) is None:
+        return None
+    return float(value) if "." in value else int(value)
+
+
+def _numeric_operands(actual: object, expected: object) -> tuple[int | float, int | float] | None:
+    """Return both operands as numbers when both are numbers or one is a number and the other a numeric string."""
+    if _is_numeric(actual) and _is_numeric(expected):
+        return actual, expected
+    if _is_numeric(actual):
+        other = _numeric_string(expected)
+        return None if other is None else (actual, other)
+    if _is_numeric(expected):
+        other = _numeric_string(actual)
+        return None if other is None else (other, expected)
+    return None
+
+
 _UNRESOLVED: Final = object()
 """Marks an operand that references a step value which does not exist, as opposed to a JSON null."""
 
 
-def _lookup_json_path(root: object, path: list[str]) -> object:
-    """Traverse nested dictionary keys along a subpath, returning _UNRESOLVED when a key is missing."""
-    current = root
-    for segment in path:
-        if not isinstance(current, dict) or segment not in current:
-            return _UNRESOLVED
-        current = current[segment]
-    return current
-
-
-def _resolve_json_path(root: object, path: list[str]) -> object:
-    """Traverse nested dictionary keys along a subpath, returning None when a key is missing."""
-    value = _lookup_json_path(root, path)
-    return None if value is _UNRESOLVED else value
-
-
 def _resolve_step_field(result: StepResult, field: str, subpath: list[str]) -> object:
-    """Extract step attribute or parsed JSON output subpath from a StepResult, or _UNRESOLVED when it has none."""
+    """Extract a step attribute or its `outputs.<key>[.<path>]` value from a StepResult, or _UNRESOLVED when it has none."""
     if field in ("exit_code", "status", "stdout"):
         return getattr(result, field)
-    if field == "outputs":
-        try:
-            parsed = json.loads(result.stdout)
-        except (json.JSONDecodeError, TypeError):
-            return _UNRESOLVED
-        return _lookup_json_path(parsed, subpath)
+    if field == "outputs" and subpath:
+        found = resolve_step_output(result.outputs, result.stdout, subpath[0], subpath[1:])
+        return _UNRESOLVED if found is None else found.value
     return _UNRESOLVED
 
 
@@ -79,17 +85,6 @@ def _operand_value(operand: str, *, iteration_index: int, step_results: dict[str
     return parse_literal(token)
 
 
-def resolve_operand_value(
-    operand: str,
-    *,
-    iteration_index: int = 1,
-    step_results: dict[str, StepResult] | None = None,
-) -> object:
-    """Resolve an operand value against iteration index and step results; a missing step value is None."""
-    value = _operand_value(operand, iteration_index=iteration_index, step_results=step_results)
-    return None if value is _UNRESOLVED else value
-
-
 def _compare_contains(actual: object, expected: object) -> bool:
     """Check if expected element or substring is contained within actual value."""
     if actual is None or expected is None:
@@ -107,9 +102,10 @@ def _compare_values(actual: object, expected: object, operator: str) -> bool:
         return False
     if operator == "contains":
         return _compare_contains(actual, expected)
-    if _is_numeric(actual) and _is_numeric(expected):
+    numeric = _numeric_operands(actual, expected)
+    if numeric is not None:
         numeric_fn = _NUMERIC_COMPARISON_OPERATORS.get(operator)
-        return bool(numeric_fn(actual, expected)) if numeric_fn else False
+        return bool(numeric_fn(*numeric)) if numeric_fn else False
     string_fn = _STRING_COMPARISON_OPERATORS.get(operator)
     return bool(string_fn(actual, expected)) if string_fn else False
 

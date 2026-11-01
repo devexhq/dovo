@@ -278,7 +278,7 @@ In `run`, `command`, `prompt`, `script_path` and `env`, reference metadata with 
   * `{{ steps[0].id }}`: First completed step ID
   * `{{ steps[-1].status }}`: Most recently finished step status (equivalent to `{{ previous_step.status }}`)
   * `{{ steps.build.exit_code }}`: Exit code of step with `id: build`
-  * `{{ steps.build.outputs.artifact_path }}` / `{{ steps['build'].outputs.artifact_path }}`: A specific output value step `build` wrote to `$DOVO_OUTPUT` (see [Step Outputs](#step-outputs-dovo_output) below). An unknown step ID or output key resolves to an empty string.
+  * `{{ steps.build.outputs.artifact_path }}` / `{{ steps['build'].outputs.artifact_path }}`: The `artifact_path` output of step `build` (see [Step Outputs](#step-outputs-dovo_output) below). An unknown step ID or output key resolves to an empty string.
   * `steps` holds finished steps only, never the current one. Out-of-range indices and unknown step IDs resolve to an empty string.
 * **Artifacts**: `{{ artifacts.<name>.revision }}`, `{{ artifacts.<name>.digest }}`, `{{ artifacts.<name>.dir }}` and `{{ artifacts.<name>.content }}` resolve against the latest revision of `<name>` published in the current session, read again for every attempt. An unknown artifact or field resolves to an empty string. `content` is the file's text and is available only when the artifact has exactly one file that is valid UTF-8 and at most 65536 bytes; otherwise the step fails with `Artifact '<name>' cannot be inlined: <reason>`.
 
@@ -326,6 +326,8 @@ steps:
     name: Publish built artifact
     run: echo "Publishing {{ steps.build.outputs.artifact_path }}"
 ```
+
+`steps.<id>.outputs.<key>` means the same thing in a placeholder and in a `when`, `until` or `if` condition: the value the step recorded for `<key>`, else the `<key>` of the step's stdout when that stdout is one JSON object. A recorded value wins. In a placeholder, a list or object from stdout renders as JSON and `null` as an empty string. In a condition, a further path such as `steps.gate.outputs.report.score` parses the value as JSON and follows it, and a string holding an integer or a decimal compares numerically against a number, so a recorded `count=3` passes `steps.gate.outputs.count > 2`. See [Step Outputs](../reference/step-schema.md#step-outputs-dovo_output) in the step reference.
 
 For a multi-line value, use the heredoc form (as in GitHub Actions' `$GITHUB_OUTPUT`). Everything between `key<<DELIM` and the matching `DELIM` line is captured as-is, so pick a delimiter that does not appear in the value:
 

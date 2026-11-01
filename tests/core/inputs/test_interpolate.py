@@ -118,6 +118,26 @@ class InterpolateStepOutputsPlaceholderTests:
 
         assert result == "completed"
 
+    @pytest.mark.parametrize(
+        ("outputs", "placeholder", "rendered"),
+        [
+            pytest.param({}, "{{ steps.code.outputs.status }}", "no_op", id="status"),
+            pytest.param({}, "{{ steps.code.outputs.touched_files }}", '["a.py", "b.py"]', id="touched_files"),
+            pytest.param({}, "{{ steps.code.outputs.summary }}", "", id="null_summary"),
+            pytest.param({"status": "done"}, "{{ steps.code.outputs.status }}", "done", id="recorded_wins"),
+        ],
+    )
+    def test_stdout_json_key_renders_as_recorded_outputs_do(
+        self, outputs: dict[str, str], placeholder: str, rendered: str
+    ) -> None:
+        stdout = '{"status":"no_op","summary":null,"unfixable_reason":null,"touched_files":["a.py","b.py"]}\n'
+        code = PreviousStepMetadata(
+            id="code", index="1", status="completed", exit_code="0", outputs=outputs, stdout=stdout
+        )
+        metadata = ExecutionMetadata(step=StepMetadata(id="report", index=2), steps=[code])
+
+        assert interpolate_string(placeholder, build_providers(metadata=metadata)) == rendered
+
 
 class InterpolateProvidersTests:
     def test_first_provider_defining_a_path_wins(self) -> None:

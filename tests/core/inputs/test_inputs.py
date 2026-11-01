@@ -203,6 +203,7 @@ class InputsPackageTests:
             "NamespaceProvider",
             "NamespaceResolutionError",
             "ParameterInput",
+            "StepOutputValue",
             "build_providers",
             "coerce_input_value",
             "format_input_error_message",
@@ -210,6 +211,8 @@ class InputsPackageTests:
             "interpolate_step_fields",
             "interpolate_string",
             "parse_cli_input_args",
+            "render_step_output",
             "resolve_inputs",
+            "resolve_step_output",
         ]
         assert not hasattr(dovo.core.inputs, "Inputs")
