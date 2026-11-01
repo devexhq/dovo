@@ -24,6 +24,8 @@ Append one entry per question to `plan.json` `decisions`, keeping the entries al
 - `id`: the next free `D-<n>`, continuing after the highest decision id in the plan's issue (its Decisions, `gh issue view <n> --json body`), in `.agentic/prior-decisions.json`, in `decisions` and, for a slice plan, in `.agentic/epic-plan.json` `decisions`.
 - `was`: the question's `OQ-<n>` id.
 - `decision`: one sentence stating the choice itself.
+- `settled_by`: `"human"`, `"assumed_accepted"` or `"challenge_accepted"`, as step 1 settled it. Every decision has one.
+- `answer`: the human's words for the question, unedited, only when `settled_by` is `"human"`; leave the key out otherwise.
 - `rejected`: the answers not taken, one sentence each: the question's `assumed` answer, `challenge_answer` (when challenged) and `alternatives`, minus the answer the decision takes. `[]` when there were none.
 - `phases`: the question's `phases`.
 - `date`: today, as `YYYY-MM-DD` (`date +%F`).
