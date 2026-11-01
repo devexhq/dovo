@@ -4,18 +4,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from typing import Final
+
+from dovo.core.inputs.models import StepOutputValue
 
 _UNPARSABLE: Final = object()
 """Marks a value that is not valid JSON, as opposed to a JSON null."""
-
-
-@dataclass(frozen=True, slots=True)
-class StepOutputValue:
-    """The value `steps.<id>.outputs.<key>` resolved to: a recorded output string, or a value parsed from stdout JSON."""
-
-    value: object
 
 
 def _parse_json(text: str) -> object:

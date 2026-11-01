@@ -9,10 +9,10 @@ from dovo.core.inputs.interpolate import (
     interpolate_step_fields,
     interpolate_string,
 )
-from dovo.core.inputs.models import InputResolveResult, InputType, ParameterInput
+from dovo.core.inputs.models import InputResolveResult, InputType, ParameterInput, StepOutputValue
 from dovo.core.inputs.parser import coerce_input_value, parse_cli_input_args
 from dovo.core.inputs.renderer import format_input_error_message, format_missing_inputs_error
-from dovo.core.inputs.step_outputs import StepOutputValue, render_step_output, resolve_step_output
+from dovo.core.inputs.step_outputs import render_step_output, resolve_step_output
 
 __all__ = [
     "ExecutionMetadataView",

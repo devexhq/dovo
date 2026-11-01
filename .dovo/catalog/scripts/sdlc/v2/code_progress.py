@@ -8,8 +8,8 @@ empty when absent. `next` names the first phase not yet done, the phase file the
 breakdown wrote for it, and how many of the slice's other phases remain, as
 `phase`, `phase_file` (`.agentic/phases/phase-<n>.json`, empty once every
 phase is done) and `remaining`: written as
-`key=value` lines to `$DOVO_OUTPUT` for later steps' templates, and printed as
-one JSON object on stdout for a loop's `until`. `next` refuses when the phase
+`key=value` lines to `$DOVO_OUTPUT`, which later steps' templates and a loop's
+`until` read, and printed as one JSON object on stdout. `next` refuses when the phase
 it names is not listed in .agentic/phases/index.json, which only a passing
 `plan.py check-breakdown` writes, or has no phase file, so the code loop stops
 rather than code a phase from unchecked files or record one no agent could

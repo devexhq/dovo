@@ -727,7 +727,7 @@ steps:
       - steps.code.outputs.status != "timeout"
       - steps.code.outputs.status != "provider_error"
       - steps.code.outputs.status != "blocked"
-      # Read from phase's stdout JSON; its $DOVO_OUTPUT lines feed the templates.
+      # Reads phase's recorded $DOVO_OUTPUT value, a numeric string compared numerically.
       - steps.phase.outputs.remaining == 0
       - steps.verify.exit_code == 0
     on_max_iterations: prompt_user

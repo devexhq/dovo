@@ -124,6 +124,13 @@ class ConditionExpressionEvaluatorTests:
 
         assert (result.resolved, result.passed, result.detail) == (False, False, "FALSE (not found)")
 
+    def test_contains_on_a_recorded_json_array_matches_text_inside_it(self) -> None:
+        gate = _gate_result(touched_files='["ba.py"]')
+
+        result = evaluate_condition('steps.gate.outputs.touched_files contains "a.py"', step_results={"gate": gate})
+
+        assert (result.resolved, result.passed) == (True, True)
+
 
 def _gate_result(**outputs: str) -> StepResult:
     """Build a `gate` command result with recorded outputs and plain stdout."""

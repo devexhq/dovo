@@ -221,7 +221,7 @@ steps.agent.exit_code == 202
 ```
 
 - `no_op` succeeds with `0`. A planning or review step that finds nothing to change therefore completes, and `steps.<id>.outputs.status` is what tells `proposed_patch` from `no_op`.
-- The step also records the four summary fields as outputs, so `steps.<id>.outputs.status`, `summary`, `unfixable_reason` and `touched_files` read the same values in conditions and placeholders (see [Step Outputs](#step-outputs-dovo_output)). A `null` `summary` or `unfixable_reason` is recorded as an empty string, and `touched_files` as a JSON array string such as `["a.py", "b.py"]`.
+- The step also records the four summary fields as outputs, so `steps.<id>.outputs.status`, `summary`, `unfixable_reason` and `touched_files` read the same values in conditions and placeholders (see [Step Outputs](#step-outputs-dovo_output)). A `null` `summary` or `unfixable_reason` is recorded as an empty string, and `touched_files` as a JSON array string such as `["a.py", "b.py"]`. A `contains` condition on `touched_files` therefore matches text inside that string, so `contains "a.py"` also matches `ba.py`.
 - These four outputs take precedence over a `$DOVO_OUTPUT` line with the same key: the step drops that line and records a warning naming the step and the key.
 - These codes are step outcomes recorded per attempt. `dovo run` keeps its own exit contract, and command and script step exit codes are unchanged.
 

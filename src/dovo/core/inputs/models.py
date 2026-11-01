@@ -1,7 +1,8 @@
-"""Pydantic models for blueprint parameter inputs."""
+"""Models for blueprint parameter inputs and resolved step outputs."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -70,3 +71,10 @@ class InputResolveResult(BaseResult):
     def ok(self) -> bool:
         """Return True when all required inputs resolved without parse errors."""
         return not self.errors and not self.missing
+
+
+@dataclass(frozen=True, slots=True)
+class StepOutputValue:
+    """The value `steps.<id>.outputs.<key>` resolved to: a recorded output string, or a value parsed from stdout JSON."""
+
+    value: object
