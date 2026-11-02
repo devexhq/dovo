@@ -58,3 +58,20 @@ class ExpressionTokenizerTests:
         )
         assert tokenize("steps.in.status") == (Token(TokenKind.NAME, "steps.in.status", 1, ("steps", "in", "status")),)
         assert tokenize('steps.a["in"]') == (Token(TokenKind.NAME, 'steps.a["in"]', 1, ("steps", "a", "in")),)
+
+    def test_run_of_not_words_reads_only_the_last_as_not_in(self) -> None:
+        tokens = tokenize("not " * 300 + "in [1]")
+
+        assert isinstance(tokens, tuple)
+        assert tokens[:299] == tuple(Token(TokenKind.NAME, "not", 4 * index + 1, ("not",)) for index in range(299))
+        assert tokens[299:] == (
+            Token(TokenKind.OPERATOR, "not in", 1197, ComparisonOperator.NOT_IN),
+            Token(TokenKind.SYMBOL, "[", 1204, "["),
+            Token(TokenKind.NUMBER, "1", 1205, 1),
+            Token(TokenKind.SYMBOL, "]", 1206, "]"),
+        )
+        assert tokenize("x not in.y") == (
+            Token(TokenKind.NAME, "x", 1, ("x",)),
+            Token(TokenKind.NAME, "not", 3, ("not",)),
+            Token(TokenKind.NAME, "in.y", 7, ("in", "y")),
+        )

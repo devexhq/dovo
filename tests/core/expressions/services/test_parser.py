@@ -478,3 +478,34 @@ class ExpressionParserTests:
         result = parse_expression(source)
 
         assert result == InvalidExpression(source, reason)
+
+    @pytest.mark.parametrize("operator", ["&&", "||"])
+    def test_joins_at_the_limit_parse(self, operator: str) -> None:
+        result = parse_expression(f" {operator} ".join(["steps.a.stdout"] * 65))
+
+        assert isinstance(result, Logical)
+
+    @pytest.mark.parametrize(
+        ("source", "reason"),
+        [
+            pytest.param(
+                " && ".join(["x"] * 600),
+                "'&&' at column 323 joins too many conditions; use at most 64 '&&' and '||'",
+                id="and_chain",
+            ),
+            pytest.param(
+                " || ".join(["x"] * 600),
+                "'||' at column 323 joins too many conditions; use at most 64 '&&' and '||'",
+                id="or_chain",
+            ),
+            pytest.param(
+                "(" + " && ".join(["x"] * 33) + ") || (" + " || ".join(["x"] * 33) + ")",
+                "'||' at column 326 joins too many conditions; use at most 64 '&&' and '||'",
+                id="across_groups",
+            ),
+        ],
+    )
+    def test_joins_past_the_limit_report_their_reason(self, source: str, reason: str) -> None:
+        result = parse_expression(source)
+
+        assert result == InvalidExpression(source, reason)

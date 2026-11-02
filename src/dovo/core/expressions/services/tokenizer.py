@@ -186,14 +186,17 @@ def _name_token(source: str, parts: tuple[str, ...], start: int, end: int) -> To
 
 
 def _read_not_in(source: str, start: int, end: int) -> Token | None:
-    """Return the 'not in' token whose 'not' runs from start to end, when the next token is the operator 'in'."""
+    """Return the 'not in' token whose 'not' runs from start to end, when the next run is a lone 'in'.
+
+    The lookahead matches the run without reading a token, so a run of 'not' words is never re-read.
+    """
     following = _skip_whitespace(source, end)
-    if following >= len(source):
+    word = _ROOT_RE.match(source, following)
+    if word is None or word.group() != ComparisonOperator.IN.value:
         return None
-    token = _read_token(source, following)
-    if isinstance(token, InvalidExpression) or token.value is not ComparisonOperator.IN:
+    if word.end() < len(source) and not _stops_run(source, word.end()):
         return None
-    return Token(TokenKind.OPERATOR, source[start : following + len(token.text)], start + 1, ComparisonOperator.NOT_IN)
+    return Token(TokenKind.OPERATOR, source[start : word.end()], start + 1, ComparisonOperator.NOT_IN)
 
 
 def _unexpected_character(source: str, position: int) -> InvalidExpression:

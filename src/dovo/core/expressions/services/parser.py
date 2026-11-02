@@ -28,8 +28,10 @@ from dovo.core.expressions.services.tokenizer import tokenize
 
 _BOOLEANS: dict[str, bool] = {"true": True, "false": False}
 _MEMBERSHIP_OPERATORS: frozenset[ComparisonOperator] = frozenset({ComparisonOperator.IN, ComparisonOperator.NOT_IN})
-# The deepest run of '(' and '!' a source may nest, well inside the interpreter's recursion limit.
+# The deepest run of '(' and '!' a source may nest, and the most '&&' and '||' it may hold in all, which together
+# keep every tree well inside the interpreter's recursion limit.
 _MAX_NESTING = 32
+_MAX_JOINS = 64
 
 _Parsed = Expression | InvalidExpression
 
@@ -38,7 +40,8 @@ def parse_expression(source: str) -> Expression | InvalidExpression:
     """Parse source into its syntax tree, or describe the first reason it is not an expression.
 
     '!' binds tighter than a comparison, a comparison tighter than '&&', and '&&' tighter than '||'; '&&' and '||'
-    group to the left, parentheses leave no node, and a comparison does not chain. '(' and '!' nest at most 32 deep.
+    group to the left, parentheses leave no node, and a comparison does not chain. '(' and '!' nest at most 32 deep,
+    and a source holds at most 64 '&&' and '||' in all.
     """
     if not source.strip():
         return InvalidExpression(source, "empty expression")
@@ -57,6 +60,7 @@ class _Parser:
         self._tokens = tokens
         self._index = 0
         self._depth = 0
+        self._joins = 0
 
     def parse(self) -> _Parsed:
         """Parse every token as one expression; a token left over is unexpected."""
@@ -75,10 +79,13 @@ class _Parser:
         return self._logical(LogicalOperator.AND, self._comparison)
 
     def _logical(self, operator: LogicalOperator, operand: Callable[[], _Parsed]) -> _Parsed:
-        """Parse operands joined by operator, grouped to the left."""
+        """Parse operands joined by operator, grouped to the left, unless the source joins more than _MAX_JOINS."""
         left = operand()
         while not isinstance(left, InvalidExpression) and self._at_symbol(operator.value):
+            if self._joins == _MAX_JOINS:
+                return self._too_many_joins()
             self._index += 1
+            self._joins += 1
             right = operand()
             if isinstance(right, InvalidExpression):
                 return right
@@ -188,6 +195,14 @@ class _Parser:
         if token is not None:
             return self._unexpected(token)
         return InvalidExpression(self._source, f"missing ')' to close '(' at column {opening.column}")
+
+    def _too_many_joins(self) -> InvalidExpression:
+        """Describe the next token, the '&&' or '||' past _MAX_JOINS, as one join too many."""
+        token = self._tokens[self._index]
+        return InvalidExpression(
+            self._source,
+            f"'{token.text}' at column {token.column} joins too many conditions; use at most {_MAX_JOINS} '&&' and '||'",
+        )
 
     def _peek(self) -> Token | None:
         """Return the next token, or None when every token is read."""
