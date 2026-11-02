@@ -912,6 +912,11 @@ def _sum(values: list[object]) -> float | None:
     return round(sum(numbers), 4) if numbers else None
 
 
+def _count(value: float | None) -> int | None:
+    """Return a summed count as an int, keeping None."""
+    return None if value is None else int(value)
+
+
 def _mapping(value: object) -> dict[str, object]:
     """Return value when it is a dict, else an empty dict."""
     return value if isinstance(value, dict) else {}
@@ -927,10 +932,10 @@ def _step_entry(rows: list[dict[str, object]]) -> dict[str, object]:
     entry: dict[str, object] = {"iterations": len(rows)}
     for key in ("wall_seconds", "model_seconds", "thinking_seconds", "tool_seconds", "cost_usd"):
         entry[key] = _sum([row.get(key) for row in rows])
-    entry["output_tokens"] = _token_sum(rows, "output_tokens")
-    entry["thinking_tokens"] = _token_sum(rows, "thinking_tokens")
+    entry["output_tokens"] = _count(_token_sum(rows, "output_tokens"))
+    entry["thinking_tokens"] = _count(_token_sum(rows, "thinking_tokens"))
     for key in ("turns", "tool_calls"):
-        entry[key] = _sum([row.get(key) for row in rows])
+        entry[key] = _count(_sum([row.get(key) for row in rows]))
     return {**entry, **_attempts_and_effort(rows)}
 
 
