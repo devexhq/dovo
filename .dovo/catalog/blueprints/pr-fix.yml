@@ -14,7 +14,10 @@ inputs:
 steps:
   # Stops the run (errors 2-5) before anything is collected. Runs from the
   # run's base, then leaves the worktree detached at the pull request's head,
-  # so every later step runs the pull request's own code.
+  # so every later step runs the pull request's own code. It first copies the
+  # base's reply scripts into .agentic/tools/, and the steps below run them
+  # from there: a head that predates a change this blueprint relies on still
+  # gets the scripts that match it.
   - id: restore
     name: Restore the run's state and collect feedback
     run: uv run python scripts/pr_feedback.py --pr "$PR"
@@ -45,7 +48,7 @@ steps:
   # stops the run before the pick.
   - id: render-triage
     name: Check the triage and render it for picking
-    run: uv run python scripts/reply_threads.py --render-triage
+    run: uv run python .agentic/tools/reply_threads.py --render-triage
     timeout_seconds: 300
     artifacts:
       - { name: triage, path: .agentic/triage.md }
@@ -76,7 +79,7 @@ steps:
   # on exactly what the person picked.
   - id: apply-picks
     name: Settle the triage to the picked items
-    run: uv run python scripts/reply_threads.py --apply-picks "$PICKED"
+    run: uv run python .agentic/tools/reply_threads.py --apply-picks "$PICKED"
     env: { PICKED: "{{ steps.pick-fixes.outputs.selected }}" }
     timeout_seconds: 300
     artifacts:
@@ -147,7 +150,7 @@ steps:
   # posts only what is missing.
   - id: reply
     name: Reply on and resolve the addressed review threads
-    run: uv run python scripts/reply_threads.py
+    run: uv run python .agentic/tools/reply_threads.py
     timeout_seconds: 300
     on_failure: prompt_user
 
