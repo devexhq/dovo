@@ -233,20 +233,25 @@ class ReplyThreadsTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         ran: list[tuple[str, ...]] = []
-        _setup(tmp_path, monkeypatch, _fake_run(ran, []), triage={"items": TRIAGE_ITEMS}, render=True)
+        _setup(tmp_path, monkeypatch, _fake_run(ran, []), triage={"items": TRIAGE_ITEMS}, flags=("--render-triage",))
 
         assert REPLY.main() == 0
 
+        lines = [
+            ("T1", "T1 [review_thread] → fix: The lock is not held."),
+            ("T2", "T2 [review_thread] → dismiss: The name is the project's term."),
+            ("T3", "T3 [review_thread] → defer: #1300 splits it."),
+            ("T4", "T4 [review_thread] → fix: The value is recomputed."),
+            ("R1", "R1 [review_finding] → dismiss: The issue body is edited by a person before merge."),
+            ("C1", "C1 [comment] → fix: The walkthrough is stale."),
+            ("K1", "K1 [check] → defer: The runner is down."),
+        ]
+        agentic = tmp_path / ".agentic"
         assert capsys.readouterr().out == "Rendered 7 triage entries to .agentic/triage.md\n"
-        assert (tmp_path / ".agentic" / "triage.md").read_text(encoding="utf-8") == (
-            "T1 [review_thread] → fix: The lock is not held.\n"
-            "T2 [review_thread] → dismiss: The name is the project's term.\n"
-            "T3 [review_thread] → defer: #1300 splits it.\n"
-            "T4 [review_thread] → fix: The value is recomputed.\n"
-            "R1 [review_finding] → dismiss: The issue body is edited by a person before merge.\n"
-            "C1 [comment] → fix: The walkthrough is stale.\n"
-            "K1 [check] → defer: The runner is down.\n"
-        )
+        assert (agentic / "triage.md").read_text(encoding="utf-8") == "".join(f"{line}\n" for _, line in lines)
+        assert json.loads((agentic / "triage-options.json").read_text(encoding="utf-8")) == {
+            "items": [{"id": item_id, "label": line} for item_id, line in lines]
+        }
         assert ran == []
 
     @pytest.mark.parametrize(
@@ -270,12 +275,103 @@ class ReplyThreadsTests:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         ran: list[tuple[str, ...]] = []
-        _setup(tmp_path, monkeypatch, _fake_run(ran, []), items=FEEDBACK_ITEMS, triage=triage, render=True)
+        _setup(
+            tmp_path, monkeypatch, _fake_run(ran, []), items=FEEDBACK_ITEMS, triage=triage, flags=("--render-triage",)
+        )
 
         assert REPLY.main() == 1
 
         assert capsys.readouterr().err == f"reply_threads.py: {expected}\n"
         assert not (tmp_path / ".agentic" / "triage.md").exists()
+        assert not (tmp_path / ".agentic" / "triage-options.json").exists()
+        assert ran == []
+
+    @pytest.mark.parametrize(
+        ("entry", "picked", "expected"),
+        [
+            pytest.param(TRIAGE_ITEMS[0], True, TRIAGE_ITEMS[0], id="picked-fix-kept"),
+            pytest.param(
+                TRIAGE_ITEMS[1],
+                True,
+                {
+                    "id": "T2",
+                    "action": "fix",
+                    "reason": "The person picked it to fix over the triaged dismiss: The name is the project's term.",
+                },
+                id="picked-dismiss-fixed",
+            ),
+            pytest.param(
+                TRIAGE_ITEMS[0],
+                False,
+                {"id": "T1", "action": "defer", "reply": "Not picked for this round of fixes."},
+                id="unpicked-fix-deferred",
+            ),
+            pytest.param(TRIAGE_ITEMS[2], False, TRIAGE_ITEMS[2], id="unpicked-defer-kept"),
+        ],
+    )
+    def test_picked_entry(self, entry: dict[str, object], picked: bool, expected: dict[str, object]) -> None:
+        assert REPLY.picked_entry(entry, picked=picked) == expected
+
+    def test_main_applies_picks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        ran: list[tuple[str, ...]] = []
+        flags = ("--apply-picks", '["T1", "K1"]')
+        _setup(tmp_path, monkeypatch, _fake_run(ran, []), triage={"items": TRIAGE_ITEMS}, flags=flags)
+
+        assert REPLY.main() == 0
+
+        agentic = tmp_path / ".agentic"
+        assert capsys.readouterr().out == "Picked 2 of 7 triage entries to fix in .agentic/triage.json\n"
+        passed_over = "Not picked for this round of fixes."
+        assert json.loads((agentic / "triage.json").read_text(encoding="utf-8")) == {
+            "items": [
+                TRIAGE_ITEMS[0],
+                TRIAGE_ITEMS[1],
+                TRIAGE_ITEMS[2],
+                {"id": "T4", "action": "defer", "reply": passed_over},
+                TRIAGE_ITEMS[4],
+                {"id": "C1", "action": "defer", "reply": passed_over},
+                {
+                    "id": "K1",
+                    "action": "fix",
+                    "reason": "The person picked it to fix over the triaged defer: The runner is down.",
+                },
+            ]
+        }
+        assert (agentic / "triage.md").read_text(encoding="utf-8").splitlines()[3] == (
+            f"T4 [review_thread] → defer: {passed_over}"
+        )
+        options = json.loads((agentic / "triage-options.json").read_text(encoding="utf-8"))
+        assert [option["id"] for option in options["items"]] == ["T1", "T2", "T3", "T4", "R1", "C1", "K1"]
+        assert ran == []
+
+    @pytest.mark.parametrize(
+        ("picked", "expected"),
+        [
+            pytest.param("T1", "the picked items 'T1' are not a JSON array", id="not-json"),
+            pytest.param('{"T1": 1}', """the picked items '{"T1": 1}' are not a JSON array of ids""", id="not-array"),
+            pytest.param('["T1", "X9"]', "picked item X9 names no feedback item", id="unknown-id"),
+        ],
+    )
+    def test_main_apply_picks_refuses(
+        self,
+        picked: str,
+        expected: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        ran: list[tuple[str, ...]] = []
+        flags = ("--apply-picks", picked)
+        _setup(tmp_path, monkeypatch, _fake_run(ran, []), triage={"items": TRIAGE_ITEMS}, flags=flags)
+
+        assert REPLY.main() == 1
+
+        assert capsys.readouterr().err == f"reply_threads.py: {expected}\n"
+        assert json.loads((tmp_path / ".agentic" / "triage.json").read_text(encoding="utf-8")) == {
+            "items": TRIAGE_ITEMS
+        }
         assert ran == []
 
     @pytest.mark.parametrize(
@@ -597,12 +693,11 @@ def _setup(
     items: list[dict[str, object]] | None = None,
     triage: object | None = None,
     outcomes: object | None = None,
-    render: bool = False,
+    flags: tuple[str, ...] = (),
 ) -> None:
-    """Write the .agentic/ inputs under root and run from it, answering commands through fake_run.
+    """Write the .agentic/ inputs under root and run from it with flags, answering commands through fake_run.
 
-    triage and outcomes default to TRIAGE_ITEMS and OUTCOME_ITEMS when items is also left out;
-    render adds --render-triage.
+    triage and outcomes default to TRIAGE_ITEMS and OUTCOME_ITEMS when items is also left out.
     """
     defaults = items is None and triage is None and outcomes is None
     monkeypatch.chdir(root)
@@ -612,7 +707,7 @@ def _setup(
         triage={"items": TRIAGE_ITEMS} if defaults else triage,
         outcomes={"items": OUTCOME_ITEMS} if defaults else outcomes,
     )
-    monkeypatch.setattr(sys, "argv", ["reply_threads.py", *(["--render-triage"] if render else [])])
+    monkeypatch.setattr(sys, "argv", ["reply_threads.py", *flags])
     monkeypatch.setattr(REPLY, "run", fake_run)
     monkeypatch.setattr(PUBLISH, "run", fake_run)
 

@@ -1,7 +1,7 @@
 version: 1
 name: pr-fix
 id: pr-fix
-description: Run one round of fixes on a pull request's open feedback, with your approval before anything changes.
+description: Run one round of fixes on a pull request's open feedback, fixing only the items you pick.
 summary: One fix round on a pull request
 
 inputs:
@@ -39,25 +39,49 @@ steps:
     artifacts:
       - { name: triage-json, path: .agentic/triage.json }
 
-  # Checks .agentic/triage.json and renders the .agentic/triage.md the person
-  # approves from it, so the approval shows exactly what the fixer and the reply
-  # act on. An invalid triage fails this step and stops the run before the approval.
+  # Checks .agentic/triage.json and renders .agentic/triage.md and the
+  # .agentic/triage-options.json the person picks from, one option per item
+  # labelled with its triage line. An invalid triage fails this step and
+  # stops the run before the pick.
   - id: render-triage
-    name: Check the triage and render it for approval
+    name: Check the triage and render it for picking
     run: uv run python scripts/reply_threads.py --render-triage
     timeout_seconds: 300
     artifacts:
       - { name: triage, path: .agentic/triage.md }
+      - { name: triage-options, path: .agentic/triage-options.json }
 
-  # Denying fails this step, which stops the run before any edit, commit, push or post.
-  - id: approve-triage
-    name: Approve the triage
+  # With no feedback item there is no option, and the run continues with
+  # nothing picked.
+  - id: pick-fixes
+    name: Pick the feedback to fix
     type: ask
     interaction:
-      mode: confirm
-      message: Approve this triage of the feedback on pull request ${{ inputs.pr }}? Only its fix items are changed. To change a decision, deny and run pr-fix again.
+      mode: multiselect
+      message: >-
+        Which feedback items on pull request ${{ inputs.pr }} do you want fixed? Each option shows
+        the triage's proposal. A ticked item is fixed. An unticked item the triage proposed to fix is
+        deferred and its thread left open; any other unticked item keeps its dismiss or defer and
+        that reply is posted. To stop before anything is posted, cancel the run.
       artifact: triage
+      options_from:
+        artifact: triage-options
+        file: .agentic/triage-options.json
+        items_path: items
+        value_field: id
+        label_field: label
       comment: { policy: optional, message: Notes for the fixer }
+
+  # Rewrites .agentic/triage.json to the picks, so the fixer and the reply act
+  # on exactly what the person picked.
+  - id: apply-picks
+    name: Settle the triage to the picked items
+    run: uv run python scripts/reply_threads.py --apply-picks "$PICKED"
+    env: { PICKED: "{{ steps.pick-fixes.outputs.selected }}" }
+    timeout_seconds: 300
+    artifacts:
+      - { name: triage-json, path: .agentic/triage.json }
+      - { name: triage, path: .agentic/triage.md }
 
   # Installed at the pull request's head, which restore checked out, before
   # the fixer writes code, so its first test run finds every project dependency.
@@ -87,9 +111,12 @@ steps:
           /dovo-code feedback
 
           Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
-          Fix the fix items of the approved triage in .agentic/triage.json.
+          Fix the fix items of the picked triage in .agentic/triage.json.
           Do not commit, stage or push.
-          Notes: {{ steps.approve-triage.outputs.comment }}
+          Run only scoped checks on what you changed: ruff and ty on the changed files and
+          `uv run dovo run tests --path "<test paths>"` on the tests they touch. Do not run
+          `uv run dovo run quality` or the whole suite: the next step runs the full gate.
+          Notes: {{ steps.pick-fixes.outputs.comment }}
           If .agentic/gate.log exists, a previous attempt left the working tree in a failing
           state: read it, keep the existing work and fix what it reports.
         tools: { allow_all: true }
