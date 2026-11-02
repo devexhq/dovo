@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from collections.abc import Callable
@@ -1726,6 +1727,88 @@ class PlanCheckBreakdownTests:
         assert _check_breakdown(monkeypatch) == 1
 
         assert _refusal(capsys) == f"plan.py: {message}\n"
+
+
+SLICE_PLAN_TEMPLATE = REPO_ROOT / ".dovo/catalog/prompts/sdlc/v2/templates/slice-plan.md"
+TEMPLATE_REQUIREMENTS = {"O-1": O_1, "O-2": O_2}
+TEMPLATE_DECISION = {**PLANNER, "id": "D-1", "phases": [2]}
+CITES = re.compile(r" — (?P<cites>[^:]+):")
+
+
+def _template_plan_md() -> str:
+    """Return the example plan inside the slice-plan template's markdown fence."""
+    text = SLICE_PLAN_TEMPLATE.read_text(encoding="utf-8")
+    return text.split("````markdown\n", 1)[1].rsplit("````", 1)[0]
+
+
+def _one_line_items(text: str, heading: str) -> list[str]:
+    """Return the `- ` lines under heading in text, up to the next heading, each read as one whole item."""
+    _, found, rest = text.partition(f"\n{heading}\n")
+    body = rest.split("\n#", 1)[0] if found else ""
+    return [line[2:] for line in body.splitlines() if line.startswith("- ")]
+
+
+def _template_phase(n: int, section: str, owned: list[str]) -> dict[str, object]:
+    """Return the phase file for the template's phase n, each test line an action citing the ids before its colon."""
+    tests = _one_line_items(section, "### Tests")
+    cited = [re.findall(r"[OD]-\d+", " ".join(CITES.findall(line))) for line in tests]
+    departures = _one_line_items(section, "### Decisions")
+    return {
+        **PHASE_1,
+        "slice": "S1",
+        "phase": n,
+        "title": section.split("\n", 1)[0].split(": ", 1)[1],
+        "depends_on": list(range(1, n)),
+        "requirements": [
+            {"id": i, "text": TEMPLATE_REQUIREMENTS[i]} for i in sorted({i for ids in cited for i in ids})
+        ],
+        "decisions": re.findall(r"\*\*(D-\d+)", " ".join(departures)),
+        "builds_on": [],
+        "binding": re.findall(r"```python\n(.*?)\n```", section, re.DOTALL),
+        "departures": departures,
+        "tests": tests,
+        "owned_elsewhere": owned,
+        "actions": [
+            {"id": f"{n}.{k}", "kind": "test", "target": "tests/", "do": line, "requirements": ids}
+            for k, (line, ids) in enumerate(zip(tests, cited, strict=True), start=1)
+        ],
+        "not_this_phase": [],
+    }
+
+
+def _write_template_breakdown(root: Path) -> None:
+    """Write the template's plan, its plan.json, its requirements and a phase file per phase to root's .agentic."""
+    plan_md = _template_plan_md()
+    sections = [part.split("\n## ", 1)[0] for part in plan_md.split("\n## Phase ")[1:]]
+    owned = _one_line_items(plan_md, "## Owned elsewhere")
+    plan = {"open_questions": [], "decisions": [TEMPLATE_DECISION], "slices": [{"id": "S1", "phases": [1, 2]}]}
+    _write_json(root / ".agentic/plan.json", plan)
+    (root / ".agentic/plan.md").write_text(plan_md, encoding="utf-8")
+    requirements = [{"id": i, "kind": "outcome", "text": text} for i, text in TEMPLATE_REQUIREMENTS.items()]
+    _write_json(root / ".agentic/requirements.json", {**REQUIREMENTS, "requirements": requirements})
+    (root / ".agentic/phases").mkdir()
+    for n, section in enumerate(sections, start=1):
+        _write_phase(root, n, _template_phase(n, section, owned))
+
+
+class SlicePlanTemplateTests:
+    def test_check_breakdown_passes_the_slice_plan_template(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write_template_breakdown(workspace)
+
+        assert _main(monkeypatch, "check-breakdown", "--slice", "S1") == 0
+
+        assert capsys.readouterr() == ("", "")
+        index = json.loads((workspace / ".agentic/phases/index.json").read_text(encoding="utf-8"))
+        assert [(entry["phase"], entry["requirements"], entry["decisions"]) for entry in index["phases"]] == [
+            (1, ["O-1"], []),
+            (2, ["O-1", "O-2"], ["D-1"]),
+        ]
+        phases = [json.loads(Path(entry["file"]).read_text(encoding="utf-8")) for entry in index["phases"]]
+        assert [
+            (len(p["binding"]), len(p["departures"]), len(p["tests"]), len(p["owned_elsewhere"])) for p in phases
+        ] == [(1, 0, 3, 1), (0, 1, 4, 1)]
 
 
 # --- check-slices ----------------------------------------------------------------

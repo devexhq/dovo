@@ -54,7 +54,7 @@ When the issue leaves a detail unspecified, choose the option consistent with th
 
 ## 5. Write plan.json
 
-Write `.agentic/plan.json` alongside the markdown. It is the only place the open questions and decisions are written. The blueprints build the summary a person reads from it and ask the person which open questions to answer. The slice flow also reads its `slices` to write the work plan comment and its `decisions` to write each slice's own issue, and the next run reads its `contract`, so they must agree with the plan's `## Feature contract` and `## Slices` sections. The example below is a slice-mode plan for a plain issue.
+Write `.agentic/plan.json` alongside the markdown. It is the only place the open questions and decisions are written. The blueprints build the summary a person reads from it and ask the person which open questions to answer. The slice flow also reads its `slices` to write the work plan comment and its `decisions` to write each slice's own issue, and the next run reads its `contract`, so they must agree with the plan's `## Feature contract` and `## Slices` sections. The example below is a slice-mode plan for a plain issue, the `plan.json` of the plan in [templates/slice-plan.md](templates/slice-plan.md).
 
 ```json
 {
