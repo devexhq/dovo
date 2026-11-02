@@ -30,7 +30,11 @@ BLUEPRINTS: Final[list[Path]] = sorted(BLUEPRINTS_DIR.glob("*.yml"))
 SHIP_PROMPTS_DIR: Final[Path] = PROMPTS_ROOT / "ship"
 SHIP_SCRIPTS_DIR: Final[Path] = SCRIPTS_ROOT / "ship"
 SHIP_TESTS_DIR: Final[Path] = TESTS_ROOT / "ship"
+SHIP_STEPS_DIR: Final[Path] = REPO_ROOT / ".dovo" / "catalog" / "steps" / "ship"
+SHIP_BLUEPRINT_FILE: Final[Path] = BLUEPRINTS_DIR / "ship.yml"
 SHIP_SKILL_FILE: Final[Path] = REPO_ROOT / ".agents" / "skills" / "ship" / "SKILL.md"
+SHIP_CATALOG_PATH: Final = re.compile(r"\.dovo/catalog/(?:prompts|scripts)/sdlc/ship/[\w./-]*\w")
+SHIP_USES_REF: Final = re.compile(r"^\s*uses:\s*ship/(?P<step>[\w-]+)\s*$", re.MULTILINE)
 EXPECTED_SHIP_PROMPTS: Final[frozenset[str]] = frozenset(
     {
         "ticket-route.md",
@@ -38,6 +42,22 @@ EXPECTED_SHIP_PROMPTS: Final[frozenset[str]] = frozenset(
         "ticket-plan.md",
         "ticket-implement.md",
         "ticket-review.md",
+    }
+)
+EXPECTED_SHIP_STEPS: Final[frozenset[str]] = frozenset(
+    {
+        "prepare.yml",
+        "next.yml",
+        "assess.yml",
+        "investigate.yml",
+        "plan.yml",
+        "implement.yml",
+        "validate.yml",
+        "review.yml",
+        "record.yml",
+        "publication-gate.yml",
+        "publish.yml",
+        "report.yml",
     }
 )
 
@@ -197,10 +217,25 @@ class ShipBundleTests:
         assert SHIP_PROMPTS_DIR.is_dir()
         assert SHIP_SCRIPTS_DIR.is_dir()
         assert SHIP_TESTS_DIR.is_dir()
+        assert SHIP_STEPS_DIR.is_dir()
+        assert SHIP_BLUEPRINT_FILE.is_file()
         assert SHIP_SKILL_FILE.is_file()
         assert (REPO_ROOT / ".claude" / "skills" / "ship" / "SKILL.md").is_file()
         prompts = {path.name for path in SHIP_PROMPTS_DIR.glob("*.md")}
         assert prompts == EXPECTED_SHIP_PROMPTS
+        steps = {path.name for path in SHIP_STEPS_DIR.glob("*.yml")}
+        assert steps == EXPECTED_SHIP_STEPS
+
+    def test_ship_steps_and_blueprint_paths_exist(self) -> None:
+        blueprint_text = SHIP_BLUEPRINT_FILE.read_text(encoding="utf-8")
+        used_steps = {f"{match['step']}.yml" for match in SHIP_USES_REF.finditer(blueprint_text)}
+        assert used_steps == EXPECTED_SHIP_STEPS
+        for step_name in sorted(EXPECTED_SHIP_STEPS):
+            step_path = SHIP_STEPS_DIR / step_name
+            matches = list(SHIP_CATALOG_PATH.finditer(step_path.read_text(encoding="utf-8")))
+            assert matches, f"{step_name} names no ship prompt or script path"
+            for match in matches:
+                assert (REPO_ROOT / match.group(0)).is_file(), f"{step_name} names missing path {match.group(0)}"
 
     def test_ship_prompts_document_stage_envelope(self) -> None:
         required_tokens = (".agentic/ship/stage.json", '"stage"', '"disposition"', '"body_sha"', '"head_sha"')
@@ -210,7 +245,12 @@ class ShipBundleTests:
                 assert token in text, f"{prompt_name} is missing required stage envelope token {token}"
 
     def test_ship_bundle_references_no_versioned_sdlc_bundle(self) -> None:
-        ship_files = [*_bundle_files(SHIP_PROMPTS_DIR), SHIP_SKILL_FILE]
+        ship_files = [
+            *_bundle_files(SHIP_PROMPTS_DIR),
+            *sorted(SHIP_STEPS_DIR.glob("*.yml")),
+            SHIP_BLUEPRINT_FILE,
+            SHIP_SKILL_FILE,
+        ]
         offenders = [
             (path.relative_to(REPO_ROOT).as_posix(), match.group(0))
             for path in ship_files

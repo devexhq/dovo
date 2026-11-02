@@ -24,7 +24,13 @@ def _manager() -> LiveDisplayManager:
 
 def _terminal_console(output: io.StringIO) -> Console:
     """Build an interactive console whose Live frames are captured in output, since render_rich cannot drive Live."""
-    return Console(force_terminal=True, color_system=None, width=160, file=output)
+    return Console(
+        force_terminal=True,
+        color_system=None,
+        width=160,
+        file=output,
+        _environ={"TERM": "xterm-256color", "COLUMNS": "160"},
+    )
 
 
 class LiveDisplayManagerLoopTests:
