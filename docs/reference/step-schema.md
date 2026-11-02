@@ -147,7 +147,7 @@ Repeats the steps in `do` until an `until` condition is met:
 
 A `when` list, an `until` list, an `if` block's `condition` and a `${{ ... }}` / `{{ ... }}` placeholder body all share one grammar: operands joined by operators, in one of these forms, loosest-binding first:
 
-- `left || right` and `left && right` — logical or/and. `||` and `&&` group to the left (`a || b || c` is `(a || b) || c`) and never chain into one another without parentheses changing the grouping; `&&` binds tighter than `||`.
+- `left || right` and `left && right` — logical or/and. `||` and `&&` group to the left (`a || b || c` is `(a || b) || c`), and `&&` binds tighter than `||`, so `a || b && c` is `a || (b && c)`.
 - `left <op> right` — one comparison; a comparison does not chain, so `a == b && b == c` is written out, never `a == b == c`.
 - `!value` — negation. `!` binds to the next `!` or to one value (a call, a projection, an operand or a parenthesised group), never to a whole comparison: `!a == b` reads as `(!a) == b`, so negating a comparison needs parentheses: `!(a == b)`.
 - `(expression)` — grouping; parentheses leave no node of their own in the parsed tree.
@@ -156,16 +156,18 @@ A `when` list, an `until` list, an `if` block's `condition` and a `${{ ... }}` /
 
 | Operator | Compares |
 |---|---|
-| `==`, `!=` | Equal or not. Both sides compare as numbers when both are a number or a numeric string (an integer or a decimal); otherwise by value. |
-| `<`, `<=`, `>`, `>=` | Order. True only when both sides are a number or a numeric string; otherwise always false. |
-| `contains` | Infix substring or membership: a string's substring, or a list's, dict's, set's or tuple's member, else a substring check on both sides' text. |
+| `==`, `!=` | Equal or not. Both sides compare as numbers when one side is a number and the other a number or a numeric string (an integer or a decimal); otherwise by value, so two strings compare as text and `"3.0" == "3"` is false. |
+| `<`, `<=`, `>`, `>=` | Order. True only when one side is a number and the other a number or a numeric string; otherwise always false, two numeric strings included, so ordering one recorded output against another is always false. |
+| `contains` | Infix substring or membership: a string's substring, an item of a list or a key of an object, else a substring check on both sides' text. |
 | `in`, `not in` | Right side is a bracketed list, `[a, b, c]`. `in` passes when any item equals the left side under `==`; `not in` when every item does under `!=`. |
 
-A value is one of a quoted string, a number, `true`/`false` (any case), or an operand: a dotted name such as `steps.check.exit_code`, read in the roots the surrounding clause allows (see [`when` Guards](#when-guards) for conditions). A value of more than one unquoted word must be quoted, as `"needs edits"` is in `steps.a.status == "needs edits"`.
+A `null` on either side, such as a JSON `null` read through an `outputs` key or an artifact's content, makes every comparison false, `!=` included.
+
+A value is one of a quoted string, a number, `true`/`false` (any case), or an operand: a dotted name such as `steps.check.exit_code`, read in the roots the surrounding clause allows (see [`when` Guards](#when-guards) for conditions). A name segment holding a character other than a letter, a digit, `_` or `-`, such as a step id or output key with a dot in it, is written as a quoted bracket key: `steps['build.linux'].outputs['image.tag']`. A placeholder can also pick a finished step by its position in run order with an integer index, `steps[0]` for the first and `steps[-1]` for the most recent (see [Interpolation Paths](#interpolation-paths)); a condition cannot. A value of more than one unquoted word must be quoted, as `"needs edits"` is in `steps.a.status == "needs edits"`.
 
 ### Truthiness and absent values
 
-An operand has no value (is absent) when the step, output or artifact it names has not run, finished, published or been recorded yet. An absent value is always false, and a comparison or `in`/`not in` built on one is unresolved rather than simply false.
+An operand has no value (is absent) when the step, output or artifact it names has not run, finished, published or been recorded yet. An absent value is always false, and a comparison or `in`/`not in` built on one is unresolved: it is false whatever its operator, and a `when` it decides skips its step as [`when_unresolved`](#when-guards). Negating it gives true, so with step `a` not run, `!(steps.a.outputs.x in ["p"])` is true while `steps.a.outputs.x not in ["p"]` is false.
 
 `false`, `0`, `0.0`, `""`, `null` and an absent value are false. Every other value is true, including the strings `"0"` and `"false"`, and an empty list `[]`.
 
@@ -179,13 +181,15 @@ An operand has no value (is absent) when the step, output or artifact it names h
 | `length(value)` | 1 | The length of a string, list or object. |
 | `trim(text)` | 1 | `text` without its leading and trailing whitespace. |
 
-A function given an absent argument, or an argument of a type it does not take, returns an absent value rather than failing to load.
+A function given an absent argument, or an argument of a type it does not take, returns an absent value at run time instead of failing the run; `fromJSON` of text that is not JSON is absent too.
 
 `<path>.*.<key>` projects: it reads `<key>` from every object of the array `<path>` holds (a string value is read as JSON first), skipping objects that miss the key, and is absent when `<path>` is not an array. A further `.<key2>` after the first key chains to read a nested key from each object, so `steps.list.outputs.items.*.name.first` reads `name.first` from every item. The path before `.*` is the operand a `when` or `until` condition checks against its readable roots.
 
 ### Placeholder `||` defaults and rendering
 
-Inside a placeholder, a lone path that no provider defines leaves the whole placeholder as written, but the same path inside a larger expression reads as absent, so `{{ inputs.name || 'anonymous' }}` renders `anonymous` when `inputs.name` is undefined: `||` takes its left side only when it is truthy, and an undefined or absent path is never truthy.
+A placeholder runs from `{{` (or `${{`) to the first `}}` outside a quoted string, so `{{ inputs.mode == 'a}}b' }}` is one placeholder; when a quote in the body is never closed, it ends at the first `}}`.
+
+A placeholder stays as written when its body is a lone path no namespace defines, such as a misspelled input or a single unknown word, or a lone quoted string, number or `true`/`false`. The same unknown path inside a larger expression reads as absent, so `{{ inputs.name || 'anonymous' }}` renders `anonymous` when `inputs.name` is undefined: `||` takes its left side only when it is truthy, and an undefined or absent path is never truthy.
 
 Every value renders the way a recorded step output does: a string as is, an absent or `null` value as the empty string, a boolean as `true` or `false`, a list or object as JSON, and anything else as plain text.
 
@@ -201,7 +205,7 @@ Every value renders the way a recorded step output does: a string as is, an abse
 | Unterminated string, or an unsupported `\` escape | `steps.a.stdout == "abc` |
 | Unsupported number: a leading `+`, a date, or scientific notation | `steps.a.exit_code == 1e3` |
 | Missing or unexpected `(`, `)`, `[`, `]`, or a value after an operator | `steps.a.exit_code ==` |
-| Nesting past 32 `(`/`!` deep, or past 64 `&&`/`\|\|` joins in all | — |
+| Nesting past 32 `(`/`!` deep, or past 64 joins in all | — |
 
 A `when` or `until` list, and an `if` block's `condition`, reject a syntactically valid expression too when an operand reads a root or step the clause cannot, or no operand of the whole expression reads step, iteration or artifact state: see [`when` Guards](#when-guards).
 

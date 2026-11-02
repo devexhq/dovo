@@ -100,7 +100,7 @@ Placeholders are replaced in these step fields:
 
 ### Interpolation Namespaces & Behavior
 * **Inputs**: `${{ inputs.<name> }}` or `{{ inputs.<name> }}` insert declared input values.
-* **Execution Metadata**: `step.*`, `blueprint.*`, `previous_step.*`, and historical `steps[...]` / `steps.<id>.*` insert run-time properties (see [Working with Steps](working-with-steps.md#runtime-execution-metadata--environment-variables)).
+* **Execution Metadata**: `step.*`, `blueprint.*`, `previous_step.*`, and historical `steps[...]` / `steps.<id>.*` insert run-time properties (see [Working with Steps](working-with-steps.md#runtime-execution-metadata-environment-variables)).
 * If a placeholder is only a reference to an unknown name, the placeholder is left as literal text.
 * A placeholder body can also be a full expression, written with the same grammar as a `when` condition: `${{ inputs.name || 'anonymous' }}` renders `anonymous` when `inputs.name` is undefined, since `||` falls back to its right side whenever the left is falsy or undefined, unlike a lone unknown name. A value renders the way a recorded step output does: a string as is, an absent or `null` value as the empty string, a boolean as `true` or `false`, and a list or object as JSON. See [Expression Grammar](../reference/step-schema.md#expression-grammar) for the operators, functions and `||` defaults a placeholder body may use.
 
