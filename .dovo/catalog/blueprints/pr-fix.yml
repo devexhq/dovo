@@ -100,10 +100,7 @@ steps:
     type: loop
     max_iterations: 5
     until:
-      - steps.fix.outputs.status != "unfixable"
-      - steps.fix.outputs.status != "timeout"
-      - steps.fix.outputs.status != "provider_error"
-      - steps.fix.outputs.status != "blocked"
+      - steps.fix.outputs.status not in ["unfixable", "timeout", "provider_error", "blocked"]
       - steps.verify.exit_code == 0
     on_max_iterations: prompt_user
     do:
