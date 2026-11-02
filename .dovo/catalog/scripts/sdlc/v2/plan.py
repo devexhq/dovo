@@ -85,13 +85,6 @@ with `--body-sha`, it refuses, naming both shas, when the issue's description
 is no longer the one the check read. The work plan, not a comment, records
 which description the check read (`workplan.py ready`).
 
-`pass-through --record FILE` writes a fingerprint of .agentic/plan.md,
-plan.json and the phase files to FILE before a stretch of steps that is to pass
-straight through (the slice phasing of a plan with two or more slices, the
-planning steps of an already phased slice); `pass-through --check FILE` after
-it refuses when the fingerprint changed, then removes FILE, and passes when
-FILE is absent, since the steps then did real work.
-
 Every refusal is one line on stderr and exit code 1.
 """
 
@@ -119,7 +112,6 @@ from plan_formats import (
     requirements_json,
 )
 
-AGENTIC = Path(".agentic")
 PLAN_JSON = Path(".agentic/plan.json")
 PLAN_MD = Path(".agentic/plan.md")
 PHASES_DIR = Path(".agentic/phases")
@@ -954,36 +946,8 @@ def requirements(issue: int, out: Path, share: dict[str, str | None] | None = No
     out.write_text(json.dumps(requirements_json(issue, found), indent=2) + "\n", encoding="utf-8")
 
 
-def fingerprint(agentic: Path) -> str:
-    """Return the sha256 of agentic's plan.md, plan.json and phase files, each named, absent ones included."""
-    digest = hashlib.sha256()
-    for path in [agentic / "plan.md", agentic / "plan.json", *sorted((agentic / "phases").glob("phase-*.json"))]:
-        digest.update(f"{path.relative_to(agentic)}\0".encode())
-        digest.update(path.read_bytes() if path.is_file() else b"<absent>")
-        digest.update(b"\0")
-    return digest.hexdigest()
-
-
-def pass_through_check(record: Path, agentic: Path) -> None:
-    """Refuse when agentic's plan changed since `pass-through --record` wrote record, then remove record.
-
-    Nothing recorded means the steps in between did real work, so there is nothing to check.
-
-    Raises:
-        PlanError: The plan or a phase file changed during steps that were to pass straight through.
-    """
-    if not record.is_file():
-        return
-    if record.read_text(encoding="utf-8").strip() != fingerprint(agentic):
-        raise PlanError(
-            f"{agentic}/plan.md, plan.json or a phase file changed during steps that were to pass straight "
-            "through; a step that should have changed nothing did."
-        )
-    record.unlink()
-
-
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser for the check-slices, check-questions, questions, check-breakdown, prior-decisions, requirements, body-sha, unchanged and pass-through subcommands."""
+    """Return the parser for the check-slices, check-questions, questions, check-breakdown, prior-decisions, requirements, body-sha and unchanged subcommands."""
     parser = argparse.ArgumentParser(description="Check the slice plan in .agentic/plan.json and keep its decisions.")
     commands = parser.add_subparsers(dest="command", required=True)
     slices = commands.add_parser("check-slices", help="Refuse slices that leave out an outcome or deliver it twice.")
@@ -1021,10 +985,6 @@ def build_parser() -> argparse.ArgumentParser:
     unchanged.add_argument("--body-sha", required=True, help="The body_sha of the description the ready check read.")
     sha = commands.add_parser("body-sha", help="Print the body_sha of an issue's description.")
     sha.add_argument("--issue", type=int, required=True, help="The issue whose description to hash.")
-    guard = commands.add_parser("pass-through", help="Record, or check, that steps passing through change no plan.")
-    mode = guard.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--record", type=Path, help="Write the plan's fingerprint here before the steps.")
-    mode.add_argument("--check", type=Path, help="Refuse when the plan differs from the fingerprint here.")
     return parser
 
 
@@ -1036,18 +996,6 @@ def _dispatch_ready(args: argparse.Namespace) -> bool:
         sys.stdout.write(body_sha(description(args.issue)) + "\n")
     else:
         return False
-    return True
-
-
-def _dispatch_pass_through(args: argparse.Namespace) -> bool:
-    """Run the pass-through subcommand when args names it; return False for any other."""
-    if args.command != "pass-through":
-        return False
-    if args.record is not None:
-        args.record.parent.mkdir(parents=True, exist_ok=True)
-        args.record.write_text(fingerprint(AGENTIC) + "\n", encoding="utf-8")
-    else:
-        pass_through_check(args.check, AGENTIC)
     return True
 
 
@@ -1064,7 +1012,7 @@ def _dispatch_questions(args: argparse.Namespace) -> bool:
 
 def dispatch(args: argparse.Namespace) -> None:
     """Run the subcommand args names."""
-    if _dispatch_ready(args) or _dispatch_pass_through(args) or _dispatch_questions(args):
+    if _dispatch_ready(args) or _dispatch_questions(args):
         return
     if args.command == "check-slices":
         check_slices(args.plan, args.requirements)
