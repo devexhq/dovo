@@ -12,6 +12,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import yaml
 
 from tests.lint.astlib import REPO_ROOT
 
@@ -684,3 +685,281 @@ class PublicationGateAndReportTests:
         _mock_git_and_issue(monkeypatch, head_sha=NEW_HEAD_SHA, issue_body=ISSUE_BODY)
         assert SHIP.main(["publication-gate"]) == 0
         assert json.loads(capsys.readouterr().out) == {"outcome": "incomplete"}
+
+
+def _seed_permitted_publication(
+    root: Path, *, head_sha: str = HEAD_SHA, permitted: bool = True, outcome: str = "ready"
+) -> None:
+    """Write .agentic/ship/publication.json in root."""
+    pub_path = root / ".agentic" / "ship" / "publication.json"
+    pub_path.parent.mkdir(parents=True, exist_ok=True)
+    pub_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "permitted": permitted,
+                "outcome": outcome,
+                "head_sha": head_sha,
+                "body_sha": ISSUE_BODY_SHA,
+                "live_body_sha": ISSUE_BODY_SHA,
+                "reason": "Gated",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _validate_cmd_response(cmd: tuple[str, ...], *, fail_ruff_check: bool) -> subprocess.CompletedProcess[str]:
+    """Return a fake CompletedProcess for one command during `ship_state.py validate`."""
+    if cmd[:3] == ("git", "rev-parse", "HEAD") or cmd[:2] == ("git", "merge-base"):
+        return _completed(cmd, stdout=f"{HEAD_SHA}\n")
+    if cmd[:2] in (("git", "diff"), ("git", "ls-files")):
+        return _completed(cmd, stdout="")
+    if fail_ruff_check and cmd[:4] == ("uv", "run", "ruff", "check"):
+        return _completed(cmd, stdout="foo.py:1:1: F401 unused import\n", returncode=1)
+    return _completed(cmd, stdout="ok\n", returncode=0)
+
+
+def _mock_validate_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    fail_ruff_check: bool = False,
+    captured_envs: list[dict[str, str]] | None = None,
+) -> None:
+    """Patch subprocess.run for `ship_state.py validate` tests."""
+
+    def fake_run(
+        args: Sequence[str],
+        *,
+        cwd: Path | None = None,
+        check: bool = True,
+        capture_output: bool = True,
+        text: bool = True,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        del cwd, check, capture_output, text
+        if env is not None and captured_envs is not None:
+            captured_envs.append(dict(env))
+        return _validate_cmd_response(tuple(args), fail_ruff_check=fail_ruff_check)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+
+def _publish_cmd_response(
+    cmd: tuple[str, ...],
+    *,
+    workspace: Path,
+    pr_py_rc: int,
+    push_rc: int,
+) -> subprocess.CompletedProcess[str]:
+    """Return a fake CompletedProcess for one git/gh/uv command during `ship_state.py publish`."""
+    if cmd[:3] == ("git", "rev-parse", "HEAD"):
+        return _completed(cmd, stdout=f"{HEAD_SHA}\n")
+    if cmd[:2] == ("git", "status"):
+        return _completed(cmd, stdout="")
+    if cmd[:2] == ("git", "push"):
+        return _completed(cmd, stderr="network error" if push_rc else "", returncode=push_rc)
+    if cmd[:4] == ("uv", "run", "python", "scripts/pr.py"):
+        if pr_py_rc == 0:
+            (workspace / ".agentic/pr-url").write_text("https://github.com/devexhq/dovo/pull/1372\n", encoding="utf-8")
+        return _completed(cmd, stderr="ambiguous failure" if pr_py_rc else "", returncode=pr_py_rc)
+    if cmd[:4] == ("uv", "run", "python", "scripts/publish_review.py"):
+        return _completed(
+            cmd, stdout="Posted review comment: https://github.com/devexhq/dovo/pull/1372#issuecomment-99\n"
+        )
+    if cmd[:3] in (("gh", "pr", "view"), ("gh", "pr", "list")):
+        pr_payload = {
+            "number": 1372,
+            "headRefName": "luckner/1367-ship",
+            "headRefOid": HEAD_SHA,
+            "baseRefName": "main",
+            "url": "https://github.com/devexhq/dovo/pull/1372",
+            "state": "OPEN",
+            "body": "Closes #1367",
+        }
+        out = json.dumps([pr_payload] if cmd[2] == "list" else pr_payload)
+        return _completed(cmd, stdout=out)
+    return _completed(cmd)
+
+
+class ValidateAndPublishTests:
+    def test_validate_runs_gates_with_sanitized_env_and_writes_passed_stage_envelope(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _seed_prepared_state(workspace)
+        monkeypatch.setenv("DOVO_STEP_ID", "validate")
+        captured_envs: list[dict[str, str]] = []
+        _mock_validate_subprocess(monkeypatch, captured_envs=captured_envs)
+
+        assert SHIP.main(["validate"]) == 0
+        assert json.loads(capsys.readouterr().out) == {"disposition": "passed", "head_sha": HEAD_SHA}
+        stage = _read_json(workspace / ".agentic/ship/stage.json")
+        assert stage["stage"] == "validate"
+        assert stage["disposition"] == "passed"
+        assert stage["body_sha"] == ISSUE_BODY_SHA
+        assert stage["head_sha"] == HEAD_SHA
+        assert (workspace / ".agentic/ship/validate.md").is_file()
+        assert captured_envs
+        assert "DOVO_STEP_ID" not in captured_envs[0]
+        assert captured_envs[0]["COLUMNS"] == "160"
+
+    def test_validate_records_checks_failed_with_zero_exit_code_when_gate_fails(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _seed_prepared_state(workspace)
+        _mock_validate_subprocess(monkeypatch, fail_ruff_check=True)
+
+        assert SHIP.main(["validate"]) == 0
+        assert json.loads(capsys.readouterr().out) == {"disposition": "checks_failed", "head_sha": HEAD_SHA}
+        stage = _read_json(workspace / ".agentic/ship/stage.json")
+        assert stage["disposition"] == "checks_failed"
+        assert "ruff check (exit 1)" in str(stage["summary"])
+        assert "F401 unused import" in (workspace / ".agentic/ship/validate.md").read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize(
+        ("permitted", "pub_head", "dirty_out"),
+        [
+            pytest.param(False, HEAD_SHA, "", id="unpermitted-publication"),
+            pytest.param(True, NEW_HEAD_SHA, "", id="mismatched-head-sha"),
+            pytest.param(True, HEAD_SHA, " M src/dovo/app.py\n", id="dirty-worktree"),
+        ],
+    )
+    def test_publish_refuses_when_gate_or_worktree_precondition_fails(
+        self,
+        permitted: bool,
+        pub_head: str,
+        dirty_out: str,
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _seed_prepared_state(workspace)
+        _seed_permitted_publication(workspace, head_sha=pub_head, permitted=permitted)
+
+        def fake_run(
+            args: Sequence[str],
+            *,
+            cwd: Path | None = None,
+            check: bool = True,
+            capture_output: bool = True,
+            text: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, check, capture_output, text
+            cmd = tuple(args)
+            if cmd[:3] == ("git", "rev-parse", "HEAD"):
+                return _completed(cmd, stdout=f"{HEAD_SHA}\n")
+            return _completed(cmd, stdout=dirty_out)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert SHIP.main(["publish"]) == 1
+
+    @pytest.mark.parametrize("pr_py_rc", [0, 1], ids=["clean-pr-py", "reconciled-after-ambiguous-pr-py-failure"])
+    def test_publish_new_pr_and_reconciles_remote_state_on_ambiguous_failure(
+        self, pr_py_rc: int, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _seed_prepared_state(workspace)
+        _seed_permitted_publication(workspace, head_sha=HEAD_SHA)
+        monkeypatch.setenv("DOVO_SESSION_ID", "dovo_session_1")
+        commands_run: list[tuple[str, ...]] = []
+
+        def fake_run(
+            args: Sequence[str],
+            *,
+            cwd: Path | None = None,
+            check: bool = True,
+            capture_output: bool = True,
+            text: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, check, capture_output, text
+            cmd = tuple(args)
+            commands_run.append(cmd)
+            return _publish_cmd_response(cmd, workspace=workspace, pr_py_rc=pr_py_rc, push_rc=0)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        assert SHIP.main(["publish"]) == 0
+        assert json.loads(capsys.readouterr().out) == {
+            "pr_number": "1372",
+            "url": "https://github.com/devexhq/dovo/pull/1372",
+            "head_sha": HEAD_SHA,
+        }
+        pr_record = _read_json(workspace / ".agentic/ship/pr.json")
+        assert pr_record == {
+            "pr_number": 1372,
+            "url": "https://github.com/devexhq/dovo/pull/1372",
+            "branch": "luckner/1367-ship",
+            "head_sha": HEAD_SHA,
+            "review_comment_url": "https://github.com/devexhq/dovo/pull/1372#issuecomment-99",
+        }
+        assert (
+            "uv",
+            "run",
+            "python",
+            "scripts/publish_review.py",
+            "--pr",
+            "https://github.com/devexhq/dovo/pull/1372",
+            "--session",
+            "dovo_session_1",
+        ) in commands_run
+
+    def test_publish_existing_pr_pushes_explicit_refspec_and_edits_pr(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_prepared_state(workspace)
+        _seed_permitted_publication(workspace, head_sha=HEAD_SHA)
+        contract_path = workspace / ".agentic/ship/contract.json"
+        contract = _read_json(contract_path)
+        contract["pull_request"] = {
+            "pr_number": 1372,
+            "branch": "luckner/1367-ship",
+            "head_sha": HEAD_SHA,
+            "base_branch": "main",
+            "url": "https://github.com/devexhq/dovo/pull/1372",
+        }
+        contract_path.write_text(json.dumps(contract), encoding="utf-8")
+        (workspace / ".agentic/pr-title").write_text("feat: updated title\n", encoding="utf-8")
+        (workspace / ".agentic/pr-description").write_text("Closes #1367\n", encoding="utf-8")
+        commands_run: list[tuple[str, ...]] = []
+
+        def fake_run(
+            args: Sequence[str],
+            *,
+            cwd: Path | None = None,
+            check: bool = True,
+            capture_output: bool = True,
+            text: bool = True,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, check, capture_output, text
+            cmd = tuple(args)
+            commands_run.append(cmd)
+            return _publish_cmd_response(cmd, workspace=workspace, pr_py_rc=0, push_rc=0)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        assert SHIP.main(["publish"]) == 0
+        assert ("git", "push", "origin", "HEAD:refs/heads/luckner/1367-ship") in commands_run
+        assert (
+            "gh",
+            "pr",
+            "edit",
+            "1372",
+            "--title",
+            "feat: updated title",
+            "--body",
+            "Closes #1367",
+        ) in commands_run
+
+
+class ShipCommandStepsTests:
+    @pytest.mark.parametrize(
+        "step_name",
+        ["prepare", "next", "record", "validate", "publication-gate", "publish", "report"],
+    )
+    def test_command_step_yaml_invokes_ship_state_subcommand_with_abort_policy(self, step_name: str) -> None:
+        step_path = REPO_ROOT / ".dovo" / "catalog" / "steps" / "ship" / f"{step_name}.yml"
+        assert step_path.is_file()
+        parsed = yaml.safe_load(step_path.read_text(encoding="utf-8"))
+        assert isinstance(parsed, dict)
+        assert parsed["id"] == step_name
+        assert parsed["type"] == "command"
+        assert parsed["on_failure"] == "abort"
+        assert parsed["command"] == f"uv run python .dovo/catalog/scripts/sdlc/ship/ship_state.py {step_name}"

@@ -1,0 +1,7 @@
+id: next
+name: Read the next stage from the recorded result
+description: Clear stale stage.json and output the next stage action or pending human question
+type: command
+command: uv run python .dovo/catalog/scripts/sdlc/ship/ship_state.py next
+timeout_seconds: 60
+on_failure: abort

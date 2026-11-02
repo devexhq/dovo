@@ -10,19 +10,36 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Final
 
-SHIP_DIR: Final[Path] = Path(".agentic/ship")
+AGENTIC_DIR: Final[Path] = Path(".agentic")
+PR_URL_FILE: Final[Path] = AGENTIC_DIR / "pr-url"
+PR_TITLE_FILE: Final[Path] = AGENTIC_DIR / "pr-title"
+PR_DESCRIPTION_FILE: Final[Path] = AGENTIC_DIR / "pr-description"
+SHIP_DIR: Final[Path] = AGENTIC_DIR / "ship"
 CONTRACT_JSON: Final[Path] = SHIP_DIR / "contract.json"
 PROGRESS_JSON: Final[Path] = SHIP_DIR / "progress.json"
 STAGE_JSON: Final[Path] = SHIP_DIR / "stage.json"
 QUESTION_MD: Final[Path] = SHIP_DIR / "question.md"
+VALIDATE_MD: Final[Path] = SHIP_DIR / "validate.md"
 PUBLICATION_JSON: Final[Path] = SHIP_DIR / "publication.json"
 PR_JSON: Final[Path] = SHIP_DIR / "pr.json"
 RESULT_JSON: Final[Path] = SHIP_DIR / "result.json"
 REPORT_MD: Final[Path] = SHIP_DIR / "report.md"
 REPORTS_DIR: Final[Path] = SHIP_DIR / "reports"
+
+STEP_ENV_PREFIXES: Final[tuple[str, ...]] = (
+    "DOVO_STEP",
+    "DOVO_STEPS",
+    "DOVO_ITERATION",
+    "DOVO_BLUEPRINT",
+    "DOVO_PREVIOUS",
+    "DOVO_TEMP",
+    "DOVO_RUNNER",
+    "DOVO_OUTPUT",
+)
 
 MAX_REVIEW_ROUNDS: Final[int] = 3
 ACTIONS: Final[tuple[str, ...]] = ("assess", "investigate", "plan", "implement", "validate", "review", "ask")
@@ -676,6 +693,245 @@ def cmd_publication_gate() -> int:
     return 0
 
 
+def _sanitized_gate_env() -> dict[str, str]:
+    """Return an environment mapping with per-step DOVO_* variables removed and terminal width set."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(STEP_ENV_PREFIXES)}
+    env["COLUMNS"] = "160"
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
+
+
+def _changed_python_files(base_ref: str) -> list[str]:
+    """Return sorted changed or untracked Python file paths relative to merge-base with base_ref."""
+    mb = _run_cmd("git", "merge-base", base_ref, "HEAD", check=False)
+    base = mb.stdout.strip() if mb.returncode == 0 and mb.stdout.strip() else base_ref
+    diff = _run_cmd("git", "diff", "--name-only", "--diff-filter=ACMR", base, check=False).stdout.splitlines()
+    untracked = _run_cmd("git", "ls-files", "--others", "--exclude-standard", check=False).stdout.splitlines()
+    paths = {p.strip() for p in [*diff, *untracked] if p.strip().endswith(".py") and Path(p.strip()).is_file()}
+    return sorted(paths)
+
+
+def _quality_gate_commands(base_ref: str, site_dir: Path, pytest_basetemp: Path) -> list[tuple[str, tuple[str, ...]]]:
+    """Build the ordered quality gate (label, command_tuple) pairs."""
+    gates: list[tuple[str, tuple[str, ...]]] = [
+        ("ruff format", ("uv", "run", "ruff", "format", "--check", ".")),
+        ("ruff check", ("uv", "run", "ruff", "check", ".")),
+        ("ty check", ("uv", "run", "ty", "check", "src", "tests", "e2e", ".dovo/catalog/scripts")),
+        ("mkdocs build", ("uv", "run", "python", "-m", "mkdocs", "build", "--strict", "--site-dir", str(site_dir))),
+    ]
+    changed_py = _changed_python_files(base_ref)
+    if changed_py:
+        gates.append(
+            (
+                "complexipy",
+                ("uv", "run", "complexipy", *changed_py, "--max-complexity-allowed", "10", "--failed", "--plain"),
+            )
+        )
+    gates.append(
+        (
+            "pytest",
+            (
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "pytest",
+                "tests/",
+                "--cov=dovo",
+                "--cov-report=term-missing",
+                f"--basetemp={pytest_basetemp}",
+            ),
+        )
+    )
+    return gates
+
+
+def _run_one_gate(label: str, cmd: tuple[str, ...], env: dict[str, str]) -> tuple[str | None, list[str]]:
+    """Run one gate command and return (failure_label_or_None, markdown_lines)."""
+    res = subprocess.run(cmd, check=False, capture_output=True, text=True, env=env)
+    Path("complexipy-results.json").unlink(missing_ok=True)
+    status = "PASSED" if res.returncode == 0 else f"FAILED (exit {res.returncode})"
+    failure = None if res.returncode == 0 else f"{label} (exit {res.returncode})"
+    combined = "\n".join(part.strip() for part in (res.stdout, res.stderr) if part and part.strip())
+    lines = [f"## {label} — {status}", "", f"Command: `{' '.join(cmd)}`", ""]
+    if combined:
+        lines.extend(["```text", combined[-4000:], "```", ""])
+    return failure, lines
+
+
+def _run_gate_commands(gates: list[tuple[str, tuple[str, ...]]], env: dict[str, str]) -> tuple[list[str], list[str]]:
+    """Execute each gate command and return (failed_labels, markdown_sections)."""
+    failed: list[str] = []
+    sections: list[str] = ["# Ship Validation Report", ""]
+    for label, cmd in gates:
+        failure, lines = _run_one_gate(label, cmd, env)
+        if failure is not None:
+            failed.append(failure)
+        sections.extend(lines)
+    return failed, sections
+
+
+def cmd_validate(base_ref: str) -> int:
+    """Execute `ship/validate`: run repository quality gates and write validate.md and stage.json."""
+    contract = _load_json_dict(CONTRACT_JSON)
+    body_sha = _expected_body_sha(contract)
+    if not body_sha:
+        raise ShipStateError("contract.json is missing issue.body_sha.")
+    head_sha = _current_head_sha()
+    env = _sanitized_gate_env()
+    with tempfile.TemporaryDirectory(prefix="dovo-ship-validate-") as tmp:
+        tmp_root = Path(tmp)
+        gates = _quality_gate_commands(base_ref, tmp_root / "site", tmp_root / "pytest")
+        failed, sections = _run_gate_commands(gates, env)
+    disposition = "checks_failed" if failed else "passed"
+    summary = f"Failed quality gates: {', '.join(failed)}" if failed else "All quality gates passed."
+    _atomic_write_text(VALIDATE_MD, "\n".join(sections).rstrip() + "\n")
+    _atomic_write_json(
+        STAGE_JSON,
+        {
+            "stage": "validate",
+            "disposition": disposition,
+            "summary": summary,
+            "body_sha": body_sha,
+            "head_sha": head_sha,
+            "report_path": VALIDATE_MD.as_posix(),
+        },
+    )
+    _emit_outputs({"disposition": disposition, "head_sha": head_sha})
+    return 0
+
+
+def _verify_publication_permitted(publication: dict[str, object], head_sha: str) -> None:
+    """Verify publication.json permits publishing at current HEAD and the working tree is clean."""
+    if publication.get("permitted") is not True or publication.get("outcome") != "ready":
+        raise ShipStateError("Publication is not permitted by '.agentic/ship/publication.json'.")
+    gated_sha = str(publication.get("head_sha", "")).strip()
+    if gated_sha != head_sha:
+        raise ShipStateError(f"Current HEAD '{head_sha}' does not match gated head_sha '{gated_sha}'.")
+    _ensure_current_worktree_clean()
+
+
+def _fetch_pr_metadata(pr_ref: str) -> dict[str, object] | None:
+    """Return normalized PR metadata via `gh pr view`, or None when lookup fails."""
+    res = _run_cmd(
+        "gh", "pr", "view", pr_ref, "--json", "number,headRefName,headRefOid,baseRefName,url,state", check=False
+    )
+    if res.returncode != 0 or not res.stdout.strip():
+        return None
+    try:
+        parsed = json.loads(res.stdout)
+    except ValueError:
+        return None
+    return _pr_dict(parsed) if isinstance(parsed, dict) else None
+
+
+def _sync_pr_metadata_if_present(pr_number: int) -> None:
+    """Update PR title and description via gh pr edit when .agentic/pr-title and .agentic/pr-description exist."""
+    if not PR_TITLE_FILE.is_file() or not PR_DESCRIPTION_FILE.is_file():
+        return
+    title = PR_TITLE_FILE.read_text(encoding="utf-8").strip()
+    description = PR_DESCRIPTION_FILE.read_text(encoding="utf-8").strip()
+    if not title or not description:
+        return
+    edit = _run_cmd("gh", "pr", "edit", str(pr_number), "--title", title, "--body", description, check=False)
+    if edit.returncode != 0 and _fetch_pr_metadata(str(pr_number)) is None:
+        detail = (edit.stderr or edit.stdout).strip()
+        raise ShipStateError(f"Failed to update PR #{pr_number}: {detail}")
+
+
+def _publish_existing_pr(existing_pr: dict[str, object], head_sha: str) -> dict[str, object]:
+    """Push HEAD to an existing PR branch via explicit refspec and reconcile remote state on failure."""
+    pr_number = _int_field(existing_pr, "pr_number")
+    branch = str(existing_pr.get("branch", "")).strip()
+    if pr_number <= 0 or not branch:
+        raise ShipStateError("contract.json pull_request is missing 'pr_number' or 'branch'.")
+    push = _run_cmd("git", "push", "origin", f"HEAD:refs/heads/{branch}", check=False)
+    remote = _fetch_pr_metadata(str(pr_number))
+    if push.returncode != 0 and (remote is None or str(remote.get("head_sha", "")) != head_sha):
+        detail = (push.stderr or push.stdout).strip()
+        raise ShipStateError(f"git push to '{branch}' failed: {detail}")
+    _sync_pr_metadata_if_present(pr_number)
+    resolved = remote or existing_pr
+    url = str(resolved.get("url", existing_pr.get("url", ""))).strip()
+    _atomic_write_text(PR_URL_FILE, f"{url}\n")
+    return {"pr_number": pr_number, "url": url, "branch": branch, "head_sha": head_sha}
+
+
+def _reconcile_or_raise_new_pr(issue_number: int, head_sha: str, error_detail: str) -> dict[str, object]:
+    """Check whether a PR for issue_number or current HEAD already landed on GitHub after an ambiguous pr.py failure."""
+    discovered = _resolve_pull_request(issue_number, "")
+    if discovered is not None and str(discovered.get("head_sha", "")) == head_sha:
+        url = str(discovered.get("url", "")).strip()
+        _atomic_write_text(PR_URL_FILE, f"{url}\n")
+        return {
+            "pr_number": _int_field(discovered, "pr_number"),
+            "url": url,
+            "branch": str(discovered.get("branch", "")),
+            "head_sha": head_sha,
+        }
+    raise ShipStateError(f"scripts/pr.py failed and no matching remote PR was found: {error_detail}")
+
+
+def _publish_new_pr(issue_number: int, head_sha: str) -> dict[str, object]:
+    """Create or reuse a PR via scripts/pr.py and reconcile remote state on ambiguous failure."""
+    res = _run_cmd("uv", "run", "python", "scripts/pr.py", check=False)
+    if res.returncode != 0:
+        detail = (res.stderr or res.stdout).strip()
+        return _reconcile_or_raise_new_pr(issue_number, head_sha, detail)
+    pr_url = PR_URL_FILE.read_text(encoding="utf-8").splitlines()[0].strip() if PR_URL_FILE.is_file() else ""
+    if not pr_url:
+        raise ShipStateError("scripts/pr.py succeeded but '.agentic/pr-url' is missing or empty.")
+    meta = _fetch_pr_metadata(pr_url)
+    return {
+        "pr_number": _int_field(meta, "pr_number") if isinstance(meta, dict) else 0,
+        "url": pr_url,
+        "branch": str(meta.get("branch", "")) if isinstance(meta, dict) else "",
+        "head_sha": head_sha,
+    }
+
+
+def _publish_review_comment(pr_url: str) -> str:
+    """Post the structured review via scripts/publish_review.py and return the comment URL."""
+    cmd = ["uv", "run", "python", "scripts/publish_review.py", "--pr", pr_url]
+    session_id = os.environ.get("DOVO_SESSION_ID", "").strip()
+    if session_id:
+        cmd.extend(["--session", session_id])
+    res = _run_cmd(*cmd, check=False)
+    if res.returncode != 0:
+        detail = (res.stderr or res.stdout).strip()
+        raise ShipStateError(f"scripts/publish_review.py failed: {detail}")
+    for line in res.stdout.splitlines():
+        if "http://" in line or "https://" in line:
+            return line.split()[-1].strip()
+    return pr_url
+
+
+def cmd_publish() -> int:
+    """Execute `ship/publish`: verify publication gate, push and create/update PR, post review, and write pr.json."""
+    contract = _load_json_dict(CONTRACT_JSON)
+    publication = _load_json_dict(PUBLICATION_JSON)
+    head_sha = _current_head_sha()
+    _verify_publication_permitted(publication, head_sha)
+    issue_number = _contract_issue_number(contract)
+    existing_pr = contract.get("pull_request")
+    if isinstance(existing_pr, dict):
+        pr_info = _publish_existing_pr(existing_pr, head_sha)
+    else:
+        pr_info = _publish_new_pr(issue_number, head_sha)
+    pr_url = str(pr_info.get("url", "")).strip()
+    comment_url = _publish_review_comment(pr_url)
+    pr_record: dict[str, object] = {
+        "pr_number": _int_field(pr_info, "pr_number"),
+        "url": pr_url,
+        "branch": str(pr_info.get("branch", "")),
+        "head_sha": head_sha,
+        "review_comment_url": comment_url,
+    }
+    _atomic_write_json(PR_JSON, pr_record)
+    _emit_outputs({"pr_number": str(pr_record["pr_number"]), "url": pr_url, "head_sha": head_sha})
+    return 0
+
+
 def _require_published_pr(head_sha: str) -> dict[str, object]:
     """Load and verify .agentic/ship/pr.json when publication was permitted."""
     pr_data = _load_json_dict(PR_JSON)
@@ -783,9 +1039,32 @@ def _build_parser() -> argparse.ArgumentParser:
     rec.add_argument("--question-id", default=os.environ.get("SHIP_QUESTION_ID", ""), help="Active question ID.")
     rec.add_argument("--answer", default=os.environ.get("SHIP_ANSWER", ""), help="Human answer text.")
 
+    val = sub.add_parser("validate", help="Run repository quality gates and write stage.json.")
+    val.add_argument("--base", default=os.environ.get("SHIP_BASE_REF", "origin/main"), help="Base git ref.")
+
     sub.add_parser("publication-gate", help="Verify contract, HEAD, validation, and review before publishing.")
+    sub.add_parser("publish", help="Push the gated revision, open or update the PR, and publish the review.")
     sub.add_parser("report", help="Write final result.json and report.md.")
     return parser
+
+
+def _dispatch_subcommand(args: argparse.Namespace) -> int:
+    """Dispatch parsed CLI arguments to the selected subcommand handler."""
+    if args.subcommand == "prepare":
+        return cmd_prepare(str(args.issue), str(args.pull_request))
+    if args.subcommand == "next":
+        return cmd_next()
+    if args.subcommand == "record":
+        return cmd_record(str(args.action), str(args.question_id), str(args.answer))
+    if args.subcommand == "validate":
+        return cmd_validate(str(args.base))
+    if args.subcommand == "publication-gate":
+        return cmd_publication_gate()
+    if args.subcommand == "publish":
+        return cmd_publish()
+    if args.subcommand == "report":
+        return cmd_report()
+    return 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -793,20 +1072,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:
-        if args.subcommand == "prepare":
-            return cmd_prepare(str(args.issue), str(args.pull_request))
-        if args.subcommand == "next":
-            return cmd_next()
-        if args.subcommand == "record":
-            return cmd_record(str(args.action), str(args.question_id), str(args.answer))
-        if args.subcommand == "publication-gate":
-            return cmd_publication_gate()
-        if args.subcommand == "report":
-            return cmd_report()
+        return _dispatch_subcommand(args)
     except ShipStateError as exc:
         sys.stderr.write(f"ship_state.py: {exc}\n")
         return 1
-    return 1
 
 
 if __name__ == "__main__":

@@ -1,0 +1,7 @@
+id: publish
+name: Open or update the ticket's PR
+description: Push the gated commit, create or update the pull request, publish the structured review comment, and write pr.json
+type: command
+command: uv run python .dovo/catalog/scripts/sdlc/ship/ship_state.py publish
+timeout_seconds: 300
+on_failure: abort
