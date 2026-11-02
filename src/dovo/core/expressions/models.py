@@ -16,6 +16,7 @@ class TokenKind(StrEnum):
     WORD = "word"
     OPERATOR = "operator"
     SYMBOL = "symbol"
+    PROJECTION = "projection"
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,8 +24,8 @@ class Token:
     """One token: its kind, its source text, its 1-based column and its value.
 
     The value is the unescaped text of a string, the int or float of a number, the (root, *segments) tuple of a
-    name (each segment a str, or an int for an unquoted bracket index such as '[0]'), the text of a word, the ComparisonOperator of an operator, or the text of a symbol: '&&', '||', '!', '(',
-    ')', '[', ']' or ','.
+    name (each segment a str, or an int for an unquoted bracket index such as '[0]'), the text of a word, the ComparisonOperator of an operator, the text of a symbol: '&&', '||', '!', '(',
+    ')', '[', ']' or ',', or the tuple of string keys of a projection such as '.*.name'.
     """
 
     kind: TokenKind
@@ -104,7 +105,7 @@ class ValueList:
 
 @dataclass(frozen=True, slots=True)
 class Comparison:
-    """Two expressions and the operator comparing them; each side is an operand, a negation or a parenthesised one.
+    """Two expressions and the operator comparing them; each side is an operand, a call, a projection, a negation or a parenthesised one.
 
     The right side is a ValueList exactly when the operator is 'in' or 'not in'.
     """
@@ -114,7 +115,24 @@ class Comparison:
     right: Expression | ValueList
 
 
-Expression = Logical | Negation | Comparison | Operand
+@dataclass(frozen=True, slots=True)
+class Call:
+    """A known function applied to its arguments, as in 'length(steps.a.stdout)'."""
+
+    name: str
+    arguments: tuple[Expression, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Projection:
+    """'<array>.*.<key>': the path of the array, the keys read from each of its objects, and the source text."""
+
+    base: Path
+    keys: tuple[str, ...]
+    text: str
+
+
+Expression = Logical | Negation | Comparison | Call | Projection | Operand
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,9 +171,9 @@ class Evaluation:
 
     - passed is the truthiness of the expression's value.
     - resolved, actual and expected come from the comparison or lone operand that decided it: for '&&' and '||' the
-      side whose value the expression took, and for '!' its operand's.
-    - resolved is False when a path that comparison read was ABSENT, so a negated unresolved comparison passes
-      unresolved.
+      side whose value the expression took, and for '!' its operand's. A call or a projection decides as a lone operand does.
+    - resolved is False when a path that comparison read was ABSENT, or when a call's value is ABSENT, a wrong
+      argument type included, so a negated unresolved comparison passes unresolved.
     - actual is the left (or lone) operand's value, None when absent.
     - expected is the right operand's value, or the list of a ValueList's item values, each None when absent; it is
       also None for a lone operand.

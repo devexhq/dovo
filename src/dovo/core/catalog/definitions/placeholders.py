@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 
 from dovo.core.catalog.definitions.conditions import expression_leaves
-from dovo.core.expressions import Expression, InvalidExpression, Path, parse_expression
+from dovo.core.expressions import Expression, InvalidExpression, Path, Projection, parse_expression
 from dovo.core.inputs import find_placeholders, placeholder_texts
 
 _INPUTS_ROOT = "inputs"
@@ -50,11 +50,18 @@ def _parsed_placeholders(text: str) -> Iterator[Expression]:
 
 
 def _text_input_names(text: str) -> set[str]:
-    """Return the first segment of every operand in text's placeholders that is a path rooted at 'inputs' by name."""
+    """Return the first segment of every operand in text's placeholders that is a path rooted at 'inputs' by name.
+
+    A projection's base is the operand it reads.
+    """
+    operands = (
+        leaf.base if isinstance(leaf, Projection) else leaf
+        for expression in _parsed_placeholders(text)
+        for leaf, _ in expression_leaves(expression)
+    )
     return {
         operand.segments[0]
-        for expression in _parsed_placeholders(text)
-        for operand, _ in expression_leaves(expression)
+        for operand in operands
         if isinstance(operand, Path)
         and operand.root == _INPUTS_ROOT
         and operand.segments

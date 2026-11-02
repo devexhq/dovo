@@ -3,6 +3,7 @@
 from dovo.core.expressions.models import (
     ABSENT,
     Absent,
+    Call,
     Comparison,
     ComparisonOperator,
     Evaluation,
@@ -14,6 +15,7 @@ from dovo.core.expressions.models import (
     Negation,
     Operand,
     Path,
+    Projection,
     Resolver,
     Token,
     TokenKind,
@@ -26,6 +28,7 @@ from dovo.core.expressions.services.tokenizer import tokenize
 __all__ = [
     "ABSENT",
     "Absent",
+    "Call",
     "Comparison",
     "ComparisonOperator",
     "Evaluation",
@@ -37,6 +40,7 @@ __all__ = [
     "Negation",
     "Operand",
     "Path",
+    "Projection",
     "Resolver",
     "Token",
     "TokenKind",

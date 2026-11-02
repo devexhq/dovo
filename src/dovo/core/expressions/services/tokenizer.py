@@ -32,12 +32,17 @@ def tokenize(source: str) -> tuple[Token, ...] | InvalidExpression:
     tokens: list[Token] = []
     position = _skip_whitespace(source, 0)
     while position < len(source):
-        token = _read_token(source, position)
+        token = _read_token(source, position, tokens[-1] if tokens else None)
         if isinstance(token, InvalidExpression):
             return token
         tokens.append(token)
-        position = _skip_whitespace(source, token.column - 1 + len(token.text))
+        position = _skip_whitespace(source, _token_end(token))
     return tuple(tokens)
+
+
+def _token_end(token: Token) -> int:
+    """Return the index just after token's text."""
+    return token.column - 1 + len(token.text)
 
 
 def _skip_whitespace(source: str, position: int) -> int:
@@ -47,8 +52,10 @@ def _skip_whitespace(source: str, position: int) -> int:
     return position
 
 
-def _read_token(source: str, position: int) -> Token | InvalidExpression:
-    """Read the token that starts at position."""
+def _read_token(source: str, position: int, previous: Token | None) -> Token | InvalidExpression:
+    """Read the token that starts at position; a projection only straight after the name token previous."""
+    if _follows_name(previous, position) and _starts_projection(source, position):
+        return _read_projection(source, position)
     if source[position] in _QUOTES:
         return _read_string(source, position)
     operator = _match_operator(source, position)
@@ -99,13 +106,58 @@ def _read_quoted(source: str, start: int) -> tuple[str, int] | InvalidExpression
     return InvalidExpression(source, f"unterminated string at column {start + 1}")
 
 
+def _follows_name(previous: Token | None, position: int) -> bool:
+    """Return whether previous is a name token that ends exactly at position."""
+    return previous is not None and previous.kind is TokenKind.NAME and _token_end(previous) == position
+
+
+def _starts_projection(source: str, position: int) -> bool:
+    """Return whether a '.*' at position is followed straight away by a '.<segment>' or a quoted bracket key."""
+    if not source.startswith(".*", position):
+        return False
+    after = position + 2
+    if source.startswith(".", after):
+        return _SEGMENT_RE.match(source, after + 1) is not None
+    return source.startswith("[", after) and source[after + 1 : after + 2] in _QUOTES
+
+
+def _read_projection(source: str, start: int) -> Token | InvalidExpression:
+    """Read the projection whose '.*' is at start, with every '.<segment>' and quoted bracket key after it.
+
+    An unquoted integer bracket index ends the keys, and a run that goes on past them is an unexpected character.
+    """
+    keys: list[str] = []
+    position = start + 2
+    while (suffix := _read_suffix(source, position)) is not None:
+        if isinstance(suffix, InvalidExpression):
+            return suffix
+        key, end = suffix
+        if isinstance(key, int):
+            break
+        keys.append(key)
+        position = end
+    if not _ends_projection(source, position):
+        return _unexpected_character(source, position)
+    return Token(TokenKind.PROJECTION, source[start:position], start + 1, tuple(keys))
+
+
+def _ends_projection(source: str, position: int) -> bool:
+    """Return whether a projection's keys may end at position: at the end of source, or where a run stops but '['."""
+    if position == len(source):
+        return True
+    return not source.startswith("[", position) and _stops_run(source, position)
+
+
 def _read_run(source: str, start: int) -> Token | InvalidExpression:
-    """Read the run of characters at start and classify it as a number, a name or a word."""
+    """Read the run of characters at start and classify it as a number, a name or a word.
+
+    A name stops before a projection, which the next token reads.
+    """
     name = _read_name(source, start)
     if isinstance(name, InvalidExpression):
         return name
     parts, name_end = name
-    end = _run_end(source, name_end)
+    end = name_end if parts and _starts_projection(source, name_end) else _run_end(source, name_end)
     text = source[start:end]
     column = start + 1
     if NUMBER_RE.fullmatch(text):

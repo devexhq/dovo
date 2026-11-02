@@ -61,6 +61,13 @@ FIXTURES = [
         id="when_inputs_root",
     ),
     pytest.param([{"id": "a", "run": "echo {{ a b }} ${{ c == }}"}], id="placeholder_syntax_error"),
+    pytest.param(
+        [
+            {"id": "a", "run": "echo {{ lenght(inputs.x) }}"},
+            {"id": "b", "run": "true", "when": ["contains(steps.a.stdout)"]},
+        ],
+        id="function_errors",
+    ),
 ]
 
 

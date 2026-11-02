@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dovo.core.expressions import ComparisonOperator, Token, TokenKind, tokenize
+from dovo.core.expressions import ComparisonOperator, InvalidExpression, Token, TokenKind, tokenize
 
 
 class ExpressionTokenizerTests:
@@ -76,6 +76,22 @@ class ExpressionTokenizerTests:
             Token(TokenKind.NUMBER, "0", 6, 0),
             Token(TokenKind.SYMBOL, "]", 7, "]"),
         )
+
+    def test_projection_is_one_token_after_a_name(self) -> None:
+        assert tokenize("steps.a.outputs.x.*.name") == (
+            Token(TokenKind.NAME, "steps.a.outputs.x", 1, ("steps", "a", "outputs", "x")),
+            Token(TokenKind.PROJECTION, ".*.name", 18, ("name",)),
+        )
+        assert tokenize("x.*['a.b'].c") == (
+            Token(TokenKind.NAME, "x", 1, ("x",)),
+            Token(TokenKind.PROJECTION, ".*['a.b'].c", 2, ("a.b", "c")),
+        )
+        assert tokenize("steps.a.stdout.*.n[0]") == InvalidExpression(
+            "steps.a.stdout.*.n[0]", "unexpected character '[' at column 19"
+        )
+        assert tokenize("x.*") == (Token(TokenKind.WORD, "x.*", 1, "x.*"),)
+        assert tokenize("a.*b") == (Token(TokenKind.WORD, "a.*b", 1, "a.*b"),)
+        assert tokenize("*.py") == (Token(TokenKind.WORD, "*.py", 1, "*.py"),)
 
     def test_run_of_not_words_reads_only_the_last_as_not_in(self) -> None:
         tokens = tokenize("not " * 300 + "in [1]")

@@ -314,6 +314,34 @@ class InterpolatePlaceholderExpressionTests:
     @pytest.mark.parametrize(
         ("template", "rendered"),
         [
+            pytest.param("{{ join(fromJSON(steps.step_a.outputs.files), ' ') }}", "a.py b.py", id="join"),
+            pytest.param("{{ length(fromJSON(steps.step_a.outputs.files)) }}", "2", id="length"),
+            pytest.param("{{ trim(inputs.s) }}", "text", id="trim"),
+            pytest.param("{{ length(inputs.n) }}", "", id="wrong_type"),
+        ],
+    )
+    def test_function_renders_its_value(self, template: str, rendered: str) -> None:
+        providers = build_providers(
+            inputs={"s": "  text  ", "n": 3}, metadata=_metadata_with_step_a_outputs({"files": '["a.py", "b.py"]'})
+        )
+
+        assert interpolate_string(template, providers) == rendered
+
+    @pytest.mark.parametrize(
+        ("template", "rendered"),
+        [
+            pytest.param("{{ join(steps.step_a.outputs.reviews.*.verdict, ', ') }}", "approve, edit", id="joined"),
+            pytest.param("{{ x.*.y }}", "", id="undefined_base"),
+        ],
+    )
+    def test_projection_renders_its_value(self, template: str, rendered: str) -> None:
+        metadata = _metadata_with_step_a_outputs({"reviews": '[{"verdict": "approve"}, {"verdict": "edit"}]'})
+
+        assert interpolate_string(template, build_providers(metadata=metadata)) == rendered
+
+    @pytest.mark.parametrize(
+        ("template", "rendered"),
+        [
             pytest.param("${{ github.ref == 'main' }}", "false", id="comparison"),
             pytest.param("${{ secrets.T || '' }}", "", id="default"),
         ],

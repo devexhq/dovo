@@ -182,6 +182,39 @@ class ConditionExpressionEvaluatorTests:
         assert (result.resolved, result.passed) == (True, True)
 
     @pytest.mark.parametrize(
+        ("expression", "outcome"),
+        [
+            pytest.param(
+                "length(fromJSON(steps.gate.outputs.files)) == 2", (True, True, "TRUE"), id="length_of_recorded_list"
+            ),
+            pytest.param(
+                "contains(fromJSON(steps.gate.outputs.files), 'b.py')", (True, True, "TRUE"), id="contains_item"
+            ),
+            pytest.param("length(steps.gate.exit_code) > 0", (False, False, "FALSE (not found)"), id="wrong_type"),
+        ],
+    )
+    def test_function_reads_step_results(self, expression: str, outcome: tuple[bool, bool, str]) -> None:
+        gate = _gate_result(files='["a.py", "b.py"]')
+
+        result = evaluate_condition(expression, step_results={"gate": gate})
+
+        assert (result.resolved, result.passed, result.detail) == outcome
+
+    @pytest.mark.parametrize(
+        ("stdout", "outputs"),
+        [
+            pytest.param('{"reviews": [{"verdict": "approve"}, {"verdict": "edit"}]}', None, id="stdout_list"),
+            pytest.param("", {"reviews": '[{"verdict": "approve"}, {"verdict": "edit"}]'}, id="recorded_string"),
+        ],
+    )
+    def test_projection_reads_step_results(self, stdout: str, outputs: dict[str, str] | None) -> None:
+        step = _build_result(step_id="a", stdout=stdout, outputs=outputs)
+
+        result = evaluate_condition("contains(steps.a.outputs.reviews.*.verdict, 'edit')", step_results={"a": step})
+
+        assert (result.passed, result.resolved, result.detail) == (True, True, "TRUE")
+
+    @pytest.mark.parametrize(
         "expression",
         [
             pytest.param("steps.build.exit_code ==", id="dangling_operator"),

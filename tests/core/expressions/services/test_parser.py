@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from dovo.core.expressions import (
+    Call,
     Comparison,
     ComparisonOperator,
     Expression,
@@ -14,6 +15,7 @@ from dovo.core.expressions import (
     LogicalOperator,
     Negation,
     Path,
+    Projection,
     ValueList,
     parse_expression,
 )
@@ -25,6 +27,12 @@ B = Comparison(Path("steps", ("b", "exit_code"), "steps.b.exit_code"), Compariso
 C = Comparison(Path("steps", ("c", "exit_code"), "steps.c.exit_code"), ComparisonOperator.EQ, Literal(0, "0"))
 AND = LogicalOperator.AND
 OR = LogicalOperator.OR
+X = Literal("x", "'x'")
+CONTAINS_CALL = Call("contains", (STDOUT, X))
+KNOWN = "known functions: contains, fromJSON, join, length, trim"
+X_OUTPUT = Path("steps", ("a", "outputs", "x"), "steps.a.outputs.x")
+NAME_PROJECTION = Projection(X_OUTPUT, ("name",), "steps.a.outputs.x.*.name")
+X_Y = Projection(Path("x", (), "x"), ("y",), "x.*.y")
 
 
 def _negated(expression: Expression, times: int) -> Expression:
@@ -284,6 +292,81 @@ class ExpressionParserTests:
         )
 
     @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            pytest.param("length(steps.a.stdout)", Call("length", (STDOUT,)), id="length"),
+            pytest.param("contains(steps.a.stdout, 'x')", CONTAINS_CALL, id="contains_call"),
+            pytest.param("join(steps.a.stdout)", Call("join", (STDOUT,)), id="join_one"),
+            pytest.param("join(steps.a.stdout, ' ')", Call("join", (STDOUT, Literal(" ", "' '"))), id="join_two"),
+            pytest.param(
+                "length(fromJSON(steps.a.stdout))", Call("length", (Call("fromJSON", (STDOUT,)),)), id="nested"
+            ),
+            pytest.param(
+                "length(steps.a.stdout) > 2",
+                Comparison(Call("length", (STDOUT,)), ComparisonOperator.GT, Literal(2, "2")),
+                id="compared",
+            ),
+            pytest.param("!contains(steps.a.stdout, 'x')", Negation(CONTAINS_CALL), id="negated"),
+            pytest.param(
+                "trim(steps.a.stdout || 'x')", Call("trim", (Logical(STDOUT, OR, X),)), id="expression_argument"
+            ),
+            pytest.param("length (steps.a.stdout)", Call("length", (STDOUT,)), id="space_before_paren"),
+        ],
+    )
+    def test_call_parses(self, source: str, expected: Expression) -> None:
+        assert parse_expression(source) == expected
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            pytest.param(
+                "steps.a.stdout contains 'x'", Comparison(STDOUT, ComparisonOperator.CONTAINS, X), id="operator"
+            ),
+            pytest.param(
+                "steps.a.stdout contains ('x')",
+                Comparison(STDOUT, ComparisonOperator.CONTAINS, X),
+                id="operator_before_group",
+            ),
+            pytest.param("contains(steps.a.stdout, 'x')", CONTAINS_CALL, id="call"),
+        ],
+    )
+    def test_contains_is_a_call_only_where_an_operand_stands(self, source: str, expected: Expression) -> None:
+        assert parse_expression(source) == expected
+
+    @pytest.mark.parametrize(
+        ("source", "reason"),
+        [
+            pytest.param("lenght(steps.a.stdout) > 0", f"unknown function 'lenght' at column 1; {KNOWN}", id="unknown"),
+            pytest.param(
+                "contains(steps.a.stdout)",
+                f"function 'contains' at column 1 takes 2 arguments, not 1; {KNOWN}",
+                id="too_few",
+            ),
+            pytest.param(
+                "trim(steps.a.stdout, 'x')",
+                f"function 'trim' at column 1 takes 1 argument, not 2; {KNOWN}",
+                id="too_many",
+            ),
+            pytest.param(
+                "length()", f"function 'length' at column 1 takes 1 argument, not 0; {KNOWN}", id="no_arguments"
+            ),
+            pytest.param(
+                "join(steps.a.stdout, ',', 'x')",
+                f"function 'join' at column 1 takes 1 or 2 arguments, not 3; {KNOWN}",
+                id="join_too_many",
+            ),
+            pytest.param(
+                "fromjson(steps.a.stdout)", f"unknown function 'fromjson' at column 1; {KNOWN}", id="wrong_case"
+            ),
+        ],
+    )
+    def test_call_error_names_the_known_functions(self, source: str, reason: str) -> None:
+        result = parse_expression(source)
+
+        assert isinstance(result, InvalidExpression)
+        assert result.message == f"Invalid expression '{source}': {reason}."
+
+    @pytest.mark.parametrize(
         ("source", "message"),
         [
             pytest.param("", "Invalid expression '': empty expression.", id="empty"),
@@ -393,8 +476,23 @@ class ExpressionParserTests:
             ),
             pytest.param(
                 "steps.a.stdout == f(x)",
-                "Invalid expression 'steps.a.stdout == f(x)': unexpected '(' at column 20.",
+                f"Invalid expression 'steps.a.stdout == f(x)': unknown function 'f' at column 19; {KNOWN}.",
                 id="call_syntax",
+            ),
+            pytest.param(
+                "length(steps.a.stdout",
+                "Invalid expression 'length(steps.a.stdout': missing ')' to close '(' at column 7.",
+                id="unclosed_call",
+            ),
+            pytest.param(
+                "length(steps.a.stdout,)",
+                "Invalid expression 'length(steps.a.stdout,)': unexpected ')' at column 23.",
+                id="trailing_comma_in_call",
+            ),
+            pytest.param(
+                "steps.a(x)",
+                "Invalid expression 'steps.a(x)': unexpected '(' at column 8.",
+                id="dotted_name_call",
             ),
             pytest.param(
                 'steps.a.stdout in "x"',
@@ -442,6 +540,21 @@ class ExpressionParserTests:
                 "Invalid expression 'steps.a.stdout == in': unexpected 'in' at column 19.",
                 id="lone_in_as_value",
             ),
+            pytest.param(
+                "steps.a.stdout in [x.*.y]",
+                "Invalid expression 'steps.a.stdout in [x.*.y]': unexpected '.*.y' at column 21.",
+                id="projection_list_item",
+            ),
+            pytest.param(
+                "true.*.x",
+                "Invalid expression 'true.*.x': unexpected '.*.x' at column 5.",
+                id="projection_of_a_boolean",
+            ),
+            pytest.param(
+                "x.*.a.*.b",
+                "Invalid expression 'x.*.a.*.b': unexpected character '.' at column 6.",
+                id="second_projection",
+            ),
         ],
     )
     def test_invalid_source_reports_its_reason(self, source: str, message: str) -> None:
@@ -449,6 +562,31 @@ class ExpressionParserTests:
 
         assert isinstance(result, InvalidExpression)
         assert result.message == message
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            pytest.param("steps.a.outputs.x.*.name", NAME_PROJECTION, id="lone"),
+            pytest.param(
+                "steps.a.outputs.x.*['a.b'].c",
+                Projection(X_OUTPUT, ("a.b", "c"), "steps.a.outputs.x.*['a.b'].c"),
+                id="bracket_key",
+            ),
+            pytest.param("x.*.y", X_Y, id="one_word_base"),
+            pytest.param(
+                "x.*.y == 'a'",
+                Comparison(X_Y, ComparisonOperator.EQ, Literal("a", "'a'")),
+                id="compared_one_word_base",
+            ),
+            pytest.param(
+                "contains(steps.a.outputs.x.*.name, 'y')",
+                Call("contains", (NAME_PROJECTION, Literal("y", "'y'"))),
+                id="call_argument",
+            ),
+        ],
+    )
+    def test_projection_parses(self, source: str, expected: Expression) -> None:
+        assert parse_expression(source) == expected
 
     @pytest.mark.parametrize(
         ("source", "expected"),
@@ -478,6 +616,11 @@ class ExpressionParserTests:
                 "(!" * 17 + "steps.a.stdout" + ")" * 17,
                 "'(' at column 33 nests too deeply; nest at most 32 levels",
                 id="mixed",
+            ),
+            pytest.param(
+                "length(" * 33 + "x" + ")" * 33,
+                "'(' at column 231 nests too deeply; nest at most 32 levels",
+                id="nested_calls",
             ),
         ],
     )

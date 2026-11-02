@@ -1,7 +1,8 @@
 """Evaluate an expression by its value's truthiness, reporting the comparison or operand that decided it.
 
 evaluate_expression reports how an expression passed or failed; evaluate_value returns the value itself.
-'&&' and '||' short-circuit: the side not taken is never evaluated, so its paths are never resolved.
+'&&' and '||' short-circuit: the side not taken is never evaluated, so its paths are never resolved. A call
+evaluates every argument, and decides as a lone operand does.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from typing import Final, TypeIs
 
 from dovo.core.expressions.models import (
     ABSENT,
+    Call,
     Comparison,
     ComparisonOperator,
     Evaluation,
@@ -21,9 +23,11 @@ from dovo.core.expressions.models import (
     LogicalOperator,
     Negation,
     Operand,
+    Projection,
     Resolver,
     ValueList,
 )
+from dovo.core.expressions.services.functions import call_function, project
 from dovo.core.expressions.services.tokenizer import NUMBER_RE
 
 _NUMERIC_OPERATORS: Final[dict[ComparisonOperator, Callable[[float, float], bool]]] = {
@@ -61,8 +65,10 @@ def evaluate_expression(expression: Expression, resolver: Resolver) -> Evaluatio
 def evaluate_value(expression: Expression, resolver: Resolver) -> object:
     """Return expression's value, reading each path through resolver.
 
-    A literal's value; what resolver reads for a path, ABSENT included; a comparison's or a negation's bool; and for
-    '&&' and '||' the value of the side that decided it, the other side never evaluated.
+    A literal's value; what resolver reads for a path, ABSENT included; a comparison's or a negation's bool; a
+    call's value, ABSENT when an argument is ABSENT or of a type the function does not take; a projection's list of
+    what its keys reach in each object of its base's array, ABSENT when the base, read as JSON when a string, is not
+    an array; and for '&&' and '||' the value of the side that decided it, the other side never evaluated.
     """
     return _evaluate(expression, resolver)[0]
 
@@ -86,6 +92,11 @@ def _evaluate(expression: Expression, resolver: Resolver) -> tuple[object, Evalu
     if isinstance(expression, Comparison):
         evaluation = _evaluate_comparison(expression, resolver)
         return evaluation.passed, evaluation
+    if isinstance(expression, Call):
+        arguments = [_evaluate(argument, resolver)[0] for argument in expression.arguments]
+        return _value_evaluation(call_function(expression.name, arguments))
+    if isinstance(expression, Projection):
+        return _value_evaluation(project(resolver.resolve(expression.base), expression.keys))
     return _evaluate_operand(expression, resolver)
 
 
@@ -99,7 +110,11 @@ def _evaluate_logical(logical: Logical, resolver: Resolver) -> tuple[object, Eva
 
 def _evaluate_operand(operand: Operand, resolver: Resolver) -> tuple[object, Evaluation]:
     """Return a lone operand's value and its Evaluation by truthiness; an absent path is unresolved."""
-    value = _operand_value(operand, resolver)
+    return _value_evaluation(_operand_value(operand, resolver))
+
+
+def _value_evaluation(value: object) -> tuple[object, Evaluation]:
+    """Return value and its Evaluation as a lone operand by truthiness; an ABSENT value is unresolved."""
     resolved = value is not ABSENT
     actual = value if resolved else None
     passed = is_truthy(value)
