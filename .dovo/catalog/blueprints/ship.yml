@@ -1,0 +1,134 @@
+version: 1
+name: ship
+id: ship
+description: Deliver one ticket to one reviewed PR, asking only for human decisions.
+summary: Assess, optionally investigate or plan, implement, validate, review, publish
+use_worktree: true
+
+inputs:
+  issue:
+    type: string
+    description: GitHub issue number to deliver
+    required: true
+    aliases: ["-i", "--issue"]
+  pull_request:
+    type: string
+    description: Existing PR to continue; otherwise discover one from the issue
+    default: ""
+
+# Operational failures preserve work and fail the run. They are not automatically
+# turned into human questions. Expected check failures are typed stage results.
+defaults:
+  on_failure: abort
+
+steps:
+  - id: prepare
+    name: Capture the ticket and establish the working change
+    uses: ship/prepare
+    env:
+      SHIP_ISSUE: "${{ inputs.issue }}"
+      SHIP_PULL_REQUEST: "${{ inputs.pull_request }}"
+    artifacts:
+      - { name: ship-contract, path: .agentic/ship/contract.json }
+
+  # One selected stage or one human question per iteration. A stage may report
+  # several questions; next presents them serially and record saves each answer.
+  # This is a dispatch loop, not 24 implementation attempts or 24 agent assessments.
+  # The ceiling includes one iteration per question and needs tuning on real runs.
+  # next and record are command steps; judgment belongs to the agent stages.
+  - id: delivery
+    name: Resolve the remaining work
+    type: loop
+    max_iterations: 24
+    until:
+      - steps.record.outputs.outcome in ["ready", "no_action", "blocked", "incomplete"]
+    on_max_iterations: continue
+    do:
+      - id: next
+        name: Read the next stage from the recorded result
+        uses: ship/next
+        artifacts:
+          - { name: ship-decision, path: .agentic/ship/question.md, required: false }
+
+      - id: assess
+        name: Determine what reasoning the ticket still needs
+        uses: ship/assess
+        when:
+          - steps.next.outputs.action == "assess"
+
+      - id: investigate
+        name: Resolve the specific causal question
+        uses: ship/investigate
+        when:
+          - steps.next.outputs.action == "investigate"
+
+      - id: plan
+        name: Plan this ticket only when design is needed
+        uses: ship/plan
+        when:
+          - steps.next.outputs.action == "plan"
+
+      - id: implement
+        name: Implement the ticket or correct verified findings
+        uses: ship/implement
+        when:
+          - steps.next.outputs.action == "implement"
+
+      - id: validate
+        name: Run the required checks and record their evidence
+        uses: ship/validate
+        when:
+          - steps.next.outputs.action == "validate"
+
+      - id: review
+        name: Review the full change against the ticket
+        uses: ship/review
+        when:
+          - steps.next.outputs.action == "review"
+
+      # A text ask answers exactly one question. If a stage has several, next
+      # selects the first unanswered one in later iterations. Only after all
+      # answers are recorded does the originating stage run again.
+      - id: human
+        name: Resolve a decision the run cannot make
+        type: ask
+        when:
+          - steps.next.outputs.action == "ask"
+        interaction:
+          mode: text
+          message: "{{ steps.next.outputs.question }}"
+          artifact: ship-decision
+
+      - id: record
+        name: Validate the stage result and record the next action
+        uses: ship/record
+        env:
+          SHIP_ACTION: "{{ steps.next.outputs.action }}"
+          SHIP_QUESTION_ID: "{{ steps.next.outputs.question_id || '' }}"
+          SHIP_ANSWER: "{{ steps.human.outputs.text || '' }}"
+        artifacts:
+          - { name: ship-progress, path: .agentic/ship/progress.json }
+          - { name: ship-evidence, path: ".agentic/ship/reports/*", required: false }
+
+  # Normalizes loop exhaustion to incomplete. A completed loop is not proof
+  # of delivery. Only fresh review + validation evidence can permit publication.
+  - id: publication-gate
+    name: Check the current contract and reviewed change before publishing
+    uses: ship/publication-gate
+    artifacts:
+      - { name: ship-publication, path: .agentic/ship/publication.json }
+
+  - id: publish
+    name: Open or update the ticket's PR
+    uses: ship/publish
+    when:
+      - steps.publication-gate.outputs.outcome == "ready"
+    artifacts:
+      - { name: ship-pr, path: .agentic/ship/pr.json }
+
+  - id: report
+    name: Report the delivery outcome and remaining action
+    uses: ship/report
+    artifacts:
+      - { name: ship-result, path: .agentic/ship/result.json }
+      - { name: ship-report, path: .agentic/ship/report.md }

@@ -1,0 +1,11 @@
+id: implement
+name: Implement the ticket or correct verified findings
+description: Implement the ticket outcomes or fix verified validation and review findings in the working tree
+type: agent
+prompt: |
+  Follow .dovo/catalog/prompts/sdlc/ship/ticket-implement.md against .agentic/ship/contract.json and .agentic/ship/progress.json.
+  Write .agentic/ship/implement.md and .agentic/ship/stage.json.
+tools:
+  allow_all: true
+timeout_seconds: 1800
+on_failure: abort

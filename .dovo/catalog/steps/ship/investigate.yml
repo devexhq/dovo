@@ -1,0 +1,11 @@
+id: investigate
+name: Resolve the specific causal question
+description: Investigate the recorded causal question and write grounded evidence before implementation or planning
+type: agent
+prompt: |
+  Follow .dovo/catalog/prompts/sdlc/ship/ticket-investigate.md against .agentic/ship/contract.json and .agentic/ship/progress.json.
+  Write .agentic/ship/investigate.md and .agentic/ship/stage.json.
+tools:
+  allow_all: true
+timeout_seconds: 1200
+on_failure: abort

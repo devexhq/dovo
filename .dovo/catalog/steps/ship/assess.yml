@@ -1,0 +1,11 @@
+id: assess
+name: Determine what reasoning the ticket still needs
+description: Assess the captured ticket contract, progress state, and working tree to choose the next stage
+type: agent
+prompt: |
+  Follow .dovo/catalog/prompts/sdlc/ship/ticket-route.md against .agentic/ship/contract.json and .agentic/ship/progress.json.
+  Write .agentic/ship/assess.md and .agentic/ship/stage.json.
+tools:
+  allow_all: true
+timeout_seconds: 900
+on_failure: abort

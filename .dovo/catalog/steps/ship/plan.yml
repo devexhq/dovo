@@ -1,0 +1,11 @@
+id: plan
+name: Plan this ticket only when design is needed
+description: Settle non-obvious design boundaries, contracts, or user-visible trade-offs for this ticket
+type: agent
+prompt: |
+  Follow .dovo/catalog/prompts/sdlc/ship/ticket-plan.md against .agentic/ship/contract.json and .agentic/ship/progress.json.
+  Write .agentic/ship/plan.md and .agentic/ship/stage.json.
+tools:
+  allow_all: true
+timeout_seconds: 1200
+on_failure: abort

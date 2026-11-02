@@ -1,0 +1,11 @@
+id: review
+name: Review the full change against the ticket
+description: Review the full diff against the ticket outcomes, decisions, and validation evidence
+type: agent
+prompt: |
+  Follow .dovo/catalog/prompts/sdlc/ship/ticket-review.md against .agentic/ship/contract.json and .agentic/ship/progress.json.
+  Write .agentic/review.md, .agentic/review.json, and .agentic/ship/stage.json.
+tools:
+  allow_all: true
+timeout_seconds: 1200
+on_failure: abort

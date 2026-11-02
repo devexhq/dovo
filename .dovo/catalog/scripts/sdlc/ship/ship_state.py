@@ -698,6 +698,8 @@ def _sanitized_gate_env() -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith(STEP_ENV_PREFIXES)}
     env["COLUMNS"] = "160"
     env["PYTHONIOENCODING"] = "utf-8"
+    if env.get("TERM") in (None, "", "dumb"):
+        env["TERM"] = "xterm-256color"
     return env
 
 
