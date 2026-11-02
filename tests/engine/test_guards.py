@@ -46,6 +46,21 @@ class GuardSkipTests:
                 StepSkip(cause=SkipCause.WHEN_FALSE, expression='steps.check.outputs.note == "x"'),
                 id="json_null_is_false_not_unresolved",
             ),
+            pytest.param(
+                ["steps.gone.exit_code == 0 && steps.check.exit_code == 0"],
+                StepSkip(
+                    cause=SkipCause.WHEN_UNRESOLVED,
+                    expression="steps.gone.exit_code == 0 && steps.check.exit_code == 0",
+                ),
+                id="compound_on_absent_operand",
+            ),
+            pytest.param(
+                ["steps.gone.exit_code == 0 || steps.check.exit_code == 1"],
+                StepSkip(
+                    cause=SkipCause.WHEN_FALSE, expression="steps.gone.exit_code == 0 || steps.check.exit_code == 1"
+                ),
+                id="compound_decided_by_a_resolved_comparison",
+            ),
         ],
     )
     def test_skip_names_the_first_failing_expression_and_its_cause(

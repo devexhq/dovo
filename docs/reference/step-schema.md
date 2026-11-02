@@ -161,11 +161,11 @@ The skip records the first failing expression, in the order written, and its cau
 
 | Cause | Meaning |
 |---|---|
-| `when_false` | Every operand resolved and the expression was false. |
-| `when_unresolved` | A step operand had no value. |
+| `when_false` | The comparison that decided the expression resolved, and the expression was false. |
+| `when_unresolved` | A step operand of the comparison that decided the expression had no value. |
 
 !!! note
-    A step operand has no value when its step was skipped or has not run, or when the step's result lacks the field or `outputs` key, such as a misspelled one; an `outputs` value that is JSON `null` is a value. A later condition that references a skipped step is false, and a placeholder that references one interpolates to an empty string, as for a step that never ran.
+    A step operand has no value when its step was skipped or has not run, or when the step's result lacks the field or `outputs` key, such as a misspelled one; an `outputs` value that is JSON `null` is a value. A later comparison that references a skipped step is false, and a placeholder that references one interpolates to an empty string, as for a step that never ran.
 
 !!! warning
     A step catalog file cannot set `when`: its step references can only be checked in the blueprint that uses it. Set `when` on the blueprint step that `uses` the catalog step instead.
@@ -185,7 +185,7 @@ Runs its `then` steps when every `condition` is true, and its `else` steps other
 
 The steps in `then` and `else` get the same shorthands as top-level steps, with derived ids `<block id>-then-step-<n>` and `<block id>-else-step-<n>`, and may carry `when`. `dovo blueprint validate`, `dovo run` and `dovo resume` reject a block, naming it, when `condition` or `then` is empty, `else` is set but empty, a branch holds a loop or another `if` block, a branch step id repeats any other step id, or `condition` references anything but the steps before the block. An `if` block inside a loop's `do` is rejected too.
 
-The branch is chosen and saved when the block starts: `then`, `else`, or `none` when a condition is false and there is no `else`. A condition that cannot be resolved counts as false. A run paused inside a branch resumes in that branch without evaluating the condition again. The block ends `completed` when every step of its branch completed, was ignored or was skipped, and otherwise takes the state of the first branch step that failed, paused or was cancelled. A block that ran nothing is `completed`.
+The branch is chosen and saved when the block starts: `then`, `else`, or `none` when a condition is false and there is no `else`. A comparison that cannot be resolved is false. A run paused inside a branch resumes in that branch without evaluating the condition again. The block ends `completed` when every step of its branch completed, was ignored or was skipped, and otherwise takes the state of the first branch step that failed, paused or was cancelled. A block that ran nothing is `completed`.
 
 A later step may reference the steps of either branch. A step of the branch that did not run resolves as a step that never ran: a condition on it is unresolved and a placeholder for it interpolates to an empty string.
 

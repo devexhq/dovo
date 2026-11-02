@@ -195,7 +195,7 @@ When the person picks nothing, the run skips the agent step and prints one line 
 [2/2] Fold the answers into the plan — skipped (when: steps.answer-questions.outputs.selected_count > 0 → FALSE)
 ```
 
-A skipped step runs nothing and counts as successful. `dovo session show` lists it as `skipped (when_false)`, or `skipped (when_unresolved)` when a condition referenced a step that did not run or a field it does not have. A later condition that references a skipped step is false.
+A skipped step runs nothing and counts as successful. `dovo session show` lists it as `skipped (when_false)`, or `skipped (when_unresolved)` when a condition referenced a step that did not run or a field it does not have. A later comparison that references a skipped step is false.
 
 A `when` list may reference earlier steps only. Inside a loop's `do`, it may also reference earlier steps of the same iteration and `iteration.index`, and it is evaluated again on every iteration. See [`when` Guards](../reference/step-schema.md#when-guards) for the full rules.
 

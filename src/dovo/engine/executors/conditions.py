@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dovo.core.expressions import ABSENT, Comparison, Path, evaluate_expression, parse_expression
+from dovo.core.expressions import ABSENT, InvalidExpression, Path, evaluate_expression, parse_expression
 from dovo.core.inputs import resolve_step_output
 from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
 
@@ -60,9 +60,9 @@ def evaluate_condition(
     iteration_index: int = 1,
     step_results: dict[str, StepResult] | None = None,
 ) -> ConditionEvaluationResult:
-    """Parse and evaluate a single condition expression."""
+    """Parse and evaluate one condition entry: a comparison, several combined with '&&', '||' and '!', or a value."""
     parsed = parse_expression(expression)
-    if not isinstance(parsed, Comparison):
+    if isinstance(parsed, InvalidExpression):
         return ConditionEvaluationResult(
             expression=expression,
             passed=False,

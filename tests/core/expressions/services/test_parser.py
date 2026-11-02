@@ -1,4 +1,4 @@
-"""Tests for parsing an expression source into a comparison, an operand or the reason it is neither."""
+"""Tests for parsing an expression source into its syntax tree or the reason it is not an expression."""
 
 from __future__ import annotations
 
@@ -10,16 +10,32 @@ from dovo.core.expressions import (
     Expression,
     InvalidExpression,
     Literal,
+    Logical,
+    LogicalOperator,
+    Negation,
     Path,
+    ValueList,
     parse_expression,
 )
 
 STDOUT = Path("steps", ("a", "stdout"), "steps.a.stdout")
 EXIT_CODE = Path("steps", ("a", "exit_code"), "steps.a.exit_code")
+A = Comparison(EXIT_CODE, ComparisonOperator.EQ, Literal(0, "0"))
+B = Comparison(Path("steps", ("b", "exit_code"), "steps.b.exit_code"), ComparisonOperator.EQ, Literal(0, "0"))
+C = Comparison(Path("steps", ("c", "exit_code"), "steps.c.exit_code"), ComparisonOperator.EQ, Literal(0, "0"))
+AND = LogicalOperator.AND
+OR = LogicalOperator.OR
+
+
+def _negated(expression: Expression, times: int) -> Expression:
+    """Return expression wrapped in times negations."""
+    for _ in range(times):
+        expression = Negation(expression)
+    return expression
 
 
 class ExpressionParserTests:
-    """parse_expression reads one comparison or one operand and names why any other source is invalid."""
+    """parse_expression reads comparisons, operands, '!', '&&', '||' and parentheses and names why a source is invalid."""
 
     @pytest.mark.parametrize(
         ("source", "expected"),
@@ -158,6 +174,93 @@ class ExpressionParserTests:
         assert parse_expression(source) == expected
 
     @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            pytest.param(
+                "steps.a.exit_code == 0 && steps.b.exit_code == 0 || steps.c.exit_code == 0",
+                Logical(Logical(A, AND, B), OR, C),
+                id="and_before_or",
+            ),
+            pytest.param(
+                "steps.a.exit_code == 0 || steps.b.exit_code == 0 && steps.c.exit_code == 0",
+                Logical(A, OR, Logical(B, AND, C)),
+                id="or_then_and",
+            ),
+            pytest.param(
+                "(steps.a.exit_code == 0 || steps.b.exit_code == 0) && steps.c.exit_code == 0",
+                Logical(Logical(A, OR, B), AND, C),
+                id="parentheses_group",
+            ),
+            pytest.param(
+                "steps.a.exit_code == 0 && steps.b.exit_code == 0 && steps.c.exit_code == 0",
+                Logical(Logical(A, AND, B), AND, C),
+                id="left_associative_and",
+            ),
+            pytest.param(
+                "!steps.a.stdout == false",
+                Comparison(Negation(STDOUT), ComparisonOperator.EQ, Literal(False, "false")),
+                id="not_binds_tighter_than_comparison",
+            ),
+            pytest.param("!(steps.a.exit_code == 0)", Negation(A), id="not_of_a_group"),
+            pytest.param("!!steps.a.stdout", Negation(Negation(STDOUT)), id="double_not"),
+            pytest.param("steps.a.exit_code==0&&steps.a.stdout", Logical(A, AND, STDOUT), id="no_spaces"),
+            pytest.param(
+                "steps.a.exit_code == (1)",
+                Comparison(EXIT_CODE, ComparisonOperator.EQ, Literal(1, "1")),
+                id="parenthesised_number",
+            ),
+        ],
+    )
+    def test_logical_expression_parses(self, source: str, expected: Expression) -> None:
+        assert parse_expression(source) == expected
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            pytest.param(
+                "steps.a.stdout in [\"x\", 'y']",
+                Comparison(STDOUT, ComparisonOperator.IN, ValueList((Literal("x", '"x"'), Literal("y", "'y'")))),
+                id="in_strings",
+            ),
+            pytest.param(
+                "steps.a.stdout not in [1, true, done]",
+                Comparison(
+                    STDOUT,
+                    ComparisonOperator.NOT_IN,
+                    ValueList((Literal(1, "1"), Literal(True, "true"), Path("done", (), "done"))),
+                ),
+                id="not_in_mixed",
+            ),
+            pytest.param(
+                "steps.a.stdout in []",
+                Comparison(STDOUT, ComparisonOperator.IN, ValueList(())),
+                id="empty_list",
+            ),
+            pytest.param(
+                "steps.a.stdout in [steps.b.stdout]",
+                Comparison(
+                    STDOUT, ComparisonOperator.IN, ValueList((Path("steps", ("b", "stdout"), "steps.b.stdout"),))
+                ),
+                id="path_item",
+            ),
+            pytest.param(
+                'steps.a.stdout in ["x"] && steps.a.exit_code == 0',
+                Logical(Comparison(STDOUT, ComparisonOperator.IN, ValueList((Literal("x", '"x"'),))), AND, A),
+                id="binds_tighter_than_and",
+            ),
+            pytest.param(
+                'steps.in.status == "x"',
+                Comparison(
+                    Path("steps", ("in", "status"), "steps.in.status"), ComparisonOperator.EQ, Literal("x", '"x"')
+                ),
+                id="step_named_in",
+            ),
+        ],
+    )
+    def test_membership_parses(self, source: str, expected: Expression) -> None:
+        assert parse_expression(source) == expected
+
+    @pytest.mark.parametrize(
         "word",
         [
             pytest.param("a/b", id="slash"),
@@ -259,6 +362,79 @@ class ExpressionParserTests:
                 "Invalid expression 'steps.a.outputs['x' == 1': unexpected character '[' at column 16.",
                 id="unclosed_bracket",
             ),
+            pytest.param("!", "Invalid expression '!': missing value after '!'.", id="lone_not"),
+            pytest.param(
+                "steps.a.exit_code == 0 &&",
+                "Invalid expression 'steps.a.exit_code == 0 &&': missing value after '&&'.",
+                id="dangling_and",
+            ),
+            pytest.param(
+                "(steps.a.exit_code == 0",
+                "Invalid expression '(steps.a.exit_code == 0': missing ')' to close '(' at column 1.",
+                id="unclosed_parenthesis",
+            ),
+            pytest.param(
+                "steps.a.exit_code == 0)",
+                "Invalid expression 'steps.a.exit_code == 0)': unexpected ')' at column 23.",
+                id="unmatched_parenthesis",
+            ),
+            pytest.param("()", "Invalid expression '()': unexpected ')' at column 2.", id="empty_parentheses"),
+            pytest.param(
+                "steps.a.exit_code == 0 == 1",
+                "Invalid expression 'steps.a.exit_code == 0 == 1': unexpected '==' at column 24.",
+                id="chained_comparison",
+            ),
+            pytest.param(
+                "steps.a.stdout == f(x)",
+                "Invalid expression 'steps.a.stdout == f(x)': unexpected '(' at column 20.",
+                id="call_syntax",
+            ),
+            pytest.param(
+                'steps.a.stdout in "x"',
+                "Invalid expression 'steps.a.stdout in \"x\"': expected a list after 'in' at column 19.",
+                id="in_without_list",
+            ),
+            pytest.param(
+                "steps.a.stdout in",
+                "Invalid expression 'steps.a.stdout in': missing value after 'in'.",
+                id="dangling_in",
+            ),
+            pytest.param(
+                'steps.a.stdout in ["x"',
+                "Invalid expression 'steps.a.stdout in [\"x\"': missing ']' to close '[' at column 19.",
+                id="unclosed_list",
+            ),
+            pytest.param(
+                'steps.a.stdout in ["x",]',
+                "Invalid expression 'steps.a.stdout in [\"x\",]': unexpected ']' at column 24.",
+                id="trailing_comma",
+            ),
+            pytest.param(
+                "steps.a.stdout in [!x]",
+                "Invalid expression 'steps.a.stdout in [!x]': unexpected '!' at column 20.",
+                id="negation_item",
+            ),
+            pytest.param(
+                'steps.a.stdout == ["x"]',
+                "Invalid expression 'steps.a.stdout == [\"x\"]': unexpected '[' at column 19.",
+                id="list_after_equals",
+            ),
+            pytest.param(
+                "steps.a.stdout in [needs edits]",
+                "Invalid expression 'steps.a.stdout in [needs edits]': "
+                "unquoted text 'needs edits' at column 20; quote a value of more than one word.",
+                id="unquoted_item_text",
+            ),
+            pytest.param(
+                "steps.a.stdout == a,b",
+                "Invalid expression 'steps.a.stdout == a,b': unexpected ',' at column 20.",
+                id="comma_in_a_word",
+            ),
+            pytest.param(
+                "steps.a.stdout == in",
+                "Invalid expression 'steps.a.stdout == in': unexpected 'in' at column 19.",
+                id="lone_in_as_value",
+            ),
         ],
     )
     def test_invalid_source_reports_its_reason(self, source: str, message: str) -> None:
@@ -266,3 +442,70 @@ class ExpressionParserTests:
 
         assert isinstance(result, InvalidExpression)
         assert result.message == message
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            pytest.param("(" * 32 + "steps.a.exit_code == 0" + ")" * 32, A, id="parentheses"),
+            pytest.param("!" * 32 + "steps.a.stdout", _negated(STDOUT, 32), id="negations"),
+            pytest.param("(!" * 16 + "steps.a.stdout" + ")" * 16, _negated(STDOUT, 16), id="mixed"),
+        ],
+    )
+    def test_nesting_at_the_limit_parses(self, source: str, expected: Expression) -> None:
+        assert parse_expression(source) == expected
+
+    @pytest.mark.parametrize(
+        ("source", "reason"),
+        [
+            pytest.param(
+                "(" * 200 + "steps.a.exit_code == 0" + ")" * 200,
+                "'(' at column 33 nests too deeply; nest at most 32 levels",
+                id="parentheses",
+            ),
+            pytest.param(
+                "!" * 1000 + "steps.a.stdout",
+                "'!' at column 33 nests too deeply; nest at most 32 levels",
+                id="negations",
+            ),
+            pytest.param(
+                "(!" * 17 + "steps.a.stdout" + ")" * 17,
+                "'(' at column 33 nests too deeply; nest at most 32 levels",
+                id="mixed",
+            ),
+        ],
+    )
+    def test_nesting_past_the_limit_reports_its_reason(self, source: str, reason: str) -> None:
+        result = parse_expression(source)
+
+        assert result == InvalidExpression(source, reason)
+
+    @pytest.mark.parametrize("operator", ["&&", "||"])
+    def test_joins_at_the_limit_parse(self, operator: str) -> None:
+        result = parse_expression(f" {operator} ".join(["steps.a.stdout"] * 65))
+
+        assert isinstance(result, Logical)
+
+    @pytest.mark.parametrize(
+        ("source", "reason"),
+        [
+            pytest.param(
+                " && ".join(["x"] * 600),
+                "'&&' at column 323 joins too many conditions; use at most 64 '&&' and '||'",
+                id="and_chain",
+            ),
+            pytest.param(
+                " || ".join(["x"] * 600),
+                "'||' at column 323 joins too many conditions; use at most 64 '&&' and '||'",
+                id="or_chain",
+            ),
+            pytest.param(
+                "(" + " && ".join(["x"] * 33) + ") || (" + " || ".join(["x"] * 33) + ")",
+                "'||' at column 326 joins too many conditions; use at most 64 '&&' and '||'",
+                id="across_groups",
+            ),
+        ],
+    )
+    def test_joins_past_the_limit_report_their_reason(self, source: str, reason: str) -> None:
+        result = parse_expression(source)
+
+        assert result == InvalidExpression(source, reason)

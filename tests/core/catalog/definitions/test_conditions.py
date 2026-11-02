@@ -52,20 +52,79 @@ class ConditionExpressionValidatorTests:
         assert validate_condition_expression(expression, known_step_ids={"a"}) == [message]
 
     @pytest.mark.parametrize(
-        "expression",
+        ("expression", "message"),
         [
-            pytest.param("not a condition", id="bare_words"),
-            pytest.param("steps.a.exit_code", id="lone_path"),
-            pytest.param("done!", id="punctuated_word"),
-            pytest.param('"abc', id="tokenize_error_without_operator"),
-            pytest.param("1e3", id="unsupported_number_without_operator"),
+            pytest.param(
+                "not a condition",
+                "Invalid expression 'not a condition': unquoted text 'not a condition' at column 1; "
+                "quote a value of more than one word.",
+                id="bare_words",
+            ),
+            pytest.param(
+                "done!",
+                "Condition 'done!' must reference at least one dynamic operand "
+                "('steps.<id>.<field>' or 'iteration.index').",
+                id="punctuated_word",
+            ),
+            pytest.param('"abc', "Invalid expression '\"abc': unterminated string at column 1.", id="tokenize_error"),
+            pytest.param(
+                "1e3", "Invalid expression '1e3': unsupported number '1e3' at column 1.", id="unsupported_number"
+            ),
         ],
     )
-    def test_entry_without_an_operator_keeps_the_existing_message(self, expression: str) -> None:
+    def test_entry_without_an_operator_reports_its_grammar_error(self, expression: str, message: str) -> None:
+        assert validate_condition_expression(expression, known_step_ids={"a"}) == [message]
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            pytest.param('steps.a.status == "completed" || steps.a.exit_code == 0', id="or"),
+            pytest.param("steps.a.exit_code == 0 && iteration.index > 1", id="and_with_iteration"),
+            pytest.param("!(steps.a.exit_code == 0)", id="not_of_a_group"),
+            pytest.param("!steps.a.stdout", id="not_of_a_path"),
+            pytest.param('steps.a.outputs.s in ["x", 1, true]', id="in_list"),
+            pytest.param('steps.a.outputs.s not in ["x"]', id="not_in_list"),
+            pytest.param("steps.a.status in [completed, skipped]", id="bare_word_items"),
+            pytest.param("steps.a.exit_code", id="lone_path"),
+            pytest.param("(steps.a.exit_code == 0)", id="parenthesised"),
+        ],
+    )
+    def test_compound_and_bare_value_entries_report_no_errors(self, expression: str) -> None:
+        assert validate_condition_expression(expression, known_step_ids={"a"}) == []
+
+    @pytest.mark.parametrize(
+        ("expression", "item"),
+        [
+            pytest.param("steps.a.status in [steps.a.stdout]", "steps.a.stdout", id="step_path"),
+            pytest.param("steps.a.status in [v1.2]", "v1.2", id="dotted_word"),
+            pytest.param("steps.a.status in [iteration]", "iteration", id="iteration"),
+        ],
+    )
+    def test_list_item_that_is_not_a_literal_is_rejected(self, expression: str, item: str) -> None:
         assert validate_condition_expression(expression, known_step_ids={"a"}) == [
-            f"Invalid condition expression '{expression}'. "
-            "Expected '<operand> <operator> <operand>' with operators: !=, <, <=, ==, >, >=, contains."
+            f"List item '{item}' in until condition '{expression}' is not a literal. "
+            "Items after 'in' and 'not in' are quoted strings, numbers, booleans or single words."
         ]
+
+    @pytest.mark.parametrize(
+        ("expression", "message"),
+        [
+            pytest.param(
+                "steps.a.exit_code == 0 && steps.zzz.exit_code == 0",
+                "Step id 'zzz' referenced in until condition 'steps.a.exit_code == 0 && steps.zzz.exit_code == 0' "
+                "not found in loop 'do' steps (allowed: a).",
+                id="unknown_step_in_the_right_arm",
+            ),
+            pytest.param(
+                '!(inputs.mode == "x")',
+                "Operand 'inputs.mode' in until condition '!(inputs.mode == \"x\")' reads 'inputs', "
+                "which a condition cannot read. Readable roots: iteration, steps.",
+                id="unreadable_root_under_not",
+            ),
+        ],
+    )
+    def test_every_operand_of_a_compound_entry_is_checked(self, expression: str, message: str) -> None:
+        assert validate_condition_expression(expression, scope=_UNTIL_SCOPE) == [message]
 
     @pytest.mark.parametrize(
         "expression",
@@ -98,6 +157,12 @@ class ConditionExpressionValidatorTests:
                 "Condition '\"x\" == steps' must reference at least one dynamic operand "
                 "('steps.<id>.<field>' or 'iteration.index').",
                 id="quoted_value_against_lone_steps",
+            ),
+            pytest.param(
+                '"x" == "x" || true',
+                'Condition \'"x" == "x" || true\' must reference at least one dynamic operand '
+                "('steps.<id>.<field>' or 'iteration.index').",
+                id="constant_compound",
             ),
         ],
     )
