@@ -19,7 +19,12 @@ every fix item a valid outcome.
 
 With --render-triage it only checks .agentic/triage.json against
 .agentic/feedback.json and renders .agentic/triage.md from it, one line per
-item, for the person to approve; it runs no command.
+item, and .agentic/triage-options.json, the same lines as the options the
+person picks the items to fix from; it runs no command. With --apply-picks
+<json array of ids> it rewrites .agentic/triage.json to the person's picks:
+each picked item becomes a fix, each unpicked fix is deferred with
+PASSED_OVER_REPLY and every other item keeps its triaged action; it then
+renders both files again and runs no command.
 """
 
 from __future__ import annotations
@@ -49,6 +54,8 @@ from publish_review import (
 
 TRIAGE_JSON = AGENTIC_DIR / "triage.json"
 TRIAGE_MD = AGENTIC_DIR / "triage.md"
+TRIAGE_OPTIONS = AGENTIC_DIR / "triage-options.json"
+PASSED_OVER_REPLY = "Not picked for this round of fixes."
 NO_FEEDBACK_LINE = "No open feedback."
 OUTCOMES_JSON = AGENTIC_DIR / "feedback-outcomes.json"
 REPLY_MARKER = "<!-- dovo-pr-fix -->"
@@ -244,27 +251,97 @@ def _triage_text(entry: dict[str, object]) -> str:
     return " ".join(str(text).split())
 
 
-def triage_markdown(items: list[dict[str, object]], triage: dict[str, object]) -> str:
-    """Return triage.md: per item in items order, `<label> → <action>: <reply, or reason for fix>`, or NO_FEEDBACK_LINE with no item."""
-    if not items:
-        return f"{NO_FEEDBACK_LINE}\n"
+def _triage_lines(items: list[dict[str, object]], triage: dict[str, object]) -> list[tuple[str, str]]:
+    """Return per item in items order its id and `<label> → <action>: <reply, or reason for fix>`."""
     entries = _entries(triage)
     lines = []
     for item in items:
         entry = entries[str(item["id"])]
-        lines.append(f"{item.get('label')} → {entry['action']}: {_triage_text(entry)}")
-    return "".join(f"{line}\n" for line in lines)
+        lines.append((str(item["id"]), f"{item.get('label')} → {entry['action']}: {_triage_text(entry)}"))
+    return lines
+
+
+def triage_markdown(items: list[dict[str, object]], triage: dict[str, object]) -> str:
+    """Return triage.md: one _triage_lines line per item, or NO_FEEDBACK_LINE with no item."""
+    if not items:
+        return f"{NO_FEEDBACK_LINE}\n"
+    return "".join(f"{line}\n" for _, line in _triage_lines(items, triage))
+
+
+def triage_options(items: list[dict[str, object]], triage: dict[str, object]) -> dict[str, object]:
+    """Return triage-options.json: an `items` list of `{id, label}`, the label being the item's triage.md line."""
+    return {"items": [{"id": item_id, "label": line} for item_id, line in _triage_lines(items, triage)]}
+
+
+def _write_triage_views(items: list[dict[str, object]], triage: dict[str, object]) -> None:
+    """Write TRIAGE_MD and TRIAGE_OPTIONS from the checked triage."""
+    TRIAGE_MD.write_text(triage_markdown(items, triage), encoding="utf-8")
+    TRIAGE_OPTIONS.write_text(json.dumps(triage_options(items, triage), indent=2) + "\n", encoding="utf-8")
 
 
 def render_triage() -> str:
-    """Check triage.json against feedback.json, write TRIAGE_MD from it and return the line to report, running no command.
+    """Check triage.json against feedback.json, write TRIAGE_MD and TRIAGE_OPTIONS and return the line to report.
+
+    Runs no command.
 
     Raises:
         ReplyThreadsError: For errors 1-2 of issue #1259, before any file is written.
     """
     _, items, triage = _read_triage()
-    TRIAGE_MD.write_text(triage_markdown(items, triage), encoding="utf-8")
+    _write_triage_views(items, triage)
     return f"Rendered {len(items)} triage entries to {TRIAGE_MD}\n"
+
+
+def _picked_ids(picked: str, item_ids: list[str]) -> list[str]:
+    """Return the ids in picked, a JSON array of feedback ids.
+
+    Raises:
+        ReplyThreadsError: When picked is not a JSON array of strings, or names an id not in item_ids.
+    """
+    try:
+        ids = json.loads(picked)
+    except json.JSONDecodeError as error:
+        raise ReplyThreadsError(f"the picked items {picked!r} are not a JSON array") from error
+    if not isinstance(ids, list) or not all(isinstance(item_id, str) for item_id in ids):
+        raise ReplyThreadsError(f"the picked items {picked!r} are not a JSON array of ids")
+    unknown = [item_id for item_id in ids if item_id not in item_ids]
+    if unknown:
+        raise ReplyThreadsError(f"picked item {unknown[0]} names no feedback item")
+    return ids
+
+
+def picked_entry(entry: dict[str, object], *, picked: bool) -> dict[str, object]:
+    """Return entry as the person's pick settles it.
+
+    A picked entry is a fix, keeping a fix's reason or giving the triaged action and reply as the reason.
+    An unpicked fix is deferred with PASSED_OVER_REPLY. Any other entry is returned unchanged.
+    """
+    action = entry["action"]
+    if picked and action != "fix":
+        reason = f"The person picked it to fix over the triaged {action}: {_triage_text(entry)}"
+        return {"id": entry["id"], "action": "fix", "reason": reason}
+    if not picked and action == "fix":
+        return {"id": entry["id"], "action": "defer", "reply": PASSED_OVER_REPLY}
+    return entry
+
+
+def apply_picks(picked: str) -> str:
+    """Rewrite triage.json to the picked items, write TRIAGE_MD and TRIAGE_OPTIONS and return the line to report.
+
+    Runs no command.
+
+    Raises:
+        ReplyThreadsError: For an invalid triage or picked list, before any file is written.
+    """
+    _, items, triage = _read_triage()
+    ids = _picked_ids(picked, [str(item["id"]) for item in items])
+    entries = _entries(triage)
+    settled: dict[str, object] = {
+        "items": [picked_entry(entries[str(item["id"])], picked=item["id"] in ids) for item in items]
+    }
+    TRIAGE_JSON.write_text(json.dumps(settled, indent=2) + "\n", encoding="utf-8")
+    _write_triage_views(items, settled)
+    return f"Picked {len(ids)} of {len(items)} triage entries to fix in {TRIAGE_JSON}\n"
 
 
 def _outcome_problem(item_id: str, entry: dict[str, object]) -> str | None:
@@ -503,22 +580,35 @@ def reply_all() -> str:
 
 
 def main() -> int:
-    """Reply on and resolve the review threads pr-fix triaged, or with --render-triage only render the triage."""
+    """Reply on and resolve the review threads pr-fix triaged, or only render the triage or apply the picks to it."""
     parser = argparse.ArgumentParser(
         description=(
             "Reply on and resolve the review threads pr-fix triaged, and post the outcomes of its out-of-diff "
-            "findings; with --render-triage, only check the triage and render it for approval."
+            "findings; with --render-triage, only check the triage and render it for the person to pick from; "
+            "with --apply-picks, only settle the triage to the picked items."
         )
     )
-    parser.add_argument(
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
         "--render-triage",
         action="store_true",
-        help="check .agentic/triage.json and render .agentic/triage.md from it, posting nothing",
+        help="check .agentic/triage.json and render .agentic/triage.md and triage-options.json, posting nothing",
+    )
+    modes.add_argument(
+        "--apply-picks",
+        metavar="IDS",
+        help="JSON array of the feedback ids the person picked to fix; rewrites .agentic/triage.json, posting nothing",
     )
     args = parser.parse_args()
 
     try:
-        sys.stdout.write(render_triage() if args.render_triage else reply_all())
+        if args.render_triage:
+            report = render_triage()
+        elif args.apply_picks is not None:
+            report = apply_picks(args.apply_picks)
+        else:
+            report = reply_all()
+        sys.stdout.write(report)
     except (ReplyThreadsError, PublishReviewError) as error:
         sys.stderr.write(f"reply_threads.py: {error}\n")
         return 1
