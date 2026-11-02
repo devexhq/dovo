@@ -435,7 +435,8 @@ steps:
       If that is not empty, change nothing and report that the slice was phased and approved in
       that session. Otherwise:
 
-      Follow .dovo/catalog/prompts/sdlc/v2/issue-plan.md in the mode `/issue-plan --slice {{ steps.next.outputs.slice }}`.
+      Follow .dovo/catalog/prompts/sdlc/v2/issue-plan.md and its slice-mode file,
+      .dovo/catalog/prompts/sdlc/v2/issue-plan-slice.md, in the mode `/issue-plan --slice {{ steps.next.outputs.slice }}`.
       Plan slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked on issue
       {{ steps.start.outputs.issue }}, from the epic plan in .agentic/epic-plan.md and
       .agentic/epic-plan.json.
@@ -488,8 +489,8 @@ steps:
         - Addressing a finding may make an open question moot, change its assumed answer or
           raise a new one: remove, rewrite or add entries in plan.json `open_questions` to
           match. Open questions live only in plan.json.
-        - Keep .agentic/plan.json in the shape the issue-plan prompt defines for slice mode
-          (`.dovo/catalog/prompts/sdlc/v2/issue-plan.md`), and in agreement with .agentic/plan.md. Never
+        - Keep .agentic/plan.json in the shape Step 5 of
+          `.dovo/catalog/prompts/sdlc/v2/issue-plan.md` defines for slice mode, and in agreement with .agentic/plan.md. Never
           change its contract or slices, or the plan's Feature contract and Slices sections,
           other than slice {{ steps.next.outputs.slice }}'s phases: a finding that needs either
           changed becomes an open question whose assumed answer keeps them.
@@ -955,7 +956,7 @@ steps:
            contract section of .agentic/plan.md and the contract in .agentic/plan.json to match
            what landed. Never reverse a decision settled by the user (`settled_by.kind` `user`):
            report it under Departures instead.
-         Keep plan.json in the shape the issue-plan prompt defines (`.dovo/catalog/prompts/sdlc/v2/issue-plan.md`),
+         Keep plan.json in the shape Step 5 of `.dovo/catalog/prompts/sdlc/v2/issue-plan.md` defines,
          and say under Later slices affected what was amended. Never change this slice or an
          earlier one.
       3. Find the open issues whose body this change makes false: the epic's open sub-issues,

@@ -188,7 +188,8 @@ steps:
     name: Slice the issue
     type: agent
     prompt: |
-      Follow .dovo/catalog/prompts/sdlc/v2/issue-plan.md in the mode `/issue-plan ${{ inputs.issue }}`.
+      Follow .dovo/catalog/prompts/sdlc/v2/issue-plan.md and its issue-mode file,
+      .dovo/catalog/prompts/sdlc/v2/issue-plan-issue.md, in the mode `/issue-plan ${{ inputs.issue }}`.
       Read the decisions of the issue's latest approved plan from .agentic/prior-decisions.json.
       List under each slice the outcomes (`O-n`) of the issue it delivers.
       Write the plan to .agentic/plan.md and its open questions, contract and slices to
@@ -241,8 +242,8 @@ steps:
           reason to recommend it.
         - Folding a challenge may make an open question moot, change its assumed answer or raise
           a new one: remove, rewrite or add entries in `open_questions` to match.
-        - Keep .agentic/plan.json in the shape the issue-plan prompt defines
-          (`.dovo/catalog/prompts/sdlc/v2/issue-plan.md`), including its contract and slices, and in
+        - Keep .agentic/plan.json in the shape Step 5 of
+          `.dovo/catalog/prompts/sdlc/v2/issue-plan.md` defines, including its contract and slices, and in
           agreement with .agentic/plan.md. Open questions live only in plan.json.
         - Run `uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py questions` and fix
           every problem it names.
@@ -390,7 +391,8 @@ steps:
       If that is empty, the plan has two or more slices: change nothing and report that you did
       nothing. Otherwise:
 
-      Follow .dovo/catalog/prompts/sdlc/v2/issue-plan.md in the mode `/issue-plan --slice {{ steps.one-slice.outputs.slice }}`.
+      Follow .dovo/catalog/prompts/sdlc/v2/issue-plan.md and its slice-mode file,
+      .dovo/catalog/prompts/sdlc/v2/issue-plan-slice.md, in the mode `/issue-plan --slice {{ steps.one-slice.outputs.slice }}`.
       Phase slice {{ steps.one-slice.outputs.slice }} of issue ${{ inputs.issue }} from the issue plan this
       run has just settled, in .agentic/epic-plan.md and .agentic/epic-plan.json.
       Read the decisions of the issue's latest approved plan from .agentic/prior-decisions.json.
@@ -434,8 +436,8 @@ steps:
         - Addressing a finding may make an open question moot, change its assumed answer or
           raise a new one: remove, rewrite or add entries in plan.json `open_questions` to
           match. Open questions live only in plan.json.
-        - Keep .agentic/plan.json in the shape the issue-plan prompt defines for slice mode
-          (`.dovo/catalog/prompts/sdlc/v2/issue-plan.md`), and in agreement with .agentic/plan.md. Never
+        - Keep .agentic/plan.json in the shape Step 5 of
+          `.dovo/catalog/prompts/sdlc/v2/issue-plan.md` defines for slice mode, and in agreement with .agentic/plan.md. Never
           change its contract or slices, or the plan's Feature contract and Slices sections,
           other than slice {{ steps.one-slice.outputs.slice }}'s phases: a finding that needs
           either changed becomes an open question whose assumed answer keeps them.

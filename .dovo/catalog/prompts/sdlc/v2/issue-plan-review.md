@@ -7,7 +7,7 @@ Review a **slice plan**, `/issue-plan-review --slice <id>`: the phases of that o
 1. **Grounding**: does the plan describe the code as it is today.
 2. **Missed behaviour**: what the planned change breaks or depends on that the plan does not say.
 3. **Coverage**: does every requirement land in a phase and a test, and nothing more.
-4. **Shape and rules**: phasing per [planning.md](../../../../../docs/agents/planning.md), the slice against the issue plan per [issue-plan](issue-plan.md), and the design against R1–R18 in [AGENTS.md](../../../../../AGENTS.md).
+4. **Shape and rules**: phasing per [planning.md](../../../../../docs/agents/planning.md), the slice against the issue plan per [issue-plan-slice.md](issue-plan-slice.md), and the design against R1–R18 in [AGENTS.md](../../../../../AGENTS.md).
 
 Output goes to `.agentic/plan-review.json`. The plan's author applies the findings, and a human approves the plan before `/issue-code` runs. Your job is to make that approval short. The findings that matter most come from reading the code, not from re-reading the plan.
 
@@ -61,7 +61,7 @@ The requirements are the slice's numbered items in `.agentic/requirements.json`:
 
 ## 6. Check shape and rules
 
-- The plan follows the template in [planning.md](../../../../../docs/agents/planning.md) Step 4, including the Phases table, as [issue-plan](issue-plan.md) Step 4 changes it: no What you're approving section, and a `## Changes to existing behaviour` section instead. Neither template has a Traceability, GWT Scenarios, per-phase Instructions, Edge cases or **Unchanged:** section, so their absence is never a finding. A phase's `### Code` that copies a literal the issue's binding values already hold, or stubs a private helper, is a Suggestion whose Fix is to cite the issue section or drop the stub.
+- The plan follows the template in [planning.md](../../../../../docs/agents/planning.md) Step 4, including the Phases table, as [issue-plan-slice.md](issue-plan-slice.md) Step 4 changes it: no What you're approving section, and a `## Changes to existing behaviour` section instead. Neither template has a Traceability, GWT Scenarios, per-phase Instructions, Edge cases or **Unchanged:** section, so their absence is never a finding. A phase's `### Code` that copies a literal the issue's binding values already hold, or stubs a private helper, is a Suggestion whose Fix is to cite the issue section or drop the stub.
 - Each phase is one concern, roughly 400 changed lines or less, passes the gate on its own and ships something. A phase over budget states why it cannot be split.
 - The phases of each slice together serve one responsibility, since each slice lands in one PR. A slice whose phases mix kinds of change (a foundation and its adoption, or a behaviour change and a refactor), not raised as an open question recommending to split the slice, is a Warning.
 - `.agentic/plan.json` `slices` agrees with the plan's `## Slices` table, every phase belongs to the slice under review, and a plain issue (`contract` is `null`) has one slice.
