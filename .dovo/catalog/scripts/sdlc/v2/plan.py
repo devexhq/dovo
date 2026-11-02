@@ -17,6 +17,9 @@ as a decision. It refuses a plan whose `open_questions` is not `[]`, or whose
 `decisions` holds an entry that is not a well-formed decision (the shape is
 `Decision` in plan_formats.py) or reuses another's id. Given `--slice`, it
 also refuses a decision whose `phases` name a phase the slice does not have.
+Given `--policy`, it verifies each original question has one corresponding
+decision, an explicit human answer when required, or its grounded planner
+recommendation, retaining phases and replacement evidence.
 A plan that passes prints nothing and exits 0.
 
 `questions` runs before the blueprints ask a person which open questions to
@@ -25,10 +28,11 @@ refuses, naming the question and the field, a plan whose `open_questions`
 holds an entry that is not a well-formed open question (the shape and caps
 are `OpenQuestion` in plan_formats.py) or reuses another's id, and a plan
 whose `decisions` is malformed as `check-questions` says. Given `--summary`, it
-writes there, as markdown, the open questions as a table with each one's
-assumed answer and recommendation, then their details, then the decisions one
+writes there, as markdown, required questions and routine recommendations
+with their classification, grounding and details, then the decisions one
 line each: the file the person reads at that prompt. A plan that passes prints
-nothing and exits 0.
+nothing and exits 0. Given `--policy`, it also writes the original validated
+questions and required-only choices for settlement verification.
 
 `check-breakdown` runs after `breakdown`, which writes one phase file per
 phase of the slice to .agentic/phases/ (the shape is `Phase` in
@@ -206,12 +210,12 @@ def load_decisions(plan: dict[str, object], path: Path) -> list[Decision]:
     return decisions
 
 
-def check_questions(path: Path, slice_id: str | None) -> None:
+def check_questions(path: Path, slice_id: str | None, policy: Path | None = None) -> None:
     """Refuse the plan at path unless every open question is settled as a well-formed decision of the slice.
 
     Raises:
-        PlanError: open_questions is not [], decisions is missing, malformed or reuses an id, or, given
-            slice_id, a decision names a phase the slice does not have.
+        PlanError: questions remain, decisions or policy are malformed, settlement contradicts the policy,
+            or a decision names a phase the slice does not have.
     """
     plan = load_plan(path)
     questions = _list(plan, "open_questions", path)
@@ -219,6 +223,8 @@ def check_questions(path: Path, slice_id: str | None) -> None:
         named = ", ".join(_question_id(item, position) for position, item in enumerate(questions, start=1))
         raise PlanError(f"{path} still lists open questions {named}; fold-answers must settle each one as a decision.")
     decisions = load_decisions(plan, path)
+    if policy is not None:
+        check_question_policy(policy, decisions)
     if slice_id is None:
         return
     numbers = slice_phases(plan, slice_id, path)
@@ -250,6 +256,48 @@ def load_open_questions(plan: dict[str, object], path: Path) -> list[OpenQuestio
     return questions
 
 
+def required_questions(questions: list[OpenQuestion]) -> list[dict[str, str]]:
+    """Return the required-question choices in their original order."""
+    return [{"id": question.id, "summary": question.summary} for question in questions if question.needs_human]
+
+
+def check_question_policy(path: Path, decisions: list[Decision]) -> None:
+    """Refuse settlements that lose original question evidence or misattribute an answer.
+
+    Raises:
+        PlanError: the policy is malformed or a question has no corresponding valid settlement.
+    """
+    policy = load_plan(path)
+    questions = load_open_questions(policy, path)
+    if _list(policy, "required_questions", path) != required_questions(questions):
+        raise PlanError(f"{path}: required_questions disagrees with the original questions.")
+    for question, raw in zip(questions, _list(policy, "open_questions", path), strict=True):
+        settled = [decision for decision in decisions if decision.was == question.id]
+        if len(settled) != 1:
+            raise PlanError(f"{path}: {question.id} must have exactly one resulting decision; found {len(settled)}.")
+        decision = settled[0]
+        check_question_settlement(question, raw, decision, path)
+
+
+def check_question_settlement(question: OpenQuestion, raw: object, decision: Decision, path: Path) -> None:
+    """Refuse an unanswered required question or a wrongly attributed routine recommendation.
+
+    Raises:
+        PlanError: the decision does not explicitly answer or automatically settle the question correctly.
+    """
+    replacement = (
+        None if decision.replaces is None else {"id": decision.replaces.id, "session": decision.replaces.session}
+    )
+    if decision.phases != question.phases or replacement != (raw.get("replaces") if isinstance(raw, dict) else None):
+        raise PlanError(f"{path}: {question.id} settlement changed its phases or replaces.")
+    if question.needs_human and decision.settled_by != "human":
+        raise PlanError(f"{path}: {question.id} requires an explicit human answer.")
+    if decision.settled_by not in ("human", "planner"):
+        raise PlanError(f"{path}: {question.id} must be settled_by human or planner.")
+    if decision.settled_by == "planner" and decision.decision != question.recommended:
+        raise PlanError(f"{path}: {question.id} planner decision differs from its grounded recommendation.")
+
+
 def _cell(text: str) -> str:
     """Return text fit for one markdown table cell."""
     return " ".join(text.split()).replace("|", "\\|")
@@ -268,7 +316,14 @@ def _question_row(question: OpenQuestion) -> str:
 
 def _question_details(question: OpenQuestion) -> list[str]:
     """Return question's heading and bullets: its details, the challenger's case and the other answers."""
-    lines = ["", f"### {question.id}", "", *(f"- {item}" for item in question.details)]
+    lines = [
+        "",
+        f"### {question.id}",
+        "",
+        f"- Reason: {question.human_reason}.",
+        *(f"- {item}" for item in question.details),
+        *(f"- Grounding: {item}" for item in question.recommendation_grounding),
+    ]
     if question.challenged:
         lines.append(f"- Challenge answer: {question.challenge_answer}")
     lines += [f"- Challenge: {item}" for item in question.challenge_details]
@@ -277,35 +332,41 @@ def _question_details(question: OpenQuestion) -> list[str]:
     return lines
 
 
+def _question_section(title: str, questions: list[OpenQuestion]) -> list[str]:
+    """Return one summary section with its questions and grounding."""
+    lines = ["", f"## {title}", ""]
+    if not questions:
+        return [*lines, "None."]
+    lines += [
+        "| ID | Question | Assumed answer | Challenged | Recommended |",
+        "|---|---|---|---|---|",
+        *(_question_row(question) for question in questions),
+    ]
+    for question in questions:
+        lines += _question_details(question)
+    return lines
+
+
 def render_summary(plan: dict[str, object], questions: list[OpenQuestion], decisions: list[Decision]) -> str:
-    """Return the summary a person reads before answering: the open questions as a table, then the decisions."""
+    """Return required questions, routine recommendations and decisions for the answer prompt."""
     issue = plan.get("issue")
     lines = [
         f"# Plan summary for #{issue}" if isinstance(issue, int) else "# Plan summary",
         "",
-        "## Open questions",
-        "",
+        "Required questions need explicit answers; unanswered routine questions settle to their recommendations.",
+        "Write `OQ-id: answer` for every required question and any routine recommendation you want to override.",
     ]
-    if questions:
-        lines += [
-            "Required questions need explicit answers; unanswered routine questions settle to their recommendations.",
-            "",
-            "| ID | Question | Assumed answer | Challenged | Recommended |",
-            "|---|---|---|---|---|",
-            *(_question_row(question) for question in questions),
-        ]
-        for question in questions:
-            lines += _question_details(question)
-    else:
-        lines.append("None.")
+    for title, needs_human in (("Required questions", True), ("Routine recommendations", False)):
+        entries = [question for question in questions if question.needs_human == needs_human]
+        lines += _question_section(title, entries)
     lines += ["", "## Decisions", ""]
     bullets = [f"- **{d.id}** {_sentence(d.decision)}. *{_label(d)}.*" for d in decisions]
     lines += bullets or ["None."]
     return "\n".join(lines) + "\n"
 
 
-def check_open_questions(path: Path, summary: Path | None) -> None:
-    """Refuse the plan at path unless its open questions and decisions are well formed; write the summary when asked.
+def check_open_questions(path: Path, summary: Path | None, policy: Path | None = None) -> None:
+    """Validate questions and decisions, then write any requested summary and policy snapshot.
 
     Raises:
         PlanError: open_questions or decisions is missing, malformed or reuses an id.
@@ -316,6 +377,10 @@ def check_open_questions(path: Path, summary: Path | None) -> None:
     if summary is not None:
         summary.parent.mkdir(parents=True, exist_ok=True)
         summary.write_text(render_summary(plan, questions, decisions), encoding="utf-8")
+    if policy is not None:
+        policy.parent.mkdir(parents=True, exist_ok=True)
+        snapshot = {"open_questions": plan["open_questions"], "required_questions": required_questions(questions)}
+        policy.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
 
 
 # --- the slices ----------------------------------------------------------------
@@ -737,6 +802,8 @@ def _label(decision: Decision) -> str:
     """Return the italic label saying who settled decision."""
     if decision.settled_by == "human":
         return f"Answered: {_sentence(decision.answer or '')}"
+    if decision.settled_by == "planner" and decision.was is not None:
+        return f"Settled by planner ({decision.was})"
     return SETTLED_LABELS[decision.settled_by]
 
 
@@ -960,9 +1027,11 @@ def build_parser() -> argparse.ArgumentParser:
     check = commands.add_parser("check-questions", help="Refuse a plan with an open question or a malformed decision.")
     check.add_argument("--plan", type=Path, default=PLAN_JSON, help="The plan.json to check.")
     check.add_argument("--slice", help="The slice whose phases every decision's phases must belong to.")
+    check.add_argument("--policy", type=Path, help="Verify settlement against the original question policy.")
     questions = commands.add_parser("questions", help="Refuse malformed open questions; write the plan summary.")
     questions.add_argument("--plan", type=Path, default=PLAN_JSON, help="The plan.json whose open questions to check.")
     questions.add_argument("--summary", type=Path, help="Write the open questions and decisions here as markdown.")
+    questions.add_argument("--policy", type=Path, help="Write the original questions and required choices here.")
     breakdown = commands.add_parser("check-breakdown", help="Refuse phase files that drop or misquote anything.")
     breakdown.add_argument("--slice", required=True, help="The slice the phase files break down.")
     breakdown.add_argument("--plan", type=Path, default=PLAN_JSON, help="The plan.json listing the slice's phases.")
@@ -1006,9 +1075,9 @@ def _dispatch_ready(args: argparse.Namespace) -> bool:
 def _dispatch_questions(args: argparse.Namespace) -> bool:
     """Run the check-questions or questions subcommand args names; return False for any other."""
     if args.command == "check-questions":
-        check_questions(args.plan, args.slice)
+        check_questions(args.plan, args.slice, args.policy)
     elif args.command == "questions":
-        check_open_questions(args.plan, args.summary)
+        check_open_questions(args.plan, args.summary, args.policy)
     else:
         return False
     return True
