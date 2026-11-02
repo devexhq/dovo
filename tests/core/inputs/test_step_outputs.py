@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 
 import pytest
 
@@ -52,10 +53,16 @@ class StepOutputResolverTests:
             pytest.param({"report": "not json"}, "", "report", ["score"], None, id="unparsable_recorded_value"),
             pytest.param({}, json.dumps({"metrics": {"coverage": 85}}), "metrics", ["lines"], None, id="missing_path"),
             pytest.param({}, json.dumps({"verdict": "ok"}), "verdict", ["deeper"], None, id="path_through_a_scalar"),
+            pytest.param({"a": '{"0": 1}'}, "", "a", (0,), None, id="integer_segment"),
         ],
     )
     def test_resolve_step_output_follows_a_further_path(
-        self, outputs: dict[str, str], stdout: str, key: str, path: list[str], expected: StepOutputValue | None
+        self,
+        outputs: dict[str, str],
+        stdout: str,
+        key: str,
+        path: Sequence[str | int],
+        expected: StepOutputValue | None,
     ) -> None:
         assert resolve_step_output(outputs, stdout, key, path) == expected
 

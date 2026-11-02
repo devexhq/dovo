@@ -5,11 +5,15 @@ import json
 import pytest
 
 from dovo.core.agents import AgentResponseStatus
+from dovo.core.inputs import build_providers, interpolate_string
 from dovo.engine.executors import evaluate_condition
 from dovo.engine.executors.models import (
     AGENT_OUTCOME_EXIT_CODES,
     AgentStepSummary,
     ConditionEvaluationResult,
+    ExecutionMetadata,
+    PreviousStepMetadata,
+    StepMetadata,
     StepResult,
 )
 
@@ -110,6 +114,17 @@ class ConditionExpressionEvaluatorTests:
         result = evaluate_condition(expression, step_results={"gate": _gate_result()})
 
         assert (result.resolved, result.passed, result.detail) == (resolved, passed, detail)
+
+    def test_placeholder_renders_the_value_the_condition_reads(self) -> None:
+        gate = PreviousStepMetadata(
+            id="gate", index="1", status="completed", exit_code="0", outputs=_gate_result().outputs
+        )
+        metadata = ExecutionMetadata(step=StepMetadata(id="next", index=2), steps=[gate])
+
+        rendered = interpolate_string("{{ steps.gate.outputs.report.score }}", build_providers(metadata=metadata))
+        result = evaluate_condition("steps.gate.outputs.report.score == 85", step_results={"gate": _gate_result()})
+
+        assert (rendered, result.passed) == ("85", True)
 
     def test_outputs_without_a_key_is_not_found(self) -> None:
         build = StepResult(
@@ -241,6 +256,20 @@ class ConditionExpressionEvaluatorTests:
         result = evaluate_condition("iteration.foo == 1", iteration_index=1)
 
         assert (result.resolved, result.passed, result.detail) == (False, False, "FALSE (not found)")
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            pytest.param('steps[0].status == "completed"', id="step_by_position"),
+            pytest.param('steps.build.outputs.files[0] == "a"', id="index_in_an_output_path"),
+        ],
+    )
+    def test_bracket_index_finds_no_value(self, expression: str) -> None:
+        build = _build_result(outputs={"files": '["a"]'})
+
+        result = evaluate_condition(expression, step_results={"build": build})
+
+        assert (result.passed, result.resolved, result.detail) == (False, False, "FALSE (not found)")
 
 
 def _build_result(

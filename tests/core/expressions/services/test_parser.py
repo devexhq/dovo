@@ -168,6 +168,13 @@ class ExpressionParserTests:
             pytest.param("'x'", Literal("x", "'x'"), id="quoted_string"),
             pytest.param("3", Literal(3, "3"), id="number"),
             pytest.param("False", Literal(False, "False"), id="boolean"),
+            pytest.param("steps[0]", Path("steps", (0,), "steps[0]"), id="integer_index"),
+            pytest.param("steps[-1].status", Path("steps", (-1, "status"), "steps[-1].status"), id="negative_index"),
+            pytest.param(
+                "steps[0].outputs['a.b']",
+                Path("steps", (0, "outputs", "a.b"), "steps[0].outputs['a.b']"),
+                id="index_then_bracket_key",
+            ),
         ],
     )
     def test_lone_operand_parses(self, source: str, expected: Expression) -> None:

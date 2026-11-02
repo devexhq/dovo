@@ -204,6 +204,8 @@ class InputsPackageTests:
             "NamespaceResolutionError",
             "ParameterInput",
             "StepOutputValue",
+            "UNDEFINED",
+            "Undefined",
             "build_providers",
             "coerce_input_value",
             "format_input_error_message",

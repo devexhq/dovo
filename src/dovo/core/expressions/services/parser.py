@@ -252,7 +252,12 @@ def _operand(token: Token) -> Operand:
         case (str() as root,) if root.lower() in _BOOLEANS:
             return Literal(_BOOLEANS[root.lower()], token.text)
         case (str() as root, *segments):
-            return Path(root, tuple(str(segment) for segment in segments), token.text)
+            return Path(root, tuple(_segment(segment) for segment in segments), token.text)
         case str() | int() | float() as value:
             return Literal(value, token.text)
     raise TypeError(f"Token {token.text!r} of kind {token.kind} is not an operand")
+
+
+def _segment(segment: object) -> str | int:
+    """Return a name token's segment as a Path segment: an int bracket index stays an int, every other is its text."""
+    return segment if isinstance(segment, int) else str(segment)

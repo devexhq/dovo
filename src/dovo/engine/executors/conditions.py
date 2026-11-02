@@ -13,12 +13,15 @@ _ITERATION_ROOT = "iteration"
 _ITERATION_FIELDS = frozenset({"index", "attempt"})
 
 
-def _resolve_step_field(result: StepResult, field: str, subpath: tuple[str, ...]) -> object:
-    """Extract a step attribute or its `outputs.<key>[.<path>]` value from a StepResult, or ABSENT when it has none."""
+def _resolve_step_field(result: StepResult, field: str, subpath: tuple[str | int, ...]) -> object:
+    """Extract a step attribute or its `outputs.<key>[.<path>]` value from a StepResult, or ABSENT when it has none.
+
+    An int segment, an unquoted bracket index, finds nothing.
+    """
     if field in ("exit_code", "status", "stdout"):
         return getattr(result, field)
-    if field == "outputs" and subpath:
-        found = resolve_step_output(result.outputs, result.stdout, subpath[0], subpath[1:])
+    if field == "outputs" and subpath and isinstance(key := subpath[0], str):
+        found = resolve_step_output(result.outputs, result.stdout, key, subpath[1:])
         return ABSENT if found is None else found.value
     return ABSENT
 
@@ -40,18 +43,22 @@ class _StepResultsResolver:
             return path.text
         return ABSENT
 
-    def _iteration(self, segments: tuple[str, ...]) -> object:
+    def _iteration(self, segments: tuple[str | int, ...]) -> object:
         """Return the iteration index for 'iteration', 'iteration.index' and 'iteration.attempt', else ABSENT."""
         if not segments or (len(segments) == 1 and segments[0] in _ITERATION_FIELDS):
             return self.iteration_index
         return ABSENT
 
-    def _step(self, segments: tuple[str, ...]) -> object:
-        """Return the field segments name on a step's result, or ABSENT when the step has no result."""
-        result = self.step_results.get(segments[0])
-        if result is None:
+    def _step(self, segments: tuple[str | int, ...]) -> object:
+        """Return the field segments name on a step's result, or ABSENT when the step has no result.
+
+        A step id or field that is an int segment, an unquoted bracket index, finds nothing.
+        """
+        step_id, field = segments[0], segments[1]
+        result = self.step_results.get(step_id) if isinstance(step_id, str) else None
+        if result is None or not isinstance(field, str):
             return ABSENT
-        return _resolve_step_field(result, segments[1], segments[2:])
+        return _resolve_step_field(result, field, segments[2:])
 
 
 def evaluate_condition(

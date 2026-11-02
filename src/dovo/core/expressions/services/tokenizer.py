@@ -24,6 +24,7 @@ NUMBER_RE: Final[re.Pattern[str]] = re.compile(r"-?[0-9]+(\.[0-9]+)?")
 _UNSUPPORTED_NUMBER_RE: Final[re.Pattern[str]] = re.compile(r"[0-9]|[+\-.][0-9]")
 _ROOT_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 _SEGMENT_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_-]+")
+_INDEX_RE: Final[re.Pattern[str]] = re.compile(r"\[(-?[0-9]+)\]")
 
 
 def tokenize(source: str) -> tuple[Token, ...] | InvalidExpression:
@@ -118,15 +119,16 @@ def _read_run(source: str, start: int) -> Token | InvalidExpression:
     return Token(TokenKind.WORD, text, column, text)
 
 
-def _read_name(source: str, start: int) -> tuple[tuple[str, ...], int] | InvalidExpression:
+def _read_name(source: str, start: int) -> tuple[tuple[str | int, ...], int] | InvalidExpression:
     """Return the parts of the name at start and the index where it stops; no parts when no name starts there.
 
-    A root of exactly 'in' reads no bracket key, so 'in["x"]' is the operator 'in' and a list.
+    An unquoted bracket index is an int part. A root of exactly 'in' reads no bracket key or index, so 'in["x"]' and
+    'in[0]' are the operator 'in' and a list.
     """
     root = _ROOT_RE.match(source, start)
     if root is None:
         return (), start
-    parts = [root.group()]
+    parts: list[str | int] = [root.group()]
     position = root.end()
     if parts == [ComparisonOperator.IN.value] and source.startswith("[", position):
         return tuple(parts), position
@@ -138,13 +140,24 @@ def _read_name(source: str, start: int) -> tuple[tuple[str, ...], int] | Invalid
     return tuple(parts), position
 
 
-def _read_suffix(source: str, position: int) -> tuple[str, int] | InvalidExpression | None:
-    """Return the '.segment' or quoted bracket key at position and the index after it, if one starts there."""
+def _read_suffix(source: str, position: int) -> tuple[str | int, int] | InvalidExpression | None:
+    """Return the '.segment', quoted bracket key or integer bracket index at position and the index after it.
+
+    None when no suffix starts there, so anything else after '[', spaces or a word included, ends the name.
+    """
     if source.startswith(".", position):
         segment = _SEGMENT_RE.match(source, position + 1)
         return None if segment is None else (segment.group(), segment.end())
-    if not source.startswith("[", position) or source[position + 1 : position + 2] not in _QUOTES:
+    if not source.startswith("[", position):
         return None
+    if source[position + 1 : position + 2] in _QUOTES:
+        return _read_bracket_key(source, position)
+    index = _INDEX_RE.match(source, position)
+    return None if index is None else (int(index.group(1)), index.end())
+
+
+def _read_bracket_key(source: str, position: int) -> tuple[str, int] | InvalidExpression:
+    """Return the quoted key of the bracket that opens at position and the index after its ']'."""
     key = _read_quoted(source, position + 1)
     if isinstance(key, InvalidExpression):
         return key
@@ -171,7 +184,7 @@ def _stops_run(source: str, position: int) -> bool:
     return char.isspace() or char in _QUOTES or source.startswith(_RUN_STOPS, position)
 
 
-def _name_token(source: str, parts: tuple[str, ...], start: int, end: int) -> Token:
+def _name_token(source: str, parts: tuple[str | int, ...], start: int, end: int) -> Token:
     """Return the token of the run from start to end, which is a whole name.
 
     A lone 'contains' or 'in' is the operator, and a lone 'not' followed, after whitespace only, by the operator 'in'

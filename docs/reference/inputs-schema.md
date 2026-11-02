@@ -72,4 +72,4 @@ Placeholders are replaced in:
 * String values within step `env` dictionaries
 
 ### Unresolved Placeholders
-If a template placeholder references an identifier not declared in `inputs:`, it is left as literal text, with no error.
+A placeholder that is only a reference to an identifier not declared in `inputs:` is left as literal text, with no error.

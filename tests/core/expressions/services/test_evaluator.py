@@ -13,6 +13,7 @@ from dovo.core.expressions import (
     Path,
     Resolver,
     evaluate_expression,
+    evaluate_value,
     is_truthy,
     parse_expression,
 )
@@ -48,6 +49,9 @@ class _RecordingResolver(_MappingResolver):
 
 _X_OR_Y = 'steps.a.stdout == "x" || steps.b.stdout == "y"'
 _X_AND_Y = 'steps.a.stdout == "x" && steps.b.stdout == "y"'
+
+_A = "steps.a.stdout"
+_A_OR_NONE = "steps.a.stdout || 'none'"
 
 _S = "steps.a.outputs.s"
 _XY = '["x", "y"]'
@@ -421,3 +425,27 @@ class ExpressionEvaluatorTests:
         evaluate_expression(expression, resolver)
 
         assert resolver.read == ["steps.a.stdout"]
+
+    @pytest.mark.parametrize(
+        ("source", "values", "expected"),
+        [
+            pytest.param(_A_OR_NONE, {_A: "note"}, "note", id="or_takes_truthy_left"),
+            pytest.param(_A_OR_NONE, {_A: ""}, "none", id="or_skips_empty_left"),
+            pytest.param(_A_OR_NONE, {}, "none", id="or_skips_absent_left"),
+            pytest.param(_A_OR_NONE, {_A: "false"}, "false", id="or_keeps_string_false"),
+            pytest.param("steps.a.stdout || steps.b.stdout", {}, ABSENT, id="or_both_absent"),
+            pytest.param("steps.a.stdout && 'x'", {_A: "y"}, "x", id="and_takes_right"),
+            pytest.param("steps.a.stdout && 'x'", {_A: 0}, 0, id="and_keeps_falsy_left"),
+            pytest.param("steps.a.stdout == 'x'", {_A: "x"}, True, id="comparison"),
+            pytest.param("!steps.a.stdout", {_A: "x"}, False, id="negation"),
+            pytest.param(_A, {}, ABSENT, id="absent_path"),
+            pytest.param("'lit'", {}, "lit", id="literal"),
+        ],
+    )
+    def test_evaluate_value_returns_the_deciding_value(
+        self, source: str, values: Mapping[str, object], expected: object
+    ) -> None:
+        expression = parse_expression(source)
+        assert not isinstance(expression, InvalidExpression)
+
+        assert evaluate_value(expression, _MappingResolver(values)) == expected

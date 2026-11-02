@@ -66,10 +66,22 @@ def _validate_step_operand(operand: Path, expression: str, scope: ConditionScope
     return errors
 
 
+def _index_errors(operand: Path, expression: str, scope: ConditionScope) -> list[str]:
+    """Reject an operand holding a bracket index: a condition reads a step by id, never by run-order position."""
+    if not any(isinstance(segment, int) for segment in operand.segments):
+        return []
+    return [
+        f"Operand '{operand.text}' in {scope.clause} condition '{expression}' holds a bracket index, "
+        "which a condition cannot read."
+    ]
+
+
 def _validate_operand(operand: Expression | ValueList, expression: str, scope: ConditionScope) -> list[str]:
-    """Validate one operand's reference: a step, the iteration, or a root a condition cannot read."""
+    """Validate one operand's reference: a bracket index, a step, the iteration, or a root a condition cannot read."""
     if not isinstance(operand, Path):
         return []
+    if index_errors := _index_errors(operand, expression, scope):
+        return index_errors
     if operand.root == _STEPS_ROOT and operand.segments:
         return _validate_step_operand(operand, expression, scope)
     if operand.root == _ITERATION_ROOT and not scope.allow_iteration:

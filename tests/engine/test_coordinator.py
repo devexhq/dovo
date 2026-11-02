@@ -2080,6 +2080,27 @@ class CoordinatorAskTests:
         assert ask_run.file("got.txt").read_text(encoding="utf-8").strip() == "approve"
 
     @pytest.mark.parametrize(
+        ("answer", "written"),
+        [
+            pytest.param(_answer("approve"), "[none]", id="no_comment"),
+            pytest.param(_answer("approve", comment="ship it"), "[ship it]", id="comment"),
+        ],
+    )
+    def test_command_renders_a_default_for_an_empty_comment(
+        self, ask_run: AskRun, answer: InteractionAnswer, written: str
+    ) -> None:
+        options = [{**_APPROVE_OPTIONS[0], "comment": "optional"}, *_APPROVE_OPTIONS[1:]]
+        steps = [
+            _approve_step(interaction={"mode": "select", "message": "Approve this plan?", "options": options}),
+            _command("after", "echo \"[{{ steps.approve.outputs.comment || 'none' }}]\" > got.txt"),
+        ]
+
+        outcome = ask_run.start(steps, _ScriptedPrompter([answer]))
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert ask_run.file("got.txt").read_text(encoding="utf-8").strip() == written
+
+    @pytest.mark.parametrize(
         ("policy", "expected_status", "expected_state", "expected_errors"),
         [
             pytest.param(
