@@ -1,0 +1,7 @@
+id: report
+name: Report the delivery outcome and remaining action
+description: Write result.json and report.md from verified delivery artifacts
+type: command
+command: uv run python .dovo/catalog/scripts/sdlc/ship/ship_state.py report
+timeout_seconds: 60
+on_failure: abort

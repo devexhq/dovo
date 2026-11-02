@@ -1,0 +1,7 @@
+id: prepare
+name: Capture the ticket and establish the working change
+description: Validate inputs, capture the live ticket contract and base, resolve an existing pull request, and align the checkout
+type: command
+command: uv run python .dovo/catalog/scripts/sdlc/ship/ship_state.py prepare
+timeout_seconds: 300
+on_failure: abort

@@ -1,0 +1,7 @@
+id: publication-gate
+name: Check the current contract and reviewed change before publishing
+description: Require live issue contract, HEAD commit, passed validation, and ready review to agree before permitting PR publication
+type: command
+command: uv run python .dovo/catalog/scripts/sdlc/ship/ship_state.py publication-gate
+timeout_seconds: 120
+on_failure: abort

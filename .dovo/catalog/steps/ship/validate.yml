@@ -1,0 +1,7 @@
+id: validate
+name: Run the required checks and record their evidence
+description: Execute repository quality gates (ruff, ty, mkdocs, complexipy, pytest) and record passed or checks_failed in stage.json
+type: command
+command: uv run python .dovo/catalog/scripts/sdlc/ship/ship_state.py validate
+timeout_seconds: 1200
+on_failure: abort

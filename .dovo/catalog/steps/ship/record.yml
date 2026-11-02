@@ -1,0 +1,7 @@
+id: record
+name: Validate the stage result and record the next action
+description: Validate stage.json or bind a human answer, archive stage reports, and update progress.json
+type: command
+command: uv run python .dovo/catalog/scripts/sdlc/ship/ship_state.py record
+timeout_seconds: 120
+on_failure: abort
