@@ -641,13 +641,14 @@ steps:
   # One phase of the slice per iteration, each in a fresh agent session that
   # learns what earlier phases did from their commits and report entries. A
   # phase is committed on the detached HEAD, and recorded as done in
-  # .agentic/code-progress.json, only once its gate passed; a failed gate
-  # leaves it out of done, so the next iteration retries the same phase with
+  # .agentic/code-progress.json, only once its checks passed; failed checks
+  # leave it out of done, so the next iteration retries the same phase with
   # gate.log present, and a resumed run starts at the first phase not done.
   # Once every phase is done, code is skipped and the iteration only runs the
-  # gate.
+  # checks. The checks are scoped to the phase; the full quality gate runs
+  # once, in the review loop's first round.
   - id: code-loop
-    name: Implement and commit one phase at a time until every phase passes the quality gate
+    name: Implement and commit one phase at a time until every phase passes its checks
     type: loop
     max_iterations: 8
     until:
@@ -684,13 +685,27 @@ steps:
           one: it holds the instructions given when the issue was planned.
           Uncommitted changes outside .agentic/ and .dovo/run are an earlier attempt at this
           phase: keep and finish them. If .agentic/gate.log exists, that attempt failed the
-          quality gate: read the log and fix what it reports.
+          phase's checks: read the log and fix what it reports.
         tools: { allow_all: true }
         timeout_seconds: 3600
 
+      # The phase's checks: format, lint and types over the whole tree, then
+      # the tests scoped_tests.py maps from the files the phase changed. Every
+      # check runs even after one fails, so gate.log reports them all.
       - id: verify
-        name: Run the quality gate
-        run: uv run dovo run quality > .agentic/gate.log 2>&1
+        name: Run the phase's checks
+        run: |
+          {
+            failed=0
+            uv run ruff format --check . || failed=1
+            uv run ruff check . || failed=1
+            uv run ty check src tests e2e .dovo/catalog/scripts || failed=1
+            paths=$(uv run --quiet python .dovo/catalog/scripts/sdlc/v2/scoped_tests.py) || failed=1
+            if [ -n "$paths" ]; then
+              uv run dovo run tests --path "$paths" || failed=1
+            fi
+            exit "$failed"
+          } > .agentic/gate.log 2>&1
         timeout_seconds: 1800
         on_failure: continue
 
@@ -699,7 +714,7 @@ steps:
       # phase that changed nothing is recorded with no commit. A failed commit
       # (no or a rejected .agentic/phase-commit-msg included) pauses for the
       # person and leaves the phase out of done. The passing gate.log is
-      # deleted before the commit, so gate.log exists only after a failed gate,
+      # deleted before the commit, so gate.log exists only after failed checks,
       # even when a failed commit sends the same phase round again.
       - id: checkpoint
         name: Commit the phase and record it as done
@@ -804,23 +819,25 @@ steps:
           Follow .dovo/catalog/prompts/sdlc/v2/issue-code.md in the mode `/issue-code review --tiers blockers,warnings`.
           If .agentic/review.json lists no BLOCKER or WARNING findings, or its action is
           needs_human or replan, fix no findings. If .agentic/fix-gate.log exists, the last
-          round's fixes failed the quality gate: fix what it reports, and add a line
+          round's quality gate failed: fix what it reports, and add a line
           `- quality gate: <what changed, with path>` to .agentic/fix-commit-msg. When you
           changed nothing, report that you did nothing. Do not commit, stage or push.
         tools: { allow_all: true }
         timeout_seconds: 3600
 
-      # The fixer runs only scoped checks, so the full gate runs here. A round
-      # that changed nothing skips it unless the last round's gate failed.
-      # stdout is only the JSON object `until` reads; the gate's own output goes
-      # to fix-gate.log.
+      # The code loop and the fixer run only scoped checks, so the full gate
+      # runs here, always in the first round. A later round that changed
+      # nothing skips it unless the last round's gate failed. A failure in the
+      # first round, with or without fixes, goes to the next round's fixer in
+      # fix-gate.log. stdout is only the JSON object `until` reads; the gate's
+      # own output goes to fix-gate.log.
       - id: fix-verify
-        name: Run the quality gate on the fixes
+        name: Run the quality gate on the change and its fixes
         run: |
           if [ -n "$(git status --porcelain -- . ':!.dovo/run')" ]; then changed=true; else changed=false; fi
           printf '{"changed": "%s"}\n' "$changed"
-          if [ ! -e .agentic/fix-gate.log ] && [ "$changed" = false ]; then
-            echo "The fixer changed nothing; the gate the code loop passed still holds." >&2
+          if [ "$DOVO_ITERATION_INDEX" != 1 ] && [ ! -e .agentic/fix-gate.log ] && [ "$changed" = false ]; then
+            echo "The fixer changed nothing; the gate the last round passed still holds." >&2
             exit 0
           fi
           if uv run dovo run quality > .agentic/fix-gate.log 2>&1; then rm .agentic/fix-gate.log; else exit 1; fi
@@ -835,10 +852,10 @@ steps:
   # The implementation report is published here, once, after the code and fix
   # loops have written their last entry; no later step reads it.
   - id: fix-gate
-    name: Stop before publishing when the fixes fail the quality gate
+    name: Stop before publishing when the change fails the quality gate
     run: |
       if [ -e .agentic/fix-gate.log ]; then
-        echo "The review fixes fail the quality gate; fix .agentic/fix-gate.log before resuming." >&2
+        echo "The change fails the quality gate; fix .agentic/fix-gate.log before resuming." >&2
         tail -n 40 .agentic/fix-gate.log >&2
         exit 1
       fi
