@@ -168,7 +168,7 @@ A loop block accepts only `id`, `type`, `name`, `max_iterations`, `until`, `do` 
 
 ## Run a Step Only When a Condition Holds (`when`)
 
-Add a `when` list to a step or loop to skip it unless every condition is true. Conditions use the same syntax as a loop's `until`:
+Add a `when` list to a step or loop to skip it unless every condition is true. Conditions use the same syntax as a loop's `until`: operands joined by `&&`, `||`, `!`, a comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`, `contains`), `in` / `not in` against a bracketed list, and the functions `contains()`, `fromJSON()`, `join()`, `length()` and `trim()`. See [Expression Grammar](../reference/step-schema.md#expression-grammar) for the full grammar, its precedence and truthiness rules, and the load errors a bad condition raises.
 
 ```yaml
 steps:
