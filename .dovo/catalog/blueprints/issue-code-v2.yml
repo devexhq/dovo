@@ -453,9 +453,13 @@ steps:
 
   # One review, folded in whole without asking; the human weighs the result at
   # the open questions and the plan approval that follow.
+  # This step, fold-findings, plan-walkthrough and report run at medium effort
+  # (CLAUDE_CODE_EFFORT_LEVEL): they check or reshape a plan already written,
+  # and long thinking turns were most of their time.
   - id: plan-review
     name: Review the slice's plan
     type: agent
+    env: { CLAUDE_CODE_EFFORT_LEVEL: medium }
     prompt: |
       Session that already phased the slice, if any: "{{ steps.phased-check.outputs.phased_session }}".
 
@@ -475,6 +479,7 @@ steps:
   - id: fold-findings
     name: Fold the review findings into the slice's plan
     type: agent
+    env: { CLAUDE_CODE_EFFORT_LEVEL: medium }
     prompt: |
       If .agentic/plan-review.json lists no findings, change nothing and report that you did
       nothing.
@@ -618,6 +623,7 @@ steps:
   - id: plan-walkthrough
     name: Walk through the slice's plan for the approver
     type: agent
+    env: { CLAUDE_CODE_EFFORT_LEVEL: medium }
     prompt: |
       Session that already phased the slice, if any: "{{ steps.phased-check.outputs.phased_session }}".
 
@@ -928,6 +934,7 @@ steps:
   - id: report
     name: Report how the slice departed from the plan and draft the sweep
     type: agent
+    env: { CLAUDE_CODE_EFFORT_LEVEL: medium }
     prompt: |
       Compare `git diff origin/main...HEAD` with slice {{ steps.next.outputs.slice }} of
       .agentic/plan.md and .agentic/plan.json, with issue ${{ inputs.issue }} and with issue
