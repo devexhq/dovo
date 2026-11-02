@@ -7,15 +7,21 @@ functions, against the step outputs and the artifacts a run would have recorded 
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Final
 
 import pytest
 import yaml
 
+from dovo.common.redact import SecretRedactor
+from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions.blueprint import BlueprintDefinition
 from dovo.core.catalog.definitions.step import IfStepBlock, LoopStepBlock, StepDefinition
+from dovo.core.interaction.services.resolve import resolve_request
 from dovo.engine.executors.models import StepResult
 from dovo.engine.guards import choose_branch, evaluate_guard, guard_skip
 from dovo.engine.models import IfBranch
@@ -119,6 +125,166 @@ def _plan_questions(open_questions: int) -> dict[str, object]:
     return {"open_questions": [{"id": f"OQ-{n}"} for n in range(1, open_questions + 1)], "slices": []}
 
 
+QUESTION_CHAINS: Final = [
+    pytest.param("issue-plan-v2", "", id="issue"),
+    pytest.param("issue-plan-v2", "slice-", id="one-slice"),
+    pytest.param("issue-code-v2", "", id="code-slice"),
+]
+
+
+def _question_run(blueprint: BlueprintDefinition, store: ArtifactStore) -> _Run:
+    """Return a run entering each planning chain rather than loading a previously phased plan."""
+    run = _Run(blueprint, store)
+    run.record("one-slice", slice="S1", slices="1")
+    run.record("phased-check", phased_session="")
+    return run
+
+
+class QuestionPolicyGuardTests:
+    @pytest.fixture
+    def detailed_mixed_policy(self, artifact_store: ArtifactStore, tmp_path: Path) -> None:
+        """Publish validated mixed-policy artifacts with enough evidence to exceed the prompt preview."""
+        question = {
+            "id": "OQ-1",
+            "summary": "Routine recommendation",
+            "assumed": "Reuse the existing convention.",
+            "details": [f"Grounded context {n}." for n in range(5)],
+            "challenged": True,
+            "challenge_answer": "Use the grounded alternative.",
+            "challenge_details": [f"Challenge evidence {n}." for n in range(5)],
+            "recommendation": "challenge",
+            "needs_human": False,
+            "human_reason": "routine",
+            "recommendation_grounding": [f"Repository evidence {n}." for n in range(5)],
+            "alternatives": ["Keep the old behavior."],
+            "phases": [1],
+            "blocks": [],
+        }
+        required = [
+            {
+                **question,
+                "id": f"OQ-{n}",
+                "summary": f"Required choice {n}",
+                "challenge_answer": f"Choose required alternative {n}.",
+                "needs_human": True,
+                "human_reason": "tradeoff",
+            }
+            for n in range(2, 12)
+        ]
+        source = tmp_path / ".agentic"
+        source.mkdir()
+        (source / "plan.json").write_text(
+            json.dumps({"open_questions": [*required, question], "decisions": []}), encoding="utf-8"
+        )
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / ".dovo/catalog/scripts/sdlc/v2/plan.py"),
+                "questions",
+                "--plan",
+                ".agentic/plan.json",
+                "--summary",
+                ".agentic/plan-summary.md",
+                "--policy",
+                ".agentic/question-policy.json",
+            ],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert (completed.returncode, completed.stdout, completed.stderr) == (0, "", "")
+        assert len((source / "plan-summary.md").read_text(encoding="utf-8").splitlines()) > 200
+        for name, filename in [("question-policy", "question-policy.json"), ("plan-summary", "plan-summary.md")]:
+            assert artifact_store.publish(
+                tmp_path,
+                name=name,
+                path_glob=f".agentic/{filename}",
+                retention_days=None,
+                provenance=ArtifactProvenance(),
+            ).ok
+
+    @pytest.mark.parametrize(("blueprint", "prefix"), QUESTION_CHAINS)
+    @pytest.mark.parametrize(("questions", "required"), [(0, 0), (1, 0), (2, 1)], ids=["empty", "routine", "mixed"])
+    def test_question_policy_routes_each_planning_chain(
+        self,
+        artifact_store: ArtifactStore,
+        publish_artifact: PublishArtifact,
+        blueprint: str,
+        prefix: str,
+        questions: int,
+        required: int,
+    ) -> None:
+        _publish_json(publish_artifact, "plan-questions", _plan_questions(questions))
+        _publish_json(publish_artifact, "question-policy", {"required_questions": [{"id": "OQ-2"}] * required})
+        run = _question_run(_load(blueprint), artifact_store)
+
+        assert run.reaches(f"{prefix}answer-questions") is bool(required)
+        assert run.reaches(f"{prefix}fold-answers") is bool(questions)
+        assert run.reaches(f"{prefix}check-questions")
+
+    @pytest.mark.parametrize(("blueprint", "prefix"), QUESTION_CHAINS)
+    @pytest.mark.parametrize("policy", [None, "not json", "{}"], ids=["missing", "unreadable", "missing-list"])
+    def test_unreadable_question_policy_never_skips_the_question_prompt(
+        self,
+        artifact_store: ArtifactStore,
+        publish_artifact: PublishArtifact,
+        blueprint: str,
+        prefix: str,
+        policy: str | None,
+    ) -> None:
+        if policy is not None:
+            publish_artifact("question-policy", {"question-policy.json": policy})
+        run = _question_run(_load(blueprint), artifact_store)
+
+        assert run.reaches(f"{prefix}answer-questions")
+
+    @pytest.mark.usefixtures("detailed_mixed_policy")
+    @pytest.mark.parametrize(("blueprint", "prefix"), QUESTION_CHAINS)
+    def test_mixed_prompt_uses_required_choices_and_publishes_complete_summary(
+        self,
+        artifact_store: ArtifactStore,
+        blueprint: str,
+        prefix: str,
+    ) -> None:
+        definition = _load(blueprint)
+        steps = {entry.id: entry for entry, _ in _walk(list(definition.steps)) if isinstance(entry, StepDefinition)}
+        summary = steps[f"{prefix}questions-summary"]
+        ask = steps[f"{prefix}answer-questions"]
+        fold = steps[f"{prefix}fold-answers"]
+        check = steps[f"{prefix}check-questions"]
+        assert ask.interaction is not None
+        resolution = resolve_request(
+            ask.id, ask.interaction, ask.interaction.message, artifact_store, SecretRedactor([])
+        )
+
+        assert resolution.ok
+        assert resolution.request is not None
+        request = resolution.request
+        assert [(option.value, option.label) for option in request.options] == [
+            (f"OQ-{n}", f"Required choice {n}") for n in range(2, 12)
+        ]
+        assert request.comment.policy == "required"
+        assert "every required" in request.message
+        assert "whether ticked or not" in request.message
+        assert "override any routine answer by its OQ-id" in request.message
+        assert request.artifact is not None
+        assert "OQ-1" in "\n".join(request.artifact.preview)
+        assert "OQ-2" in "\n".join(request.artifact.preview)
+        assert any("OQ-1 |" in line and "Use the grounded alternative." in line for line in request.artifact.preview)
+        assert {(spec.name, spec.path) for spec in summary.artifacts} == {
+            ("plan-summary", ".agentic/plan-summary.md"),
+            ("question-policy", ".agentic/question-policy.json"),
+        }
+        assert summary.run is not None
+        assert "--policy .agentic/question-policy.json" in summary.run
+        assert check.run is not None
+        assert "--policy .agentic/question-policy.json" in check.run
+        assert fold.prompt is not None
+        assert f"steps.{prefix}answer-questions.outputs.selected || ''" in fold.prompt
+        assert f"steps.{prefix}answer-questions.outputs.comment || ''" in fold.prompt
+
+
 class IssuePlanGuardTests:
     @pytest.fixture
     def run(self, artifact_store: ArtifactStore) -> _Run:
@@ -130,6 +296,7 @@ class IssuePlanGuardTests:
         """Publish a challenge, an open question and a review finding, so every fold has work."""
         _publish_json(publish_artifact, "plan-challenges", {"challenges": [{"id": "C-1"}]})
         _publish_json(publish_artifact, "plan-questions", _plan_questions(1))
+        _publish_json(publish_artifact, "question-policy", {"required_questions": [{"id": "OQ-1"}]})
         _publish_json(publish_artifact, "plan-findings", {"findings": [{"id": "F-1"}]})
 
     @pytest.mark.usefixtures("questions_and_findings")
@@ -180,6 +347,7 @@ class IssuePlanGuardTests:
     ) -> None:
         _publish_json(publish_artifact, "plan-challenges", {"challenges": []})
         _publish_json(publish_artifact, "plan-questions", _plan_questions(0))
+        _publish_json(publish_artifact, "question-policy", {"required_questions": []})
         _publish_json(publish_artifact, "plan-findings", {"findings": []})
         run.record("one-slice", slice="S1", slices="1")
 
@@ -258,6 +426,7 @@ class IssueCodeGuardTests:
         self, run: _Run, publish_artifact: PublishArtifact
     ) -> None:
         _publish_json(publish_artifact, "plan-questions", _plan_questions(1))
+        _publish_json(publish_artifact, "question-policy", {"required_questions": [{"id": "OQ-1"}]})
         _publish_json(publish_artifact, "plan-findings", {"findings": [{"id": "F-1"}]})
         run.record("phased-check", phased_session="")
 

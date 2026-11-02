@@ -72,6 +72,14 @@ PLANNER = {
     "date": "2026-10-29",
 }
 
+ROUTINE_SETTLED = {
+    **PLANNER,
+    "was": "OQ-2",
+    "decision": "Filter in Sessions.list.",
+    "phases": [1],
+    "replaces": {"id": "D-1", "session": "blueprint_plan01"},
+}
+
 
 @pytest.fixture
 def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -99,6 +107,141 @@ def _check(monkeypatch: pytest.MonkeyPatch) -> int:
 
 
 class PlanCheckQuestionsTests:
+    @pytest.mark.parametrize(
+        ("question_changes", "decision_changes"),
+        [
+            pytest.param(
+                {"recommendation": "assumed"},
+                {"decision": "No: discarded sessions are hidden unless `--all` is passed."},
+                id="assumed",
+            ),
+            pytest.param({}, {}, id="challenge"),
+            pytest.param(
+                {"needs_human": True, "human_reason": "tradeoff"},
+                {"settled_by": "human", "answer": "accept challenge"},
+                id="required",
+            ),
+            pytest.param(
+                {
+                    "needs_human": True,
+                    "human_reason": "ungrounded",
+                    "recommendation": "none",
+                    "recommendation_grounding": [],
+                },
+                {"settled_by": "human", "answer": "Use a setting.", "decision": "Use a setting."},
+                id="ungrounded",
+            ),
+            pytest.param(
+                {}, {"settled_by": "human", "answer": "Use a setting.", "decision": "Use a setting."}, id="override"
+            ),
+        ],
+    )
+    def test_policy_accepts_planner_recommendations_and_explicit_human_answers(
+        self,
+        question_changes: dict[str, object],
+        decision_changes: dict[str, object],
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _write_plan(
+            workspace, [{**CHALLENGED, "needs_human": False, "human_reason": "routine", **question_changes}], []
+        )
+        assert _questions(monkeypatch, "--policy", ".agentic/question-policy.json") == 0
+        _write_plan(workspace, [], [{**ROUTINE_SETTLED, **decision_changes}])
+
+        assert _main(monkeypatch, "check-questions", "--policy", ".agentic/question-policy.json") == 0
+
+        assert capsys.readouterr() == ("", "")
+
+    @pytest.mark.parametrize(
+        ("question_changes", "decisions", "message"),
+        [
+            pytest.param({}, [], "OQ-2 must have exactly one resulting decision; found 0.", id="missing"),
+            pytest.param(
+                {},
+                [ROUTINE_SETTLED, {**ROUTINE_SETTLED, "id": "D-6"}],
+                "OQ-2 must have exactly one resulting decision; found 2.",
+                id="duplicate",
+            ),
+            pytest.param(
+                {"needs_human": True, "human_reason": "tradeoff"},
+                [ROUTINE_SETTLED],
+                "OQ-2 requires an explicit human answer.",
+                id="required-planner",
+            ),
+            pytest.param(
+                {}, [{**ROUTINE_SETTLED, "settled_by": "human"}], "Decision D-5 has no answer.", id="unanswered"
+            ),
+            pytest.param(
+                {},
+                [{**ROUTINE_SETTLED, "decision": "Filter in the formatter."}],
+                "OQ-2 planner decision differs from its grounded recommendation.",
+                id="wrong-recommendation",
+            ),
+            pytest.param(
+                {},
+                [{**ROUTINE_SETTLED, "settled_by": "challenge_accepted"}],
+                "OQ-2 must be settled_by human or planner.",
+                id="old-attribution",
+            ),
+            pytest.param(
+                {},
+                [{**ROUTINE_SETTLED, "phases": []}],
+                "OQ-2 settlement changed its phases or replaces.",
+                id="lost-phases",
+            ),
+            pytest.param(
+                {},
+                [{**ROUTINE_SETTLED, "replaces": None}],
+                "OQ-2 settlement changed its phases or replaces.",
+                id="lost-replacement",
+            ),
+            pytest.param(
+                {},
+                [{**ROUTINE_SETTLED, "answer": "accept challenge"}],
+                "Decision D-5 has an answer, but only a decision settled_by human has one.",
+                id="planner-answer",
+            ),
+        ],
+    )
+    def test_policy_refuses_incomplete_or_wrongly_attributed_settlement(
+        self,
+        question_changes: dict[str, object],
+        decisions: list[object],
+        message: str,
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _write_plan(
+            workspace, [{**CHALLENGED, "needs_human": False, "human_reason": "routine", **question_changes}], []
+        )
+        assert _questions(monkeypatch, "--policy", ".agentic/question-policy.json") == 0
+        _write_plan(workspace, [], decisions)
+
+        assert _main(monkeypatch, "check-questions", "--policy", ".agentic/question-policy.json") == 1
+
+        assert capsys.readouterr().err.endswith(message + "\n")
+
+    @pytest.mark.parametrize(
+        "policy_text", [None, "{", "[]", "{}", '{"open_questions": [], "required_questions": [{}]}']
+    )
+    def test_policy_refuses_unreadable_or_malformed_original_evidence(
+        self,
+        policy_text: str | None,
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _write_plan(workspace, [], [])
+        if policy_text is not None:
+            (workspace / ".agentic/question-policy.json").write_text(policy_text)
+
+        assert _main(monkeypatch, "check-questions", "--policy", ".agentic/question-policy.json") == 1
+
+        assert capsys.readouterr().err.startswith("plan.py: .agentic/question-policy.json")
+
     def test_check_questions_passes_a_plan_with_every_question_settled(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -295,6 +438,9 @@ QUESTION = {
     "challenge_answer": "",
     "challenge_details": [],
     "recommendation": "assumed",
+    "needs_human": False,
+    "human_reason": "routine",
+    "recommendation_grounding": ["The existing worktree list follows this convention (worktree_list.py:41)."],
     "alternatives": ["Show them with a `discarded` status column."],
     "phases": [1],
     "blocks": [],
@@ -307,6 +453,9 @@ CHALLENGED = {
     "challenge_answer": "Filter in Sessions.list.",
     "challenge_details": ["JSON output skips the formatter (session_list.py:12).", "C1 cites it."],
     "recommendation": "challenge",
+    "needs_human": True,
+    "human_reason": "tradeoff",
+    "recommendation_grounding": ["JSON output skips the formatter (session_list.py:12)."],
     "alternatives": ["Filter in the formatter."],
     "replaces": {"id": "D-1", "session": "blueprint_plan01"},
 }
@@ -328,48 +477,66 @@ class PlanQuestionsTests:
         assert capsys.readouterr() == ("", "")
         assert sorted(path.name for path in (workspace / ".agentic").iterdir()) == ["plan.json"]
 
+    @pytest.mark.parametrize("reason", ["ungrounded", "departure", "tradeoff"])
+    def test_questions_accepts_a_human_question_without_a_grounded_recommendation(
+        self, reason: str, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        question = {
+            **QUESTION,
+            "needs_human": True,
+            "human_reason": reason,
+            "recommendation": "none",
+            "recommendation_grounding": [],
+        }
+        _write_plan(workspace, [question], [])
+
+        assert _questions(monkeypatch, "--summary", ".agentic/plan-summary.md") == 0
+
+        summary = (workspace / ".agentic/plan-summary.md").read_text(encoding="utf-8")
+        assert "| no | no grounded recommendation |" in summary
+        assert "Required questions need explicit answers" in summary
+
     def test_questions_writes_the_summary_of_questions_and_decisions(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         challenge = {**ASSUMED, "id": "D-6", "was": "OQ-6", "settled_by": "challenge_accepted"}
-        _write_plan(workspace, [QUESTION, CHALLENGED], [HUMAN, PLANNER, challenge])
+        _write_plan(workspace, [QUESTION, CHALLENGED], [HUMAN, PLANNER, challenge, {**ROUTINE_SETTLED, "id": "D-7"}])
 
         assert _questions(monkeypatch, "--summary", ".agentic/plan-summary.md") == 0
 
         assert capsys.readouterr() == ("", "")
         assert (workspace / ".agentic/plan-summary.md").read_text(encoding="utf-8") == (
-            "# Plan summary for #914\n"
-            "\n"
-            "## Open questions\n"
-            "\n"
-            "A question you do not tick settles to its recommended answer.\n"
-            "\n"
+            "# Plan summary for #914\n\n"
+            "Required questions need explicit answers; unanswered routine questions settle to their recommendations.\n"
+            "Write `OQ-id: answer` for every required question and any routine recommendation you want to override.\n"
+            "\n## Required questions\n\n"
+            "| ID | Question | Assumed answer | Challenged | Recommended |\n"
+            "|---|---|---|---|---|\n"
+            "| OQ-2 | Who owns \\| the filter? | No: discarded sessions are hidden unless `--all` is passed. "
+            "| yes | challenge: Filter in Sessions.list. |\n"
+            "\n## Routine recommendations\n\n"
             "| ID | Question | Assumed answer | Challenged | Recommended |\n"
             "|---|---|---|---|---|\n"
             "| OQ-1 | Should `dovo session list` include discarded sessions by default? "
             "| No: discarded sessions are hidden unless `--all` is passed. | no | assumed |\n"
-            "| OQ-2 | Who owns \\| the filter? | No: discarded sessions are hidden unless `--all` is passed. "
-            "| yes | challenge: Filter in Sessions.list. |\n"
-            "\n"
-            "### OQ-1\n"
-            "\n"
+            "\n## Question details\n"
+            "\n### OQ-2\n\n- Reason: tradeoff.\n"
             "- `dovo worktree list` hides removed worktrees (worktree_list.py:41).\n"
-            "- Other answers: Show them with a `discarded` status column.\n"
-            "\n"
-            "### OQ-2\n"
-            "\n"
-            "- `dovo worktree list` hides removed worktrees (worktree_list.py:41).\n"
+            "- Grounding: JSON output skips the formatter (session_list.py:12).\n"
             "- Challenge answer: Filter in Sessions.list.\n"
             "- Challenge: JSON output skips the formatter (session_list.py:12).\n"
             "- Challenge: C1 cites it.\n"
             "- Other answers: Filter in the formatter.\n"
-            "\n"
-            "## Decisions\n"
-            "\n"
+            "\n### OQ-1\n\n- Reason: routine.\n"
+            "- `dovo worktree list` hides removed worktrees (worktree_list.py:41).\n"
+            "- Grounding: The existing worktree list follows this convention (worktree_list.py:41).\n"
+            "- Other answers: Show them with a `discarded` status column.\n"
+            "\n## Decisions\n\n"
             "- **D-3** Required config's ConfigError carries the load's diagnostic records. "
             "*Answered: accept challenge.*\n"
             "- **D-5** The list reuses worktree_list's empty-state line. *Planner, approved with the plan.*\n"
             "- **D-6** Discarded sessions stay hidden unless --all is passed. *Challenge's answer, accepted.*\n"
+            "- **D-7** Filter in Sessions.list. *Settled by planner (OQ-2).*\n"
         )
 
     def test_questions_summarises_a_plan_with_nothing_open_or_decided(
@@ -380,7 +547,10 @@ class PlanQuestionsTests:
         assert _questions(monkeypatch, "--summary", ".agentic/plan-summary.md") == 0
 
         assert (workspace / ".agentic/plan-summary.md").read_text(encoding="utf-8") == (
-            "# Plan summary for #914\n\n## Open questions\n\nNone.\n\n## Decisions\n\nNone.\n"
+            "# Plan summary for #914\n\n"
+            "Required questions need explicit answers; unanswered routine questions settle to their recommendations.\n"
+            "Write `OQ-id: answer` for every required question and any routine recommendation you want to override.\n"
+            "\n## Required questions\n\nNone.\n\n## Routine recommendations\n\nNone.\n\n## Decisions\n\nNone.\n"
         )
 
     @pytest.mark.parametrize(
@@ -393,6 +563,61 @@ class PlanQuestionsTests:
                 {key: value for key, value in QUESTION.items() if key not in ("details", "blocks")},
                 "Open question OQ-1 has no blocks, details.",
                 id="missing-fields",
+            ),
+            pytest.param(
+                {key: value for key, value in QUESTION.items() if key != "needs_human"},
+                "Open question OQ-1 has no needs_human.",
+                id="missing-human-classification",
+            ),
+            pytest.param(
+                {key: value for key, value in QUESTION.items() if key != "human_reason"},
+                "Open question OQ-1 has no human_reason.",
+                id="missing-human-reason",
+            ),
+            pytest.param(
+                {key: value for key, value in QUESTION.items() if key != "recommendation_grounding"},
+                "Open question OQ-1 has no recommendation_grounding.",
+                id="missing-recommendation-grounding",
+            ),
+            pytest.param(
+                {**QUESTION, "needs_human": "false"},
+                "Open question OQ-1 has needs_human 'false'; it must be true or false.",
+                id="nonboolean-human-classification",
+            ),
+            pytest.param(
+                {**QUESTION, "human_reason": "unclear"},
+                "Open question OQ-1 has human_reason 'unclear'; it must be routine, departure, tradeoff, ungrounded.",
+                id="unknown-human-reason",
+            ),
+            pytest.param(
+                {**QUESTION, "needs_human": True},
+                "Open question OQ-1 needs_human contradicts human_reason 'routine'.",
+                id="required-routine",
+            ),
+            pytest.param(
+                {**QUESTION, "human_reason": "departure"},
+                "Open question OQ-1 needs_human contradicts human_reason 'departure'.",
+                id="automatic-departure",
+            ),
+            pytest.param(
+                {**QUESTION, "recommendation_grounding": []},
+                "Open question OQ-1 recommendation and recommendation_grounding disagree.",
+                id="ungrounded-recommendation",
+            ),
+            pytest.param(
+                {**QUESTION, "recommendation": "none"},
+                "Open question OQ-1 recommendation and recommendation_grounding disagree.",
+                id="none-with-grounding",
+            ),
+            pytest.param(
+                {**QUESTION, "recommendation": "none", "recommendation_grounding": []},
+                "Open question OQ-1 is routine but has no grounded recommendation.",
+                id="automatic-without-recommendation",
+            ),
+            pytest.param(
+                {**QUESTION, "needs_human": True, "human_reason": "ungrounded"},
+                "Open question OQ-1 is ungrounded but has a recommendation.",
+                id="ungrounded-with-recommendation",
             ),
             pytest.param(
                 {**QUESTION, "summary": "x" * 121},
@@ -437,7 +662,7 @@ class PlanQuestionsTests:
             ),
             pytest.param(
                 {**QUESTION, "recommendation": "challenged"},
-                "Open question OQ-1 has recommendation 'challenged'; it must be assumed or challenge.",
+                "Open question OQ-1 has recommendation 'challenged'; it must be assumed, challenge or none.",
                 id="unknown-recommendation",
             ),
             pytest.param(
@@ -509,6 +734,41 @@ class PlanQuestionsTests:
 
         assert capsys.readouterr() == ("", f"plan.py: .agentic/plan.json: {message}\n")
         assert not (workspace / ".agentic/plan-summary.md").exists()
+
+    @pytest.mark.parametrize(
+        ("questions", "required"),
+        [
+            pytest.param([], [], id="empty"),
+            pytest.param([QUESTION], [], id="routine"),
+            pytest.param([QUESTION, CHALLENGED], [{"id": "OQ-2", "summary": "Who owns | the filter?"}], id="mixed"),
+        ],
+    )
+    def test_questions_writes_the_original_policy_and_required_choices(
+        self,
+        questions: list[object],
+        required: list[object],
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _write_plan(workspace, questions, [])
+
+        assert _questions(monkeypatch, "--policy", ".agentic/question-policy.json") == 0
+
+        assert json.loads((workspace / ".agentic/question-policy.json").read_text()) == {
+            "open_questions": questions,
+            "required_questions": required,
+        }
+
+    def test_questions_invalid_classification_writes_no_policy(
+        self,
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _write_plan(workspace, [{**QUESTION, "needs_human": True}], [])
+
+        assert _questions(monkeypatch, "--policy", ".agentic/question-policy.json") == 1
+
+        assert not (workspace / ".agentic/question-policy.json").exists()
 
     def test_questions_refuses_a_question_id_used_twice(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

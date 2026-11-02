@@ -445,7 +445,9 @@ steps:
             - Address every finding in .agentic/plan-review.json, by id, as each one describes.
             - Addressing a finding may make an open question moot, change its assumed answer or
               raise a new one: remove, rewrite or add entries in plan.json `open_questions` to
-              match. Open questions live only in plan.json.
+              match. Open questions live only in plan.json. Re-ground each new or changed question
+              and update needs_human, human_reason and recommendation_grounding under issue-plan.md
+              Step 5; a recommendation alone never waives a departure or unsettled trade-off.
             - Keep .agentic/plan.json in the shape Step 5 of
               `.dovo/catalog/prompts/sdlc/v2/issue-plan.md` defines for slice mode, and in agreement with .agentic/plan.md. Never
               change its contract or slices, or the plan's Feature contract and Slices sections,
@@ -464,40 +466,39 @@ steps:
       # open questions with their assumed answers and recommendations, and the
       # decisions. Holds the run when an open question is malformed; the
       # message names it. The person fixes it in .agentic/plan.json and
-      # retries, keeping its id and summary, which the prompt lists from the
-      # plan-questions artifact plan or fold-findings published last.
+      # retries. The validated question-policy supplies the prompt choices.
       - id: questions-summary
         name: Summarise the slice plan's open questions and decisions
         run: >-
           uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py questions
-          --plan .agentic/plan.json --summary .agentic/plan-summary.md
+          --plan .agentic/plan.json --summary .agentic/plan-summary.md --policy .agentic/question-policy.json
         timeout_seconds: 120
         on_failure: prompt_user
         artifacts:
           - { name: plan-summary, path: .agentic/plan-summary.md }
+          - { name: question-policy, path: .agentic/question-policy.json }
 
       # Asked after the findings are folded in, so every question reflects
-      # them. This ask and fold-answers are skipped when the plan has no open
-      # question.
+      # them. Only required questions reach the ask; routine questions still fold.
       - id: answer-questions
         name: Answer the slice plan's open questions
         type: ask
         when:
-          - "!(length(artifacts.plan-questions.content.open_questions) == 0)"
+          - "!(length(artifacts.question-policy.content.required_questions) == 0)"
         interaction:
           mode: multiselect
           message: >-
-            Which open questions do you want to answer instead of accepting the planner's recommended
-            answer? The attached summary gives each one's assumed answer and recommendation. A question
-            you do not tick settles to its recommended answer.
+            Answer every required question in the comment as OQ-id: answer, including explicit
+            acceptance of a recommendation, whether ticked or not. The attached summary includes
+            routine recommendations; override any routine answer by its OQ-id in the same comment.
           artifact: plan-summary
           options_from:
-            artifact: plan-questions
-            file: .agentic/plan.json
-            items_path: open_questions
+            artifact: question-policy
+            file: .agentic/question-policy.json
+            items_path: required_questions
             value_field: id
             label_field: summary
-          comment: { policy: optional, message: "Your answers, one per selected question (e.g. OQ-1: show them)" }
+          comment: { policy: required, message: "Answer every required OQ-id, including explicit acceptance; override any routine OQ-id here (e.g. OQ-1: show them)" }
 
       # Runs its fold whenever the plan has an open question, ticked or not:
       # every open question leaves as a decision, settled by the human's
@@ -509,8 +510,8 @@ steps:
           - "!(length(artifacts.plan-questions.content.open_questions) == 0)"
         prompt: |
           Follow .dovo/catalog/prompts/sdlc/v2/fold-answers.md.
-          Open questions the human ticked: {{ steps.answer-questions.outputs.selected }}
-          The human's answers: {{ steps.answer-questions.outputs.comment || 'none' }}
+          Open questions the human ticked: {{ steps.answer-questions.outputs.selected || '' }}
+          The human's answers: {{ steps.answer-questions.outputs.comment || '' }}
           The plan phases slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked on
           issue {{ steps.start.outputs.issue }}.
         tools: { allow_all: true }
@@ -526,7 +527,7 @@ steps:
       # losing the run.
       - id: check-questions
         name: Check that every open question is settled
-        run: uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py check-questions --plan .agentic/plan.json --slice {{ steps.next.outputs.slice }}
+        run: uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py check-questions --plan .agentic/plan.json --policy .agentic/question-policy.json --slice {{ steps.next.outputs.slice }}
         timeout_seconds: 120
         on_failure: prompt_user
 
