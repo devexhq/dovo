@@ -81,6 +81,15 @@ class StepOutputValue:
     value: object
 
 
+@dataclass(frozen=True, slots=True)
+class ArtifactReference:
+    """What `artifacts.<name>.<field>[.<path>]` names in a condition: an artifact, one of its fields, and a path into its content."""
+
+    name: str
+    field: str
+    path: tuple[str | int, ...] = ()
+
+
 class Undefined(Enum):
     """What a namespace provider returns for a path its namespace does not define."""
 

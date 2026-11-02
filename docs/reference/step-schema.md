@@ -153,7 +153,9 @@ A `when` list holds condition expressions written exactly as loop `until` condit
 - an expression references a step that is not an earlier step in the same or an enclosing scope. A top-level step sees the top-level steps before it. A step inside `do` also sees the steps before it in the same `do`. A step after an `if` block also sees the steps of either branch, and a step inside a branch sees the steps before the block and the steps before it in the same branch. A loop's or `if` block's own id cannot be referenced, and the steps inside a loop's `do` are not visible after the loop;
 - an expression uses `iteration.index` outside a loop's `do`;
 - a value of more than one word is not quoted, as in `steps.a.status == needs edits`;
-- an operand is a dotted name whose root is neither `steps` nor `iteration`, as `inputs.<name>` and `artifacts.<name>` are.
+- an operand is a dotted name whose root is not `steps`, `iteration` or `artifacts`, as `inputs.<name>` is;
+- an `artifacts.<name>.<field>` operand names no field (`content`, `digest`, `dir` or `revision`), as `artifacts.plan` does;
+- an operand reads an artifact that no step of the blueprint publishes through its `artifacts:`. A step anywhere in the blueprint counts, inside a loop's `do` or an `if` branch too, but on a `uses:` step only the `artifacts:` written in the blueprint.
 
 The list is evaluated just before the step or loop would start. A `when` inside `do` is evaluated again on every iteration, against the steps of the current iteration. When every expression is true the step runs normally. Otherwise it is skipped: it runs nothing and has no attempt, outputs, artifacts or step logs, a skipped `ask` shows no prompt and does not pause, and a skipped loop runs no iteration. A skip counts as successful, so a run whose remaining steps are all skipped ends `completed`. A step skipped before a run paused stays skipped when the run resumes.
 
@@ -183,7 +185,7 @@ Runs its `then` steps when every `condition` is true, and its `else` steps other
 | `then` | `list[step]` | **Yes** | - | Steps run in order when every condition is true. At least one. |
 | `else` | `list[step]` | No | `null` | Steps run in order when a condition is false. At least one when set. |
 
-The steps in `then` and `else` get the same shorthands as top-level steps, with derived ids `<block id>-then-step-<n>` and `<block id>-else-step-<n>`, and may carry `when`. `dovo blueprint validate`, `dovo run` and `dovo resume` reject a block, naming it, when `condition` or `then` is empty, `else` is set but empty, a branch holds a loop or another `if` block, a branch step id repeats any other step id, or `condition` references anything but the steps before the block. An `if` block inside a loop's `do` is rejected too.
+The steps in `then` and `else` get the same shorthands as top-level steps, with derived ids `<block id>-then-step-<n>` and `<block id>-else-step-<n>`, and may carry `when`. `dovo blueprint validate`, `dovo run` and `dovo resume` reject a block, naming it, when `condition` or `then` is empty, `else` is set but empty, a branch holds a loop or another `if` block, a branch step id repeats any other step id, or `condition` references a step other than the steps before the block, a root other than `steps` or `artifacts`, or an artifact operand with no field or no step that publishes it. An `if` block inside a loop's `do` is rejected too.
 
 The branch is chosen and saved when the block starts: `then`, `else`, or `none` when a condition is false and there is no `else`. A comparison that cannot be resolved is false. A run paused inside a branch resumes in that branch without evaluating the condition again. The block ends `completed` when every step of its branch completed, was ignored or was skipped, and otherwise takes the state of the first branch step that failed, paused or was cancelled. A block that ran nothing is `completed`.
 

@@ -197,7 +197,7 @@ When the person picks nothing, the run skips the agent step and prints one line 
 
 A skipped step runs nothing and counts as successful. `dovo session show` lists it as `skipped (when_false)`, or `skipped (when_unresolved)` when a condition referenced a step that did not run or a field it does not have. A later comparison that references a skipped step is false.
 
-A `when` list may reference earlier steps only. Inside a loop's `do`, it may also reference earlier steps of the same iteration and `iteration.index`, and it is evaluated again on every iteration. See [`when` Guards](../reference/step-schema.md#when-guards) for the full rules.
+A `when` list may reference earlier steps, and the artifacts that any step of the blueprint publishes through its `artifacts:`. Inside a loop's `do`, it may also reference earlier steps of the same iteration and `iteration.index`, and it is evaluated again on every iteration. See [`when` Guards](../reference/step-schema.md#when-guards) for the full rules.
 
 ## Choose Between Two Paths (`type: if`)
 

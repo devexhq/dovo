@@ -107,7 +107,7 @@ class ConditionScopeTests:
                     },
                 ],
                 "If block 'gate': Operand 'inputs.mode' in if condition 'steps.a.status == inputs.mode' "
-                "reads 'inputs', which a condition cannot read. Readable roots: steps.",
+                "reads 'inputs', which a condition cannot read. Readable roots: artifacts, steps.",
                 id="if_inputs_root",
             ),
         ],
@@ -268,4 +268,70 @@ class IfBlockScopeTests:
         ],
     )
     def test_valid_reference_reports_no_errors(self, steps: list[dict[str, object]]) -> None:
+        assert _errors(steps) == []
+
+
+def _publishes(step_id: str, name: str, **fields: object) -> dict[str, object]:
+    """Return a step step_id that publishes artifact name."""
+    return {"id": step_id, "run": "x", "artifacts": [{"name": name, "path": f"{name}.json"}], **fields}
+
+
+_PLAN = _publishes("plan", "plan")
+_GHOST = 'artifacts.ghost.content == "x"'
+_GHOST_MESSAGE = (
+    "Artifact 'ghost' read in {clause} condition 'artifacts.ghost.content == \"x\"' is not published by "
+    "any step's 'artifacts:' in the blueprint (published: plan)."
+)
+
+
+class ArtifactPublisherScopeTests:
+    @pytest.mark.parametrize(
+        ("steps", "owner", "clause"),
+        [
+            pytest.param([_PLAN, {"id": "a", "run": "x", "when": [_GHOST]}], "Step 'a'", "when", id="top_level_when"),
+            pytest.param([_PLAN, _loop(when=[_GHOST])], "Loop 'fix'", "when", id="loop_when"),
+            pytest.param(
+                [_PLAN, _loop(do=[{"id": "b", "run": "y", "when": [_GHOST]}])], "Step 'b'", "when", id="do_step_when"
+            ),
+            pytest.param([_PLAN, _route(condition=[_GHOST])], "If block 'route'", "if", id="if_condition"),
+            pytest.param(
+                [
+                    _PLAN,
+                    _route(
+                        condition=["steps.plan.exit_code == 0"],
+                        **{"else": [{"id": "ship", "run": "z", "when": [_GHOST]}]},
+                    ),
+                ],
+                "Step 'ship'",
+                "when",
+                id="branch_step_when",
+            ),
+        ],
+    )
+    def test_unpublished_artifact_reports_one_message_naming_the_owner(
+        self, steps: list[dict[str, object]], owner: str, clause: str
+    ) -> None:
+        assert _errors(steps) == [f"{owner}: {_GHOST_MESSAGE.format(clause=clause)}"]
+
+    @pytest.mark.parametrize(
+        "steps",
+        [
+            pytest.param([{"id": "a", "run": "x", "when": ["artifacts.plan.revision >= 1"]}, _PLAN], id="later_step"),
+            pytest.param(
+                [{"id": "a", "run": "x", "when": ["artifacts.plan.revision >= 1"]}, _loop(do=[_PLAN])],
+                id="loop_do_step",
+            ),
+            pytest.param(
+                [_route(condition=["artifacts.plan.revision >= 1"], **{"else": [_PLAN]})], id="if_branch_step"
+            ),
+            pytest.param(
+                [
+                    {"id": "a", "run": "x", "when": ["artifacts.plan.revision >= 1"]},
+                    {"id": "plan", "uses": "plan-step", "artifacts": [{"name": "plan", "path": "plan.json"}]},
+                ],
+                id="uses_step",
+            ),
+        ],
+    )
+    def test_artifact_published_anywhere_in_the_blueprint_passes(self, steps: list[dict[str, object]]) -> None:
         assert _errors(steps) == []

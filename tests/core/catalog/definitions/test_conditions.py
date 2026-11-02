@@ -5,10 +5,20 @@ import pytest
 from dovo.core.catalog.definitions import validate_condition_expression
 from dovo.core.catalog.definitions.conditions import ConditionScope
 
-_UNTIL_SCOPE = ConditionScope(known_step_ids=frozenset({"a"}))
+_PUBLISHED = frozenset({"verdict", "findings", "team.plan"})
+_UNTIL_SCOPE = ConditionScope(known_step_ids=frozenset({"a"}), published_artifacts=_PUBLISHED)
 _WHEN_SCOPE = ConditionScope(
-    clause="when", known_step_ids=frozenset({"a"}), scope_label="earlier steps", allow_iteration=False
+    clause="when",
+    known_step_ids=frozenset({"a"}),
+    scope_label="earlier steps",
+    allow_iteration=False,
+    published_artifacts=_PUBLISHED,
 )
+
+
+def _until_scope(*step_ids: str, published: frozenset[str] = _PUBLISHED) -> ConditionScope:
+    """Return an until scope over step_ids that reads the published artifact names."""
+    return ConditionScope(known_step_ids=frozenset(step_ids), published_artifacts=published)
 
 
 class ConditionExpressionValidatorTests:
@@ -16,7 +26,7 @@ class ConditionExpressionValidatorTests:
 
     def test_validate_condition_expression_detects_unknown_step_ids(self) -> None:
         expression = "steps.unknown_step.exit_code == 0"
-        errors = validate_condition_expression(expression, known_step_ids={"build"})
+        errors = validate_condition_expression(expression, scope=_until_scope("build"))
         assert errors == [
             "Step id 'unknown_step' referenced in until condition 'steps.unknown_step.exit_code == 0' not found in loop 'do' steps (allowed: build)."
         ]
@@ -49,7 +59,7 @@ class ConditionExpressionValidatorTests:
         ],
     )
     def test_syntax_error_reports_invalid_expression(self, expression: str, message: str) -> None:
-        assert validate_condition_expression(expression, known_step_ids={"a"}) == [message]
+        assert validate_condition_expression(expression, scope=_UNTIL_SCOPE) == [message]
 
     @pytest.mark.parametrize(
         ("expression", "message"),
@@ -73,7 +83,7 @@ class ConditionExpressionValidatorTests:
         ],
     )
     def test_entry_without_an_operator_reports_its_grammar_error(self, expression: str, message: str) -> None:
-        assert validate_condition_expression(expression, known_step_ids={"a"}) == [message]
+        assert validate_condition_expression(expression, scope=_UNTIL_SCOPE) == [message]
 
     @pytest.mark.parametrize(
         "expression",
@@ -93,7 +103,7 @@ class ConditionExpressionValidatorTests:
         ],
     )
     def test_compound_and_bare_value_entries_report_no_errors(self, expression: str) -> None:
-        assert validate_condition_expression(expression, known_step_ids={"a"}) == []
+        assert validate_condition_expression(expression, scope=_UNTIL_SCOPE) == []
 
     @pytest.mark.parametrize(
         ("expression", "item"),
@@ -104,7 +114,7 @@ class ConditionExpressionValidatorTests:
         ],
     )
     def test_list_item_that_is_not_a_literal_is_rejected(self, expression: str, item: str) -> None:
-        assert validate_condition_expression(expression, known_step_ids={"a"}) == [
+        assert validate_condition_expression(expression, scope=_UNTIL_SCOPE) == [
             f"List item '{item}' in until condition '{expression}' is not a literal. "
             "Items after 'in' and 'not in' are quoted strings, numbers, booleans or single words."
         ]
@@ -121,7 +131,7 @@ class ConditionExpressionValidatorTests:
             pytest.param(
                 '!(inputs.mode == "x")',
                 "Operand 'inputs.mode' in until condition '!(inputs.mode == \"x\")' reads 'inputs', "
-                "which a condition cannot read. Readable roots: iteration, steps.",
+                "which a condition cannot read. Readable roots: artifacts, iteration, steps.",
                 id="unreadable_root_under_not",
             ),
         ],
@@ -152,7 +162,7 @@ class ConditionExpressionValidatorTests:
         ],
     )
     def test_projection_base_is_checked_as_an_operand(self, expression: str, message: str) -> None:
-        assert validate_condition_expression(expression, known_step_ids={"a"}) == [message]
+        assert validate_condition_expression(expression, scope=_UNTIL_SCOPE) == [message]
 
     @pytest.mark.parametrize(
         "expression",
@@ -164,7 +174,7 @@ class ConditionExpressionValidatorTests:
         ],
     )
     def test_form_the_grammar_reads_reports_no_errors(self, expression: str) -> None:
-        assert validate_condition_expression(expression, known_step_ids={"a", "contains"}) == []
+        assert validate_condition_expression(expression, scope=_until_scope("a", "contains")) == []
 
     @pytest.mark.parametrize(
         ("expression", "message"),
@@ -195,7 +205,7 @@ class ConditionExpressionValidatorTests:
         ],
     )
     def test_existing_operand_message_is_unchanged(self, expression: str, message: str) -> None:
-        assert validate_condition_expression(expression, known_step_ids={"a"}) == [message]
+        assert validate_condition_expression(expression, scope=_UNTIL_SCOPE) == [message]
 
     @pytest.mark.parametrize(
         ("expression", "scope", "message"),
@@ -204,35 +214,28 @@ class ConditionExpressionValidatorTests:
                 "steps.a.status == inputs.mode",
                 _UNTIL_SCOPE,
                 "Operand 'inputs.mode' in until condition 'steps.a.status == inputs.mode' reads 'inputs', "
-                "which a condition cannot read. Readable roots: iteration, steps.",
+                "which a condition cannot read. Readable roots: artifacts, iteration, steps.",
                 id="inputs_in_until",
             ),
             pytest.param(
                 "steps.a.status == inputs.mode",
                 _WHEN_SCOPE,
                 "Operand 'inputs.mode' in when condition 'steps.a.status == inputs.mode' reads 'inputs', "
-                "which a condition cannot read. Readable roots: steps.",
+                "which a condition cannot read. Readable roots: artifacts, steps.",
                 id="inputs_in_when",
-            ),
-            pytest.param(
-                'artifacts.plan.content == "x"',
-                _WHEN_SCOPE,
-                "Operand 'artifacts.plan.content' in when condition 'artifacts.plan.content == \"x\"' "
-                "reads 'artifacts', which a condition cannot read. Readable roots: steps.",
-                id="artifacts_root",
             ),
             pytest.param(
                 "steps.a.stdout == a.py",
                 _UNTIL_SCOPE,
                 "Operand 'a.py' in until condition 'steps.a.stdout == a.py' reads 'a', "
-                "which a condition cannot read. Readable roots: iteration, steps.",
+                "which a condition cannot read. Readable roots: artifacts, iteration, steps.",
                 id="dotted_bare_value",
             ),
             pytest.param(
                 'inputs.mode == "x"',
                 _UNTIL_SCOPE,
                 "Operand 'inputs.mode' in until condition 'inputs.mode == \"x\"' reads 'inputs', "
-                "which a condition cannot read. Readable roots: iteration, steps.",
+                "which a condition cannot read. Readable roots: artifacts, iteration, steps.",
                 id="inputs_only",
             ),
         ],
@@ -258,7 +261,7 @@ class ConditionExpressionValidatorTests:
         ],
     )
     def test_condition_valid_today_reports_no_errors(self, expression: str, step_id: str) -> None:
-        assert validate_condition_expression(expression, known_step_ids={step_id}) == []
+        assert validate_condition_expression(expression, scope=_until_scope(step_id)) == []
 
     @pytest.mark.parametrize(
         ("expression", "operand"),
@@ -266,10 +269,13 @@ class ConditionExpressionValidatorTests:
             pytest.param('steps[0].status == "x"', "steps[0].status", id="step_by_position"),
             pytest.param('steps.a.outputs.files[0] == "x"', "steps.a.outputs.files[0]", id="index_in_an_output_path"),
             pytest.param("x[1] == steps.a.stdout", "x[1]", id="index_on_a_word"),
+            pytest.param(
+                'artifacts.plan.content[0] == "x"', "artifacts.plan.content[0]", id="index_in_artifact_content"
+            ),
         ],
     )
     def test_bracket_index_is_rejected(self, expression: str, operand: str) -> None:
-        assert validate_condition_expression(expression, known_step_ids={"a"}) == [
+        assert validate_condition_expression(expression, scope=_UNTIL_SCOPE) == [
             f"Operand '{operand}' in until condition '{expression}' holds a bracket index, which a condition cannot read."
         ]
 
@@ -286,7 +292,7 @@ class ConditionExpressionValidatorTests:
         ],
     )
     def test_call_error_is_a_load_error(self, expression: str, reason: str) -> None:
-        assert validate_condition_expression(expression, known_step_ids={"a"}) == [
+        assert validate_condition_expression(expression, scope=_UNTIL_SCOPE) == [
             f"Invalid expression '{expression}': {reason}; known functions: contains, fromJSON, join, length, trim."
         ]
 
@@ -302,7 +308,7 @@ class ConditionExpressionValidatorTests:
             pytest.param(
                 "length(inputs.x) > 0",
                 "Operand 'inputs.x' in until condition 'length(inputs.x) > 0' reads 'inputs', "
-                "which a condition cannot read. Readable roots: iteration, steps.",
+                "which a condition cannot read. Readable roots: artifacts, iteration, steps.",
                 id="unreadable_root",
             ),
             pytest.param(
@@ -314,4 +320,53 @@ class ConditionExpressionValidatorTests:
         ],
     )
     def test_call_arguments_are_checked_as_operands(self, expression: str, message: str) -> None:
-        assert validate_condition_expression(expression, known_step_ids={"a"}) == [message]
+        assert validate_condition_expression(expression, scope=_UNTIL_SCOPE) == [message]
+
+    @pytest.mark.parametrize("scope", [pytest.param(_UNTIL_SCOPE, id="until"), pytest.param(_WHEN_SCOPE, id="when")])
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            pytest.param('artifacts.verdict.content == "x"', id="content"),
+            pytest.param("artifacts.verdict.content.done", id="lone_content_path"),
+            pytest.param("length(fromJSON(artifacts.findings.content)) > 0", id="call_argument"),
+            pytest.param("contains(artifacts.findings.content.*.severity, 'high')", id="projection"),
+            pytest.param("artifacts['team.plan'].revision >= 2", id="bracket_key_name"),
+        ],
+    )
+    def test_artifact_operand_reports_no_errors(self, expression: str, scope: ConditionScope) -> None:
+        assert validate_condition_expression(expression, scope=scope) == []
+
+    @pytest.mark.parametrize(
+        ("expression", "operand"),
+        [
+            pytest.param('artifacts.plan == "x"', "artifacts.plan", id="name_only"),
+            pytest.param('artifacts.plan.bogus == "x"', "artifacts.plan.bogus", id="unknown_field"),
+        ],
+    )
+    def test_artifact_operand_without_a_field_is_rejected(self, expression: str, operand: str) -> None:
+        assert validate_condition_expression(expression, scope=_UNTIL_SCOPE) == [
+            f"Operand '{operand}' in until condition '{expression}' reads no artifact field. "
+            "Expected 'artifacts.<name>.<field>' with a field of content, digest, dir, revision."
+        ]
+
+    @pytest.mark.parametrize(
+        ("published", "listed"),
+        [pytest.param(frozenset({"plan"}), "plan", id="plan_published"), pytest.param(frozenset(), "none", id="none")],
+    )
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            pytest.param('artifacts.ghost.content == "x"', id="comparison"),
+            pytest.param("length(artifacts.ghost.content) > 0", id="call_argument"),
+            pytest.param("contains(artifacts.ghost.content.*.k, 'x')", id="projection"),
+        ],
+    )
+    def test_artifact_no_step_publishes_is_rejected(
+        self, expression: str, published: frozenset[str], listed: str
+    ) -> None:
+        scope = _until_scope("a", published=published)
+
+        assert validate_condition_expression(expression, scope=scope) == [
+            f"Artifact 'ghost' read in until condition '{expression}' is not published by "
+            f"any step's 'artifacts:' in the blueprint (published: {listed})."
+        ]

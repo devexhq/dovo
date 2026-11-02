@@ -9,8 +9,14 @@ from typing import Annotated, Any, Final
 from pydantic import BaseModel, Discriminator, Field, Tag, ValidationError, field_validator, model_validator
 
 from dovo.common.models import OnFailureSpec
-from dovo.core.catalog.definitions.conditions import validate_condition_expression
-from dovo.core.catalog.definitions.step import BlueprintStep, IfStepBlock, LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions.conditions import ConditionScope, validate_condition_expression
+from dovo.core.catalog.definitions.step import (
+    BlueprintStep,
+    IfStepBlock,
+    LoopStepBlock,
+    StepDefinition,
+    published_artifact_names,
+)
 from dovo.core.catalog.exceptions import BlueprintValidationError
 from dovo.core.inputs import ParameterInput
 
@@ -67,20 +73,21 @@ def apply_on_failure_default(
     return filled
 
 
-def _validate_single_loop_block(loop: LoopStepBlock) -> None:
-    """Validate condition expressions and referenced step IDs within a loop block."""
-    known = {s.id for s in loop.do}
+def _validate_single_loop_block(loop: LoopStepBlock, published: frozenset[str]) -> None:
+    """Validate the loop's 'until' entries against its 'do' step ids and the blueprint's published artifact names."""
+    scope = ConditionScope(known_step_ids=frozenset(s.id for s in loop.do), published_artifacts=published)
     for expr in loop.until:
-        errors = validate_condition_expression(expr, known_step_ids=known)
+        errors = validate_condition_expression(expr, scope=scope)
         if errors:
             raise ValueError(f"Loop '{loop.id}': {'; '.join(errors)}")
 
 
 def _validate_loop_steps(steps: list[BlueprintStep]) -> None:
-    """Validate loop step blocks within a step definition list."""
+    """Validate loop step blocks within a step definition list, against every artifact name the steps publish."""
+    published = published_artifact_names(steps)
     for step in steps:
         if isinstance(step, LoopStepBlock):
-            _validate_single_loop_block(step)
+            _validate_single_loop_block(step, published)
 
 
 class BlueprintDefaults(BaseModel):
