@@ -157,11 +157,24 @@ class TestStepRows:
                 "status": "completed",
                 "attempts": 1,
                 "wall_seconds": 30.5,
+                "effort": None,
+                "models": [],
                 "model_seconds": 7.5,
+                "thinking_seconds": 0.0,
+                "tool_seconds": 0.0,
                 "turns": 3,
                 "tool_calls": 4,
                 "calls_per_turn": 1.33,
+                "subagents": 0,
+                "tokens": {
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                    "input_tokens": 10,
+                    "output_tokens": 20,
+                    "thinking_tokens": 0,
+                },
                 "cost_usd": 0.5,
+                "ended": [None],
                 "top_tools": [["Read", 2], ["Bash", 1], ["Grep", 1]],
                 "error_message": None,
             }
@@ -172,6 +185,7 @@ class TestStepRows:
             "cache_read_input_tokens": 0,
             "input_tokens": 10,
             "output_tokens": 20,
+            "thinking_tokens": 0,
         }
 
     def test_events_of_one_response_count_as_one_turn(self, tmp_path: Path) -> None:
@@ -353,6 +367,160 @@ class TestFlags:
         ]
 
 
+def _at(event: dict[str, object], seconds: int) -> dict[str, object]:
+    """Return event stamped seconds after 10:00:00 UTC, as Claude Code stamps stream-json events."""
+    return event | {"timestamp": f"2026-11-02T10:{seconds // 60:02d}:{seconds % 60:02d}.000Z"}
+
+
+def _ts(event: dict[str, object], seconds: int) -> dict[str, object]:
+    """Return a session.log event stamped seconds after 10:00:00 UTC."""
+    return event | {"ts": f"2026-11-02T10:{seconds // 60:02d}:{seconds % 60:02d}+00:00"}
+
+
+class TestAudit:
+    def test_wall_time_splits_into_tool_time_and_each_responses_time(self, tmp_path: Path) -> None:
+        thinking: dict[str, object] = {"type": "assistant", "message": {"id": "m1", "content": [{"type": "thinking"}]}}
+        text: dict[str, object] = {
+            "type": "assistant",
+            "message": {"id": "m2", "content": [{"type": "text", "text": "Done."}]},
+        }
+        subagent = _use("s", "Bash") | {"parent_tool_use_id": "m1"}
+        events = [
+            _at({"type": "system", "subtype": "init", "claude_code_version": "2.1.316"}, 0),
+            _at(thinking | {"thinking_duration_ms": 38000}, 40),
+            _at(_use("m1", "Bash", command="ls"), 45),
+            _at(subagent, 46),
+            _at(_result("m1"), 48),
+            _at(text, 50),
+            _final(),
+        ]
+        _write_log(tmp_path / "01_plan_attempt_1.stdout.log", events)
+
+        result = PI.analyse(_payload([_step("plan")]), tmp_path)
+
+        row = result["steps"][0]
+        assert (row["thinking_seconds"], row["tool_seconds"]) == (38.0, 3.0)
+        assert result["slowest_responses"] == [
+            {
+                "step": "plan",
+                "file": "01_plan_attempt_1.stdout.log",
+                "line": 3,
+                "seconds": 45.0,
+                "thinking_seconds": 38.0,
+                "produced": ["Bash"],
+            },
+            {
+                "step": "plan",
+                "file": "01_plan_attempt_1.stdout.log",
+                "line": 7,
+                "seconds": 2.0,
+                "thinking_seconds": 0.0,
+                "produced": ["text"],
+            },
+        ]
+        assert result["session"]["claude_code_versions"] == ["2.1.316"]
+
+    def test_tokens_count_thinking_and_usage_is_reported_per_model(self, tmp_path: Path) -> None:
+        final = _final(
+            usage={"input_tokens": 10, "output_tokens": 20, "output_tokens_details": {"thinking_tokens": 7}},
+            modelUsage={
+                "claude-opus-5-5": {"inputTokens": 10, "outputTokens": 15, "thinkingTokens": 7, "costUSD": 0.4},
+                "claude-haiku-5-5": {"outputTokens": 5, "cacheReadInputTokens": 100, "costUSD": 0.1},
+            },
+            subagent_stats={"spawned": 1},
+            terminal_reason="completed",
+        )
+        _write_log(tmp_path / "01_code_attempt_1.stdout.log", [_use("a", "Task"), final])
+
+        result = PI.analyse(_payload([_step("code")]), tmp_path)
+
+        row = result["steps"][0]
+        assert (row["models"], row["tokens"]["thinking_tokens"], row["subagents"], row["ended"]) == (
+            ["claude-haiku-5-5", "claude-opus-5-5"],
+            7,
+            1,
+            ["completed"],
+        )
+        assert result["session"]["models"] == {
+            "claude-haiku-5-5": {
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 100,
+                "cost_usd": 0.1,
+                "input_tokens": 0,
+                "output_tokens": 5,
+                "thinking_tokens": 0,
+            },
+            "claude-opus-5-5": {
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cost_usd": 0.4,
+                "input_tokens": 10,
+                "output_tokens": 15,
+                "thinking_tokens": 7,
+            },
+        }
+
+    def test_effort_comes_from_the_steps_env_in_the_frozen_blueprint(self, tmp_path: Path) -> None:
+        log_dir = tmp_path / "logs" / SESSION
+        log_dir.mkdir(parents=True)
+        definitions = tmp_path / "sessions" / SESSION / "definitions"
+        definitions.mkdir(parents=True)
+        blueprint = {
+            "steps": [
+                {"id": "plan", "type": "agent", "env": {"CLAUDE_CODE_EFFORT_LEVEL": "medium"}},
+                {"id": "loop", "type": "loop", "steps": [{"id": "fix", "env": {"CLAUDE_CODE_EFFORT_LEVEL": "low"}}]},
+                {"id": "code", "type": "agent", "env": {"OTHER": "x"}},
+            ]
+        }
+        (definitions / "demo.yml").write_text(json.dumps(blueprint), encoding="utf-8")
+        steps = [_step("plan"), _step("fix", loop_id="loop", iteration=1), _step("code")]
+
+        result = PI.analyse(_payload(steps), log_dir)
+
+        assert [(row["id"], row["effort"]) for row in result["steps"]] == [
+            ("plan", "medium"),
+            ("fix#1", "low"),
+            ("code", None),
+        ]
+
+    def test_session_time_separates_running_waiting_and_command_steps(self, tmp_path: Path) -> None:
+        events = [
+            _ts({"event": "session_started"}, 0),
+            _ts({"event": "session_completed"}, 100),
+            _ts({"event": "session_started"}, 160),
+            _ts({"event": "session_completed"}, 200),
+        ]
+        _write_log(tmp_path / "session.log", events)
+        _write_log(tmp_path / "01_code_attempt_1.stdout.log", [_use("a", "Bash"), _final()])
+        steps = [_step("code"), _step("build", duration_seconds=12.0)]
+
+        time = PI.analyse(_payload(steps), tmp_path)["session"]["time"]
+
+        assert time == {
+            "runs": 2,
+            "active_seconds": 140.0,
+            "waiting_seconds": 60.0,
+            "agent_seconds": 9.0,
+            "model_seconds": 7.5,
+            "command_seconds": 12.0,
+            "thinking_seconds": 0.0,
+            "tool_seconds": 0.0,
+            "turns": 1,
+            "tool_calls": 1,
+            "calls_per_turn": 1.0,
+            "subagents": 0,
+        }
+
+    def test_markdown_report_shows_the_sessions_values(self, tmp_path: Path) -> None:
+        events = [_at(_use("m1", "Bash"), 0), _at(_result("m1"), 4), _at(_use("m2", "Read"), 30), _final()]
+        _write_log(tmp_path / "01_plan_attempt_1.stdout.log", events)
+
+        report = PI.render_markdown(PI.analyse(_payload([_step("plan"), _step("build")]), tmp_path))
+
+        for value in (f"# Session {SESSION}", "demo", "plan", "build", "7.50", "0.50", "26.00", "Read"):
+            assert value in report
+
+
 class TestFingerprint:
     @pytest.mark.parametrize(
         ("first", "second"),
@@ -418,6 +586,18 @@ class TestMain:
 
         assert commands == [("uv", "run", "dovo", "session", "show", "--logs", "--format", "json")]
         assert json.loads(capsys.readouterr().out)["session"]["blueprint"] == "demo"
+
+    def test_main_prints_a_markdown_report_with_format_markdown(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setattr(PI, "run", lambda *args: json.dumps({"payload": _payload([_step("build")])}))
+        monkeypatch.setattr(sys, "argv", ["session_pi.py", SESSION, "--format", "markdown"])
+
+        assert PI.main() == 0
+
+        out = capsys.readouterr().out
+        assert f"# Session {SESSION}" in out
+        assert "build" in out
 
     def test_main_reports_a_session_it_cannot_read(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

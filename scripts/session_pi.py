@@ -5,9 +5,12 @@ Reads `dovo session show <id> --logs --format json` for the blueprint, outcome
 and step results, then the session's own log directory: `session.log` for
 resumes and agent notes, `NN_<step>[_iter_K]_attempt_N.stdout.log` for the
 Claude Code stream-json each agent step wrote, and the matching `.stderr.log`.
-Prints one JSON document (or writes it to --out) holding the session summary,
-one row per step and the flags that point at evidence. It makes no judgement:
-every number comes from a log, and every flag names the file and line to read.
+The effort each agent step asked for comes from the blueprint the session froze
+under `sessions/<id>/definitions/`. Prints one JSON document (or writes it to
+--out) holding the session summary, one row per step, the slowest model
+responses and the flags that point at evidence; `--format markdown` renders the
+same facts as a report. It makes no judgement: every number comes from a log,
+and every flag names the file and line to read.
 """
 
 from __future__ import annotations
@@ -20,8 +23,11 @@ import subprocess
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime
+from itertools import pairwise
 from pathlib import Path
 
+import yaml
 from publish_review import run
 
 MIN_TURNS_FOR_BATCHING = 10
@@ -42,6 +48,29 @@ LOG_NAME = re.compile(
 PATH_TEXT = re.compile(r"(?:~|\.{0,2})/[^\s'\"]+")
 SHA_TEXT = re.compile(r"\b[0-9a-f]{7,40}\b")
 NUMBER_TEXT = re.compile(r"\d+")
+EFFORT_ENV = "CLAUDE_CODE_EFFORT_LEVEL"
+SLOWEST_RESPONSES = 10
+USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+MODEL_USAGE_KEYS = {
+    "inputTokens": "input_tokens",
+    "outputTokens": "output_tokens",
+    "thinkingTokens": "thinking_tokens",
+    "cacheReadInputTokens": "cache_read_input_tokens",
+    "cacheCreationInputTokens": "cache_creation_input_tokens",
+}
+AGENT_METRIC_KEYS = (
+    "models",
+    "model_seconds",
+    "thinking_seconds",
+    "tool_seconds",
+    "turns",
+    "tool_calls",
+    "calls_per_turn",
+    "subagents",
+    "tokens",
+    "cost_usd",
+    "ended",
+)
 
 Evidence = dict[str, object]
 Flag = dict[str, object]
@@ -75,8 +104,22 @@ class FailedCall:
 
 
 @dataclass
+class Response:
+    """One model response, by message.id: the wall time its events closed, its thinking time and what it produced."""
+
+    line: int
+    seconds: float = 0.0
+    thinking_ms: float = 0.0
+    produced: list[str] = field(default_factory=list)
+
+
+@dataclass
 class AgentLog:
-    """What one step attempt's Claude Code stream-json holds."""
+    """What one step attempt's Claude Code stream-json holds.
+
+    Wall time between two timestamped top-level events goes to the event that ends the gap: a tool result's
+    gap is tool time, an assistant event's gap is its response's time.
+    """
 
     file: str
     step: str
@@ -85,6 +128,10 @@ class AgentLog:
     turns: list[Turn] = field(default_factory=list)
     failed: list[FailedCall] = field(default_factory=list)
     result: dict[str, object] = field(default_factory=dict)
+    init: dict[str, object] = field(default_factory=dict)
+    responses: dict[str, Response] = field(default_factory=dict)
+    tool_seconds: float = 0.0
+    clock: datetime | None = None
 
     @property
     def calls(self) -> int:
@@ -177,12 +224,15 @@ def _apply_event(
     uses: dict[str, Call],
     responses: dict[str, Turn],
 ) -> None:
-    """Add one stream-json event to log: the result, top-level tool calls, or failed tool results."""
+    """Add one stream-json event to log: the result, the init, its wall time, top-level tool calls, or failed tool results."""
     kind = event.get("type")
     if kind == "result":
         log.result = event
     if event.get("parent_tool_use_id"):
         return
+    if kind == "system" and event.get("subtype") == "init":
+        log.init = event
+    _clock(log, number, event)
     if kind == "assistant":
         _add_calls(log, number, event, _calls(number, event, uses), responses)
     if kind == "user":
@@ -204,6 +254,41 @@ def _add_calls(
     log.turns.append(turn)
     if message_id:
         responses[message_id] = turn
+
+
+def _timestamp(event: dict[str, object]) -> datetime | None:
+    """Return the event's ISO 8601 timestamp (`timestamp`, or session.log's `ts`), or None when it has none."""
+    value = event.get("timestamp") or event.get("ts")
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _clock(log: AgentLog, number: int, event: dict[str, object]) -> None:
+    """Charge the wall time since the previous timestamped event to the tools or to this event's response."""
+    now = _timestamp(event)
+    if now is None:
+        return
+    gap = (now - log.clock).total_seconds() if log.clock is not None else 0.0
+    log.clock = now
+    if event.get("type") == "user":
+        log.tool_seconds += gap
+    elif event.get("type") == "assistant":
+        _charge_response(log, number, event, gap)
+
+
+def _charge_response(log: AgentLog, number: int, event: dict[str, object], gap: float) -> None:
+    """Add gap, the event's thinking time and the blocks it produced to the response its message.id names."""
+    key = _message_id(event) or f"line-{number}"
+    response = log.responses.setdefault(key, Response(number))
+    response.seconds += gap
+    response.thinking_ms += _number(event.get("thinking_duration_ms"))
+    for block in _content(event):
+        kind = block.get("type")
+        response.produced.append(str(block.get("name")) if kind == "tool_use" else str(kind))
 
 
 def scan_logs(log_dir: Path) -> tuple[list[AgentLog], dict[tuple[str, int | None, int], str], list[Evidence]]:
@@ -275,18 +360,62 @@ def _number(value: object) -> float:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
 
 
+def _thinking_tokens(result: dict[str, object]) -> int:
+    """Return the thinking tokens of a result event's usage.output_tokens_details, 0 when it has none."""
+    usage = result.get("usage")
+    details = usage.get("output_tokens_details") if isinstance(usage, dict) else None
+    return int(_number(details.get("thinking_tokens"))) if isinstance(details, dict) else 0
+
+
 def _usage(logs: list[AgentLog]) -> dict[str, int]:
-    """Return the token usage summed over the logs' result events."""
+    """Return the token usage summed over the logs' result events, thinking tokens included."""
     total: Counter[str] = Counter()
     for log in logs:
         usage = log.result.get("usage")
-        for key in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
+        for key in USAGE_KEYS:
             total[key] += int(_number(usage.get(key))) if isinstance(usage, dict) else 0
+        total["thinking_tokens"] += _thinking_tokens(log.result)
     return {key: total[key] for key in sorted(total)}
 
 
-def step_row(step: dict[str, object], logs: list[AgentLog], other: list[str]) -> dict[str, object]:
-    """Return the timeline row of a payload step, with the metrics of its agent logs."""
+def model_usage(logs: list[AgentLog]) -> dict[str, dict[str, float]]:
+    """Return the tokens and cost per model, summed over the logs' result modelUsage (subagents included)."""
+    models: dict[str, dict[str, float]] = {}
+    for log in logs:
+        for model, counts in _model_counts(log):
+            total = models.setdefault(model, {})
+            for key, value in counts.items():
+                total[key] = total.get(key, 0.0) + value
+    return {model: _rounded(total) for model, total in sorted(models.items())}
+
+
+def _model_counts(log: AgentLog) -> list[tuple[str, dict[str, float]]]:
+    """Return each model of the log's result modelUsage with its tokens and cost under this script's keys."""
+    usage = log.result.get("modelUsage")
+    if not isinstance(usage, dict):
+        return []
+    sources = {**MODEL_USAGE_KEYS, "costUSD": "cost_usd"}
+    return [
+        (str(model), {key: _number(counts.get(source)) for source, key in sources.items()})
+        for model, counts in usage.items()
+        if isinstance(counts, dict)
+    ]
+
+
+def _rounded(total: dict[str, float]) -> dict[str, float]:
+    """Return a model's usage with tokens as ints and cost to four decimals, keys sorted."""
+    return {key: round(value, 4) if key == "cost_usd" else int(value) for key, value in sorted(total.items())}
+
+
+def _seconds(logs: list[AgentLog], key: str) -> float:
+    """Return the milliseconds field key of the logs' result events, summed and in seconds."""
+    return round(sum(_number(log.result.get(key)) for log in logs) / 1000, 1)
+
+
+def step_row(
+    step: dict[str, object], logs: list[AgentLog], other: list[str], efforts: dict[str, str]
+) -> dict[str, object]:
+    """Return the timeline row of a payload step, with the metrics of its agent logs and the effort it asked for."""
     return {
         "id": step_label(step),
         "step_id": step.get("step_id"),
@@ -296,33 +425,74 @@ def step_row(step: dict[str, object], logs: list[AgentLog], other: list[str]) ->
         "status": step.get("state"),
         "attempts": step.get("attempts"),
         "wall_seconds": step.get("duration_seconds"),
+        "effort": efforts.get(str(step.get("step_id"))),
         **agent_metrics(logs),
         "error_message": step.get("error_message"),
     }
 
 
 def agent_metrics(logs: list[AgentLog]) -> dict[str, object]:
-    """Return the model time, turns, calls, cost and top tools summed over a step's agent logs (None without logs)."""
+    """Return the time, turns, calls, tokens, cost and tools summed over a step's agent logs (None without logs)."""
     if not logs:
-        return {
-            "model_seconds": None,
-            "turns": None,
-            "tool_calls": None,
-            "calls_per_turn": None,
-            "cost_usd": None,
-            "top_tools": [],
-        }
-    turns = sum(len(log.turns) for log in logs)
-    calls = sum(log.calls for log in logs)
+        return dict.fromkeys(AGENT_METRIC_KEYS) | {"top_tools": []}
     tools = Counter(call.name for log in logs for turn in log.turns for call in turn.calls)
     return {
-        "model_seconds": round(sum(_number(log.result.get("duration_api_ms")) for log in logs) / 1000, 1),
+        "models": sorted(model_usage(logs)),
+        "model_seconds": _seconds(logs, "duration_api_ms"),
+        **_activity(logs),
+        "tokens": _usage(logs),
+        "cost_usd": _cost(logs),
+        "ended": [log.result.get("terminal_reason") or log.result.get("subtype") for log in logs],
+        "top_tools": [[name, count] for name, count in tools.most_common(3)],
+    }
+
+
+def _activity(logs: list[AgentLog]) -> dict[str, object]:
+    """Return the thinking and tool seconds, turns, tool calls, calls per turn and subagents of the logs."""
+    turns = sum(len(log.turns) for log in logs)
+    calls = sum(log.calls for log in logs)
+    return {
+        "thinking_seconds": round(_thinking_ms(logs) / 1000, 1),
+        "tool_seconds": round(sum(log.tool_seconds for log in logs), 1),
         "turns": turns,
         "tool_calls": calls,
         "calls_per_turn": round(calls / turns, 2) if turns else None,
-        "cost_usd": round(sum(_number(log.result.get("total_cost_usd")) for log in logs), 4),
-        "top_tools": [[name, count] for name, count in tools.most_common(3)],
+        "subagents": sum(_subagents(log) for log in logs),
     }
+
+
+def _cost(logs: list[AgentLog]) -> float:
+    """Return the logs' total_cost_usd, summed to four decimals."""
+    return round(sum(_number(log.result.get("total_cost_usd")) for log in logs), 4)
+
+
+def _thinking_ms(logs: list[AgentLog]) -> float:
+    """Return the thinking milliseconds summed over the logs' responses."""
+    return sum(response.thinking_ms for log in logs for response in log.responses.values())
+
+
+def _subagents(log: AgentLog) -> int:
+    """Return the subagents the log's result says the session spawned."""
+    stats = log.result.get("subagent_stats")
+    return int(_number(stats.get("spawned"))) if isinstance(stats, dict) else 0
+
+
+def slowest_responses(logs: list[AgentLog]) -> list[dict[str, object]]:
+    """Return the SLOWEST_RESPONSES model responses with the most wall time across the logs, slowest first."""
+    ranked = sorted(
+        ((log, response) for log in logs for response in log.responses.values()), key=lambda pair: -pair[1].seconds
+    )
+    return [
+        {
+            "step": row_id(log.step, log.iteration),
+            "file": log.file,
+            "line": response.line,
+            "seconds": round(response.seconds, 1),
+            "thinking_seconds": round(response.thinking_ms / 1000, 1),
+            "produced": [name for name in response.produced if name != "thinking"],
+        }
+        for log, response in ranked[:SLOWEST_RESPONSES]
+    ]
 
 
 def step_iteration(step: dict[str, object]) -> int | None:
@@ -367,9 +537,84 @@ def session_summary(
         "error_message": session.get("error_message"),
         "worktree_kept": payload.get("worktree_kept"),
         "resumes": max(0, starts - 1),
-        "total_cost_usd": round(sum(_number(log.result.get("total_cost_usd")) for log in logs), 4),
+        "claude_code_versions": sorted(
+            {str(log.init["claude_code_version"]) for log in logs if log.init.get("claude_code_version")}
+        ),
+        "total_cost_usd": _cost(logs),
         "tokens": _usage(logs),
+        "models": model_usage(logs),
     }
+
+
+def session_runs(events: list[tuple[int, dict[str, object]]]) -> list[tuple[datetime, datetime]]:
+    """Return the (start, end) of each finished run of the session: a session_started to its session_completed."""
+    runs: list[tuple[datetime, datetime]] = []
+    start: datetime | None = None
+    for _, event in events:
+        now = _timestamp(event)
+        if now is None:
+            continue
+        if event.get("event") == "session_started":
+            start = now
+        elif event.get("event") == "session_completed" and start is not None:
+            runs.append((start, now))
+            start = None
+    return runs
+
+
+def time_summary(
+    events: list[tuple[int, dict[str, object]]], logs: list[AgentLog], rows: list[dict[str, object]]
+) -> dict[str, object]:
+    """Return where the session's time went: running versus waiting between runs, and agent versus command steps.
+
+    `waiting_seconds` is the time between one run pausing and the next starting, usually a person answering a prompt.
+    """
+    runs = session_runs(events)
+    return {
+        "runs": len(runs),
+        "active_seconds": round(sum((end - start).total_seconds() for start, end in runs), 1),
+        "waiting_seconds": round(sum((after[0] - before[1]).total_seconds() for before, after in pairwise(runs)), 1),
+        "agent_seconds": _seconds(logs, "duration_ms"),
+        "model_seconds": _seconds(logs, "duration_api_ms"),
+        "command_seconds": round(sum(_number(row["wall_seconds"]) for row in rows if row["type"] != "claude"), 1),
+        **_activity(logs),
+    }
+
+
+def step_efforts(definition: Path | None) -> dict[str, str]:
+    """Return the CLAUDE_CODE_EFFORT_LEVEL each step of a frozen blueprint sets in its env, by step id."""
+    if definition is None or not definition.is_file():
+        return {}
+    try:
+        document = yaml.safe_load(definition.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return {}
+    efforts: dict[str, str] = {}
+    _collect_efforts(document, efforts)
+    return efforts
+
+
+def _collect_efforts(node: object, efforts: dict[str, str]) -> None:
+    """Add the effort of every step mapping under node, walking loop and if blocks."""
+    if isinstance(node, list):
+        for item in node:
+            _collect_efforts(item, efforts)
+        return
+    if not isinstance(node, dict):
+        return
+    env = node.get("env")
+    if isinstance(node.get("id"), str) and isinstance(env, dict) and env.get(EFFORT_ENV):
+        efforts[node["id"]] = str(env[EFFORT_ENV])
+    for value in node.values():
+        if isinstance(value, (dict, list)):
+            _collect_efforts(value, efforts)
+
+
+def definition_path(log_dir: Path | None, blueprint: object) -> Path | None:
+    """Return the frozen blueprint of the session whose log directory is log_dir, beside it under sessions/."""
+    if log_dir is None or not isinstance(blueprint, str):
+        return None
+    return log_dir.parent.parent / "sessions" / log_dir.name / "definitions" / f"{blueprint}.yml"
 
 
 def log_flags(log: AgentLog) -> list[Flag]:
@@ -547,11 +792,13 @@ def _logs_of(
 
 
 def analyse(payload: dict[str, object], log_dir: Path | None) -> dict[str, object]:
-    """Return the session summary, step rows and flags for a `dovo session show` payload and its log directory."""
+    """Return the session summary, step rows, slowest responses and flags for a `dovo session show` payload and its log directory."""
     agents, other, tracebacks = scan_logs(log_dir) if log_dir is not None and log_dir.is_dir() else ([], {}, [])
     events, events_file = read_session_log(log_dir) if log_dir is not None else ([], "session.log")
     summary = session_summary(payload, events, agents)
-    rows = [step_row(step, *_logs_of(step, agents, other)) for step in payload_steps(payload)]
+    efforts = step_efforts(definition_path(log_dir, summary["blueprint"]))
+    rows = [step_row(step, *_logs_of(step, agents, other), efforts) for step in payload_steps(payload)]
+    summary["time"] = time_summary(events, agents, rows)
     flags = [
         *session_flags(payload, summary),
         *step_flags(payload),
@@ -561,7 +808,7 @@ def analyse(payload: dict[str, object], log_dir: Path | None) -> dict[str, objec
     ]
     if tracebacks:
         flags.append(make_flag("stderr_traceback", None, f"{len(tracebacks)} tracebacks in stderr logs", tracebacks))
-    return {"session": summary, "steps": rows, "flags": flags}
+    return {"session": summary, "steps": rows, "slowest_responses": slowest_responses(agents), "flags": flags}
 
 
 def fetch(session: str | None) -> tuple[dict[str, object], Path | None]:
@@ -576,11 +823,136 @@ def fetch(session: str | None) -> tuple[dict[str, object], Path | None]:
     return payload, Path(str(first)).parent if first else None
 
 
+def _cell(value: object) -> str:
+    """Return value as a markdown table cell: '-' for None, floats to two decimals, ints with separators."""
+    if value is None:
+        return "-"
+    if isinstance(value, float):
+        return f"{value:,.2f}"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return f"{value:,}"
+    if isinstance(value, list):
+        return ", ".join(_cell(item) for item in value) or "-"
+    return str(value).replace("|", "\\|")
+
+
+def _table(headers: list[str], rows: list[list[object]]) -> list[str]:
+    """Return the lines of a markdown table."""
+    lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
+    return [*lines, *("| " + " | ".join(_cell(value) for value in row) + " |" for row in rows), ""]
+
+
+def _session_lines(session: dict[str, object]) -> list[str]:
+    """Return the report's session and time sections."""
+    time = session.get("time")
+    time = time if isinstance(time, dict) else {}
+    keys = ("id", "blueprint", "status", "started_at", "completed_at", "wall_seconds", "resumes", "total_cost_usd")
+    rows = [[key, session.get(key)] for key in keys]
+    rows += [
+        ["claude_code_versions", session.get("claude_code_versions")],
+        ["error_message", session.get("error_message")],
+    ]
+    tokens = session.get("tokens")
+    token_rows = [[key, value] for key, value in tokens.items()] if isinstance(tokens, dict) else []
+    return [
+        f"# Session {session.get('id')}",
+        "",
+        *_table(["field", "value"], rows),
+        "## Time",
+        "",
+        *_table(["measure", "seconds or count"], [[key, value] for key, value in time.items()]),
+        "## Tokens",
+        "",
+        *_table(["kind", "tokens"], token_rows),
+    ]
+
+
+def _model_lines(models: object) -> list[str]:
+    """Return the report's per-model usage section."""
+    if not isinstance(models, dict) or not models:
+        return []
+    keys = [
+        "input_tokens",
+        "output_tokens",
+        "thinking_tokens",
+        "cache_read_input_tokens",
+        "cache_creation_input_tokens",
+        "cost_usd",
+    ]
+    rows = [[model, *(usage.get(key) for key in keys)] for model, usage in models.items() if isinstance(usage, dict)]
+    return [
+        "## Models",
+        "",
+        *_table(["model", "input", "output", "thinking", "cache read", "cache write", "cost"], rows),
+    ]
+
+
+STEP_COLUMNS = {
+    "step": "id",
+    "status": "status",
+    "tries": "attempts",
+    "wall s": "wall_seconds",
+    "model s": "model_seconds",
+    "think s": "thinking_seconds",
+    "tool s": "tool_seconds",
+    "turns": "turns",
+    "calls": "tool_calls",
+    "effort": "effort",
+    "cost": "cost_usd",
+}
+
+
+def _step_lines(steps: object) -> list[str]:
+    """Return the report's step table, with each agent step's output and thinking tokens."""
+    rows = []
+    for step in steps if isinstance(steps, list) else []:
+        tokens = step.get("tokens") if isinstance(step.get("tokens"), dict) else {}
+        values = [step.get(key) for key in STEP_COLUMNS.values()]
+        rows.append([*values, tokens.get("output_tokens"), tokens.get("thinking_tokens")])
+    return ["## Steps", "", *_table([*STEP_COLUMNS, "out tok", "think tok"], rows)]
+
+
+def _slow_lines(responses: object) -> list[str]:
+    """Return the report's slowest-responses section."""
+    keys = ("step", "seconds", "thinking_seconds", "produced", "file", "line")
+    rows = (
+        [[row.get(key) for key in keys] for row in responses if isinstance(row, dict)]
+        if isinstance(responses, list)
+        else []
+    )
+    return ["## Slowest model responses", "", *_table(list(keys), rows)] if rows else []
+
+
+def _flag_lines(flags: object) -> list[str]:
+    """Return the report's flags section."""
+    rows = (
+        [[f.get("kind"), f.get("step"), f.get("detail")] for f in flags if isinstance(f, dict)]
+        if isinstance(flags, list)
+        else []
+    )
+    return ["## Flags", "", *_table(["kind", "step", "detail"], rows)] if rows else []
+
+
+def render_markdown(analysis: dict[str, object]) -> str:
+    """Return the analysis as a markdown audit report: session, time, tokens, models, steps, slowest responses, flags."""
+    session = analysis.get("session")
+    session = session if isinstance(session, dict) else {}
+    lines = [
+        *_session_lines(session),
+        *_model_lines(session.get("models")),
+        *_step_lines(analysis.get("steps")),
+        *_slow_lines(analysis.get("slowest_responses")),
+        *_flag_lines(analysis.get("flags")),
+    ]
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def main() -> int:
-    """Print the session analysis as JSON, or write it to --out."""
+    """Print the session analysis as JSON or a markdown report, or write it to --out."""
     parser = argparse.ArgumentParser(description="Extract the facts /dovo-pi analyses a dovo session from.")
     parser.add_argument("session", nargs="?", help="Session id. Defaults to the latest session.")
-    parser.add_argument("--out", type=Path, help="Write the JSON here instead of printing it.")
+    parser.add_argument("--out", type=Path, help="Write the output here instead of printing it.")
+    parser.add_argument("--format", choices=("json", "markdown"), default="json", help="Output format.")
     args = parser.parse_args()
     out: Path | None = args.out
     session: str | None = args.session
@@ -589,7 +961,8 @@ def main() -> int:
     except (subprocess.CalledProcessError, ValueError, json.JSONDecodeError) as error:
         sys.stderr.write(f"session_pi.py: could not read the session: {error}\n")
         return 1
-    text = json.dumps(analyse(payload, log_dir), indent=2) + "\n"
+    analysis = analyse(payload, log_dir)
+    text = render_markdown(analysis) if args.format == "markdown" else json.dumps(analysis, indent=2) + "\n"
     if out is None:
         sys.stdout.write(text)
     else:
