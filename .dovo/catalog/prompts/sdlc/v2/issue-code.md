@@ -43,7 +43,7 @@ Work phase by phase, in the Phases table's order. Within a phase, work one requi
 
 1. Re-read the plan section, then the current contents of every file you are about to touch.
 2. Write the production code at the paths the plan names.
-3. Write the tests the plan's test lines (in one-phase mode, the phase file's `tests`) name, asserting the outcome each line states for the requirements it cites (R12–R16, [testing.md](../../../../../docs/agents/testing.md)).
+3. Write the tests the plan's test lines (in one-phase mode, the phase file's `tests`) name, asserting the outcome each line states for the requirements it cites (R12–R16, [testing.md](../../../../../docs/agents/testing.md)). A test line states the behaviour in words and leaves the expected values to you: derive each message, column, result and case from the code you wrote and the issue, and assert it as a literal (R16). Assert a literal the issue's binding values or a decision pins exactly as written.
 4. Run only the scoped tests for what you touched, and fix failures before the next requirement:
 
    ```bash
