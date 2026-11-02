@@ -1,0 +1,40 @@
+# issue-plan: slice mode
+
+`/issue-plan --slice <id>` phases one slice. Read [issue-plan.md](issue-plan.md) first: it holds the modes, the hard boundaries and the steps both modes share (2, 3, 4, 5 and 6). This file adds slice mode's Step 1b and its part of Steps 3 and 4.
+
+## 1b. Load the slice (slice mode)
+
+Never reset `.agentic/` in slice mode: the epic plan, `.agentic/epic-plan.md` and `.agentic/epic-plan.json`, is this mode's input. The `issue-code-v2` blueprint copies both from the downloaded plan, recording the slice's own issue as its `child` when the work plan's row has one the downloaded plan lacks; the `issue-plan-v2` blueprint copies both from the issue plan it has just settled, when that plan has one slice. If either is missing, stop and say so. When run by hand, copy the downloaded `.agentic/plan.md` and `.agentic/plan.json` to them first, setting the slice's `child` in the same way. Never edit the epic plan. Start every run from it, so a retry never builds on its own partial output, and delete the files an earlier planning round in this workspace could leave behind, so none is read as current:
+
+```bash
+cp .agentic/epic-plan.md .agentic/plan.md && cp .agentic/epic-plan.json .agentic/plan.json
+rm -f .agentic/plan-review.json .agentic/plan-challenge.json .agentic/plan-summary.md .agentic/plan-walkthrough.md .agentic/evidence.md
+```
+
+Then read, from the epic plan, and keep in view for the whole run:
+
+- **The slice:** the `slices` entry whose `id` is `<id>`. An id not in `slices` stops the run and names the valid ids. `plan.json` `issue` is the epic, or the plain issue itself. The slice's issue is its `child`, an issue of its own, when it has one, and otherwise `plan.json` `issue`: the slice is worked on it, and its PR closes it.
+- **The epic's binding contract:** `plan.json` `contract` (none when it is `null`) and the plan's `## Feature contract`, with the ownership rows of this slice and of the slices it depends on.
+- **The "as landed" reports:** `.agentic/landed/<id>/.agentic/slice-report.md`, one per slice in review or merged, which the blueprint's `landed-reports` step downloads from the code session the slice's work plan row names (run by hand: `uv run dovo artifacts download <session> slice-report --dest .agentic/landed/<id>`). They record how earlier slices departed from the plan and which later slices they affect. A slice whose landing changed the contract amended it when it landed, so a report that still conflicts with `contract` is raised as an open question, never settled silently.
+- **The slice's issue:** `gh issue view <n> --json number,title,body`, read live, since it was readied or created just before this step. When it is the slice's own issue, or the plan has one slice, its outcomes (`O-n`) and decisions (`D-n`) are the requirements this slice's phases answer. When it is `plan.json` `issue` and the plan has two or more slices, only the outcomes the slice's `outcomes` lists are; the issue's decisions bind every slice, so plan against them, but they are not this slice's requirements. Its binding values are the literals the phases keep, and its **Out of scope** items are its collision checks.
+- **The requirements:** `.agentic/requirements.json`, the slice's numbered items (`O-n` and `D-n`) with their exact text, as the item above scopes them. An outcome the slice delivers only part of carries that part as its `part`; plan only that part. The blueprint's `requirements` step writes it just before this one; when run by hand, write it first with `uv run python .dovo/catalog/scripts/sdlc/v2/plan.py requirements --issue <n> --slice <id> --plan .agentic/epic-plan.json --out .agentic/requirements.json`. Cite each requirement by its id there, in the Phases table and the test lines: the `breakdown` step quotes them from it into each phase's file, and its check refuses an item no phase answers.
+- **The prior decisions:** `.agentic/prior-decisions.json`, the decisions of the plan the work plan names: the epic plan's, and on a plan of one slice the issue plan's kept beside it. The blueprint's `prior-decisions` step writes it before this one; when run by hand, write it first with `uv run python .dovo/catalog/scripts/sdlc/v2/plan.py prior-decisions --issue <epic> --plan .agentic/epic-plan.json --session <session> --planned-sha <body_sha> --out .agentic/prior-decisions.json`, with the session and body_sha `workplan.py show --issue <epic>` prints. A decision marked `given` binds this plan like the issue does: plan against it and never raise it again as an open question. A decision marked `to_confirm` was settled before the issue's description last changed: raise it as an open question whose `assumed` answer is the earlier decision, with `replaces` naming it (Step 5).
+- **The issue plan's decisions:** `.agentic/epic-plan.json` `decisions` and `contract.decisions`, settled when the issue was planned; a slice worked on its own issue finds the epic's plan-level decisions copied into that issue's Decisions too. They bind this plan like decisions marked `given`: plan against them and never raise them again as open questions, except a `to_confirm` one, which you raise with `replaces` as the item above says. The plan review reports a phase that contradicts one.
+
+The downloaded plan may come from an earlier slice's code session, since `land` repoints the work plan there when that slice's report amends the plan. Its phases, tests and open questions belong to that earlier slice: never carry them into this plan.
+
+## 3. Size and phase (slice mode)
+
+In slice mode, phase this slice only; when grounding shows the slice mixes kinds of change, or is over its budget, raise an open question recommending re-slicing the epic with `/issue-plan <epic>`. Then follow Step 3 of [issue-plan.md](issue-plan.md).
+
+## 4. Write the plan (slice mode)
+
+Write `.agentic/plan.md` as [templates/slice-plan.md](templates/slice-plan.md) shows: its sections in its order, under its headings, each line in its form. It is planning.md Step 4's template as slice mode changes it. The example cannot show these rules:
+
+- **The header names the slice's issue**, the slice's `child` when it has one and otherwise `plan.json` `issue`, and the line after it names the slice and the epic.
+- **The epic's sections are copied, never changed.** Copy the epic plan's `## Feature contract` (on an epic) and `## Slices` sections, and its `## Instructions from the approver` when present, verbatim after the header. Everything after them is this slice's alone.
+- **What each section holds.** Traps include the edge cases. The Artifact inventory lists every file and symbol each phase touches. `### Code` holds only new public surface the issue does not pin literally, `### Decisions` only departures from the issue or the nearest existing pattern, and `### Tests` one line per test, citing the requirements it pins, with the R13 matrix for each command. Link the issue rather than copying its prose, and cite the issue section that holds a literal contract rather than copying it.
+- **Test lines leave expected values to the code phase,** as planning.md Step 4 says. The rest of the plan keeps its detail: `### Code` keeps the signatures of new public surface, `### Decisions` keeps every departure, and the test lines keep the R13 matrix.
+- **No other section.** There is no Traceability, GWT Scenarios or per-phase Instructions section: the Phases table's Requirements column and the test lines map every requirement.
+- **Split requirements.** A requirement whose parts land in different phases is listed in each of those phases' Requirements cells with its part in parentheses (`O-7 (reply)`, `O-7 (fixer)`), and each part is cited by a test line; before finishing, split each outcome and decision into its obligations and check that each lands in a phase.
+- **The breakdown copies by heading.** `plan.py check-breakdown` reads each `## Phase <n>` section's code blocks under `### Code` and its list items under `### Decisions` and `### Tests`, and the items under `## Owned elsewhere`. Keep those headings exactly, and write each item as one top-level list item.

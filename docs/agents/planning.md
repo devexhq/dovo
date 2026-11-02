@@ -53,7 +53,7 @@ Group requirements into phases of one concern each (~400 changed lines or less, 
 ## Step 4: Write `.agentic/plan.md`
 
 - **Code:** a phase's `### Code` holds only new public surface the issue does not already pin literally: a new public signature with type hints, a result model, an enum, a command's flag set. No stubs for private helpers, and no copy of a literal the issue's Binding values already hold; cite that issue section instead. A phase with no such surface says "None: the issue pins it (`#<n>, <section>`)".
-- **Tests:** one line per test, `TestClass.test_name (path) — O-n: <outcome>`, citing every requirement it pins. No bodies and no `raise NotImplementedError` stubs. Sibling cases are one parametrized test and stay one line.
+- **Tests:** one line per test, `TestClass.test_name (path) — O-n: <behaviour>`, citing every requirement it pins and stating the behaviour it checks in words. No bodies and no `raise NotImplementedError` stubs. Sibling cases are one parametrized test and stay one line; name its cases by what they cover ("parametrized over terminal and `--format json` output"), not by their ids. A test line gives no value you would have to derive to write it: no computed message, column number, full result tuple or model repr. Keep a literal only when the issue's binding values or a settled decision pins it. The implementing agent derives the expected values from the code and the issue when it writes each test.
 - **Commands:** every command a phase adds or changes gets the R13 matrix (success, a failure path, `--format json`, each option it binds) as test lines in that phase's `### Tests`.
 - **Decisions:** a phase's `### Decisions` lists only where the plan departs from the issue or from the nearest existing pattern; omit the heading when there is none.
 - **Numbers:** a line estimate or total appears once, or agrees everywhere it appears.
@@ -143,8 +143,8 @@ Not needed: <surfaces checked and left alone, e.g. migration, result model, conf
 
 ### Tests
 
-- `<TestClass>.<test_name>` (`<test file path>`) — O-<n>[, D-<m>]: <exact outcome>.
-- `<TestClass>.<test_name>[<case>, <case>]` (`<test file path>`) — O-<n>: <exact outcome, per case>.
+- `<TestClass>.<test_name>` (`<test file path>`) — O-<n>[, D-<m>]: <behaviour it checks, in words>.
+- `<TestClass>.<test_name>` (`<test file path>`) — O-<n>: <behaviour>, parametrized over <what the cases cover>.
 
 <For commands, the R13 matrix as test lines: success, a failure path, `--format json`, each option it binds.>
 
