@@ -196,3 +196,96 @@ class IssuePlanGuardTests:
         run.record("approve-plan", selected="approve", comment=comment)
 
         assert run.reaches("keep-instructions") is kept
+
+
+CODING_AGENT_STEPS: Final = {"code", "pr-prep", "review", "fix", "report", "pr-describe"}
+
+
+class IssueCodeGuardTests:
+    @pytest.fixture
+    def run(self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact) -> _Run:
+        """Return a run of issue-code-v2 that picked slice S1 of an unready issue, with phase 1 next."""
+        run = _Run(_load("issue-code-v2"), artifact_store)
+        _publish_json(publish_artifact, "next-hold", {"holds": []})
+        run.record("next", slice="S1", plan_session="blueprint_plan01")
+        run.record("ready-state", ready="false")
+        run.record("phase", phase="1", phase_file=".agentic/phases/phase-1.json", remaining="0")
+        return run
+
+    def test_slice_phased_at_planning_is_coded_without_planning_or_approval(self, run: _Run) -> None:
+        run.record("phased-check", phased_session="blueprint_plan01")
+
+        assert run.agent_steps() == {"check", *CODING_AGENT_STEPS}
+        assert run.reaches("load-phased-plan")
+        assert [step for step in ("check-questions", "check-breakdown", "approve-plan") if run.reaches(step)] == []
+
+    def test_slice_not_phased_is_planned_reviewed_and_approved(
+        self, run: _Run, publish_artifact: PublishArtifact
+    ) -> None:
+        _publish_json(publish_artifact, "plan-questions", _plan_questions(1))
+        _publish_json(publish_artifact, "plan-findings", {"findings": [{"id": "F-1"}]})
+        run.record("phased-check", phased_session="")
+
+        planning = {"plan", "plan-review", "fold-findings", "fold-answers", "breakdown", "plan-walkthrough"}
+        assert run.agent_steps() == {"check", *planning, *CODING_AGENT_STEPS}
+        assert run.reaches("answer-questions")
+        assert run.reaches("approve-plan")
+        assert not run.reaches("load-phased-plan")
+
+    def test_issue_ready_as_it_is_skips_the_ready_check_and_its_label(self, run: _Run) -> None:
+        run.record("ready-state", ready="true")
+
+        assert [step for step in ("check", "hold", "approve", "apply") if run.reaches(step)] == []
+
+    def test_unready_issue_is_checked_and_its_label_approved(self, run: _Run) -> None:
+        run.record("gate", verdict="ready")
+
+        assert [step for step in ("check", "approve", "apply") if run.reaches(step)] == ["check", "approve", "apply"]
+        assert not run.reaches("hold")
+        assert run.ends("ready-loop")
+
+    def test_slice_waiting_on_a_person_holds_and_picks_again(
+        self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
+    ) -> None:
+        run = _Run(_load("issue-code-v2"), artifact_store)
+        _publish_json(publish_artifact, "next-hold", {"holds": [{"id": "S2", "label": "S2 waits on #12"}]})
+        run.record("next")
+
+        assert run.reaches("next-hold")
+        assert not run.ends("pick-loop")
+
+    def test_picked_slice_ends_the_pick_loop_without_holding(self, run: _Run) -> None:
+        assert not run.reaches("next-hold")
+        assert run.ends("pick-loop")
+
+    def test_iteration_after_every_phase_is_done_runs_only_the_gate(self, run: _Run) -> None:
+        run.record("phase", phase="done", phase_file="", remaining="0")
+        run.record("verify")
+
+        assert not run.reaches("code")
+        assert run.ends("code-loop")
+
+    def test_coded_last_phase_that_passes_the_gate_ends_the_code_loop(self, run: _Run) -> None:
+        run.record("code", status="proposed_patch")
+        run.record("verify")
+
+        assert run.reaches("code")
+        assert run.ends("code-loop")
+
+    @pytest.mark.parametrize(
+        ("review", "ends"),
+        [
+            pytest.param('{"findings": []}', True, id="no-findings"),
+            pytest.param('{"findings": [{"severity": "NIT"}]}', True, id="nits-only"),
+            pytest.param('{"findings": [{"severity": "WARNING"}]}', False, id="warning"),
+            pytest.param('{"action": "needs_human", "findings": [{"severity": "BLOCKER"}]}', True, id="needs-human"),
+            pytest.param("not json", False, id="unreadable"),
+        ],
+    )
+    def test_review_loop_ends_once_no_finding_an_agent_can_fix_remains(
+        self, run: _Run, publish_artifact: PublishArtifact, review: str, ends: bool
+    ) -> None:
+        publish_artifact("review-findings", {"review.json": review})
+        run.record("fix-verify", changed="false")
+
+        assert run.ends("review-loop") is ends
