@@ -266,6 +266,85 @@ class InterpolateRenderingTests:
         assert '"$POST" = "false"' in rendered.run
 
 
+def _metadata_with_note(note: str) -> ExecutionMetadata:
+    """Build metadata with one finished step `a` whose recorded output `note` holds note."""
+    a = PreviousStepMetadata(id="a", index="1", status="completed", exit_code="0", outputs={"note": note})
+    return ExecutionMetadata(step=StepMetadata(id="b", index=2), steps=[a])
+
+
+class InterpolatePlaceholderExpressionTests:
+    @pytest.mark.parametrize(
+        ("template", "metadata", "rendered"),
+        [
+            pytest.param("{{ steps.a.outputs.note || 'none' }}", _metadata_with_note("ready"), "ready", id="note_set"),
+            pytest.param("{{ steps.a.outputs.note || 'none' }}", _metadata_with_note(""), "none", id="note_empty"),
+            pytest.param("{{ steps.a.outputs.note || 'none' }}", _BareMetadata(), "none", id="step_not_run"),
+            pytest.param(
+                "{{ nope.field || 'none' }}", _metadata_with_note("ready"), "none", id="left_side_not_defined"
+            ),
+            pytest.param(
+                "{{ steps.a.outputs.note || 'none' }}",
+                _metadata_with_note("false"),
+                "false",
+                id="string_false_is_truthy",
+            ),
+            pytest.param("{{ inputs.n || 'none' }}", _BareMetadata(), "none", id="zero_is_falsy"),
+        ],
+    )
+    def test_or_default(self, template: str, metadata: ExecutionMetadataView, rendered: str) -> None:
+        providers = build_providers(inputs={"n": 0}, metadata=metadata)
+
+        assert interpolate_string(template, providers) == rendered
+
+    @pytest.mark.parametrize(
+        ("template", "rendered"),
+        [
+            pytest.param("{{ steps.a.outputs.note == 'ready' }}", "true", id="comparison"),
+            pytest.param("{{ !steps.a.outputs.note }}", "false", id="negation"),
+            pytest.param("{{ inputs.s && 'yes' }}", "yes", id="and_takes_right"),
+            pytest.param("{{ steps.a.outputs.note in ['ready', 'done'] }}", "true", id="membership"),
+            pytest.param("{{ inputs.flag || 'x' }}", "x", id="false_input_defaults"),
+        ],
+    )
+    def test_expression_renders_its_value(self, template: str, rendered: str) -> None:
+        providers = build_providers(inputs={"s": "text", "flag": False}, metadata=_metadata_with_note("ready"))
+
+        assert interpolate_string(template, providers) == rendered
+
+    @pytest.mark.parametrize(
+        ("template", "rendered"),
+        [
+            pytest.param("${{ github.ref == 'main' }}", "false", id="comparison"),
+            pytest.param("${{ secrets.T || '' }}", "", id="default"),
+        ],
+    )
+    def test_other_template_compound_body_is_evaluated(self, template: str, rendered: str) -> None:
+        providers = build_providers(inputs={"s": "text"}, metadata=_finished_steps_metadata())
+
+        assert interpolate_string(template, providers) == rendered
+
+    def test_untaken_side_is_never_resolved(self) -> None:
+        providers = [*build_providers(inputs={"s": "text"}), _RaisingProvider()]
+
+        assert interpolate_string("{{ inputs.s || boom.x }}", providers) == "text"
+        with pytest.raises(NamespaceResolutionError, match="boom"):
+            interpolate_string("{{ boom.x || 'd' }}", providers)
+
+    @pytest.mark.parametrize(
+        ("template", "rendered"),
+        [
+            pytest.param("{{ inputs.missing || '}}' }}", "}}", id="quoted_closing_braces"),
+            pytest.param("{{ inputs.missing || 'a\\'}}' }}", "a'}}", id="escaped_quote"),
+            pytest.param("x${{ inputs.s }}y", "xtexty", id="dollar_prefix"),
+            pytest.param("{{ inputs.s }}-{{ inputs.n }}", "text-3", id="two_placeholders"),
+            pytest.param("{{ it's }} {{ inputs.s }}", "{{ it's }} text", id="unclosed_quote"),
+            pytest.param("{{ inputs.s", "{{ inputs.s", id="no_closing"),
+        ],
+    )
+    def test_placeholder_bounds(self, template: str, rendered: str) -> None:
+        assert interpolate_string(template, build_providers(inputs={"s": "text", "n": 3})) == rendered
+
+
 class InterpolateProvidersTests:
     def test_first_provider_defining_a_path_wins(self) -> None:
         providers = [_MappingProvider("x", {"x.y": "a"}), _MappingProvider("x", {"x.y": "b"})]

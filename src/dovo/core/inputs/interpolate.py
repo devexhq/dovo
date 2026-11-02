@@ -1,24 +1,24 @@
 """Template variable interpolation for resolved blueprint inputs and execution metadata.
 
-Each `{{ ... }}` or `${{ ... }}` body is parsed by the expression grammar. A body that is a lone path is replaced by
-the value of the first namespace provider that defines the path, rendered as recorded outputs hold values, with an
-absent value as the empty string. A path no provider defines, a body that is not an expression and any other
-expression stay as written.
+Each `{{ ... }}` or `${{ ... }}` placeholder runs to the first `}}` outside a quoted string, and its body is parsed by
+the expression grammar. A body that is a lone path is replaced by the value of the first namespace provider that
+defines the path; a lone path no provider defines, a lone literal and a body that is not an expression stay as
+written. Any other expression is replaced by its value, a path no provider defines reading as absent inside it. Values
+render as recorded outputs hold them, with an absent value as the empty string.
 """
 
 from __future__ import annotations
 
-import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, Protocol
 
 from pydantic import BaseModel
 
-from dovo.core.expressions import ABSENT, Path, parse_expression
+from dovo.core.expressions import ABSENT, InvalidExpression, Literal, Path, evaluate_value, parse_expression
 from dovo.core.inputs.models import UNDEFINED
 from dovo.core.inputs.step_outputs import render_step_output, resolve_step_output
 
-_PLACEHOLDER_RE = re.compile(r"\$?\{\{\s*([^}]+?)\s*\}\}")
+_QUOTES = ("'", '"')
 _INTERPOLATED_FIELDS = ("command", "prompt", "script_path", "run")
 _STEP_ENTRY_FIELDS = {"id", "name", "index", "status", "exit_code"}
 
@@ -210,18 +210,85 @@ def build_providers(
 
 
 def interpolate_string(template: str, providers: Sequence[NamespaceProvider]) -> str:
-    """Replace ``${{ ... }}`` and ``{{ ... }}`` placeholders whose body is a path some provider defines."""
+    """Replace ``${{ ... }}`` and ``{{ ... }}`` placeholders with what their bodies render, leaving the rest as written."""
     if not providers:
         return template
+    parts: list[str] = []
+    position = 0
+    for start, end, body in _placeholders(template):
+        parts.append(template[position:start])
+        parts.append(_replacement(template[start:end], body, providers))
+        position = end
+    parts.append(template[position:])
+    return "".join(parts)
 
-    def _replace(match: re.Match[str]) -> str:
-        expression = parse_expression(match.group(1))
-        if not isinstance(expression, Path):
-            return match.group(0)
+
+def _replacement(placeholder: str, body: str, providers: Sequence[NamespaceProvider]) -> str:
+    """Return what placeholder renders: a lone defined path's value, any compound expression's value, else itself."""
+    expression = parse_expression(body.strip())
+    if isinstance(expression, (InvalidExpression, Literal)):
+        return placeholder
+    if isinstance(expression, Path):
         value = _lookup(expression, providers)
-        return match.group(0) if value is UNDEFINED else _render(value)
+        return placeholder if value is UNDEFINED else _render(value)
+    return _render(evaluate_value(expression, _PlaceholderResolver(providers)))
 
-    return _PLACEHOLDER_RE.sub(_replace, template)
+
+class _PlaceholderResolver:
+    """Resolver reading each path of a compound placeholder body from the providers, an undefined path as ABSENT."""
+
+    def __init__(self, providers: Sequence[NamespaceProvider]) -> None:
+        self._providers = providers
+
+    def resolve(self, path: Path) -> object:
+        """Return the first provider's value for path, or ABSENT when no provider defines it."""
+        value = _lookup(path, self._providers)
+        return ABSENT if value is UNDEFINED else value
+
+
+def _placeholders(template: str) -> Iterator[tuple[int, int, str]]:
+    """Yield the start, end and body of each placeholder: from `{{`, with a `$` straight before it, past its `}}`."""
+    position = template.find("{{")
+    while position != -1:
+        close = _placeholder_close(template, position + 2)
+        if close is None:
+            return
+        start = position - 1 if position and template[position - 1] == "$" else position
+        yield start, close + 2, template[position + 2 : close]
+        position = template.find("{{", close + 2)
+
+
+def _placeholder_close(template: str, position: int) -> int | None:
+    """Return the index of the first `}}` from position outside a quoted string, else of the first `}}`, else None.
+
+    A backslash-escaped quote does not close a string; a string never closed falls back to the first `}}`.
+    """
+    first = template.find("}}", position)
+    if first == -1:
+        return None
+    while position < len(template):
+        if template.startswith("}}", position):
+            return position
+        if template[position] not in _QUOTES:
+            position += 1
+            continue
+        after = _after_quoted(template, position)
+        if after is None:
+            return first
+        position = after
+    return first
+
+
+def _after_quoted(template: str, start: int) -> int | None:
+    """Return the index after the closing quote of the string opened at start, or None when it never closes."""
+    quote = template[start]
+    position = start + 1
+    while position < len(template):
+        char = template[position]
+        if char == quote:
+            return position + 1
+        position += 2 if char == "\\" else 1
+    return None
 
 
 def _lookup(path: Path, providers: Sequence[NamespaceProvider]) -> object:

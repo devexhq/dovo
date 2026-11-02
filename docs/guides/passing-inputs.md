@@ -99,7 +99,7 @@ Placeholders are replaced in these step fields:
 
 ### Interpolation Namespaces & Behavior
 * **Inputs**: `${{ inputs.<name> }}` or `{{ inputs.<name> }}` insert declared input values.
-* **Execution Metadata**: `step.*`, `blueprint.*`, `previous_step.*`, and historical `steps[...]` / `steps.<id>.*` insert run-time properties (see [Working with Steps](working-with-steps.md#runtime-execution-metadata--environment-variables)).* If a placeholder references an unknown name, the placeholder is left as literal text.
+* **Execution Metadata**: `step.*`, `blueprint.*`, `previous_step.*`, and historical `steps[...]` / `steps.<id>.*` insert run-time properties (see [Working with Steps](working-with-steps.md#runtime-execution-metadata--environment-variables)).* If a placeholder is only a reference to an unknown name, the placeholder is left as literal text.
 
 ---
 
