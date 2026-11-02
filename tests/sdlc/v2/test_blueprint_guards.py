@@ -1,4 +1,4 @@
-"""Tier 1 contract: the `when` guards, `if` blocks and loop `until` lists of the blueprints sdlc v2 runs decide which steps a run reaches.
+"""Tier 1 contract: the `when` guards, `if` blocks and loop `until` lists of the sdlc v2 blueprints, and the review loop feature-dev shares with them, decide which steps a run reaches.
 
 Each blueprint is loaded from the catalog and every guard is evaluated by the engine's guard
 functions, against the step outputs and the artifacts a run would have recorded by then.
@@ -23,6 +23,8 @@ from tests.conftest import PublishArtifact
 from tests.lint.astlib import REPO_ROOT
 
 BLUEPRINTS_DIR: Final = REPO_ROOT / ".dovo" / "catalog" / "blueprints"
+
+NOT_READY_HOLDS: Final = {"holds": [{"id": "G-1", "label": "G-1 (gate): blocker #12 is open. Fix: close it."}]}
 
 Entry = StepDefinition | LoopStepBlock | IfStepBlock
 
@@ -87,6 +89,17 @@ class _Run:
         assert isinstance(loop, LoopStepBlock)
         return self._passes(loop.until)
 
+    def published_after(self, step_id: str) -> set[str]:
+        """Return the names of the artifacts the steps the run reaches after step_id, in blueprint order, publish."""
+        ids = list(self._entries)
+        later = ids[ids.index(step_id) + 1 :]
+        return {
+            spec.name
+            for later_id in later
+            if isinstance(entry := self._entries[later_id][0], StepDefinition) and self.reaches(later_id)
+            for spec in entry.artifacts
+        }
+
     def agent_steps(self) -> set[str]:
         """Return the ids of the agent steps the run reaches."""
         return {
@@ -134,6 +147,12 @@ class IssuePlanGuardTests:
         assert not run.reaches("slice-check-questions")
         assert not run.reaches("check-breakdown")
         assert run.reaches("label-epic")
+
+    @pytest.mark.parametrize(("slice_id", "slices"), [("", "2"), ("S1", "1")], ids=["multi-slice", "one-slice"])
+    def test_plan_fixed_at_the_checks_is_republished_on_every_path(self, run: _Run, slice_id: str, slices: str) -> None:
+        run.record("one-slice", slice=slice_id, slices=slices)
+
+        assert {"plan", "plan-questions"} <= run.published_after("check-slices")
 
     @pytest.mark.usefixtures("questions_and_findings")
     def test_one_slice_plan_phases_its_slice_in_the_run(self, run: _Run) -> None:
@@ -183,6 +202,22 @@ class IssuePlanGuardTests:
 
         assert run.reaches("hold")
         assert not run.ends("ready-loop")
+
+    @pytest.mark.parametrize(
+        ("holds", "asked"),
+        [
+            pytest.param('{"holds": []}', True, id="ready"),
+            pytest.param(json.dumps(NOT_READY_HOLDS), False, id="not-ready-at-the-loop-ceiling"),
+            pytest.param("not json", True, id="unreadable"),
+        ],
+    )
+    def test_label_approval_is_asked_unless_findings_still_hold(
+        self, run: _Run, publish_artifact: PublishArtifact, holds: str, asked: bool
+    ) -> None:
+        publish_artifact("issue-hold", {"issue-hold.json": holds})
+
+        assert run.reaches("approve") is asked
+        assert run.reaches("apply")
 
     @pytest.mark.parametrize("verdict", ["ready", "needs_edits"])
     def test_verdict_no_person_must_settle_ends_the_ready_loop_without_holding(self, run: _Run, verdict: str) -> None:
@@ -237,12 +272,24 @@ class IssueCodeGuardTests:
 
         assert [step for step in ("check", "hold", "approve", "apply") if run.reaches(step)] == []
 
-    def test_unready_issue_is_checked_and_its_label_approved(self, run: _Run) -> None:
+    def test_unready_issue_is_checked_and_its_label_approved(
+        self, run: _Run, publish_artifact: PublishArtifact
+    ) -> None:
+        _publish_json(publish_artifact, "issue-hold", {"holds": []})
         run.record("gate", verdict="ready")
 
         assert [step for step in ("check", "approve", "apply") if run.reaches(step)] == ["check", "approve", "apply"]
         assert not run.reaches("hold")
         assert run.ends("ready-loop")
+
+    def test_unready_verdict_past_the_ready_loop_asks_no_approval_and_reaches_the_refusing_apply(
+        self, run: _Run, publish_artifact: PublishArtifact
+    ) -> None:
+        _publish_json(publish_artifact, "issue-hold", NOT_READY_HOLDS)
+        run.record("gate", verdict="not_ready")
+
+        assert not run.reaches("approve")
+        assert run.reaches("apply")
 
     def test_slice_waiting_on_a_person_holds_and_picks_again(
         self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
@@ -272,20 +319,23 @@ class IssueCodeGuardTests:
         assert run.reaches("code")
         assert run.ends("code-loop")
 
-    @pytest.mark.parametrize(
-        ("review", "ends"),
-        [
-            pytest.param('{"findings": []}', True, id="no-findings"),
-            pytest.param('{"findings": [{"severity": "NIT"}]}', True, id="nits-only"),
-            pytest.param('{"findings": [{"severity": "WARNING"}]}', False, id="warning"),
-            pytest.param('{"action": "needs_human", "findings": [{"severity": "BLOCKER"}]}', True, id="needs-human"),
-            pytest.param("not json", False, id="unreadable"),
-        ],
-    )
-    def test_review_loop_ends_once_no_finding_an_agent_can_fix_remains(
-        self, run: _Run, publish_artifact: PublishArtifact, review: str, ends: bool
-    ) -> None:
-        publish_artifact("review-findings", {"review.json": review})
-        run.record("fix-verify", changed="false")
 
-        assert run.ends("review-loop") is ends
+@pytest.mark.parametrize("blueprint", ["issue-code-v2", "feature-dev"])
+@pytest.mark.parametrize(
+    ("review", "ends"),
+    [
+        pytest.param('{"findings": []}', True, id="no-findings"),
+        pytest.param('{"findings": [{"severity": "NIT"}]}', True, id="nits-only"),
+        pytest.param('{"findings": [{"severity": "WARNING"}]}', False, id="warning"),
+        pytest.param('{"action": "needs_human", "findings": [{"severity": "BLOCKER"}]}', True, id="needs-human"),
+        pytest.param("not json", False, id="unreadable"),
+    ],
+)
+def test_review_loop_ends_once_no_finding_an_agent_can_fix_remains(
+    artifact_store: ArtifactStore, publish_artifact: PublishArtifact, blueprint: str, review: str, ends: bool
+) -> None:
+    run = _Run(_load(blueprint), artifact_store)
+    publish_artifact("review-findings", {"review.json": review})
+    run.record("fix-verify", changed="false")
+
+    assert run.ends("review-loop") is ends

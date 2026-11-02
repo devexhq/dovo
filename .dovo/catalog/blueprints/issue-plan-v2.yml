@@ -111,10 +111,16 @@ steps:
             label_field: label
           comment: { policy: optional, message: "What you changed, for the re-check" }
 
-  # Denying stops the run with the issue unlabelled.
+  # Denying stops the run with the issue unlabelled. Skipped when the ready
+  # loop ran out of rounds on a verdict that is not ready, whose findings the
+  # gate's last issue-hold lists; apply then refuses, which stops the run the
+  # same way. A hold file the condition cannot read shows the approval rather
+  # than skipping it.
   - id: approve
     name: Approve the label
     type: ask
+    when:
+      - "!(length(artifacts.issue-hold.content.holds) > 0)"
     interaction:
       mode: confirm
       message: Label issue ${{ inputs.issue }} dovo:ready?
@@ -334,8 +340,8 @@ steps:
   # failed session cannot resume, so the person fixes the slices' outcomes in
   # .agentic/plan.json and .agentic/plan.md and retries rather than losing the
   # run. It only reads the plan, so it publishes nothing: the steps below read
-  # the files in the worktree, and slice-plan, the next step to publish the
-  # plan, publishes the fixed files.
+  # the files in the worktree, and one-slice, the next step, publishes the
+  # fixed files on every path.
   - id: check-slices
     name: Check that each outcome belongs to one slice
     run: >-
@@ -359,7 +365,10 @@ steps:
   # holds only the slice plan's decisions: the next planning of the issue reads
   # the issue plan's from it. requirements.json above already lists every item,
   # which is the one slice's share. Writes `slice`, the one slice's id or ""
-  # for any other count, and `slices`, the count.
+  # for any other count, and `slices`, the count. It also republishes plan and
+  # plan-questions, so a plan the person fixed at check-questions or
+  # check-slices is the revision publish-workplan records and issue-code-v2
+  # downloads, even when the slice phasing below is skipped.
   - id: one-slice
     name: Keep the issue plan and name its slice when it has one
     run: |
@@ -374,6 +383,8 @@ steps:
     timeout_seconds: 120
     artifacts:
       - { name: epic-plan-questions, path: .agentic/epic-plan.json }
+      - { name: plan, path: .agentic/plan.md }
+      - { name: plan-questions, path: .agentic/plan.json }
 
   # The one slice's plan: phased, reviewed once and folded in whole without
   # asking (the human weighs the result at the open questions and the plan

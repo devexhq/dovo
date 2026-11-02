@@ -274,13 +274,17 @@ steps:
           comment: { policy: optional, message: "What you changed, for the re-check" }
 
   # Skipped, with apply, when the issue needed no check, so a slice's own
-  # sub-issue asks for no approval. Denying stops the run with the issue
-  # untouched.
+  # sub-issue asks for no approval. Skipped too when the ready loop ran out of
+  # rounds on a verdict that is not ready, whose findings the gate's last
+  # issue-hold lists; apply then refuses. Either way, denying or refusing
+  # stops the run with the issue untouched. A hold file the condition cannot
+  # read shows the approval rather than skipping it.
   - id: approve
     name: Approve the label
     type: ask
     when:
       - steps.ready-state.outputs.ready != "true"
+      - "!(length(artifacts.issue-hold.content.holds) > 0)"
     interaction:
       mode: confirm
       message: >-
@@ -293,7 +297,8 @@ steps:
   # label is added, when the description is no longer the one the check read;
   # the slice's work plan row then records that description's body_sha, so a
   # later run skips the check only while the description it checked is
-  # unchanged.
+  # unchanged. It is not guarded on the verdict: a verdict that is not ready
+  # reaches it unapproved, and its refusal stops the run.
   - id: apply
     name: Label the slice's issue and record the check in the work plan
     when:
