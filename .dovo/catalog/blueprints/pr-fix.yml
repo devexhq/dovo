@@ -116,7 +116,7 @@ steps:
           Run only scoped checks on what you changed: ruff and ty on the changed files and
           `uv run dovo run tests --path "<test paths>"` on the tests they touch. Do not run
           `uv run dovo run quality` or the whole suite: the next step runs the full gate.
-          Notes: {{ steps.pick-fixes.outputs.comment }}
+          Notes: {{ steps.pick-fixes.outputs.comment || 'none' }}
           If .agentic/gate.log exists, a previous attempt left the working tree in a failing
           state: read it, keep the existing work and fix what it reports.
         tools: { allow_all: true }

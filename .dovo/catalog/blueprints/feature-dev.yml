@@ -137,7 +137,7 @@ steps:
     type: agent
     prompt: |
       Open questions answered: {{ steps.answer-questions.outputs.selected }}
-      Answers: {{ steps.answer-questions.outputs.comment }}
+      Answers: {{ steps.answer-questions.outputs.comment || 'none' }}
 
       If the list is empty, change nothing and report that you did nothing.
       Otherwise update .agentic/plan.md and .agentic/plan.json:
@@ -203,7 +203,7 @@ steps:
 
           Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
           Implement .agentic/plan.md. Do not commit, stage or push.
-          Instructions from the approver: {{ steps.approve-plan.outputs.comment }}
+          Instructions from the approver: {{ steps.approve-plan.outputs.comment || 'none' }}
           If .agentic/gate.log exists, a previous attempt left the working tree in a failing
           state: read it, keep the existing work and fix what it reports.
         tools: { allow_all: true }
