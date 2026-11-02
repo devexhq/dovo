@@ -1222,7 +1222,7 @@ def phased_plan(plan: WorkPlan, row: Slice, body_sha: str) -> tuple[str, str]:
         return "", f"the issue's description changed since {row.id} was phased, {again}"
     return (
         row.phased_session,
-        f"{row.id} was phased and approved in session {row.phased_session}; planning passes through.",
+        f"{row.id} was phased and approved in session {row.phased_session}; planning is skipped.",
     )
 
 

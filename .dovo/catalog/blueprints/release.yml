@@ -58,7 +58,7 @@ steps:
           line. Leave out pull requests that only touch tests, agent skills or docs for contributors.
 
           Previous draft, if any: {{ artifacts.release-notes.content }}
-          Feedback to address: {{ steps.approve.outputs.comment }}
+          Feedback to address: {{ steps.approve.outputs.comment || 'none' }}
         tools:
           allow:
             - { capability: read }

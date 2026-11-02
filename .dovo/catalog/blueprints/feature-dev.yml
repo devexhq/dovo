@@ -137,7 +137,7 @@ steps:
     type: agent
     prompt: |
       Open questions answered: {{ steps.answer-questions.outputs.selected }}
-      Answers: {{ steps.answer-questions.outputs.comment }}
+      Answers: {{ steps.answer-questions.outputs.comment || 'none' }}
 
       If the list is empty, change nothing and report that you did nothing.
       Otherwise update .agentic/plan.md and .agentic/plan.json:
@@ -191,10 +191,7 @@ steps:
     type: loop
     max_iterations: 5
     until:
-      - steps.code.outputs.status != "unfixable"
-      - steps.code.outputs.status != "timeout"
-      - steps.code.outputs.status != "provider_error"
-      - steps.code.outputs.status != "blocked"
+      - steps.code.outputs.status not in ["unfixable", "timeout", "provider_error", "blocked"]
       - steps.verify.exit_code == 0
     on_max_iterations: prompt_user
     do:
@@ -206,7 +203,7 @@ steps:
 
           Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
           Implement .agentic/plan.md. Do not commit, stage or push.
-          Instructions from the approver: {{ steps.approve-plan.outputs.comment }}
+          Instructions from the approver: {{ steps.approve-plan.outputs.comment || 'none' }}
           If .agentic/gate.log exists, a previous attempt left the working tree in a failing
           state: read it, keep the existing work and fix what it reports.
         tools: { allow_all: true }
@@ -261,7 +258,12 @@ steps:
     type: loop
     max_iterations: 3
     until:
-      - steps.remaining.exit_code == 0
+      # The review needs a person, or lists no blocker or warning. A review.json
+      # the condition cannot read leaves the loop going.
+      - >-
+        artifacts.review-findings.content.action in ["needs_human", "replan"]
+        || (contains(artifacts.review-findings.content.findings.*.severity, "BLOCKER") == false
+        && contains(artifacts.review-findings.content.findings.*.severity, "WARNING") == false)
     on_max_iterations: continue
     do:
       - id: review
@@ -275,16 +277,9 @@ steps:
           and .agentic/verdict.txt.
         tools: { allow_all: true }
         timeout_seconds: 1800
-        artifacts: [{ name: review, path: ".agentic/review.*" }]
-
-      - id: remaining
-        name: Check for blockers and warnings an agent can fix
-        run: >-
-          uv run python -c 'import json, sys;
-          review = json.load(open(".agentic/review.json"));
-          needs_person = review.get("action") in ("needs_human", "replan");
-          sys.exit(not needs_person and any(f["severity"] in ("BLOCKER", "WARNING") for f in review["findings"]))'
-        on_failure: continue
+        artifacts:
+          - { name: review, path: ".agentic/review.*" }
+          - { name: review-findings, path: .agentic/review.json }
 
       - id: fix
         name: Fix the blockers and warnings

@@ -1551,7 +1551,7 @@ class PhasedTests:
                 _row("S1", phased_session=PLAN_SESSION, phased_body_sha=BODY_SHA),
                 BODY_SHA,
                 PLAN_SESSION,
-                f"S1 was phased and approved in session {PLAN_SESSION}; planning passes through.",
+                f"S1 was phased and approved in session {PLAN_SESSION}; planning is skipped.",
                 id="holds",
             ),
             pytest.param(_row("S1"), BODY_SHA, "", "S1 has no phased plan; it is phased in this run.", id="not-phased"),

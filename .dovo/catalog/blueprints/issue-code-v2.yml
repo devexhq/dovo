@@ -42,8 +42,9 @@ steps:
     name: Pick the next slice once nothing it waits on needs a person
     type: loop
     max_iterations: 5
+    # next writes no slice while it holds, so the loop repeats until it picks one.
     until:
-      - steps.picked.exit_code == 0
+      - steps.next.outputs.slice != ""
     on_max_iterations: prompt_user
     do:
       - id: next
@@ -55,10 +56,12 @@ steps:
         artifacts:
           - { name: next-hold, path: .agentic/next-hold.json }
 
-      # No prompt is shown when a slice was picked.
+      # Skipped when a slice was picked, which lists no hold.
       - id: next-hold
         name: Wait for a person to unblock a slice
         type: ask
+        when:
+          - "!(length(artifacts.next-hold.content.holds) == 0)"
         interaction:
           mode: multiselect
           message: >-
@@ -72,13 +75,6 @@ steps:
             items_path: holds
             value_field: id
             label_field: label
-
-      # Fails, and so repeats the loop, only when next held instead of picking.
-      - id: picked
-        name: Pick again unless a slice was picked
-        run: test -n "{{ steps.next.outputs.slice }}"
-        timeout_seconds: 60
-        on_failure: continue
 
   # The latest revisions of the session the work plan points at: the planning
   # session, or the code session of the last slice that amended the plan.
@@ -131,15 +127,15 @@ steps:
     timeout_seconds: 120
 
   # load-plan already read that session's plan and plan-questions, so only the
-  # phase files are loaded; the planning steps below then pass straight
-  # through. A plan grounded behind main is coded from as approved, with a note.
+  # phase files are loaded; the planning steps below are then skipped. A plan
+  # grounded behind main is coded from as approved, with a note.
   - id: load-phased-plan
     name: Load the slice's approved phase files when its phased plan holds
+    when:
+      - steps.phased-check.outputs.phased_session != ""
     run: |
       set -eu
-      session="{{ steps.phased-check.outputs.phased_session }}"
-      [ -n "$session" ] || { echo "Slice {{ steps.next.outputs.slice }} is phased in this run."; exit 0; }
-      uv run dovo artifacts download "$session" phases --dest .
+      uv run dovo artifacts download "{{ steps.phased-check.outputs.phased_session }}" phases --dest .
       grounded=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/plan.json")).get("grounded_at") or "")')
       if [ -n "$grounded" ] && git cat-file -e "$grounded^{commit}" 2>/dev/null; then
         behind=$(git rev-list --count "$grounded..HEAD")
@@ -170,9 +166,8 @@ steps:
       ' "{{ steps.next.outputs.slice }}" "{{ steps.start.outputs.issue }}"
     timeout_seconds: 120
 
-  # --- The ready check's gate steps, run on the issue the slice is worked on. A
-  # step cannot be skipped, so each of them passes straight through, with no
-  # prompt shown, when that issue needs no check: a slice's own sub-issue,
+  # --- The ready check's gate steps, run on the issue the slice is worked on.
+  # They are skipped when that issue needs no check: a slice's own sub-issue,
   # which is ready from the issue's approved plan, or the issue itself while
   # it is labelled dovo:ready for its description as it is (the check that
   # labelled it recorded the description's body_sha on the slice's work plan
@@ -192,13 +187,16 @@ steps:
   # holds at a prompt that lists the findings, so the person settles them on
   # GitHub and answers (or leaves the run paused and continues it later with
   # `dovo resume`). The loop then re-runs the check, since the gate reads the
-  # verdict the check wrote, and ends once the verdict is ready.
+  # verdict the check wrote, and ends once the verdict is anything but
+  # not_ready.
   - id: ready-loop
     name: Check the slice's issue until no person needs to settle it
     type: loop
     max_iterations: 5
+    when:
+      - steps.ready-state.outputs.ready != "true"
     until:
-      - steps.settled.exit_code == 0
+      - steps.gate.outputs.verdict != "not_ready"
     on_max_iterations: prompt_user
     do:
       # Each check grounds against main as it is now, including a blocker
@@ -212,16 +210,10 @@ steps:
         name: Re-ground and re-check the slice's issue
         type: agent
         prompt: |
-          Issue ready without a check: {{ steps.ready-state.outputs.ready }}
-
-          If that is true, write only .agentic/issue-ready.md, containing the one line
-          "Issue #{{ steps.start.outputs.issue }} needs no ready check; not checked.",
-          and stop. Otherwise run:
-
           Follow .dovo/catalog/prompts/sdlc/v2/issue-ready.md for issue {{ steps.start.outputs.issue }}, the issue issue-code-v2 works slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }} on. The slice's `outcomes` in .agentic/epic-plan.json are the outcomes it delivers. Write .agentic/issue-ready.md and .agentic/issue-ready.json.
           Do not edit the issue, its labels or its comments.
-          Findings of the previous check a person says they settled, if any: {{ steps.hold.outputs.selected }}
-          Their notes: {{ steps.hold.outputs.comment }}
+          Findings of the previous check a person says they settled: {{ steps.hold.outputs.selected || 'none' }}
+          Their notes: {{ steps.hold.outputs.comment || 'none' }}
         tools: { allow_all: true }
         timeout_seconds: 1800
         artifacts:
@@ -230,19 +222,11 @@ steps:
       # Any verdict but ready means the current body is stale, so a label left
       # from an earlier run is removed and never vouches for it; apply adds it
       # back. Lists what a person must settle: every finding of a not_ready
-      # verdict, and nothing otherwise. Also lists the one option that
-      # approves the label for a ready verdict, and none otherwise.
+      # verdict.
       - id: gate
         name: List what a person must settle on the slice's issue
         run: |
           set -eu
-          if [ "{{ steps.ready-state.outputs.ready }}" = "true" ]; then
-            echo "Issue {{ steps.start.outputs.issue }} needs no ready check."
-            echo "verdict=unchecked" >> "$DOVO_OUTPUT"
-            printf '{"holds": []}\n' > .agentic/issue-hold.json
-            printf '{"approve": []}\n' > .agentic/issue-approve.json
-            exit 0
-          fi
           verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
           echo "Verdict: $verdict"
           echo "verdict=$verdict" >> "$DOVO_OUTPUT"
@@ -260,20 +244,18 @@ steps:
           if report["verdict"] == "not_ready" and not holds:
               holds = [{"id": "report", "label": "The check is not_ready but lists no finding; read its report."}]
           json.dump({"holds": holds}, open(".agentic/issue-hold.json", "w"), indent=2)
-          approve = [{"id": "approve", "label": "Label the issue dovo:ready"}] if report["verdict"] == "ready" else []
-          json.dump({"approve": approve}, open(".agentic/issue-approve.json", "w"), indent=2)
           PY
           if [ "$verdict" = "not_ready" ]; then cat .agentic/issue-ready.md; fi
         timeout_seconds: 120
         artifacts:
           - { name: issue-hold, path: .agentic/issue-hold.json }
-          - { name: issue-approve, path: .agentic/issue-approve.json }
           - { name: issue-ready-report, path: .agentic/issue-ready.md }
 
-      # No prompt is shown when the gate lists nothing.
       - id: hold
         name: Wait for a person to settle the slice's issue's findings
         type: ask
+        when:
+          - steps.gate.outputs.verdict == "not_ready"
         interaction:
           mode: multiselect
           message: >-
@@ -291,48 +273,38 @@ steps:
             label_field: label
           comment: { policy: optional, message: "What you changed, for the re-check" }
 
-      # Fails, and so repeats the loop, only when the verdict was not_ready.
-      - id: settled
-        name: Re-check the slice's issue unless no person was needed
-        run: test "{{ steps.gate.outputs.verdict }}" != "not_ready"
-        timeout_seconds: 60
-        on_failure: continue
-
-  # No prompt is shown when the issue needed no check, so a slice's own
-  # sub-issue asks for no approval; selecting nothing stops the run with the
-  # issue untouched.
+  # Skipped, with apply, when the issue needed no check, so a slice's own
+  # sub-issue asks for no approval. Skipped too when the ready loop ran out of
+  # rounds on a verdict that is not ready, whose findings the gate's last
+  # issue-hold lists; apply then refuses. Either way, denying or refusing
+  # stops the run with the issue untouched. A hold file the condition cannot
+  # read shows the approval rather than skipping it.
   - id: approve
     name: Approve the label
     type: ask
+    when:
+      - steps.ready-state.outputs.ready != "true"
+      - "!(length(artifacts.issue-hold.content.holds) > 0)"
     interaction:
-      mode: multiselect
+      mode: confirm
       message: >-
-        Issue {{ steps.start.outputs.issue }}, which slice {{ steps.next.outputs.slice }} is worked on,
-        is ready to plan; the check's report is attached. Select the option to label it dovo:ready;
-        select nothing to stop the run with the issue untouched.
+        Label issue {{ steps.start.outputs.issue }}, which slice {{ steps.next.outputs.slice }} is worked
+        on, dovo:ready? The check's report is attached.
       artifact: issue-ready-report
-      options_from:
-        artifact: issue-approve
-        file: .agentic/issue-approve.json
-        items_path: approve
-        value_field: id
-        label_field: label
 
   # A command step: the label runs exactly as approved, with the host's gh
   # credentials, and no comment is posted. `unchanged` refuses, before the
   # label is added, when the description is no longer the one the check read;
   # the slice's work plan row then records that description's body_sha, so a
   # later run skips the check only while the description it checked is
-  # unchanged.
+  # unchanged. It is not guarded on the verdict: a verdict that is not ready
+  # reaches it unapproved, and its refusal stops the run.
   - id: apply
     name: Label the slice's issue and record the check in the work plan
+    when:
+      - steps.ready-state.outputs.ready != "true"
     run: |
       set -eu
-      [ "{{ steps.ready-state.outputs.ready }}" = "true" ] && { echo "Issue {{ steps.start.outputs.issue }} needs no ready check; nothing to apply."; exit 0; }
-      case '{{ steps.approve.outputs.selected }}' in
-        *'"approve"'*) ;;
-        *) echo "The label was not approved; issue {{ steps.start.outputs.issue }} is left unlabelled."; exit 1 ;;
-      esac
       verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
       checked=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json")).get("body_sha", ""))')
       if [ "$verdict" != "ready" ]; then
@@ -351,8 +323,8 @@ steps:
   # landed" reports of the slices before it. The plan artifacts this session
   # publishes hold the slice's plan, with the epic's contract and slices kept
   # as downloaded. For a slice the planning run phased (load-phased-plan), the
-  # agent steps write nothing new and no prompt is shown, so the run goes on to
-  # claim with the plan and phase files approved there. ---
+  # planning steps, the walkthrough and the approval are skipped, so the run
+  # goes on to claim with the plan and phase files approved there. ---
 
   # main can move while the slice's issue waits for a person above, so the
   # slice is planned against main as it is when planning starts.
@@ -412,174 +384,164 @@ steps:
       --plan .agentic/epic-plan.json --out .agentic/requirements.json
     timeout_seconds: 120
 
-  # For a slice phased at planning every planning step below passes straight
-  # through; pass-through-check refuses once they are done if any of them
-  # changed the approved plan or its phase files anyway.
-  - id: pass-through-record
-    name: Record the approved phased plan when planning passes through
-    run: |
-      set -eu
-      if [ -n "{{ steps.phased-check.outputs.phased_session }}" ]; then
-        uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py pass-through --record .agentic/pass-through.sha
-      else
-        rm -f .agentic/pass-through.sha
-      fi
-    timeout_seconds: 120
+  # The slice's plan, unless a planning run phased it: written, reviewed once
+  # and folded in whole without asking (the human weighs the result at the
+  # open questions and the plan approval that follow), then answered and
+  # settled. No challenge follows the review: the design was challenged when
+  # the issue was planned, and the review holds the slice's phases to the
+  # decisions settled then. plan-review, fold-findings, plan-walkthrough and
+  # report run at medium effort (CLAUDE_CODE_EFFORT_LEVEL): they check or
+  # reshape a plan already written, and long thinking turns were most of their
+  # time.
+  - id: plan-slice
+    name: Plan the slice unless a planning run phased it
+    type: if
+    condition:
+      - steps.phased-check.outputs.phased_session == ""
+    then:
+      - id: plan
+        name: Plan the slice
+        type: agent
+        prompt: |
+          Follow .dovo/catalog/prompts/sdlc/v2/issue-plan.md and its slice-mode file,
+          .dovo/catalog/prompts/sdlc/v2/issue-plan-slice.md, in the mode `/issue-plan --slice {{ steps.next.outputs.slice }}`.
+          Plan slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked on issue
+          {{ steps.start.outputs.issue }}, from the epic plan in .agentic/epic-plan.md and
+          .agentic/epic-plan.json.
+          Read the decisions of the plan the work plan names from .agentic/prior-decisions.json, and the
+          earlier slices' "as landed" reports from .agentic/landed/<slice>/.agentic/slice-report.md.
+          Read the slice's numbered items from .agentic/requirements.json, and cite each requirement
+          by its id there.
+          Write its phases to .agentic/plan.md and .agentic/plan.json, keeping the contract and the
+          slices as downloaded, then stop; do not implement anything.
+        tools: { allow_all: true }
+        timeout_seconds: 1800
+        artifacts:
+          - { name: plan, path: .agentic/plan.md }
+          - { name: plan-questions, path: .agentic/plan.json }
 
-  - id: plan
-    name: Plan the slice
-    type: agent
-    prompt: |
-      Session that already phased the slice, if any: "{{ steps.phased-check.outputs.phased_session }}".
+      - id: plan-review
+        name: Review the slice's plan
+        type: agent
+        env: { CLAUDE_CODE_EFFORT_LEVEL: medium }
+        prompt: |
+          Follow .dovo/catalog/prompts/sdlc/v2/issue-plan-review.md in the mode `/issue-plan-review --slice {{ steps.next.outputs.slice }}`.
+          Review .agentic/plan.md and write findings to .agentic/plan-review.json.
+        tools: { allow_all: true }
+        timeout_seconds: 1800
+        artifacts:
+          - { name: plan-findings, path: .agentic/plan-review.json }
 
-      If that is not empty, change nothing and report that the slice was phased and approved in
-      that session. Otherwise:
+      # Skipped when the review lists no finding; a findings file that cannot
+      # be read leaves the fold running.
+      - id: fold-findings
+        name: Fold the review findings into the slice's plan
+        type: agent
+        env: { CLAUDE_CODE_EFFORT_LEVEL: medium }
+        when:
+          - "!(length(artifacts.plan-findings.content.findings) == 0)"
+        prompt: |
+          Update .agentic/plan.md and .agentic/plan.json:
+            - Address every finding in .agentic/plan-review.json, by id, as each one describes.
+            - Addressing a finding may make an open question moot, change its assumed answer or
+              raise a new one: remove, rewrite or add entries in plan.json `open_questions` to
+              match. Open questions live only in plan.json.
+            - Keep .agentic/plan.json in the shape Step 5 of
+              `.dovo/catalog/prompts/sdlc/v2/issue-plan.md` defines for slice mode, and in agreement with .agentic/plan.md. Never
+              change its contract or slices, or the plan's Feature contract and Slices sections,
+              other than slice {{ steps.next.outputs.slice }}'s phases: a finding that needs either
+              changed becomes an open question whose assumed answer keeps them.
+            - Run `uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py questions` and fix
+              every problem it names.
+          Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
+        tools: { allow_all: true }
+        timeout_seconds: 1800
+        artifacts:
+          - { name: plan, path: .agentic/plan.md }
+          - { name: plan-questions, path: .agentic/plan.json }
 
-      Follow .dovo/catalog/prompts/sdlc/v2/issue-plan.md and its slice-mode file,
-      .dovo/catalog/prompts/sdlc/v2/issue-plan-slice.md, in the mode `/issue-plan --slice {{ steps.next.outputs.slice }}`.
-      Plan slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked on issue
-      {{ steps.start.outputs.issue }}, from the epic plan in .agentic/epic-plan.md and
-      .agentic/epic-plan.json.
-      Read the decisions of the plan the work plan names from .agentic/prior-decisions.json, and the
-      earlier slices' "as landed" reports from .agentic/landed/<slice>/.agentic/slice-report.md.
-      Read the slice's numbered items from .agentic/requirements.json, and cite each requirement
-      by its id there.
-      Write its phases to .agentic/plan.md and .agentic/plan.json, keeping the contract and the
-      slices as downloaded, then stop; do not implement anything.
-    tools: { allow_all: true }
-    timeout_seconds: 1800
-    artifacts:
-      - { name: plan, path: .agentic/plan.md }
-      - { name: plan-questions, path: .agentic/plan.json }
+      # What the person reads at the prompt below, built from plan.json: the
+      # open questions with their assumed answers and recommendations, and the
+      # decisions. Holds the run when an open question is malformed; the
+      # message names it. The person fixes it in .agentic/plan.json and
+      # retries, keeping its id and summary, which the prompt lists from the
+      # plan-questions artifact plan or fold-findings published last.
+      - id: questions-summary
+        name: Summarise the slice plan's open questions and decisions
+        run: >-
+          uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py questions
+          --plan .agentic/plan.json --summary .agentic/plan-summary.md
+        timeout_seconds: 120
+        on_failure: prompt_user
+        artifacts:
+          - { name: plan-summary, path: .agentic/plan-summary.md }
 
-  # One review, folded in whole without asking; the human weighs the result at
-  # the open questions and the plan approval that follow.
-  # This step, fold-findings, plan-walkthrough and report run at medium effort
-  # (CLAUDE_CODE_EFFORT_LEVEL): they check or reshape a plan already written,
-  # and long thinking turns were most of their time.
-  - id: plan-review
-    name: Review the slice's plan
-    type: agent
-    env: { CLAUDE_CODE_EFFORT_LEVEL: medium }
-    prompt: |
-      Session that already phased the slice, if any: "{{ steps.phased-check.outputs.phased_session }}".
+      # Asked after the findings are folded in, so every question reflects
+      # them. This ask and fold-answers are skipped when the plan has no open
+      # question.
+      - id: answer-questions
+        name: Answer the slice plan's open questions
+        type: ask
+        when:
+          - "!(length(artifacts.plan-questions.content.open_questions) == 0)"
+        interaction:
+          mode: multiselect
+          message: >-
+            Which open questions do you want to answer instead of accepting the planner's recommended
+            answer? The attached summary gives each one's assumed answer and recommendation. A question
+            you do not tick settles to its recommended answer.
+          artifact: plan-summary
+          options_from:
+            artifact: plan-questions
+            file: .agentic/plan.json
+            items_path: open_questions
+            value_field: id
+            label_field: summary
+          comment: { policy: optional, message: "Your answers, one per selected question (e.g. OQ-1: show them)" }
 
-      If that is not empty, write only .agentic/plan-review.json, containing {"findings": []},
-      and stop: slice {{ steps.next.outputs.slice }} was reviewed and approved in that session.
-      Otherwise:
+      # Runs its fold whenever the plan has an open question, ticked or not:
+      # every open question leaves as a decision, settled by the human's
+      # answer or by the planner's recommended one.
+      - id: fold-answers
+        name: Settle the slice plan's open questions as decisions
+        type: agent
+        when:
+          - "!(length(artifacts.plan-questions.content.open_questions) == 0)"
+        prompt: |
+          Follow .dovo/catalog/prompts/sdlc/v2/fold-answers.md.
+          Open questions the human ticked: {{ steps.answer-questions.outputs.selected }}
+          The human's answers: {{ steps.answer-questions.outputs.comment || 'none' }}
+          The plan phases slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked on
+          issue {{ steps.start.outputs.issue }}.
+        tools: { allow_all: true }
+        timeout_seconds: 1800
+        artifacts:
+          - { name: plan, path: .agentic/plan.md }
+          - { name: plan-questions, path: .agentic/plan.json }
 
-      Follow .dovo/catalog/prompts/sdlc/v2/issue-plan-review.md in the mode `/issue-plan-review --slice {{ steps.next.outputs.slice }}`.
-      Review .agentic/plan.md and write findings to .agentic/plan-review.json.
-    tools: { allow_all: true }
-    timeout_seconds: 1800
-    artifacts:
-      - { name: plan-findings, path: .agentic/plan-review.json }
-
-  # No challenge follows: the design was challenged when the issue was planned,
-  # and the review holds the slice's phases to the decisions settled then.
-  - id: fold-findings
-    name: Fold the review findings into the slice's plan
-    type: agent
-    env: { CLAUDE_CODE_EFFORT_LEVEL: medium }
-    prompt: |
-      If .agentic/plan-review.json lists no findings, change nothing and report that you did
-      nothing.
-      Otherwise update .agentic/plan.md and .agentic/plan.json:
-        - Address every finding in .agentic/plan-review.json, by id, as each one describes.
-        - Addressing a finding may make an open question moot, change its assumed answer or
-          raise a new one: remove, rewrite or add entries in plan.json `open_questions` to
-          match. Open questions live only in plan.json.
-        - Keep .agentic/plan.json in the shape Step 5 of
-          `.dovo/catalog/prompts/sdlc/v2/issue-plan.md` defines for slice mode, and in agreement with .agentic/plan.md. Never
-          change its contract or slices, or the plan's Feature contract and Slices sections,
-          other than slice {{ steps.next.outputs.slice }}'s phases: a finding that needs either
-          changed becomes an open question whose assumed answer keeps them.
-        - Run `uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py questions` and fix
-          every problem it names.
-      Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
-    tools: { allow_all: true }
-    timeout_seconds: 1800
-    artifacts:
-      - { name: plan, path: .agentic/plan.md }
-      - { name: plan-questions, path: .agentic/plan.json }
-
-  # What the person reads at the prompt below, built from plan.json: the open
-  # questions with their assumed answers and recommendations, and the
-  # decisions. Holds the run when an open question is malformed; the message
-  # names it. The person fixes it in .agentic/plan.json and retries, keeping
-  # its id and summary, which the prompt lists from the plan-questions
-  # artifact fold-findings published.
-  - id: questions-summary
-    name: Summarise the slice plan's open questions and decisions
-    run: >-
-      uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py questions
-      --plan .agentic/plan.json --summary .agentic/plan-summary.md
-    timeout_seconds: 120
-    on_failure: prompt_user
-    artifacts:
-      - { name: plan-summary, path: .agentic/plan-summary.md }
-
-  # Asked after the findings are folded in, so every question reflects them.
-  # No prompt is shown when the plan has no open question, as for a slice
-  # phased at planning, whose questions were settled there.
-  - id: answer-questions
-    name: Answer the slice plan's open questions
-    type: ask
-    interaction:
-      mode: multiselect
-      message: >-
-        Which open questions do you want to answer instead of accepting the planner's recommended
-        answer? The attached summary gives each one's assumed answer and recommendation. A question
-        you do not tick settles to its recommended answer.
-      artifact: plan-summary
-      options_from:
-        artifact: plan-questions
-        file: .agentic/plan.json
-        items_path: open_questions
-        value_field: id
-        label_field: summary
-      comment: { policy: optional, message: "Your answers, one per selected question (e.g. OQ-1: show them)" }
-
-  # Always runs its fold, ticked or not: every open question leaves as a
-  # decision, settled by the human's answer or by the planner's recommended one.
-  - id: fold-answers
-    name: Settle the slice plan's open questions as decisions
-    type: agent
-    prompt: |
-      Session that already phased the slice, if any: "{{ steps.phased-check.outputs.phased_session }}".
-
-      If that is not empty, change nothing and report that you did nothing. Otherwise:
-
-      Follow .dovo/catalog/prompts/sdlc/v2/fold-answers.md.
-      Open questions the human ticked: {{ steps.answer-questions.outputs.selected }}
-      The human's answers: {{ steps.answer-questions.outputs.comment }}
-      The plan phases slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked on
-      issue {{ steps.start.outputs.issue }}.
-    tools: { allow_all: true }
-    timeout_seconds: 1800
-    artifacts:
-      - { name: plan, path: .agentic/plan.md }
-      - { name: plan-questions, path: .agentic/plan.json }
-
-  # Holds the run before the walkthrough when fold-answers left a question
-  # open, such as one ticked with no answer, or wrote a malformed decision;
-  # the message names which. A failed session cannot resume, so the person
-  # settles it in .agentic/plan.json and retries rather than losing the run.
-  - id: check-questions
-    name: Check that every open question is settled
-    run: uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py check-questions --plan .agentic/plan.json --slice {{ steps.next.outputs.slice }}
-    timeout_seconds: 120
-    on_failure: prompt_user
+      # Holds the run before the walkthrough when fold-answers left a question
+      # open, such as one ticked with no answer, or wrote a malformed
+      # decision; the message names which. A failed session cannot resume, so
+      # the person settles it in .agentic/plan.json and retries rather than
+      # losing the run.
+      - id: check-questions
+        name: Check that every open question is settled
+        run: uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py check-questions --plan .agentic/plan.json --slice {{ steps.next.outputs.slice }}
+        timeout_seconds: 120
+        on_failure: prompt_user
 
   # The plan cut into one file per phase, which is all each code-loop agent
   # reads. Written once every question is settled, so the files carry the final
   # decisions, and before the walkthrough, so the person approves them with the
   # plan. A failed check sends the breakdown round again, with the check's
-  # message in .agentic/check-breakdown.log.
+  # message in .agentic/check-breakdown.log. A loop cannot sit in the block
+  # above, so it takes the block's condition as its own guard.
   - id: breakdown-loop
     name: Break the slice's plan into phase files until they pass the check
     type: loop
     max_iterations: 3
+    when:
+      - steps.phased-check.outputs.phased_session == ""
     until:
       - steps.check-breakdown.exit_code == 0
     on_max_iterations: prompt_user
@@ -588,11 +550,6 @@ steps:
         name: Break the slice's plan into phase files
         type: agent
         prompt: |
-          Session that already phased the slice, if any: "{{ steps.phased-check.outputs.phased_session }}".
-
-          If that is not empty, the phase files in .agentic/phases/ were approved in that session:
-          change nothing and report that you did nothing. Otherwise:
-
           Follow .dovo/catalog/prompts/sdlc/v2/breakdown.md.
           Break slice {{ steps.next.outputs.slice }} of .agentic/plan.md into .agentic/phases/phase-<n>.json,
           quoting requirements from .agentic/requirements.json, the slice's numbered items of issue
@@ -621,17 +578,15 @@ steps:
   # explains the plan and phase files being approved. The approval prompt shows
   # it rather than the plan, which is cut at 200 lines there; the full plan
   # stays in the plan artifact and the phase files in the phases artifact.
+  # This step and approve-plan are skipped for a slice phased at planning,
+  # which was approved there.
   - id: plan-walkthrough
     name: Walk through the slice's plan for the approver
     type: agent
     env: { CLAUDE_CODE_EFFORT_LEVEL: medium }
+    when:
+      - steps.phased-check.outputs.phased_session == ""
     prompt: |
-      Session that already phased the slice, if any: "{{ steps.phased-check.outputs.phased_session }}".
-
-      If that is not empty, write only .agentic/plan-walkthrough.md, containing the one line
-      "Slice {{ steps.next.outputs.slice }} was phased and approved in session {{ steps.phased-check.outputs.phased_session }}.",
-      and stop. Otherwise:
-
       Follow .dovo/catalog/prompts/sdlc/v2/plan-walkthrough.md.
       Explain .agentic/plan.md to the person approving it and write .agentic/plan-walkthrough.md.
       The plan phases slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}, worked
@@ -647,56 +602,20 @@ steps:
     artifacts:
       - { name: plan-walkthrough, path: .agentic/plan-walkthrough.md }
 
-  - id: pass-through-check
-    name: Check that the planning that passed through changed no plan
-    run: uv run --quiet python .dovo/catalog/scripts/sdlc/v2/plan.py pass-through --check .agentic/pass-through.sha
-    timeout_seconds: 120
-
-  # A confirm prompt is always shown, so the approval is a multiselect whose
-  # one option approves: a slice phased at planning was approved there, its
-  # options list nothing and no prompt is shown. Selecting nothing denies the
-  # plan, and `approved` then stops the run.
-  - id: approval-options
-    name: List the approval the slice's plan still needs
-    run: |
-      set -eu
-      if [ -n "{{ steps.phased-check.outputs.phased_session }}" ]; then
-        printf '{"approvals": []}\n' > .agentic/plan-approval.json
-      else
-        printf '{"approvals": [{"id": "approve", "label": "Approve the plan and its phase files"}]}\n' > .agentic/plan-approval.json
-      fi
-    timeout_seconds: 60
-    artifacts:
-      - { name: plan-approval, path: .agentic/plan-approval.json }
-
+  # Denying stops the run before claim.
   - id: approve-plan
     name: Approve the slice's plan
     type: ask
+    when:
+      - steps.phased-check.outputs.phased_session == ""
     interaction:
-      mode: multiselect
+      mode: confirm
       message: >-
         Approve this plan for slice {{ steps.next.outputs.slice }} of issue ${{ inputs.issue }}
         (worked on issue {{ steps.start.outputs.issue }}) and its phase files? The full plan is in the
-        plan artifact, and the phase files in the phases artifact. Select the approval to approve;
-        select nothing to deny, which stops the run.
+        plan artifact, and the phase files in the phases artifact.
       artifact: plan-walkthrough
-      options_from:
-        artifact: plan-approval
-        file: .agentic/plan-approval.json
-        items_path: approvals
-        value_field: id
-        label_field: label
       comment: { policy: optional, message: Instructions for the implementer }
-
-  - id: approved
-    name: Stop unless the slice's plan is approved
-    run: |
-      if [ -n "{{ steps.phased-check.outputs.phased_session }}" ]; then exit 0; fi
-      if [ "{{ steps.approve-plan.outputs.selected_count }}" != 1 ]; then
-        echo "The plan for slice {{ steps.next.outputs.slice }} was not approved; stopping before claim." >&2
-        exit 1
-      fi
-    timeout_seconds: 60
 
   # Installed after refresh-base's checkout and before the first agent writes
   # code, so its first test run finds every project dependency. Runs before
@@ -725,15 +644,16 @@ steps:
   # .agentic/code-progress.json, only once its gate passed; a failed gate
   # leaves it out of done, so the next iteration retries the same phase with
   # gate.log present, and a resumed run starts at the first phase not done.
+  # Once every phase is done, code is skipped and the iteration only runs the
+  # gate.
   - id: code-loop
     name: Implement and commit one phase at a time until every phase passes the quality gate
     type: loop
     max_iterations: 8
     until:
-      - steps.code.outputs.status != "unfixable"
-      - steps.code.outputs.status != "timeout"
-      - steps.code.outputs.status != "provider_error"
-      - steps.code.outputs.status != "blocked"
+      - >-
+        steps.phase.outputs.phase == "done"
+        || steps.code.outputs.status not in ["unfixable", "timeout", "provider_error", "blocked"]
       # Reads phase's recorded $DOVO_OUTPUT value, a numeric string compared numerically.
       - steps.phase.outputs.remaining == 0
       - steps.verify.exit_code == 0
@@ -750,6 +670,8 @@ steps:
       - id: code
         name: Implement the phase
         type: agent
+        when:
+          - steps.phase.outputs.phase != "done"
         prompt: |
           Follow .dovo/catalog/prompts/sdlc/v2/issue-code.md in the mode `/issue-code --slice {{ steps.next.outputs.slice }} --phase {{ steps.phase.outputs.phase }}`.
           Implement {{ steps.phase.outputs.phase_file }}, phase {{ steps.phase.outputs.phase }} of slice
@@ -757,7 +679,7 @@ steps:
           {{ steps.start.outputs.issue }}. Open a section of .agentic/plan.md only when an action's `do`
           or a `tests` item names it (`grep -n '^## '`, then a ranged read). Earlier phases are
           already committed. Do not commit, stage or push.
-          Instructions from the approver: {{ steps.approve-plan.outputs.comment }}
+          Instructions from the approver: {{ steps.approve-plan.outputs.comment || 'none' }}
           Read the `## Instructions from the approver` section of .agentic/plan.md too, when it has
           one: it holds the instructions given when the issue was planned.
           Uncommitted changes outside .agentic/ and .dovo/run are an earlier attempt at this
@@ -848,7 +770,12 @@ steps:
     type: loop
     max_iterations: 3
     until:
-      - steps.remaining.exit_code == 0
+      # The review needs a person, or lists no blocker or warning. A review.json
+      # the condition cannot read leaves the loop going.
+      - >-
+        artifacts.review-findings.content.action in ["needs_human", "replan"]
+        || (contains(artifacts.review-findings.content.findings.*.severity, "BLOCKER") == false
+        && contains(artifacts.review-findings.content.findings.*.severity, "WARNING") == false)
       # A round whose fixer changed files, a gate repair included, needs a fresh
       # review: post-review refuses a review of a commit that is no longer the head.
       - steps.fix-verify.exit_code == 0
@@ -866,16 +793,9 @@ steps:
           and .agentic/verdict.txt. Do not read .agentic/implementation-report.md.
         tools: { allow_all: true }
         timeout_seconds: 1800
-        artifacts: [{ name: review, path: ".agentic/review.*" }]
-
-      - id: remaining
-        name: Check for blockers and warnings an agent can fix
-        run: >-
-          uv run python -c 'import json, sys;
-          review = json.load(open(".agentic/review.json"));
-          needs_person = review.get("action") in ("needs_human", "replan");
-          sys.exit(not needs_person and any(f["severity"] in ("BLOCKER", "WARNING") for f in review["findings"]))'
-        on_failure: continue
+        artifacts:
+          - { name: review, path: ".agentic/review.*" }
+          - { name: review-findings, path: .agentic/review.json }
 
       - id: fix
         name: Fix the blockers and warnings
