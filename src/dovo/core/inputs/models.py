@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum, StrEnum
+from typing import Final
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -78,3 +79,12 @@ class StepOutputValue:
     """The value `steps.<id>.outputs.<key>` resolved to: a recorded output string, or a value parsed from stdout JSON."""
 
     value: object
+
+
+class Undefined(Enum):
+    """What a namespace provider returns for a path its namespace does not define."""
+
+    UNDEFINED = "undefined"
+
+
+UNDEFINED: Final = Undefined.UNDEFINED

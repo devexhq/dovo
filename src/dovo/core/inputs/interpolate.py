@@ -1,4 +1,10 @@
-"""Template variable interpolation for resolved blueprint inputs and execution metadata."""
+"""Template variable interpolation for resolved blueprint inputs and execution metadata.
+
+Each `{{ ... }}` or `${{ ... }}` body is parsed by the expression grammar. A body that is a lone path is replaced by
+the value of the first namespace provider that defines the path, rendered as recorded outputs hold values, with an
+absent value as the empty string. A path no provider defines, a body that is not an expression and any other
+expression stay as written.
+"""
 
 from __future__ import annotations
 
@@ -8,13 +14,13 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel
 
+from dovo.core.expressions import ABSENT, Path, parse_expression
+from dovo.core.inputs.models import UNDEFINED
 from dovo.core.inputs.step_outputs import render_step_output, resolve_step_output
 
 _PLACEHOLDER_RE = re.compile(r"\$?\{\{\s*([^}]+?)\s*\}\}")
 _INTERPOLATED_FIELDS = ("command", "prompt", "script_path", "run")
 _STEP_ENTRY_FIELDS = {"id", "name", "index", "status", "exit_code"}
-_STEPS_BRACKET_RE = re.compile(r"^steps\s*\[\s*(['\"]?)(.*?)\1\s*\]\s*\.\s*([A-Za-z0-9_]+)$")
-_STEPS_OUTPUTS_BRACKET_RE = re.compile(r"^steps\s*\[\s*(['\"])(.*?)\1\s*\]\s*\.\s*outputs\s*\.\s*(.+)$")
 
 
 def _extract_iteration_index(meta: object) -> str:
@@ -45,51 +51,11 @@ _METADATA_EXTRACTORS: dict[str, Any] = {
 }
 
 
-def _parse_steps_selector(key: str) -> tuple[str, str, bool] | None:
-    """Parse a steps expression into (selector, field_name, is_quoted)."""
-    bracket_match = _STEPS_BRACKET_RE.match(key)
-    if bracket_match:
-        quote = bracket_match.group(1)
-        selector = bracket_match.group(2).strip()
-        field_name = bracket_match.group(3)
-        return selector, field_name, bool(quote)
-
-    if key.startswith("steps."):
-        parts = key.split(".")
-        if len(parts) >= 3:
-            field_name = parts[-1]
-            selector = ".".join(parts[1:-1])
-            return selector, field_name, False
-
-    return None
-
-
-def _resolve_step_entry_field(entry: object, field_name: str) -> str:
-    """Extract named attribute from step entry as a string."""
-    if entry is None:
-        return ""
-    value = getattr(entry, field_name, "")
-    return str(value) if value is not None else ""
-
-
 def _find_step_by_id(steps: Sequence[object], step_id: str) -> object:
     """Find the most recent step matching step_id in steps list."""
     for entry in reversed(steps):
         if getattr(entry, "id", None) == step_id:
             return entry
-    return None
-
-
-def _parse_steps_outputs_selector(key: str) -> tuple[str, str] | None:
-    """Parse `steps.<id>.outputs.<key>` or `steps['<id>'].outputs.<key>` into (step_id, output_key)."""
-    bracket_match = _STEPS_OUTPUTS_BRACKET_RE.match(key)
-    if bracket_match:
-        return bracket_match.group(2), bracket_match.group(3)
-    if key.startswith("steps.") and ".outputs." in key:
-        remainder = key[len("steps.") :]
-        step_id, _, output_key = remainder.partition(".outputs.")
-        if step_id and output_key:
-            return step_id, output_key
     return None
 
 
@@ -123,12 +89,12 @@ class ExecutionMetadataView(Protocol):
 
 
 class NamespaceProvider(Protocol):
-    """Resolves placeholder expressions for one namespace."""
+    """Resolves placeholder paths for one namespace."""
 
     namespace: str
 
-    def resolve(self, path: str) -> str | None:
-        """Return the rendered value for the dotted path, or None when this provider does not define it."""
+    def resolve(self, path: Path) -> object:
+        """Return the value path names, ABSENT when this namespace defines path but holds no value, or UNDEFINED when it does not define path."""
         ...
 
 
@@ -140,62 +106,60 @@ class InputsProvider:
     def __init__(self, inputs: Mapping[str, object]) -> None:
         self._inputs = inputs
 
-    def resolve(self, path: str) -> str | None:
-        """Return str(value) for `inputs.<name>` or a bare `<name>` present in inputs, else None."""
-        if path.startswith("inputs."):
-            input_name = path[len("inputs.") :]
-            if input_name in self._inputs:
-                return str(self._inputs[input_name])
-        if path in self._inputs:
-            return str(self._inputs[path])
-        return None
+    def resolve(self, path: Path) -> object:
+        """Return the value of `inputs.<name>` or a bare `<name>` present in inputs, else UNDEFINED."""
+        if path.root == "inputs" and len(path.segments) == 1:
+            name = path.segments[0]
+        elif not path.segments:
+            name = path.root
+        else:
+            return UNDEFINED
+        if isinstance(name, str) and name in self._inputs:
+            return self._inputs[name]
+        return UNDEFINED
 
 
 class StepsProvider:
-    """Resolves `steps[...]` and `steps.<id>.outputs.<key>` references against execution metadata."""
+    """Resolves `steps[<selector>].<field>` and `steps[<selector>].outputs.<key>` against execution metadata."""
 
     namespace = "steps"
 
     def __init__(self, metadata: ExecutionMetadataView) -> None:
         self._steps: list[object] = list(metadata.steps or [])
 
-    def resolve(self, path: str) -> str | None:
-        """Return the step field or output value (recorded, else the stdout JSON key), '' for an unknown step/key, or None for a non-steps expression."""
-        if not path.startswith(("steps[", "steps.")):
+    def resolve(self, path: Path) -> object:
+        """Return the step field or output value (recorded, else the stdout JSON key, following any further path).
+
+        ABSENT for an unknown step, an out-of-range index or a missing output; UNDEFINED for a path that is not a
+        step field or an output key.
+        """
+        if path.root != "steps" or len(path.segments) < 2:
+            return UNDEFINED
+        selector, field_name, *rest = path.segments
+        entry = self._select(selector)
+        if field_name == "outputs" and rest:
+            return _step_output(entry, rest[0], rest[1:])
+        if field_name in _STEP_ENTRY_FIELDS and not rest:
+            return ABSENT if entry is None else getattr(entry, field_name, ABSENT)
+        return UNDEFINED
+
+    def _select(self, selector: str | int) -> object:
+        """Return the step at an int position within range or the most recent step with a str id, else None."""
+        if isinstance(selector, int):
+            if -len(self._steps) <= selector < len(self._steps):
+                return self._steps[selector]
             return None
+        return _find_step_by_id(self._steps, selector)
 
-        outputs_selector = _parse_steps_outputs_selector(path)
-        if outputs_selector is not None:
-            step_id, output_key = outputs_selector
-            entry = _find_step_by_id(self._steps, step_id)
-            outputs = getattr(entry, "outputs", None) or {}
-            stdout = getattr(entry, "stdout", None) or ""
-            found = resolve_step_output(outputs, stdout, output_key)
-            return "" if found is None else render_step_output(found.value)
 
-        return self._resolve_entry_field(path)
-
-    def _resolve_entry_field(self, path: str) -> str | None:
-        """Resolve `steps[<selector>].<field>` by index or step id; None when the expression is not a step field."""
-        parsed = _parse_steps_selector(path)
-        if parsed is None:
-            return None
-
-        selector, field_name, is_quoted = parsed
-        if field_name not in _STEP_ENTRY_FIELDS:
-            return None
-
-        if not is_quoted:
-            try:
-                index = int(selector)
-            except ValueError:
-                pass
-            else:
-                if -len(self._steps) <= index < len(self._steps):
-                    return _resolve_step_entry_field(self._steps[index], field_name)
-                return ""
-
-        return _resolve_step_entry_field(_find_step_by_id(self._steps, selector), field_name)
+def _step_output(entry: object, key: str | int, rest: Sequence[str | int]) -> object:
+    """Return the output key of entry, following rest through its parsed JSON; ABSENT when there is none."""
+    if entry is None or isinstance(key, int):
+        return ABSENT
+    outputs = getattr(entry, "outputs", None) or {}
+    stdout = getattr(entry, "stdout", None) or ""
+    found = resolve_step_output(outputs, stdout, key, rest)
+    return ABSENT if found is None else found.value
 
 
 class MetadataProvider:
@@ -205,19 +169,19 @@ class MetadataProvider:
         self.namespace = namespace
         self._metadata = metadata
 
-    def resolve(self, path: str) -> str | None:
-        """Return the extractor value for a `<namespace>.<field>` key, or None when undefined."""
-        if not path.startswith(f"{self.namespace}."):
-            return None
+    def resolve(self, path: Path) -> object:
+        """Return the extractor value for a `<namespace>.<field>` path, or UNDEFINED when it is not defined."""
+        if path.root != self.namespace or not all(isinstance(segment, str) for segment in path.segments):
+            return UNDEFINED
 
-        extractor = _METADATA_EXTRACTORS.get(path)
+        extractor = _METADATA_EXTRACTORS.get(".".join((path.root, *map(str, path.segments))))
         if extractor is None:
-            return None
+            return UNDEFINED
 
         try:
             return extractor(self._metadata)
         except AttributeError:
-            return None
+            return UNDEFINED
 
 
 def _metadata_providers(metadata: ExecutionMetadataView) -> list[NamespaceProvider]:
@@ -246,19 +210,32 @@ def build_providers(
 
 
 def interpolate_string(template: str, providers: Sequence[NamespaceProvider]) -> str:
-    """Replace ``${{ ... }}`` and ``{{ ... }}`` placeholders using the first provider that defines each path."""
+    """Replace ``${{ ... }}`` and ``{{ ... }}`` placeholders whose body is a path some provider defines."""
     if not providers:
         return template
 
     def _replace(match: re.Match[str]) -> str:
-        key = match.group(1)
-        for provider in providers:
-            value = provider.resolve(key)
-            if value is not None:
-                return value
-        return match.group(0)
+        expression = parse_expression(match.group(1))
+        if not isinstance(expression, Path):
+            return match.group(0)
+        value = _lookup(expression, providers)
+        return match.group(0) if value is UNDEFINED else _render(value)
 
     return _PLACEHOLDER_RE.sub(_replace, template)
+
+
+def _lookup(path: Path, providers: Sequence[NamespaceProvider]) -> object:
+    """Return the first provider result for path that is not UNDEFINED, or UNDEFINED when none defines it."""
+    for provider in providers:
+        value = provider.resolve(path)
+        if value is not UNDEFINED:
+            return value
+    return UNDEFINED
+
+
+def _render(value: object) -> str:
+    """Render value as placeholder text: the empty string for ABSENT, else as recorded outputs hold it."""
+    return "" if value is ABSENT else render_step_output(value)
 
 
 def _interpolated_field_updates(step: BaseModel, providers: Sequence[NamespaceProvider]) -> dict[str, object]:

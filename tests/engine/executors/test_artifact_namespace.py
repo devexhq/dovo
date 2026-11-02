@@ -6,9 +6,17 @@ import pytest
 
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
-from dovo.core.inputs import NamespaceResolutionError
+from dovo.core.expressions import ABSENT, Path, parse_expression
+from dovo.core.inputs import UNDEFINED, NamespaceResolutionError
 from dovo.engine.executors.artifact_namespace import ArtifactNamespaceProvider
 from tests.conftest import PublishArtifact
+
+
+def _path(source: str) -> Path:
+    """Parse source, which must be a lone path."""
+    path = parse_expression(source)
+    assert isinstance(path, Path)
+    return path
 
 
 class ArtifactNamespaceProviderTests:
@@ -26,7 +34,7 @@ class ArtifactNamespaceProviderTests:
         assert record is not None
         expected = {"revision": "2", "dir": str(record.path)}[field_name]
 
-        assert ArtifactNamespaceProvider(artifact_store).resolve(f"artifacts.plan.{field_name}") == expected
+        assert ArtifactNamespaceProvider(artifact_store).resolve(_path(f"artifacts.plan.{field_name}")) == expected
 
     @pytest.mark.parametrize(
         "path",
@@ -40,7 +48,7 @@ class ArtifactNamespaceProviderTests:
     ) -> None:
         publish_artifact("plan", {"PLAN.md": "plan"})
 
-        assert ArtifactNamespaceProvider(artifact_store).resolve(path) == ""
+        assert ArtifactNamespaceProvider(artifact_store).resolve(_path(path)) is ABSENT
 
     def test_dotted_artifact_name_uses_last_segment_as_field(
         self,
@@ -53,14 +61,29 @@ class ArtifactNamespaceProviderTests:
         assert record is not None
         assert record.digest
 
-        assert ArtifactNamespaceProvider(artifact_store).resolve("artifacts.team.plan.digest") == record.digest
+        assert ArtifactNamespaceProvider(artifact_store).resolve(_path("artifacts.team.plan.digest")) == record.digest
+
+    def test_bracketed_artifact_name_reads_its_field(
+        self,
+        artifacts_repository: ArtifactsRepository,
+        artifact_store: ArtifactStore,
+        publish_artifact: PublishArtifact,
+    ) -> None:
+        publish_artifact("team.plan", {"PLAN.md": "plan"})
+        record = artifacts_repository.get("wf_1", "team.plan")
+        assert record is not None
+        assert record.digest
+
+        assert (
+            ArtifactNamespaceProvider(artifact_store).resolve(_path("artifacts['team.plan'].digest")) == record.digest
+        )
 
     @pytest.mark.parametrize("path", ["inputs.x", "artifacts.plan"])
-    def test_non_artifact_path_returns_none(self, path: str) -> None:
-        assert ArtifactNamespaceProvider(None).resolve(path) is None
+    def test_non_artifact_path_is_undefined(self, path: str) -> None:
+        assert ArtifactNamespaceProvider(None).resolve(_path(path)) is UNDEFINED
 
     def test_missing_store_resolves_well_formed_key_to_empty_string(self) -> None:
-        assert ArtifactNamespaceProvider(None).resolve("artifacts.plan.revision") == ""
+        assert ArtifactNamespaceProvider(None).resolve(_path("artifacts.plan.revision")) is ABSENT
 
     def test_content_of_multi_file_artifact_raises_with_classified_message(
         self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
@@ -68,7 +91,7 @@ class ArtifactNamespaceProviderTests:
         publish_artifact("plan", {"a.md": "a", "b.md": "b"})
 
         with pytest.raises(NamespaceResolutionError) as raised:
-            ArtifactNamespaceProvider(artifact_store).resolve("artifacts.plan.content")
+            ArtifactNamespaceProvider(artifact_store).resolve(_path("artifacts.plan.content"))
 
         assert str(raised.value) == (
             "Artifact 'plan' cannot be inlined: artifact has 2 files, content needs exactly one"

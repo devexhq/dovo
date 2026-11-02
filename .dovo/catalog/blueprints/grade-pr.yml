@@ -45,7 +45,7 @@ steps:
   # comment when there is one, so a pull request carries one grade.
   - id: post
     name: Post the grade to the pull request
-    run: '[ "$POST" = "False" ] || uv run python scripts/publish_grade.py --pr "$PR" --session "$DOVO_SESSION_ID"'
+    run: '[ "$POST" = "false" ] || uv run python scripts/publish_grade.py --pr "$PR" --session "$DOVO_SESSION_ID"'
     env: { PR: "${{ inputs.pr }}", POST: "${{ inputs.post }}" }
     timeout_seconds: 120
     on_failure: prompt_user

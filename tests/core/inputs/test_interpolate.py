@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path as FilePath
 
 import pytest
+import yaml
 
 from dovo.core.catalog.definitions import StepDefinition, StepType
+from dovo.core.expressions import Path
 from dovo.core.inputs import (
+    UNDEFINED,
     ExecutionMetadataView,
     NamespaceProvider,
     NamespaceResolutionError,
@@ -25,8 +29,8 @@ class _MappingProvider(NamespaceProvider):
         self.namespace = namespace
         self._values = values
 
-    def resolve(self, path: str) -> str | None:
-        return self._values.get(path)
+    def resolve(self, path: Path) -> object:
+        return self._values.get(path.text, UNDEFINED)
 
 
 class _RaisingProvider(NamespaceProvider):
@@ -34,11 +38,12 @@ class _RaisingProvider(NamespaceProvider):
 
     namespace = "boom"
 
-    def resolve(self, path: str) -> str | None:
+    def resolve(self, path: Path) -> object:
         raise NamespaceResolutionError("boom")
 
 
 _BARE = object()
+_GRADE_PR = FilePath(__file__).resolve().parents[3] / ".dovo" / "catalog" / "blueprints" / "grade-pr.yml"
 
 
 class _BareMetadata(ExecutionMetadataView):
@@ -137,6 +142,128 @@ class InterpolateStepOutputsPlaceholderTests:
         metadata = ExecutionMetadata(step=StepMetadata(id="report", index=2), steps=[code])
 
         assert interpolate_string(placeholder, build_providers(metadata=metadata)) == rendered
+
+
+def _finished_steps_metadata() -> ExecutionMetadata:
+    """Build metadata with finished steps `a` (completed) and `b` (failed), current step `c` and previous step `b`."""
+    a = PreviousStepMetadata(id="a", name="Alpha", index="1", status="completed", exit_code="0")
+    b = PreviousStepMetadata(id="b", index="2", status="failed", exit_code="1")
+    return ExecutionMetadata(step=StepMetadata(id="c", index=3), previous_step=b, steps=[a, b])
+
+
+def _metadata_with_step_s(*, outputs: dict[str, str] | None = None, stdout: str = "") -> ExecutionMetadata:
+    """Build metadata with one finished step `s` carrying the given outputs and stdout."""
+    s = PreviousStepMetadata(id="s", index="1", status="completed", exit_code="0", outputs=outputs or {}, stdout=stdout)
+    return ExecutionMetadata(step=StepMetadata(id="t", index=2), steps=[s])
+
+
+class InterpolateStepsPlaceholderTests:
+    @pytest.mark.parametrize(
+        ("template", "rendered"),
+        [
+            pytest.param("{{ steps[0].id }}", "a", id="first_by_position"),
+            pytest.param("{{ steps[-1].status }}", "failed", id="last_by_position"),
+            pytest.param("{{ steps['b'].exit_code }}", "1", id="quoted_id"),
+            pytest.param("{{ steps.a.name }}", "Alpha", id="dot_form_id"),
+            pytest.param("{{ steps[5].id }}", "", id="out_of_range"),
+            pytest.param("{{ steps.zzz.status }}", "", id="unknown_id"),
+            pytest.param("{{ steps.a.bogus }}", "{{ steps.a.bogus }}", id="unknown_field"),
+            pytest.param("{{ steps.a }}", "{{ steps.a }}", id="step_without_field"),
+            pytest.param("{{ steps.0.id }}", "", id="numeric_dotted_segment_is_an_id"),
+            pytest.param("{{ previous_step.exit_code }}", "1", id="previous_step"),
+            pytest.param("{{ step.index }}", "3", id="current_step"),
+            pytest.param("{{ iteration.index }}", "1", id="iteration"),
+        ],
+    )
+    def test_existing_step_form_keeps_its_result(self, template: str, rendered: str) -> None:
+        providers = build_providers(metadata=_finished_steps_metadata())
+
+        assert interpolate_string(template, providers) == rendered
+
+    @pytest.mark.parametrize(
+        ("template", "rendered"),
+        [
+            pytest.param(
+                "{{ steps['a.b'].status }}|{{ steps.a.b.status }}", "completed|{{ steps.a.b.status }}", id="step_id"
+            ),
+            pytest.param("{{ inputs['a.b'] }}|{{ a.b }}", "v|{{ a.b }}", id="input_name"),
+        ],
+    )
+    def test_dotted_name_reads_only_through_brackets(self, template: str, rendered: str) -> None:
+        step = PreviousStepMetadata(id="a.b", index="1", status="completed", exit_code="0")
+        metadata = ExecutionMetadata(step=StepMetadata(id="c", index=2), steps=[step])
+
+        assert interpolate_string(template, build_providers(inputs={"a.b": "v"}, metadata=metadata)) == rendered
+
+    @pytest.mark.parametrize(
+        ("template", "rendered"),
+        [
+            pytest.param("{{ steps.s.outputs.a.b }}", "x", id="dotted_path"),
+            pytest.param("{{ steps.s.outputs['a.b'] }}", "whole", id="bracket_key"),
+            pytest.param("{{ steps['s'].outputs['a.b'] }}", "whole", id="bracket_step_and_key"),
+            pytest.param("{{ steps[0].outputs.t }}", "plain", id="position_then_output"),
+            pytest.param("{{ steps.s.outputs.a.c }}", "", id="missing_path"),
+            pytest.param("{{ steps.s.outputs.t.u }}", "", id="not_json"),
+            pytest.param("{{ steps.s.outputs }}", "{{ steps.s.outputs }}", id="outputs_without_key"),
+        ],
+    )
+    def test_output_path_reads_json_or_a_bracketed_key(self, template: str, rendered: str) -> None:
+        outputs = {"a": '{"b": "x"}', "a.b": "whole", "t": "plain"}
+
+        assert (
+            interpolate_string(template, build_providers(metadata=_metadata_with_step_s(outputs=outputs))) == rendered
+        )
+
+
+class InterpolateRenderingTests:
+    @pytest.mark.parametrize(
+        ("template", "rendered"),
+        [
+            pytest.param("{{ inputs.s }}", "text", id="string"),
+            pytest.param("${{ inputs.flag }}", "true", id="true_input"),
+            pytest.param("{{ off }}", "false", id="false_input"),
+            pytest.param("{{ inputs.n }}", "3", id="integer_input"),
+            pytest.param("{{ steps.s.outputs.n }}", "2.5", id="number_from_stdout"),
+            pytest.param("{{ steps.s.outputs.files }}", '["a.py", "b.py"]', id="list_from_stdout"),
+            pytest.param("{{ steps.s.outputs.o }}", '{"k": 1}', id="object_from_stdout"),
+            pytest.param("{{ steps.s.outputs.z }}", "", id="null_from_stdout"),
+            pytest.param("{{ steps.s.outputs.missing }}", "", id="absent_output"),
+        ],
+    )
+    def test_value_renders_by_its_type(self, template: str, rendered: str) -> None:
+        metadata = _metadata_with_step_s(stdout='{"n": 2.5, "files": ["a.py", "b.py"], "o": {"k": 1}, "z": null}')
+        inputs: dict[str, object] = {"s": "text", "flag": True, "off": False, "n": 3}
+
+        assert interpolate_string(template, build_providers(inputs=inputs, metadata=metadata)) == rendered
+
+    @pytest.mark.parametrize(
+        "template",
+        [
+            pytest.param("{{ github.sha }}", id="unknown_root"),
+            pytest.param("{{ other }}", id="unknown_input"),
+            pytest.param("{{ 'x' }}", id="quoted_literal"),
+            pytest.param("{{ 5 }}", id="number"),
+            pytest.param("{{ .Values.image }}", id="word_from_another_template"),
+            pytest.param("{{ two words }}", id="unquoted_text"),
+            pytest.param("{{ steps[ 0 ].id }}", id="spaced_index"),
+            pytest.param("{{ steps[a].id }}", id="unquoted_bracket_id"),
+        ],
+    )
+    def test_body_that_no_namespace_defines_stays_as_text(self, template: str) -> None:
+        providers = build_providers(inputs={"s": "text"}, metadata=_finished_steps_metadata())
+
+        assert interpolate_string(template, providers) == template
+
+    def test_grade_pr_post_step_compares_the_rendered_boolean(self) -> None:
+        blueprint = yaml.safe_load(_GRADE_PR.read_text(encoding="utf-8"))
+        post = StepDefinition.model_validate(next(step for step in blueprint["steps"] if step["id"] == "post"))
+
+        rendered = interpolate_step_fields(post, build_providers(inputs={"pr": 7, "post": False}))
+
+        assert rendered.env is not None
+        assert rendered.env["POST"] == "false"
+        assert rendered.run is not None
+        assert '"$POST" = "false"' in rendered.run
 
 
 class InterpolateProvidersTests:
