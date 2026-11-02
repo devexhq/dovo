@@ -1,8 +1,8 @@
 # fold-answers
 
-Settle every open question of a plan written by `issue-plan`: a slice plan, or in issue mode the plan that slices an issue. The human has just been asked which open questions to answer. Required questions always need an explicit answer, including explicit acceptance of a recommendation; unticked routine questions may use the planner's grounded recommendation. After this prompt the plan has no open questions, only decisions that say who settled them. The blueprint's next step, `check-questions`, stops the run if any question is left open or any decision is malformed.
+Settle every open question of a plan written by `issue-plan`: a slice plan, or in issue mode the plan that slices an issue. The human is asked only when questions require a person. Required questions always need an explicit answer, including explicit acceptance of a recommendation; unanswered routine questions use the planner's grounded recommendation. After this prompt the plan has no open questions, only decisions that say who settled them. The blueprint's next step, `check-questions`, stops the run if any question is left open or any decision is malformed.
 
-The blueprint gives you the ticked question ids, the human's answers (one comment, usually written as `OQ-1: <answer>`) and the slice id, or says the plan slices the issue in issue mode. The plan's issue is the slice's issue, the one the blueprint says the slice is worked on (its own issue when it has one, otherwise the sliced issue), or in issue mode the issue itself. The decisions stay in plan.json; nothing posts them to the issue.
+The blueprint gives you the ticked required question ids (empty when the ask was skipped), the human's answers (one comment, usually written as `OQ-1: <answer>`) and the slice id, or says the plan slices the issue in issue mode. The plan's issue is the slice's issue, the one the blueprint says the slice is worked on (its own issue when it has one, otherwise the sliced issue), or in issue mode the issue itself. The decisions stay in plan.json; nothing posts them to the issue.
 
 ## Hard boundaries
 
@@ -16,8 +16,8 @@ Before changing either file, preflight every question with `needs_human: true` a
 
 For every entry of `plan.json` `open_questions`, in order:
 
-- **Explicitly answered (required or ticked):** rewrite the plan against the human's answer, as if it had been the plan's answer from the start: every phase, test line and trap it changes (in issue mode, every slice and contract section). The decision is the answer as planned, with `settled_by` `"human"` and `answer` holding the human's words for that question, unedited. If the comment gives no answer for a ticked question, settle nothing in either file and report which question has no answer. `check-questions` then stops the run with that question still open.
-- **Routine and not ticked:** the question settles to its recommended answer, with no `answer`. When `recommendation` is `"assumed"`, the plan already holds it: the decision is the question's `assumed` answer, with `settled_by` `"assumed_accepted"`. When it is `"challenge"`, rewrite the plan against `challenge_answer` as for a ticked question; the decision is that answer, with `settled_by` `"challenge_accepted"`.
+- **Explicitly answered (required or routine, including an unticked OQ-id override in the comment):** rewrite the plan against the human's answer, as if it had been the plan's answer from the start: every phase, test line and trap it changes (in issue mode, every slice and contract section). The decision is the answer as planned, with `settled_by` `"human"` and `answer` holding the human's words for that question, unedited. If the comment gives no answer for a ticked question, settle nothing in either file and report which question has no answer. `check-questions` then stops the run with that question still open.
+- **Routine and not explicitly answered:** settle to the grounded recommended answer, with `settled_by` `"planner"` and no `answer`. For `"assumed"`, the decision is `assumed`; for `"challenge"`, rewrite the plan against `challenge_answer` as for an explicit answer and use that answer as the decision. Only questions with `needs_human: false` may settle this way.
 
 ## 2. Record the decisions
 
@@ -26,7 +26,7 @@ Append one entry per question to `plan.json` `decisions`, keeping the entries al
 - `id`: the next free `D-<n>`, continuing after the highest decision id in the plan's issue (its Decisions, `gh issue view <n> --json body`), in `.agentic/prior-decisions.json`, in `decisions` and, for a slice plan, in `.agentic/epic-plan.json` `decisions`.
 - `was`: the question's `OQ-<n>` id.
 - `decision`: one sentence stating the choice itself.
-- `settled_by`: `"human"`, `"assumed_accepted"` or `"challenge_accepted"`, as step 1 settled it. Every decision has one.
+- `settled_by`: `"human"` or `"planner"`, as step 1 settled it. Every decision has one.
 - `answer`: the human's words for the question, unedited, only when `settled_by` is `"human"`; leave the key out otherwise.
 - `rejected`: the answers not taken, one sentence each: the question's `assumed` answer, `challenge_answer` (when challenged) and `alternatives`, minus the answer the decision takes. `[]` when there were none.
 - `phases`: the question's `phases`.

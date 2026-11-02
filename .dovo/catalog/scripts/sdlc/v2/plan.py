@@ -333,7 +333,7 @@ def _question_details(question: OpenQuestion) -> list[str]:
 
 
 def _question_section(title: str, questions: list[OpenQuestion]) -> list[str]:
-    """Return one summary section with its questions and grounding."""
+    """Return one compact overview section, ahead of expanded question details."""
     lines = ["", f"## {title}", ""]
     if not questions:
         return [*lines, "None."]
@@ -342,8 +342,6 @@ def _question_section(title: str, questions: list[OpenQuestion]) -> list[str]:
         "|---|---|---|---|---|",
         *(_question_row(question) for question in questions),
     ]
-    for question in questions:
-        lines += _question_details(question)
     return lines
 
 
@@ -359,6 +357,10 @@ def render_summary(plan: dict[str, object], questions: list[OpenQuestion], decis
     for title, needs_human in (("Required questions", True), ("Routine recommendations", False)):
         entries = [question for question in questions if question.needs_human == needs_human]
         lines += _question_section(title, entries)
+    if questions:
+        lines += ["", "## Question details"]
+        for question in sorted(questions, key=lambda question: not question.needs_human):
+            lines += _question_details(question)
     lines += ["", "## Decisions", ""]
     bullets = [f"- **{d.id}** {_sentence(d.decision)}. *{_label(d)}.*" for d in decisions]
     lines += bullets or ["None."]

@@ -2,14 +2,15 @@
 
 A decision is one entry of `decisions` in .agentic/plan.json: a choice the plan
 is written against, and who settled it. `settled_by` is `human` for an open
-question the human answered, with `answer` holding the human's words;
-`assumed_accepted` for an open question the human left unanswered whose
-recommendation was its assumed answer; `challenge_accepted` for one the human
-left unanswered whose recommendation was the challenge's answer; and `planner` for a departure from the issue the planner made, which the human
-approves with the plan. `was` is the id of the open question the decision
-settles, or null for a planner's departure that was never one. `replaces`, when
-present, names the decision of an earlier planning session's plan that this
-one takes the place of: `{"id": "D-2", "session": "<session id>"}`.
+question the human answered, with `answer` holding the human's words, or
+`planner` for a routine question settled to its grounded recommendation or a
+departure the planner made for approval with the plan. Historical decisions
+retain `assumed_accepted` or `challenge_accepted` when an unanswered question
+was attributed to human acceptance of the assumed or challenged answer.
+`was` is the id of the open question the decision settles, including routine
+planner settlements, or null for a departure that was never an open question.
+`replaces`, when present, names the decision of an earlier planning session's
+plan that this one takes the place of: `{"id": "D-2", "session": "<session id>"}`.
 
 An open question is one entry of `open_questions` in .agentic/plan.json, the
 only place the plan states it. `summary` is the question on one line of at most
