@@ -15,6 +15,7 @@ from dovo.core.expressions import (
     LogicalOperator,
     Negation,
     Path,
+    Projection,
     ValueList,
     parse_expression,
 )
@@ -29,6 +30,9 @@ OR = LogicalOperator.OR
 X = Literal("x", "'x'")
 CONTAINS_CALL = Call("contains", (STDOUT, X))
 KNOWN = "known functions: contains, fromJSON, join, length, trim"
+X_OUTPUT = Path("steps", ("a", "outputs", "x"), "steps.a.outputs.x")
+NAME_PROJECTION = Projection(X_OUTPUT, ("name",), "steps.a.outputs.x.*.name")
+X_Y = Projection(Path("x", (), "x"), ("y",), "x.*.y")
 
 
 def _negated(expression: Expression, times: int) -> Expression:
@@ -536,6 +540,21 @@ class ExpressionParserTests:
                 "Invalid expression 'steps.a.stdout == in': unexpected 'in' at column 19.",
                 id="lone_in_as_value",
             ),
+            pytest.param(
+                "steps.a.stdout in [x.*.y]",
+                "Invalid expression 'steps.a.stdout in [x.*.y]': unexpected '.*.y' at column 21.",
+                id="projection_list_item",
+            ),
+            pytest.param(
+                "true.*.x",
+                "Invalid expression 'true.*.x': unexpected '.*.x' at column 5.",
+                id="projection_of_a_boolean",
+            ),
+            pytest.param(
+                "x.*.a.*.b",
+                "Invalid expression 'x.*.a.*.b': unexpected character '.' at column 6.",
+                id="second_projection",
+            ),
         ],
     )
     def test_invalid_source_reports_its_reason(self, source: str, message: str) -> None:
@@ -543,6 +562,31 @@ class ExpressionParserTests:
 
         assert isinstance(result, InvalidExpression)
         assert result.message == message
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            pytest.param("steps.a.outputs.x.*.name", NAME_PROJECTION, id="lone"),
+            pytest.param(
+                "steps.a.outputs.x.*['a.b'].c",
+                Projection(X_OUTPUT, ("a.b", "c"), "steps.a.outputs.x.*['a.b'].c"),
+                id="bracket_key",
+            ),
+            pytest.param("x.*.y", X_Y, id="one_word_base"),
+            pytest.param(
+                "x.*.y == 'a'",
+                Comparison(X_Y, ComparisonOperator.EQ, Literal("a", "'a'")),
+                id="compared_one_word_base",
+            ),
+            pytest.param(
+                "contains(steps.a.outputs.x.*.name, 'y')",
+                Call("contains", (NAME_PROJECTION, Literal("y", "'y'"))),
+                id="call_argument",
+            ),
+        ],
+    )
+    def test_projection_parses(self, source: str, expected: Expression) -> None:
+        assert parse_expression(source) == expected
 
     @pytest.mark.parametrize(
         ("source", "expected"),

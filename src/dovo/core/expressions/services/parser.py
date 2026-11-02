@@ -2,8 +2,8 @@
 
 expression := and ("||" and)*; and := comparison ("&&" comparison)*;
 comparison := unary [<operator> unary | ("in" | "not in") list]; list := "[" [operand ("," operand)*] "]";
-unary := "!" unary | primary; primary := call | operand | "(" expression ")";
-call := name "(" [expression ("," expression)*] ")".
+unary := "!" unary | primary; primary := call | projection | operand | "(" expression ")";
+call := name "(" [expression ("," expression)*] ")"; projection := path ".*" key+.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from dovo.core.expressions.models import (
     Negation,
     Operand,
     Path,
+    Projection,
     Token,
     TokenKind,
     ValueList,
@@ -163,7 +164,7 @@ class _Parser:
         return operand if isinstance(operand, InvalidExpression) else Negation(operand)
 
     def _primary(self) -> _Parsed:
-        """Parse a call, an operand or a parenthesised expression."""
+        """Parse a call, a projection, an operand or a parenthesised expression."""
         token = self._peek()
         if token is None:
             return InvalidExpression(self._source, f"missing value after '{self._tokens[self._index - 1].text}'")
@@ -174,7 +175,17 @@ class _Parser:
         if token.kind in (TokenKind.OPERATOR, TokenKind.SYMBOL):
             return self._unexpected(token)
         self._index += 1
-        return _operand(token)
+        return self._projection(_operand(token))
+
+    def _projection(self, operand: Operand) -> _Parsed:
+        """Return operand, or its Projection when a projection token follows; projecting a literal is unexpected."""
+        token = self._peek()
+        if token is None or token.kind is not TokenKind.PROJECTION:
+            return operand
+        if not isinstance(operand, Path) or not isinstance(token.value, tuple):
+            return self._unexpected(token)
+        self._index += 1
+        return Projection(operand, tuple(str(key) for key in token.value), operand.text + token.text)
 
     def _starts_call(self, token: Token) -> bool:
         """Return whether token, standing where an operand stands, is a one-part name or 'contains' before a '('."""
@@ -310,8 +321,10 @@ def _unquoted_text(source: str, tokens: tuple[Token, ...]) -> InvalidExpression 
 
 
 def _is_bare_word(token: Token) -> bool:
-    """Return whether token is a word or a lone name."""
-    return token.kind is TokenKind.WORD or (isinstance(token.value, tuple) and len(token.value) == 1)
+    """Return whether token is a word or a one-part name; a projection is never a bare word."""
+    if token.kind is TokenKind.WORD:
+        return True
+    return token.kind is TokenKind.NAME and isinstance(token.value, tuple) and len(token.value) == 1
 
 
 def _operand(token: Token) -> Operand:

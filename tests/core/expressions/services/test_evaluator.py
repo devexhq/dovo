@@ -519,3 +519,38 @@ class ExpressionFunctionTests:
     )
     def test_call_decides_like_a_lone_operand(self, source: str, value: object, expected: Evaluation) -> None:
         assert _evaluate(source, {_A: value}) == expected
+
+
+_NAMES = "steps.a.stdout.*.name"
+_TWO_NAMES = [{"name": "a"}, {"name": "b"}]
+
+
+class ExpressionProjectionTests:
+    """A projection lists what its keys reach in each object of its base's array, and is ABSENT for a non-array."""
+
+    @pytest.mark.parametrize(
+        ("source", "value", "expected"),
+        [
+            pytest.param(_NAMES, _TWO_NAMES, ["a", "b"], id="objects"),
+            pytest.param(_NAMES, [{"name": "a"}, {"id": 1}, "x"], ["a"], id="skips_misses"),
+            pytest.param("steps.a.stdout.*.user.login", [{"user": {"login": "u"}}], ["u"], id="nested_keys"),
+            pytest.param(_NAMES, '[{"name": "a"}]', ["a"], id="recorded_string"),
+            pytest.param("length(steps.a.stdout.*.name)", _TWO_NAMES, 2, id="counted"),
+            pytest.param("contains(steps.a.stdout.*.name, 'b')", _TWO_NAMES, True, id="searched"),
+        ],
+    )
+    def test_projection_reads_each_objects_key(self, source: str, value: object, expected: object) -> None:
+        assert _value(source, {_A: value}) == expected
+
+    @pytest.mark.parametrize(
+        "values",
+        [
+            pytest.param({_A: 5}, id="number"),
+            pytest.param({_A: {"name": "a"}}, id="object"),
+            pytest.param({_A: "not json"}, id="unparsable_string"),
+            pytest.param({}, id="absent"),
+        ],
+    )
+    def test_projection_of_a_non_array_is_absent(self, values: Mapping[str, object]) -> None:
+        assert _value(_NAMES, values) is ABSENT
+        assert _evaluate(_NAMES, values) == Evaluation(False, False, None, None, "FALSE (not found)")

@@ -330,6 +330,18 @@ class InterpolatePlaceholderExpressionTests:
     @pytest.mark.parametrize(
         ("template", "rendered"),
         [
+            pytest.param("{{ join(steps.step_a.outputs.reviews.*.verdict, ', ') }}", "approve, edit", id="joined"),
+            pytest.param("{{ x.*.y }}", "", id="undefined_base"),
+        ],
+    )
+    def test_projection_renders_its_value(self, template: str, rendered: str) -> None:
+        metadata = _metadata_with_step_a_outputs({"reviews": '[{"verdict": "approve"}, {"verdict": "edit"}]'})
+
+        assert interpolate_string(template, build_providers(metadata=metadata)) == rendered
+
+    @pytest.mark.parametrize(
+        ("template", "rendered"),
+        [
             pytest.param("${{ github.ref == 'main' }}", "false", id="comparison"),
             pytest.param("${{ secrets.T || '' }}", "", id="default"),
         ],

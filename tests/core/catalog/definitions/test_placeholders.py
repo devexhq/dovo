@@ -117,6 +117,7 @@ class PlaceholderInputNamesTests:
             pytest.param([{"id": "s", "run": "echo {{ 'x' in [inputs.a] }}"}], {"a"}, id="list_item"),
             pytest.param([{"id": "s", "run": "echo {{ inputs['a.b'] }}"}], {"a.b"}, id="bracket_key"),
             pytest.param([{"id": "s", "run": "echo {{ join(inputs.a, inputs.b) }}"}], {"a", "b"}, id="call_argument"),
+            pytest.param([{"id": "s", "run": "echo {{ join(inputs.a.*.name) }}"}], {"a"}, id="projection_base"),
             pytest.param(
                 [
                     {"id": "s", "run": "true", "env": {"V": "{{ inputs.a }}"}},

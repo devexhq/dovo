@@ -14,6 +14,7 @@ from dovo.core.expressions import (
     Negation,
     Operand,
     Path,
+    Projection,
     ValueList,
     parse_expression,
 )
@@ -98,7 +99,7 @@ def _validate_operand(operand: Expression | ValueList, expression: str, scope: C
     return []
 
 
-def _list_item_errors(item: Operand, expression: str, scope: ConditionScope) -> list[str]:
+def _list_item_errors(item: Operand | Projection, expression: str, scope: ConditionScope) -> list[str]:
     """Reject a list item that reads a value: a dotted path, or one rooted at 'iteration'."""
     if not isinstance(item, Path) or not (item.segments or item.root == _ITERATION_ROOT):
         return []
@@ -108,8 +109,11 @@ def _list_item_errors(item: Operand, expression: str, scope: ConditionScope) -> 
     ]
 
 
-def expression_leaves(node: Expression | ValueList) -> Iterator[tuple[Operand, bool]]:
-    """Yield every operand of a tree, left to right, with whether it is an item of a list after 'in' or 'not in'."""
+def expression_leaves(node: Expression | ValueList) -> Iterator[tuple[Operand | Projection, bool]]:
+    """Yield every operand and projection of a tree, left to right, with whether it is an item of a list after 'in' or 'not in'.
+
+    A projection is one leaf: its base is the operand it reads, and its keys are not operands.
+    """
     if isinstance(node, Logical):
         yield from expression_leaves(node.left)
         yield from expression_leaves(node.right)
@@ -127,16 +131,33 @@ def expression_leaves(node: Expression | ValueList) -> Iterator[tuple[Operand, b
         yield node, False
 
 
+def _projection_errors(projection: Projection, expression: str, scope: ConditionScope) -> list[str]:
+    """Reject a projection whose base is neither a step or iteration value nor a root a condition cannot read."""
+    base = projection.base
+    if _is_dynamic_operand(base) or _is_unreadable_root(base):
+        return []
+    return [
+        f"Operand '{projection.text}' in {scope.clause} condition '{expression}' projects '{base.text}', "
+        "which is not a step or iteration value."
+    ]
+
+
 def _tree_errors(expression: str, parsed: Expression, scope: ConditionScope) -> list[str]:
-    """Return the operand and list-item errors of a parsed entry, and the dynamic-operand error unless one reads state."""
+    """Return the operand and list-item errors of a parsed entry, and the dynamic-operand error unless one reads state.
+
+    A projection's base is checked as an operand, and must read a step or iteration value.
+    """
     errors: list[str] = []
     operands: list[Operand] = []
-    for operand, is_item in expression_leaves(parsed):
+    for leaf, is_item in expression_leaves(parsed):
         if is_item:
-            errors.extend(_list_item_errors(operand, expression, scope))
+            errors.extend(_list_item_errors(leaf, expression, scope))
             continue
+        operand = leaf.base if isinstance(leaf, Projection) else leaf
         operands.append(operand)
         errors.extend(_validate_operand(operand, expression, scope))
+        if isinstance(leaf, Projection):
+            errors.extend(_projection_errors(leaf, expression, scope))
     if not any(_is_unreadable_root(operand) or _is_dynamic_operand(operand) for operand in operands):
         errors.append(
             f"Condition '{expression}' must reference at least one dynamic operand ('steps.<id>.<field>' or 'iteration.index')."

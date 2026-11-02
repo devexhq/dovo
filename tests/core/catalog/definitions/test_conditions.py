@@ -89,6 +89,7 @@ class ConditionExpressionValidatorTests:
             pytest.param("(steps.a.exit_code == 0)", id="parenthesised"),
             pytest.param("length(fromJSON(steps.a.stdout)) > 2", id="compared_call"),
             pytest.param("contains(steps.a.stdout, 'x')", id="call"),
+            pytest.param("contains(steps.a.outputs.x.*.y, 'v')", id="projection"),
         ],
     )
     def test_compound_and_bare_value_entries_report_no_errors(self, expression: str) -> None:
@@ -127,6 +128,31 @@ class ConditionExpressionValidatorTests:
     )
     def test_every_operand_of_a_compound_entry_is_checked(self, expression: str, message: str) -> None:
         assert validate_condition_expression(expression, scope=_UNTIL_SCOPE) == [message]
+
+    @pytest.mark.parametrize(
+        ("expression", "message"),
+        [
+            pytest.param(
+                "contains(steps.zz.outputs.x.*.y, 'v')",
+                "Step id 'zz' referenced in until condition 'contains(steps.zz.outputs.x.*.y, 'v')' "
+                "not found in loop 'do' steps (allowed: a).",
+                id="unknown_step",
+            ),
+            pytest.param(
+                "steps.a.result.*.y",
+                "Unknown step field 'result' in 'steps.a.result'. Allowed fields: exit_code, outputs, status, stdout.",
+                id="unknown_field",
+            ),
+            pytest.param(
+                "steps.a.stdout == x.*.y",
+                "Operand 'x.*.y' in until condition 'steps.a.stdout == x.*.y' projects 'x', "
+                "which is not a step or iteration value.",
+                id="one_word_base",
+            ),
+        ],
+    )
+    def test_projection_base_is_checked_as_an_operand(self, expression: str, message: str) -> None:
+        assert validate_condition_expression(expression, known_step_ids={"a"}) == [message]
 
     @pytest.mark.parametrize(
         "expression",

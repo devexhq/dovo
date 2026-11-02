@@ -1,6 +1,7 @@
 """The functions an expression can call, how many arguments each takes and the value each returns.
 
-A function given an ABSENT argument, or an argument of a type it does not take, returns ABSENT.
+A function given an ABSENT argument, or an argument of a type it does not take, returns ABSENT. project reads
+the keys of a '<array>.*.<key>' projection from each object of an array.
 """
 
 from __future__ import annotations
@@ -25,6 +26,28 @@ def call_function(name: str, arguments: Sequence[object]) -> object:
     if any(argument is ABSENT for argument in arguments):
         return ABSENT
     return _FUNCTIONS[name][1](*arguments)
+
+
+def project(value: object, keys: Sequence[str]) -> object:
+    """Return what keys reach in each object of the array value, skipping objects they miss; ABSENT when value is not an array.
+
+    A string value is read as JSON first, so a recorded output holding a JSON array projects too.
+    """
+    if isinstance(value, str):
+        value = _from_json(value)
+    if not isinstance(value, list):
+        return ABSENT
+    reached = (_reach(item, keys) for item in value)
+    return [item for item in reached if item is not ABSENT]
+
+
+def _reach(value: object, keys: Sequence[str]) -> object:
+    """Return what keys reach in value through objects, or ABSENT when a key is missing or a value is not an object."""
+    for key in keys:
+        if not isinstance(value, dict) or key not in value:
+            return ABSENT
+        value = value[key]
+    return value
 
 
 def _contains(haystack: object, needle: object) -> object:
