@@ -57,6 +57,32 @@ class PlaceholderSyntaxErrorsTests:
         assert _errors({"run": run}) == expected
 
     @pytest.mark.parametrize(
+        ("run", "body", "reason"),
+        [
+            pytest.param(
+                "echo {{ lenght(inputs.x) }}", "lenght(inputs.x)", "unknown function 'lenght' at column 1", id="unknown"
+            ),
+            pytest.param(
+                "echo {{ contains(inputs.x) }}",
+                "contains(inputs.x)",
+                "function 'contains' at column 1 takes 2 arguments, not 1",
+                id="too_few",
+            ),
+            pytest.param(
+                "echo ${{ trim(inputs.x, 'y') }}",
+                "trim(inputs.x, 'y')",
+                "function 'trim' at column 1 takes 1 argument, not 2",
+                id="too_many",
+            ),
+        ],
+    )
+    def test_call_error_names_step_field_and_known_functions(self, run: str, body: str, reason: str) -> None:
+        assert _errors({"run": run}) == [
+            f"Step 's', run: Invalid expression '{body}': {reason}; "
+            "known functions: contains, fromJSON, join, length, trim."
+        ]
+
+    @pytest.mark.parametrize(
         "run",
         [
             pytest.param("echo {{ inputs.x }}", id="input"),
@@ -67,6 +93,7 @@ class PlaceholderSyntaxErrorsTests:
             pytest.param("echo ${{ github.ref == 'main' }}", id="other_template_compound"),
             pytest.param("echo {{", id="unclosed_braces"),
             pytest.param("echo hi", id="no_placeholder"),
+            pytest.param("echo {{ join(inputs.x, ' ') }}", id="call"),
         ],
     )
     def test_valid_or_unknown_placeholder_passes(self, run: str) -> None:
@@ -89,6 +116,7 @@ class PlaceholderInputNamesTests:
             pytest.param([{"id": "s", "run": "echo {{ !inputs.a }}"}], {"a"}, id="negation"),
             pytest.param([{"id": "s", "run": "echo {{ 'x' in [inputs.a] }}"}], {"a"}, id="list_item"),
             pytest.param([{"id": "s", "run": "echo {{ inputs['a.b'] }}"}], {"a.b"}, id="bracket_key"),
+            pytest.param([{"id": "s", "run": "echo {{ join(inputs.a, inputs.b) }}"}], {"a", "b"}, id="call_argument"),
             pytest.param(
                 [
                     {"id": "s", "run": "true", "env": {"V": "{{ inputs.a }}"}},

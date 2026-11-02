@@ -449,3 +449,73 @@ class ExpressionEvaluatorTests:
         assert not isinstance(expression, InvalidExpression)
 
         assert evaluate_value(expression, _MappingResolver(values)) == expected
+
+
+def _value(source: str, values: Mapping[str, object]) -> object:
+    expression = parse_expression(source)
+    assert not isinstance(expression, InvalidExpression)
+    return evaluate_value(expression, _MappingResolver(values))
+
+
+_LENGTH = "length(steps.a.stdout)"
+_CONTAINS_B = "contains(steps.a.stdout, 'b')"
+_JOIN = "join(steps.a.stdout)"
+_FROM_JSON = "fromJSON(steps.a.stdout)"
+
+
+class ExpressionFunctionTests:
+    """A call returns its function's value, ABSENT on a wrong argument type, and decides as a lone operand does."""
+
+    @pytest.mark.parametrize(
+        ("source", "value", "expected"),
+        [
+            pytest.param(_FROM_JSON, '{"n": 1}', {"n": 1}, id="from_json_object"),
+            pytest.param(_FROM_JSON, "not json", ABSENT, id="from_json_invalid"),
+            pytest.param(_LENGTH, "abc", 3, id="length_string"),
+            pytest.param(_LENGTH, [1, 2], 2, id="length_list"),
+            pytest.param(_LENGTH, {"a": 1, "b": 2}, 2, id="length_object"),
+            pytest.param(_CONTAINS_B, "abc", True, id="contains_substring"),
+            pytest.param(_CONTAINS_B, ["a", "b"], True, id="contains_item"),
+            pytest.param(_CONTAINS_B, ["a"], False, id="contains_missing_item"),
+            pytest.param(_JOIN, ["a", "b"], "a,b", id="join_default"),
+            pytest.param("join(steps.a.stdout, ' | ')", ["a", "b"], "a | b", id="join_separator"),
+            pytest.param(_JOIN, [1, True, None, {"k": 1}], '1,true,,{"k": 1}', id="join_renders_items"),
+            pytest.param("trim(steps.a.stdout)", "  x \n", "x", id="trim"),
+            pytest.param("length(fromJSON(steps.a.stdout))", "[1, 2, 3]", 3, id="nested"),
+        ],
+    )
+    def test_function_returns_its_value(self, source: str, value: object, expected: object) -> None:
+        assert _value(source, {_A: value}) == expected
+
+    @pytest.mark.parametrize(
+        ("source", "values"),
+        [
+            pytest.param(_LENGTH, {_A: 5}, id="length_of_number"),
+            pytest.param(_LENGTH, {_A: None}, id="length_of_null"),
+            pytest.param(_JOIN, {_A: "a,b"}, id="join_of_string"),
+            pytest.param("join(steps.a.stdout, 1)", {_A: ["a"]}, id="join_non_string_separator"),
+            pytest.param("trim(steps.a.stdout)", {_A: ["x"]}, id="trim_of_list"),
+            pytest.param("contains(steps.a.stdout, 'x')", {}, id="contains_of_absent"),
+            pytest.param("contains(steps.a.stdout, 1)", {_A: "a1"}, id="contains_string_with_number"),
+            pytest.param("contains(steps.a.stdout, 'a')", {_A: {"a": 1}}, id="contains_object"),
+            pytest.param(_FROM_JSON, {_A: 5}, id="from_json_of_number"),
+        ],
+    )
+    def test_wrong_argument_type_is_absent(self, source: str, values: Mapping[str, object]) -> None:
+        assert _value(source, values) is ABSENT
+        assert _evaluate(source, values) == Evaluation(False, False, None, None, "FALSE (not found)")
+
+    @pytest.mark.parametrize(
+        ("source", "value", "expected"),
+        [
+            pytest.param(_LENGTH, "abc", Evaluation(True, True, 3, None, "TRUE"), id="truthy"),
+            pytest.param(
+                "length(steps.a.stdout) > 2",
+                5,
+                Evaluation(False, False, None, 2, "FALSE (not found)"),
+                id="compared_wrong_type",
+            ),
+        ],
+    )
+    def test_call_decides_like_a_lone_operand(self, source: str, value: object, expected: Evaluation) -> None:
+        assert _evaluate(source, {_A: value}) == expected

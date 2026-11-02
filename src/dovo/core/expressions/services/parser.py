@@ -2,7 +2,8 @@
 
 expression := and ("||" and)*; and := comparison ("&&" comparison)*;
 comparison := unary [<operator> unary | ("in" | "not in") list]; list := "[" [operand ("," operand)*] "]";
-unary := "!" unary | primary; primary := operand | "(" expression ")".
+unary := "!" unary | primary; primary := call | operand | "(" expression ")";
+call := name "(" [expression ("," expression)*] ")".
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from dovo.core.expressions.models import (
+    Call,
     Comparison,
     ComparisonOperator,
     Expression,
@@ -24,6 +26,7 @@ from dovo.core.expressions.models import (
     TokenKind,
     ValueList,
 )
+from dovo.core.expressions.services.functions import KNOWN_FUNCTIONS, function_arity
 from dovo.core.expressions.services.tokenizer import tokenize
 
 _BOOLEANS: dict[str, bool] = {"true": True, "false": False}
@@ -32,6 +35,7 @@ _MEMBERSHIP_OPERATORS: frozenset[ComparisonOperator] = frozenset({ComparisonOper
 # keep every tree well inside the interpreter's recursion limit.
 _MAX_NESTING = 32
 _MAX_JOINS = 64
+_KNOWN_FUNCTIONS_TEXT = ", ".join(KNOWN_FUNCTIONS)
 
 _Parsed = Expression | InvalidExpression
 
@@ -159,18 +163,71 @@ class _Parser:
         return operand if isinstance(operand, InvalidExpression) else Negation(operand)
 
     def _primary(self) -> _Parsed:
-        """Parse an operand or a parenthesised expression."""
+        """Parse a call, an operand or a parenthesised expression."""
         token = self._peek()
         if token is None:
             return InvalidExpression(self._source, f"missing value after '{self._tokens[self._index - 1].text}'")
         if self._at_symbol("("):
             return self._group(token)
+        if self._starts_call(token):
+            return self._call(token)
         if token.kind in (TokenKind.OPERATOR, TokenKind.SYMBOL):
             return self._unexpected(token)
         self._index += 1
         return _operand(token)
 
-    def _nested(self, opening: Token, parse: Callable[[], _Parsed]) -> _Parsed:
+    def _starts_call(self, token: Token) -> bool:
+        """Return whether token, standing where an operand stands, is a one-part name or 'contains' before a '('."""
+        is_name = token.kind is TokenKind.NAME and isinstance(token.value, tuple) and len(token.value) == 1
+        is_contains = token.kind is TokenKind.OPERATOR and token.value is ComparisonOperator.CONTAINS
+        following = self._index + 1
+        return (
+            (is_name or is_contains)
+            and following < len(self._tokens)
+            and self._tokens[following].kind is TokenKind.SYMBOL
+            and self._tokens[following].text == "("
+        )
+
+    def _call(self, name: Token) -> _Parsed:
+        """Parse the call of the function name names: its parenthesised arguments, checked against its arity."""
+        arity = function_arity(name.text)
+        if arity is None:
+            return InvalidExpression(
+                self._source,
+                f"unknown function '{name.text}' at column {name.column}; known functions: {_KNOWN_FUNCTIONS_TEXT}",
+            )
+        self._index += 1
+        opening = self._tokens[self._index]
+        arguments = self._nested(opening, self._arguments)
+        if isinstance(arguments, InvalidExpression):
+            return arguments
+        unclosed = self._close(opening)
+        if unclosed is not None:
+            return unclosed
+        fewest, most = arity
+        if not fewest <= len(arguments) <= most:
+            return InvalidExpression(
+                self._source,
+                f"function '{name.text}' at column {name.column} takes {_argument_count(fewest, most)}, "
+                f"not {len(arguments)}; known functions: {_KNOWN_FUNCTIONS_TEXT}",
+            )
+        return Call(name.text, arguments)
+
+    def _arguments(self) -> tuple[Expression, ...] | InvalidExpression:
+        """Parse a call's arguments, expressions separated by ',', or none when ')' follows at once."""
+        if self._at_symbol(")"):
+            return ()
+        arguments: list[Expression] = []
+        while True:
+            argument = self._or()
+            if isinstance(argument, InvalidExpression):
+                return argument
+            arguments.append(argument)
+            if not self._at_symbol(","):
+                return tuple(arguments)
+            self._index += 1
+
+    def _nested[T](self, opening: Token, parse: Callable[[], T]) -> T | InvalidExpression:
         """Read the '(' or '!' at opening and parse what it nests, unless it nests deeper than _MAX_NESTING."""
         if self._depth == _MAX_NESTING:
             return InvalidExpression(
@@ -188,9 +245,14 @@ class _Parser:
         inner = self._nested(opening, self._or)
         if isinstance(inner, InvalidExpression):
             return inner
+        unclosed = self._close(opening)
+        return inner if unclosed is None else unclosed
+
+    def _close(self, opening: Token) -> InvalidExpression | None:
+        """Read the ')' that closes the '(' at opening, or describe why the next token is not it."""
         if self._at_symbol(")"):
             self._index += 1
-            return inner
+            return None
         token = self._peek()
         if token is not None:
             return self._unexpected(token)
@@ -216,6 +278,12 @@ class _Parser:
     def _unexpected(self, token: Token) -> InvalidExpression:
         """Describe token as one that cannot stand where it is."""
         return InvalidExpression(self._source, f"unexpected '{token.text}' at column {token.column}")
+
+
+def _argument_count(fewest: int, most: int) -> str:
+    """Return how many arguments a function takes: '1 argument', '2 arguments' or '1 or 2 arguments'."""
+    count = str(fewest) if fewest == most else f"{fewest} or {most}"
+    return f"{count} argument" if most == 1 else f"{count} arguments"
 
 
 def _unclosed_list(source: str, opening: Token) -> InvalidExpression:

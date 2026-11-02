@@ -87,6 +87,8 @@ class ConditionExpressionValidatorTests:
             pytest.param("steps.a.status in [completed, skipped]", id="bare_word_items"),
             pytest.param("steps.a.exit_code", id="lone_path"),
             pytest.param("(steps.a.exit_code == 0)", id="parenthesised"),
+            pytest.param("length(fromJSON(steps.a.stdout)) > 2", id="compared_call"),
+            pytest.param("contains(steps.a.stdout, 'x')", id="call"),
         ],
     )
     def test_compound_and_bare_value_entries_report_no_errors(self, expression: str) -> None:
@@ -244,3 +246,46 @@ class ConditionExpressionValidatorTests:
         assert validate_condition_expression(expression, known_step_ids={"a"}) == [
             f"Operand '{operand}' in until condition '{expression}' holds a bracket index, which a condition cannot read."
         ]
+
+    @pytest.mark.parametrize(
+        ("expression", "reason"),
+        [
+            pytest.param("lenght(steps.a.stdout) > 0", "unknown function 'lenght' at column 1", id="unknown"),
+            pytest.param(
+                "contains(steps.a.stdout)", "function 'contains' at column 1 takes 2 arguments, not 1", id="too_few"
+            ),
+            pytest.param(
+                "trim(steps.a.stdout, 'x')", "function 'trim' at column 1 takes 1 argument, not 2", id="too_many"
+            ),
+        ],
+    )
+    def test_call_error_is_a_load_error(self, expression: str, reason: str) -> None:
+        assert validate_condition_expression(expression, known_step_ids={"a"}) == [
+            f"Invalid expression '{expression}': {reason}; known functions: contains, fromJSON, join, length, trim."
+        ]
+
+    @pytest.mark.parametrize(
+        ("expression", "message"),
+        [
+            pytest.param(
+                "contains(steps.zz.stdout, 'x')",
+                "Step id 'zz' referenced in until condition 'contains(steps.zz.stdout, 'x')' "
+                "not found in loop 'do' steps (allowed: a).",
+                id="unknown_step",
+            ),
+            pytest.param(
+                "length(inputs.x) > 0",
+                "Operand 'inputs.x' in until condition 'length(inputs.x) > 0' reads 'inputs', "
+                "which a condition cannot read. Readable roots: iteration, steps.",
+                id="unreadable_root",
+            ),
+            pytest.param(
+                "contains('ab', 'b')",
+                "Condition 'contains('ab', 'b')' must reference at least one dynamic operand "
+                "('steps.<id>.<field>' or 'iteration.index').",
+                id="no_dynamic_operand",
+            ),
+        ],
+    )
+    def test_call_arguments_are_checked_as_operands(self, expression: str, message: str) -> None:
+        assert validate_condition_expression(expression, known_step_ids={"a"}) == [message]

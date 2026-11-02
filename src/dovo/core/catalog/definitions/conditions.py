@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 from dovo.core.expressions import (
+    Call,
     Comparison,
     Expression,
     InvalidExpression,
@@ -117,6 +118,9 @@ def expression_leaves(node: Expression | ValueList) -> Iterator[tuple[Operand, b
     elif isinstance(node, Comparison):
         yield from expression_leaves(node.left)
         yield from expression_leaves(node.right)
+    elif isinstance(node, Call):
+        for argument in node.arguments:
+            yield from expression_leaves(argument)
     elif isinstance(node, ValueList):
         yield from ((item, True) for item in node.items)
     else:
@@ -152,9 +156,9 @@ def validate_condition_expression(
     names the clause and the step ids a 'when' or 'condition' expression may reference instead.
 
     Returns a list of error message strings (empty if valid). A syntax error returns its one error. Otherwise every
-    operand of the entry, through '&&', '||', '!', parentheses and comparisons, is checked as a reference, every item
-    of a list after 'in' or 'not in' must not read a value, and the entry as a whole needs one operand outside a list
-    that reads step or iteration state.
+    operand of the entry, through '&&', '||', '!', parentheses, comparisons and call arguments, is checked as a
+    reference, every item of a list after 'in' or 'not in' must not read a value, and the entry as a whole needs one
+    operand outside a list that reads step or iteration state.
     """
     if scope is None:
         scope = ConditionScope(known_step_ids=None if known_step_ids is None else frozenset(known_step_ids))
