@@ -11,6 +11,12 @@ under `sessions/<id>/definitions/`. Prints one JSON document (or writes it to
 responses and the flags that point at evidence; `--format markdown` renders the
 same facts as a report. It makes no judgement: every number comes from a log,
 and every flag names the file and line to read.
+
+`--history PATH` instead reduces a finished `issue-plan-v2` or `issue-code-v2`
+session to one flat JSON row (`schema_version` 1: identity, `totals`, and a
+`steps` dict keyed by step id with loop iterations summed) and upserts it by
+session id into PATH, a JSONL file kept sorted by `started_at`, so runs can be
+compared over time. It refuses any other blueprint and any running session.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -35,6 +42,34 @@ MAX_UNBATCHED_RATIO = 1.1
 MIN_SERIAL_EDITS = 3
 MIN_READ_STEPS = 3
 MAX_EVIDENCE = 5
+HISTORY_BLUEPRINTS = ("issue-plan-v2", "issue-code-v2")
+HISTORY_SCHEMA_VERSION = 1
+HISTORY_TIME_KEYS = (
+    "runs",
+    "active_seconds",
+    "waiting_seconds",
+    "agent_seconds",
+    "model_seconds",
+    "thinking_seconds",
+    "tool_seconds",
+    "command_seconds",
+    "turns",
+    "tool_calls",
+    "subagents",
+)
+HISTORY_TOKEN_KEYS = (
+    "input_tokens",
+    "output_tokens",
+    "thinking_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+)
+# Where a blueprint's issue and slice show in the step results of its session.json: (step id, output key).
+HISTORY_SLICE_OUTPUT = {"issue-code-v2": ("next", "slice"), "issue-plan-v2": ("one-slice", "slice")}
+HISTORY_ISSUE_OUTPUT = {"issue-code-v2": ("start", "issue")}
+# issue-plan-v2 takes the issue as an input and no step outputs it, so read it from what its steps print.
+HISTORY_ISSUE_STDOUT = ("rewrite-gate", "apply")
+ISSUE_TEXT = re.compile(r"/issues/(\d+)|\b[Ii]ssue #?(\d+)\b")
 EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 TARGET_KEYS = ("file_path", "command", "skill", "pattern", "url", "description")
 TARGET_WIDTH = 160
@@ -614,7 +649,12 @@ def definition_path(log_dir: Path | None, blueprint: object) -> Path | None:
     """Return the frozen blueprint of the session whose log directory is log_dir, beside it under sessions/."""
     if log_dir is None or not isinstance(blueprint, str):
         return None
-    return log_dir.parent.parent / "sessions" / log_dir.name / "definitions" / f"{blueprint}.yml"
+    return session_dir(log_dir) / "definitions" / f"{blueprint}.yml"
+
+
+def session_dir(log_dir: Path) -> Path:
+    """Return the session's directory under sessions/, which sits beside the logs/ directory holding log_dir."""
+    return log_dir.parent.parent / "sessions" / log_dir.name
 
 
 def log_flags(log: AgentLog) -> list[Flag]:
@@ -823,6 +863,170 @@ def fetch(session: str | None) -> tuple[dict[str, object], Path | None]:
     return payload, Path(str(first)).parent if first else None
 
 
+def read_session_json(log_dir: Path | None) -> dict[str, object]:
+    """Return the session's session.json, or an empty document when it is missing or unreadable."""
+    if log_dir is None:
+        return {}
+    try:
+        document = json.loads((session_dir(log_dir) / "session.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return document if isinstance(document, dict) else {}
+
+
+def _results(document: dict[str, object]) -> dict[str, dict[str, object]]:
+    """Return the step results of a session.json by step id; a step that ran more than once keeps its last."""
+    raw = document.get("results")
+    items = [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
+    return {str(item.get("step_id")): item for item in items}
+
+
+def _output(results: dict[str, dict[str, object]], where: tuple[str, str] | None) -> str | None:
+    """Return the (step id, key) output of the step results as a string, or None when absent or empty."""
+    if where is None:
+        return None
+    outputs = results.get(where[0], {}).get("outputs")
+    value = outputs.get(where[1]) if isinstance(outputs, dict) else None
+    return str(value) if value not in (None, "") else None
+
+
+def _issue_from_stdout(results: dict[str, dict[str, object]]) -> str | None:
+    """Return the issue number the HISTORY_ISSUE_STDOUT steps print, or None."""
+    for step in HISTORY_ISSUE_STDOUT:
+        match = ISSUE_TEXT.search(str(results.get(step, {}).get("stdout") or ""))
+        if match:
+            return match[1] or match[2]
+    return None
+
+
+def run_target(blueprint: str, document: dict[str, object]) -> tuple[str | None, str | None]:
+    """Return the (issue, slice) a run worked on from its session.json step results; None for either when absent."""
+    results = _results(document)
+    issue = _output(results, HISTORY_ISSUE_OUTPUT.get(blueprint)) or _issue_from_stdout(results)
+    return issue, _output(results, HISTORY_SLICE_OUTPUT.get(blueprint))
+
+
+def _sum(values: list[object]) -> float | None:
+    """Return the sum of the numbers among values to four decimals, or None when there are none."""
+    numbers = [_number(value) for value in values if isinstance(value, (int, float)) and not isinstance(value, bool)]
+    return round(sum(numbers), 4) if numbers else None
+
+
+def _count(value: float | None) -> int | None:
+    """Return a summed count as an int, keeping None."""
+    return None if value is None else int(value)
+
+
+def _mapping(value: object) -> dict[str, object]:
+    """Return value when it is a dict, else an empty dict."""
+    return value if isinstance(value, dict) else {}
+
+
+def _token_sum(rows: list[dict[str, object]], key: str) -> float | None:
+    """Return the sum of the key token count over the rows' tokens dicts, or None when no row has tokens."""
+    return _sum([_mapping(row["tokens"]).get(key) for row in rows if isinstance(row.get("tokens"), dict)])
+
+
+def _step_entry(rows: list[dict[str, object]]) -> dict[str, object]:
+    """Return the history entry of one step id: its rows (loop iterations) summed."""
+    entry: dict[str, object] = {"iterations": len(rows)}
+    for key in ("wall_seconds", "model_seconds", "thinking_seconds", "tool_seconds", "cost_usd"):
+        entry[key] = _sum([row.get(key) for row in rows])
+    entry["output_tokens"] = _count(_token_sum(rows, "output_tokens"))
+    entry["thinking_tokens"] = _count(_token_sum(rows, "thinking_tokens"))
+    for key in ("turns", "tool_calls"):
+        entry[key] = _count(_sum([row.get(key) for row in rows]))
+    return {**entry, **_attempts_and_effort(rows)}
+
+
+def _attempts_and_effort(rows: list[dict[str, object]]) -> dict[str, object]:
+    """Return the attempts summed over the rows and the first non-null effort."""
+    attempts = _sum([row.get("attempts") for row in rows])
+    efforts = [row["effort"] for row in rows if row.get("effort")]
+    return {"attempts": int(attempts) if attempts is not None else None, "effort": efforts[0] if efforts else None}
+
+
+def history_steps(rows: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    """Return the history entry per step id, summing loop iterations into one entry."""
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for row in rows:
+        grouped.setdefault(str(row.get("step_id")), []).append(row)
+    return {step: _step_entry(group) for step, group in grouped.items()}
+
+
+def _retries(rows: list[dict[str, object]]) -> int:
+    """Return the sum of attempts - 1 over the step rows."""
+    return sum(max(0, int(_number(row.get("attempts"))) - 1) for row in rows)
+
+
+def _flag_counts(flags: object) -> dict[str, int]:
+    """Return how many flags of each kind there are."""
+    kinds = [str(flag.get("kind")) for flag in flags if isinstance(flag, dict)] if isinstance(flags, list) else []
+    return dict(sorted(Counter(kinds).items()))
+
+
+def history_totals(analysis: dict[str, object]) -> dict[str, object]:
+    """Return the history row's totals: wall time, the time block, cost, tokens, resumes, retries and flags per kind."""
+    session = _mapping(analysis["session"])
+    time = _mapping(session.get("time"))
+    tokens = _mapping(session.get("tokens"))
+    steps = analysis["steps"]
+    return {
+        "wall_seconds": session.get("wall_seconds"),
+        **{key: time.get(key) for key in HISTORY_TIME_KEYS},
+        "cost_usd": session.get("total_cost_usd"),
+        **{key: tokens.get(key, 0) for key in HISTORY_TOKEN_KEYS},
+        "resumes": session.get("resumes"),
+        "retries": _retries(steps if isinstance(steps, list) else []),
+        "flags": _flag_counts(analysis.get("flags")),
+    }
+
+
+def history_row(analysis: dict[str, object], document: dict[str, object]) -> dict[str, object]:
+    """Return the flat history row of an analysed session: identity, the run's issue and slice, totals and steps."""
+    session = _mapping(analysis["session"])
+    blueprint = _mapping(_mapping(document.get("manifest")).get("blueprint"))
+    steps = analysis["steps"]
+    issue, slice_id = run_target(str(session.get("blueprint")), document)
+    return {
+        "schema_version": HISTORY_SCHEMA_VERSION,
+        "session_id": session.get("id"),
+        "blueprint": session.get("blueprint"),
+        "blueprint_sha": blueprint.get("sha"),
+        "status": session.get("status"),
+        "started_at": session.get("started_at"),
+        "completed_at": session.get("completed_at"),
+        "issue": issue,
+        "slice": slice_id,
+        "totals": history_totals(analysis),
+        "steps": history_steps(steps if isinstance(steps, list) else []),
+    }
+
+
+def history_refusal(payload: dict[str, object]) -> str | None:
+    """Return why the session may not enter the history (wrong blueprint, still running), or None when it may."""
+    session = payload.get("session")
+    session = session if isinstance(session, dict) else {}
+    if session.get("blueprint_name") not in HISTORY_BLUEPRINTS:
+        return f"blueprint {session.get('blueprint_name')} is not one of {', '.join(HISTORY_BLUEPRINTS)}"
+    if session.get("status") == "running":
+        return "the session is still running, so its numbers are not final"
+    return None
+
+
+def write_history(path: Path, row: dict[str, object]) -> None:
+    """Replace the row of row's session id in the JSONL file path (or add it), sorted by started_at, atomically."""
+    rows: list[dict[str, object]] = []
+    if path.exists():
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [old for old in rows if old.get("session_id") != row["session_id"]]
+    rows = sorted([*rows, row], key=lambda item: (str(item.get("started_at")), str(item.get("session_id"))))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temp.write_text("".join(json.dumps(item) + "\n" for item in rows), encoding="utf-8")
+    os.replace(temp, path)
+
+
 def _cell(value: object) -> str:
     """Return value as a markdown table cell: '-' for None, floats to two decimals, ints with separators."""
     if value is None:
@@ -947,12 +1151,27 @@ def render_markdown(analysis: dict[str, object]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def save_history(payload: dict[str, object], log_dir: Path | None, history: Path) -> int:
+    """Write the session's history row into history, or say why it may not and write nothing."""
+    refusal = history_refusal(payload)
+    if refusal is not None:
+        sys.stderr.write(f"session_pi.py: not written to the history: {refusal}\n")
+        return 1
+    row = history_row(analyse(payload, log_dir), read_session_json(log_dir))
+    write_history(history, row)
+    sys.stdout.write(f"session_pi.py: wrote {row['session_id']} to {history}\n")
+    return 0
+
+
 def main() -> int:
     """Print the session analysis as JSON or a markdown report, or write it to --out."""
     parser = argparse.ArgumentParser(description="Extract the facts /dovo-pi analyses a dovo session from.")
     parser.add_argument("session", nargs="?", help="Session id. Defaults to the latest session.")
     parser.add_argument("--out", type=Path, help="Write the output here instead of printing it.")
     parser.add_argument("--format", choices=("json", "markdown"), default="json", help="Output format.")
+    parser.add_argument(
+        "--history", type=Path, help="Upsert the session's flat row into this JSONL file instead of printing a report."
+    )
     args = parser.parse_args()
     out: Path | None = args.out
     session: str | None = args.session
@@ -961,6 +1180,8 @@ def main() -> int:
     except (subprocess.CalledProcessError, ValueError, json.JSONDecodeError) as error:
         sys.stderr.write(f"session_pi.py: could not read the session: {error}\n")
         return 1
+    if args.history is not None:
+        return save_history(payload, log_dir, args.history)
     analysis = analyse(payload, log_dir)
     text = render_markdown(analysis) if args.format == "markdown" else json.dumps(analysis, indent=2) + "\n"
     if out is None:

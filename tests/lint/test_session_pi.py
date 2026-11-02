@@ -607,3 +607,225 @@ class TestMain:
 
         assert PI.main() == 1
         assert "could not read the session" in capsys.readouterr().err
+
+
+def _session_tree(
+    root: Path,
+    steps: list[dict[str, object]],
+    results: list[dict[str, object]] | None,
+    session_id: str = SESSION,
+    **session: object,
+) -> tuple[dict[str, object], Path]:
+    """Return a `dovo session show` payload and the log dir of a session whose session.json holds results."""
+    log_dir = root / "logs" / session_id
+    log_dir.mkdir(parents=True, exist_ok=True)
+    folder = root / "sessions" / session_id
+    folder.mkdir(parents=True, exist_ok=True)
+    document: dict[str, object] = {"manifest": {"blueprint": {"ref": "repo:blueprint:x", "sha": "cafe01"}}}
+    if results is not None:
+        document["results"] = results
+    (folder / "session.json").write_text(json.dumps(document), encoding="utf-8")
+    payload = _payload(steps, **session) | {"session_id": session_id, "log_files": [str(log_dir / "session.log")]}
+    return payload, log_dir
+
+
+def _outputs(step_id: str, *, stdout: str = "", **outputs: object) -> dict[str, object]:
+    """Return a session.json step result with the given stdout and outputs."""
+    return {"step_id": step_id, "status": "completed", "stdout": stdout, "outputs": outputs}
+
+
+def _history_row(payload: dict[str, object], log_dir: Path | None) -> dict[str, object]:
+    """Return the history row of a payload and its log directory."""
+    return PI.history_row(PI.analyse(payload, log_dir), PI.read_session_json(log_dir))
+
+
+class TestHistoryRow:
+    def test_row_holds_identity_totals_and_steps_with_loop_iterations_summed(self, tmp_path: Path) -> None:
+        steps = [
+            _step("fix", loop_id="loop", iteration=1),
+            _step("fix", loop_id="loop", iteration=2),
+            _step("build", attempts=2),
+        ]
+        results = [_outputs("next", slice="S7"), _outputs("start", issue="1289")]
+        payload, log_dir = _session_tree(
+            tmp_path,
+            steps,
+            results,
+            blueprint_name="issue-code-v2",
+            started_at="2026-11-02 10:00:00",
+            completed_at="2026-11-02 10:05:00",
+        )
+        for iteration in (1, 2):
+            _write_log(log_dir / f"01_fix_iter_{iteration}_attempt_1.stdout.log", [_use("a", "Bash"), _final()])
+
+        row = _history_row(payload, log_dir)
+
+        assert row == {
+            "schema_version": 1,
+            "session_id": SESSION,
+            "blueprint": "issue-code-v2",
+            "blueprint_sha": "cafe01",
+            "status": "completed",
+            "started_at": "2026-11-02 10:00:00",
+            "completed_at": "2026-11-02 10:05:00",
+            "issue": "1289",
+            "slice": "S7",
+            "totals": {
+                "wall_seconds": 100.0,
+                "runs": 0,
+                "active_seconds": 0.0,
+                "waiting_seconds": 0.0,
+                "agent_seconds": 18.0,
+                "model_seconds": 15.0,
+                "thinking_seconds": 0.0,
+                "tool_seconds": 0.0,
+                "command_seconds": 12.0,
+                "turns": 2,
+                "tool_calls": 2,
+                "subagents": 0,
+                "cost_usd": 1.0,
+                "input_tokens": 20,
+                "output_tokens": 40,
+                "thinking_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+                "resumes": 0,
+                "retries": 1,
+                "flags": {"retries": 1},
+            },
+            "steps": {
+                "fix": {
+                    "iterations": 2,
+                    "wall_seconds": 24.0,
+                    "model_seconds": 15.0,
+                    "thinking_seconds": 0.0,
+                    "tool_seconds": 0.0,
+                    "cost_usd": 1.0,
+                    "output_tokens": 40,
+                    "thinking_tokens": 0,
+                    "turns": 2,
+                    "tool_calls": 2,
+                    "attempts": 2,
+                    "effort": None,
+                },
+                "build": {
+                    "iterations": 1,
+                    "wall_seconds": 12.0,
+                    "model_seconds": None,
+                    "thinking_seconds": None,
+                    "tool_seconds": None,
+                    "cost_usd": None,
+                    "output_tokens": None,
+                    "thinking_tokens": None,
+                    "turns": None,
+                    "tool_calls": None,
+                    "attempts": 2,
+                    "effort": None,
+                },
+            },
+        }
+
+    def test_issue_and_slice_are_null_when_session_json_has_no_results(self, tmp_path: Path) -> None:
+        payload, log_dir = _session_tree(tmp_path, [_step("plan")], None, blueprint_name="issue-code-v2")
+
+        row = _history_row(payload, log_dir)
+
+        assert (row["issue"], row["slice"], row["blueprint_sha"]) == (None, None, "cafe01")
+
+    def test_row_survives_a_missing_session_json(self) -> None:
+        row = _history_row(_payload([_step("plan")], blueprint_name="issue-plan-v2"), None)
+
+        assert (row["issue"], row["slice"], row["blueprint_sha"]) == (None, None, None)
+
+    def test_plan_run_reads_its_slice_from_one_slice_and_its_issue_from_what_apply_printed(
+        self, tmp_path: Path
+    ) -> None:
+        results = [
+            _outputs("one-slice", slice="S1"),
+            _outputs("apply", stdout="https://github.com/devexhq/dovo/issues/1310\n"),
+        ]
+        payload, log_dir = _session_tree(tmp_path, [_step("plan")], results, blueprint_name="issue-plan-v2")
+
+        row = _history_row(payload, log_dir)
+
+        assert (row["issue"], row["slice"]) == ("1310", "S1")
+
+    def test_plan_run_without_a_slice_has_null_slice(self, tmp_path: Path) -> None:
+        results = [_outputs("rewrite-gate", stdout="Issue 1310 is in the short format.\n")]
+        payload, log_dir = _session_tree(tmp_path, [_step("plan")], results, blueprint_name="issue-plan-v2")
+
+        row = _history_row(payload, log_dir)
+
+        assert (row["issue"], row["slice"]) == ("1310", None)
+
+    def test_first_non_null_effort_of_a_step_is_kept(self) -> None:
+        rows = [{"step_id": "plan", "effort": None}, {"step_id": "plan", "effort": "medium"}]
+
+        assert PI.history_steps(rows)["plan"]["effort"] == "medium"
+
+
+class TestWriteHistory:
+    def test_creates_the_file_and_its_parent_directory(self, tmp_path: Path) -> None:
+        path = tmp_path / "deep" / "history.jsonl"
+
+        PI.write_history(path, {"session_id": "a", "started_at": "2026-11-02 10:00:00"})
+
+        assert path.read_text(encoding="utf-8") == '{"session_id": "a", "started_at": "2026-11-02 10:00:00"}\n'
+        assert [p.name for p in path.parent.iterdir()] == ["history.jsonl"]
+
+    def test_replaces_the_row_of_the_same_session_and_sorts_by_started_at(self, tmp_path: Path) -> None:
+        path = tmp_path / "history.jsonl"
+        PI.write_history(path, {"session_id": "late", "started_at": "2026-11-03 09:00:00", "cost": 1})
+        PI.write_history(path, {"session_id": "early", "started_at": "2026-11-01 09:00:00", "cost": 2})
+        PI.write_history(path, {"session_id": "late", "started_at": "2026-11-03 09:00:00", "cost": 3})
+
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+        assert [(row["session_id"], row["cost"]) for row in rows] == [("early", 2), ("late", 3)]
+
+
+class TestHistoryMain:
+    def _run(self, monkeypatch: pytest.MonkeyPatch, payload: dict[str, object], history: Path) -> int:
+        monkeypatch.setattr(PI, "run", lambda *args: json.dumps({"payload": payload}))
+        monkeypatch.setattr(sys, "argv", ["session_pi.py", SESSION, "--history", str(history)])
+        return PI.main()
+
+    def test_history_flag_writes_the_row_and_prints_one_line(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        payload, _ = _session_tree(
+            tmp_path, [_step("build")], [_outputs("start", issue="9")], blueprint_name="issue-code-v2", started_at="t1"
+        )
+        history = tmp_path / "out" / "history.jsonl"
+
+        assert self._run(monkeypatch, payload, history) == 0
+
+        rows = [json.loads(line) for line in history.read_text(encoding="utf-8").splitlines()]
+        assert [(row["session_id"], row["issue"], row["totals"]["command_seconds"]) for row in rows] == [
+            (SESSION, "9", 12.0)
+        ]
+        assert capsys.readouterr().out == f"session_pi.py: wrote {SESSION} to {history}\n"
+
+    def test_another_blueprint_is_refused_and_nothing_is_written(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        payload = _payload([_step("build")], blueprint_name="feature-dev")
+        history = tmp_path / "history.jsonl"
+
+        assert self._run(monkeypatch, payload, history) == 1
+
+        captured = capsys.readouterr()
+        assert "blueprint feature-dev is not one of issue-plan-v2, issue-code-v2" in captured.err
+        assert captured.out == ""
+        assert not history.exists()
+
+    def test_a_running_session_is_refused_and_nothing_is_written(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        payload = _payload([_step("build")], blueprint_name="issue-plan-v2", status="running")
+        history = tmp_path / "history.jsonl"
+
+        assert self._run(monkeypatch, payload, history) == 1
+
+        assert "still running" in capsys.readouterr().err
+        assert not history.exists()
