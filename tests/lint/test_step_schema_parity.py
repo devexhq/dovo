@@ -12,6 +12,7 @@ import typer.main
 
 from dovo.cli.session.app import session_app
 from dovo.core.catalog.definitions.step import ArtifactPublishSpec, InteractionSpec, LoopStepBlock, StepDefinition
+from dovo.core.expressions.services.functions import KNOWN_FUNCTIONS, function_arity
 from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
 from tests.lint.astlib import REPO_ROOT
 
@@ -23,9 +24,13 @@ _LOOP_HEADING: Final = "## `LoopStepBlock`"
 _INTERACTION_HEADING: Final = "## `interaction` Block"
 _OUTPUTS_HEADING: Final = "### Ask step outputs"
 _RESUME_HEADING: Final = "## `dovo session resume`"
+_FUNCTIONS_HEADING: Final = "### Functions and projection"
 _FLAG_RE: Final = re.compile(r"^\|\s*`(?P<flag>--[a-z-]+)", re.MULTILINE)
 _OUTPUT_ROW_RE: Final = re.compile(r"^\|\s*(?P<keys>`[a-z_]+`(?:,\s*`[a-z_]+`)*)\s*\|", re.MULTILINE)
 _ROW_RE: Final = re.compile(r"^\|\s*`(?P<field>[a-z_]+)`\s*\|[^|]*\|\s*(?P<required>[^|]*?)\s*\|", re.MULTILINE)
+_FUNCTION_ROW_RE: Final = re.compile(
+    r"^\|\s*`(?P<name>[A-Za-z]+)\([^)]*\)`\s*\|\s*(?P<arity>[\d\u2013-]+)\s*\|", re.MULTILINE
+)
 
 
 def _section(path: Path, heading: str, end: str) -> str:
@@ -58,6 +63,18 @@ def _documented_output_keys() -> set[str]:
     """Return the keys named in the Ask step outputs table."""
     section = _section(STEP_SCHEMA_DOC, _OUTPUTS_HEADING, "\n\nRead them")
     return {key.strip("` ") for match in _OUTPUT_ROW_RE.finditer(section) for key in match["keys"].split(",")}
+
+
+def _documented_functions() -> dict[str, tuple[int, int]]:
+    """Map each documented function name to the (fewest, most) arguments its Arguments cell names."""
+    section = _section(STEP_SCHEMA_DOC, _FUNCTIONS_HEADING, "A function given an absent argument")
+    documented = {}
+    for match in _FUNCTION_ROW_RE.finditer(section):
+        bounds = re.split("[\u2013-]", match["arity"])
+        fewest = int(bounds[0])
+        most = int(bounds[-1])
+        documented[match["name"]] = (fewest, most)
+    return documented
 
 
 def _documented_resume_flags() -> set[str]:
@@ -107,6 +124,18 @@ class StepSchemaParityTests:
 
         assert "name" in documented
         assert documented == expected
+
+
+class FunctionsParityTests:
+    """The Functions and projection table must agree with `KNOWN_FUNCTIONS` and each function's arity."""
+
+    def test_documented_functions_match_known_functions(self) -> None:
+        assert set(_documented_functions()) == set(KNOWN_FUNCTIONS)
+
+    def test_documented_arities_match_function_arity(self) -> None:
+        expected = {name: function_arity(name) for name in KNOWN_FUNCTIONS}
+
+        assert _documented_functions() == expected
 
 
 class InteractionSchemaParityTests:
