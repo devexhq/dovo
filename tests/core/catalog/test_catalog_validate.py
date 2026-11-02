@@ -272,6 +272,23 @@ class CatalogValidateServiceTests:
         ]
         assert result.remediations == []
 
+    def test_undeclared_input_inside_an_expression_warns(self, isolated_workspace: Path) -> None:
+        _write_yaml(
+            isolated_workspace / "ph.yml",
+            {
+                "name": "ph",
+                "inputs": {"ok": {"type": "string"}},
+                "steps": [{"id": "s1", "run": "echo {{ inputs.x || 'y' }} {{ inputs.ok }}"}],
+            },
+        )
+
+        result = _validate("ph.yml", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
+
+        assert (result.error_code, result.ok) == (None, True)
+        assert result.warnings == [
+            "Placeholder 'inputs.x' is not declared in 'inputs:' (CATALOG_UNDECLARED_INPUT_PLACEHOLDER)."
+        ]
+
     def test_validate_unsafe_script_path_reports_error(self, isolated_workspace: Path) -> None:
         _write_yaml(
             isolated_workspace / "script.yml",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from dovo.core.catalog.definitions import StepDefinition
-from dovo.core.catalog.definitions.placeholders import placeholder_syntax_errors
+from dovo.core.catalog.definitions.placeholders import placeholder_input_names, placeholder_syntax_errors
 
 _UNQUOTED_A_B = "Invalid expression 'a b': unquoted text 'a b' at column 1; quote a value of more than one word."
 
@@ -71,3 +71,46 @@ class PlaceholderSyntaxErrorsTests:
     )
     def test_valid_or_unknown_placeholder_passes(self, run: str) -> None:
         assert _errors({"run": run}) == []
+
+
+def _names(*steps: dict[str, object]) -> set[str]:
+    """Return the input names the placeholders of steps built from each fields mapping read."""
+    return placeholder_input_names([StepDefinition.model_validate(fields) for fields in steps])
+
+
+class PlaceholderInputNamesTests:
+    @pytest.mark.parametrize(
+        ("steps", "expected"),
+        [
+            pytest.param([{"id": "s", "run": "echo ${{ inputs.a }}"}], {"a"}, id="dollar_lone"),
+            pytest.param([{"id": "s", "run": "echo {{ inputs.a }}"}], {"a"}, id="plain_lone"),
+            pytest.param([{"id": "s", "run": "echo {{ inputs.a || 'y' }}"}], {"a"}, id="or_default"),
+            pytest.param([{"id": "s", "run": "echo {{ inputs.a == inputs.b }}"}], {"a", "b"}, id="comparison"),
+            pytest.param([{"id": "s", "run": "echo {{ !inputs.a }}"}], {"a"}, id="negation"),
+            pytest.param([{"id": "s", "run": "echo {{ 'x' in [inputs.a] }}"}], {"a"}, id="list_item"),
+            pytest.param([{"id": "s", "run": "echo {{ inputs['a.b'] }}"}], {"a.b"}, id="bracket_key"),
+            pytest.param(
+                [
+                    {"id": "s", "run": "true", "env": {"V": "{{ inputs.a }}"}},
+                    {"id": "t", "type": "ask", "interaction": {"mode": "text", "message": "{{ inputs.b }}"}},
+                ],
+                {"a", "b"},
+                id="env_and_message",
+            ),
+        ],
+    )
+    def test_reads_every_input_path_in_an_expression(self, steps: list[dict[str, object]], expected: set[str]) -> None:
+        assert _names(*steps) == expected
+
+    @pytest.mark.parametrize(
+        "run",
+        [
+            pytest.param("echo {{ a }}", id="bare_name"),
+            pytest.param("echo {{ github.sha }}", id="other_root"),
+            pytest.param("echo {{ steps.a.outputs.x }}", id="step_output"),
+            pytest.param("echo {{ inputs[0] }}", id="index_segment"),
+            pytest.param("echo {{ inputs.a b }}", id="unparsable"),
+        ],
+    )
+    def test_reads_no_name_from_other_paths(self, run: str) -> None:
+        assert _names({"id": "s", "run": run}) == set()

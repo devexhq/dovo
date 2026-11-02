@@ -7,7 +7,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Protocol, Self
+from typing import Any, Protocol, Self
 
 import yaml
 from pydantic import ValidationError
@@ -17,13 +17,11 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
 from dovo.common.models import Remediation
 from dovo.core.catalog.definitions.blueprint import STEP_KIND_TAGS, BlueprintDefinition
-from dovo.core.catalog.definitions.placeholders import placeholder_syntax_errors
+from dovo.core.catalog.definitions.placeholders import placeholder_input_names, placeholder_syntax_errors
 from dovo.core.catalog.definitions.scopes import condition_reference_errors
 from dovo.core.catalog.exceptions import CatalogError, CatalogValidateFindings
 from dovo.core.catalog.models import CatalogItemType
 
-_PLACEHOLDER_RE = re.compile(r"\$\{\{\s*inputs\.([a-zA-Z0-9_-]+)\s*\}\}")
-_PLACEHOLDER_FIELDS: Final[tuple[str, ...]] = ("run", "command", "prompt", "script_path")
 _DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:/")
 
 
@@ -231,31 +229,6 @@ def _audit_duplicate_input_aliases(inputs: dict[str, object]) -> list[str]:
     return errors
 
 
-def _collect_field_placeholder_names(value: object) -> set[str]:
-    """Return placeholder input names referenced by value, if it is a string."""
-    return set(_PLACEHOLDER_RE.findall(value)) if isinstance(value, str) else set()
-
-
-def _collect_step_placeholder_references(step: object) -> set[str]:
-    """Return the set of `inputs.<name>` placeholder names referenced by one step's own fields."""
-    referenced: set[str] = set()
-    for field_name in _PLACEHOLDER_FIELDS:
-        referenced.update(_collect_field_placeholder_names(getattr(step, field_name, None)))
-    env = getattr(step, "env", None)
-    if isinstance(env, dict):
-        for value in env.values():
-            referenced.update(_collect_field_placeholder_names(value))
-    return referenced
-
-
-def _collect_placeholder_references(flat_steps: list[object]) -> set[str]:
-    """Return the set of `inputs.<name>` placeholder names referenced across run/command/prompt/script_path/env."""
-    referenced: set[str] = set()
-    for step in flat_steps:
-        referenced.update(_collect_step_placeholder_references(step))
-    return referenced
-
-
 def _audit_undeclared_placeholders(referenced: set[str], declared_inputs: set[str]) -> list[str]:
     """Return one CATALOG_UNDECLARED_INPUT_PLACEHOLDER warning per referenced-but-undeclared input name."""
     return [
@@ -321,8 +294,7 @@ def _semantic_findings(item_type: str, definition: object, repo_root: Path) -> t
     script_errors, warnings = _audit_script_paths(flat_steps, repo_root)
     errors.extend(script_errors)
 
-    referenced = _collect_placeholder_references(flat_steps)
-    warnings.extend(_audit_undeclared_placeholders(referenced, set(inputs)))
+    warnings.extend(_audit_undeclared_placeholders(placeholder_input_names(flat_steps), set(inputs)))
 
     return errors, warnings
 
