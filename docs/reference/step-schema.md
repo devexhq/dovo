@@ -143,21 +143,84 @@ Repeats the steps in `do` until an `until` condition is met:
 
 ---
 
+## Expression Grammar
+
+A `when` list, an `until` list, an `if` block's `condition` and a `${{ ... }}` / `{{ ... }}` placeholder body all share one grammar: operands joined by operators, in one of these forms, loosest-binding first:
+
+- `left || right` and `left && right` — logical or/and. `||` and `&&` group to the left (`a || b || c` is `(a || b) || c`) and never chain into one another without parentheses changing the grouping; `&&` binds tighter than `||`.
+- `left <op> right` — one comparison; a comparison does not chain, so `a == b && b == c` is written out, never `a == b == c`.
+- `!value` — negation. `!` binds to the next `!` or to one value (a call, a projection, an operand or a parenthesised group), never to a whole comparison: `!a == b` reads as `(!a) == b`, so negating a comparison needs parentheses: `!(a == b)`.
+- `(expression)` — grouping; parentheses leave no node of their own in the parsed tree.
+
+`&&`/`||` short-circuit: the side not taken is never evaluated, so a path only on that side is never resolved. A source nests `(` and `!` at most 32 deep and holds at most 64 `&&` and `||` joins in all.
+
+| Operator | Compares |
+|---|---|
+| `==`, `!=` | Equal or not. Both sides compare as numbers when both are a number or a numeric string (an integer or a decimal); otherwise by value. |
+| `<`, `<=`, `>`, `>=` | Order. True only when both sides are a number or a numeric string; otherwise always false. |
+| `contains` | Infix substring or membership: a string's substring, or a list's, dict's, set's or tuple's member, else a substring check on both sides' text. |
+| `in`, `not in` | Right side is a bracketed list, `[a, b, c]`. `in` passes when any item equals the left side under `==`; `not in` when every item does under `!=`. |
+
+A value is one of a quoted string, a number, `true`/`false` (any case), or an operand: a dotted name such as `steps.check.exit_code`, read in the roots the surrounding clause allows (see [`when` Guards](#when-guards) for conditions). A value of more than one unquoted word must be quoted, as `"needs edits"` is in `steps.a.status == "needs edits"`.
+
+### Truthiness and absent values
+
+An operand has no value (is absent) when the step, output or artifact it names has not run, finished, published or been recorded yet. An absent value is always false, and a comparison or `in`/`not in` built on one is unresolved rather than simply false.
+
+`false`, `0`, `0.0`, `""`, `null` and an absent value are false. Every other value is true, including the strings `"0"` and `"false"`, and an empty list `[]`.
+
+### Functions and projection
+
+| Function | Arguments | Returns |
+|---|---|---|
+| `contains(haystack, needle)` | 2 | Whether the string `haystack` holds the string `needle`, or the list `haystack` holds an item equal to `needle`. |
+| `fromJSON(text)` | 1 | The value the JSON string `text` holds. |
+| `join(list[, separator])` | 1–2 | The list's items, each rendered as a placeholder renders a value (below), joined by `separator` (`,` when omitted). |
+| `length(value)` | 1 | The length of a string, list or object. |
+| `trim(text)` | 1 | `text` without its leading and trailing whitespace. |
+
+A function given an absent argument, or an argument of a type it does not take, returns an absent value rather than failing to load.
+
+`<path>.*.<key>` projects: it reads `<key>` from every object of the array `<path>` holds (a string value is read as JSON first), skipping objects that miss the key, and is absent when `<path>` is not an array. A further `.<key2>` after the first key chains to read a nested key from each object, so `steps.list.outputs.items.*.name.first` reads `name.first` from every item. The path before `.*` is the operand a `when` or `until` condition checks against its readable roots.
+
+### Placeholder `||` defaults and rendering
+
+Inside a placeholder, a lone path that no provider defines leaves the whole placeholder as written, but the same path inside a larger expression reads as absent, so `{{ inputs.name || 'anonymous' }}` renders `anonymous` when `inputs.name` is undefined: `||` takes its left side only when it is truthy, and an undefined or absent path is never truthy.
+
+Every value renders the way a recorded step output does: a string as is, an absent or `null` value as the empty string, a boolean as `true` or `false`, a list or object as JSON, and anything else as plain text.
+
+### Load errors
+
+`dovo blueprint validate`, `dovo run` and `dovo resume` reject an expression that cannot be parsed, naming the step, loop or placeholder, with `Invalid expression '<source>': <reason>.`:
+
+| Reason | Example source |
+|---|---|
+| Empty expression | `""` |
+| Unquoted text of more than one word | `steps.a.status == needs edits` |
+| Unknown function, or the wrong number of arguments | `unknown(1)`, `length()` |
+| Unterminated string, or an unsupported `\` escape | `steps.a.stdout == "abc` |
+| Unsupported number: a leading `+`, a date, or scientific notation | `steps.a.exit_code == 1e3` |
+| Missing or unexpected `(`, `)`, `[`, `]`, or a value after an operator | `steps.a.exit_code ==` |
+| Nesting past 32 `(`/`!` deep, or past 64 `&&`/`\|\|` joins in all | — |
+
+A `when` or `until` list, and an `if` block's `condition`, reject a syntactically valid expression too when an operand reads a root or step the clause cannot, or no operand of the whole expression reads step, iteration or artifact state: see [`when` Guards](#when-guards).
+
+---
+
 ## `when` Guards
 
 A `when` list holds condition expressions written exactly as loop `until` conditions are, such as `steps.check.exit_code == 0`. Any step kind and any loop can carry one, including steps inside a loop's `do`.
 
 `dovo blueprint validate`, `dovo run` and `dovo resume` reject a blueprint, naming the step or loop, when:
 
-- a `when` list is empty or holds an invalid expression;
+- a `when` list is empty or holds an invalid expression, including an unquoted value of more than one word; see [Load errors](#load-errors) for the full list of reasons;
 - an expression references a step that is not an earlier step in the same or an enclosing scope. A top-level step sees the top-level steps before it. A step inside `do` also sees the steps before it in the same `do`. A step after an `if` block also sees the steps of either branch, and a step inside a branch sees the steps before the block and the steps before it in the same branch. A loop's or `if` block's own id cannot be referenced, and the steps inside a loop's `do` are not visible after the loop;
 - an expression uses `iteration.index` outside a loop's `do`;
-- a value of more than one word is not quoted, as in `steps.a.status == needs edits`;
 - an operand is a dotted name whose root is not `steps`, `iteration` or `artifacts`, as `inputs.<name>` is;
 - an `artifacts.<name>.<field>` operand names no field (`content`, `digest`, `dir` or `revision`), as `artifacts.plan` does;
 - an operand reads an artifact that no step of the blueprint publishes through its `artifacts:`. A step anywhere in the blueprint counts, inside a loop's `do` or an `if` branch too, but on a `uses:` step only the `artifacts:` written in the blueprint.
 
-An `artifacts.<name>.<field>` operand reads the latest revision of `<name>` published in the current session, when the expression is evaluated. The field is the first of `content`, `digest`, `dir` or `revision` after the name, so a name may contain dots, and every field is text: `revision` is `"2"`, which compares as a number in `artifacts.plan.revision >= 2`. A path after `content` reads the content as JSON, as a path after an `outputs` key does: `artifacts.verdict.content.done == true` is true when the artifact's file holds `{"done": true}`. The operand has no value, and never fails the run, when no step has published the artifact yet, it reads `content` of an artifact that is not one UTF-8 file of at most 65536 bytes, the content is not JSON under a path, or a path follows `revision`, `digest` or `dir`.
+An `artifacts.<name>.<field>` operand reads the latest revision of `<name>` published in the current session, when the expression is evaluated. The field is the first of `content`, `digest`, `dir` or `revision` after the name, so a name may contain dots. `revision` is `"2"`, comparing numerically as [Expression Grammar](#expression-grammar) says a numeric string does, and a path after `content` reads the content as JSON, as a path after an `outputs` key does (`artifacts.verdict.content.done == true` is true when the artifact's file holds `{"done": true}`). The operand has no value, and never fails the run, when no step has published the artifact yet, it reads `content` of an artifact that is not one UTF-8 file of at most 65536 bytes, the content is not JSON under a path, or a path follows `revision`, `digest` or `dir`.
 
 The list is evaluated just before the step or loop would start. A `when` inside `do` is evaluated again on every iteration, against the steps of the current iteration. When every expression is true the step runs normally. Otherwise it is skipped: it runs nothing and has no attempt, outputs, artifacts or step logs, a skipped `ask` shows no prompt and does not pause, and a skipped loop runs no iteration. A skip counts as successful, so a run whose remaining steps are all skipped ends `completed`. A step skipped before a run paused stays skipped when the run resumes.
 
