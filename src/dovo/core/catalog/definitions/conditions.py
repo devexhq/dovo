@@ -1,9 +1,13 @@
-"""Authoring-time validation of condition expressions, shared by loop 'until' and step 'when' lists."""
+"""Authoring-time validation of condition expressions, shared by loop 'until' and step 'when' lists.
+
+A condition reads three roots: 'steps', 'iteration' inside a loop's 'do', and 'artifacts'. An artifact operand must
+name a field and an artifact some step of the blueprint publishes through its 'artifacts:'.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dovo.core.expressions import (
     Call,
@@ -18,32 +22,38 @@ from dovo.core.expressions import (
     ValueList,
     parse_expression,
 )
+from dovo.core.inputs import ARTIFACT_FIELDS, artifact_reference
 
 _VALID_STEP_FIELDS = frozenset({"exit_code", "outputs", "status", "stdout"})
 _STEPS_ROOT = "steps"
 _ITERATION_ROOT = "iteration"
+_ARTIFACTS_ROOT = "artifacts"
+_READABLE_ROOTS = (_STEPS_ROOT, _ITERATION_ROOT, _ARTIFACTS_ROOT)
 
 
 @dataclass(frozen=True)
 class ConditionScope:
-    """Where a condition list sits: its clause name, the step ids it may reference, and whether 'iteration' resolves."""
+    """Where a condition list sits: its clause, the step ids it may reference, whether 'iteration' resolves, and the published artifacts."""
 
     clause: str = "until"
     known_step_ids: frozenset[str] | None = None
     scope_label: str = "loop 'do' steps"
     allow_iteration: bool = True
+    published_artifacts: frozenset[str] = field(kw_only=True)
 
 
 def _is_dynamic_operand(operand: Expression | ValueList) -> bool:
-    """Return whether an operand reads step or iteration state; a lone 'steps' is a bare word."""
+    """Return whether an operand reads step, iteration or artifact state; a lone 'steps' or 'artifacts' is a bare word."""
     if not isinstance(operand, Path):
         return False
-    return operand.root == _ITERATION_ROOT or (operand.root == _STEPS_ROOT and bool(operand.segments))
+    return operand.root == _ITERATION_ROOT or (
+        operand.root in (_STEPS_ROOT, _ARTIFACTS_ROOT) and bool(operand.segments)
+    )
 
 
 def _is_unreadable_root(operand: Expression | ValueList) -> bool:
     """Return whether an operand is a dotted path whose root a condition cannot read."""
-    return isinstance(operand, Path) and bool(operand.segments) and operand.root not in (_STEPS_ROOT, _ITERATION_ROOT)
+    return isinstance(operand, Path) and bool(operand.segments) and operand.root not in _READABLE_ROOTS
 
 
 def _validate_step_operand(operand: Path, expression: str, scope: ConditionScope) -> list[str]:
@@ -78,25 +88,49 @@ def _index_errors(operand: Path, expression: str, scope: ConditionScope) -> list
     ]
 
 
+def _artifact_operand_errors(operand: Path, expression: str, scope: ConditionScope) -> list[str]:
+    """Reject an artifact operand that names no field, or an artifact no step of the blueprint publishes."""
+    reference = artifact_reference(operand.segments)
+    if reference is None:
+        return [
+            f"Operand '{operand.text}' in {scope.clause} condition '{expression}' reads no artifact field. "
+            f"Expected 'artifacts.<name>.<field>' with a field of {', '.join(sorted(ARTIFACT_FIELDS))}."
+        ]
+    if reference.name not in scope.published_artifacts:
+        published = ", ".join(sorted(scope.published_artifacts)) or "none"
+        return [
+            f"Artifact '{reference.name}' read in {scope.clause} condition '{expression}' is not published by "
+            f"any step's 'artifacts:' in the blueprint (published: {published})."
+        ]
+    return []
+
+
+def _unreadable_root_errors(operand: Path, expression: str, scope: ConditionScope) -> list[str]:
+    """Reject a dotted path whose root a condition cannot read, naming the roots it can."""
+    if not _is_unreadable_root(operand):
+        return []
+    roots = "artifacts, iteration, steps" if scope.allow_iteration else "artifacts, steps"
+    return [
+        f"Operand '{operand.text}' in {scope.clause} condition '{expression}' reads '{operand.root}', "
+        f"which a condition cannot read. Readable roots: {roots}."
+    ]
+
+
 def _validate_operand(operand: Expression | ValueList, expression: str, scope: ConditionScope) -> list[str]:
-    """Validate one operand's reference: a bracket index, a step, the iteration, or a root a condition cannot read."""
+    """Validate one operand's reference: a bracket index, a step, an artifact, the iteration, or an unreadable root."""
     if not isinstance(operand, Path):
         return []
     if index_errors := _index_errors(operand, expression, scope):
         return index_errors
     if operand.root == _STEPS_ROOT and operand.segments:
         return _validate_step_operand(operand, expression, scope)
+    if operand.root == _ARTIFACTS_ROOT and operand.segments:
+        return _artifact_operand_errors(operand, expression, scope)
     if operand.root == _ITERATION_ROOT and not scope.allow_iteration:
         return [
             f"Operand '{operand.text}' in {scope.clause} condition '{expression}' is only available inside a loop's 'do'."
         ]
-    if _is_unreadable_root(operand):
-        roots = "iteration, steps" if scope.allow_iteration else "steps"
-        return [
-            f"Operand '{operand.text}' in {scope.clause} condition '{expression}' reads '{operand.root}', "
-            f"which a condition cannot read. Readable roots: {roots}."
-        ]
-    return []
+    return _unreadable_root_errors(operand, expression, scope)
 
 
 def _list_item_errors(item: Operand | Projection, expression: str, scope: ConditionScope) -> list[str]:
@@ -132,7 +166,7 @@ def expression_leaves(node: Expression | ValueList) -> Iterator[tuple[Operand | 
 
 
 def _projection_errors(projection: Projection, expression: str, scope: ConditionScope) -> list[str]:
-    """Reject a projection whose base is neither a step or iteration value nor a root a condition cannot read."""
+    """Reject a projection whose base is neither a step, iteration or artifact value nor a root a condition cannot read."""
     base = projection.base
     if _is_dynamic_operand(base) or _is_unreadable_root(base):
         return []
@@ -145,7 +179,7 @@ def _projection_errors(projection: Projection, expression: str, scope: Condition
 def _tree_errors(expression: str, parsed: Expression, scope: ConditionScope) -> list[str]:
     """Return the operand and list-item errors of a parsed entry, and the dynamic-operand error unless one reads state.
 
-    A projection's base is checked as an operand, and must read a step or iteration value.
+    A projection's base is checked as an operand, and must read a step, iteration or artifact value.
     """
     errors: list[str] = []
     operands: list[Operand] = []
@@ -165,24 +199,17 @@ def _tree_errors(expression: str, parsed: Expression, scope: ConditionScope) -> 
     return errors
 
 
-def validate_condition_expression(
-    expression: str,
-    known_step_ids: set[str] | None = None,
-    *,
-    scope: ConditionScope | None = None,
-) -> list[str]:
-    """Validate the syntax and operand references of one condition entry.
+def validate_condition_expression(expression: str, *, scope: ConditionScope) -> list[str]:
+    """Validate the syntax and operand references of one condition entry against scope.
 
-    known_step_ids alone checks a loop 'until' expression against its loop's 'do' step ids; scope, when given,
-    names the clause and the step ids a 'when' or 'condition' expression may reference instead.
+    scope names the clause, the step ids the entry may reference, whether 'iteration' resolves, and the artifact
+    names the blueprint publishes.
 
     Returns a list of error message strings (empty if valid). A syntax error returns its one error. Otherwise every
     operand of the entry, through '&&', '||', '!', parentheses, comparisons and call arguments, is checked as a
     reference, every item of a list after 'in' or 'not in' must not read a value, and the entry as a whole needs one
-    operand outside a list that reads step or iteration state.
+    operand outside a list that reads step, iteration or artifact state.
     """
-    if scope is None:
-        scope = ConditionScope(known_step_ids=None if known_step_ids is None else frozenset(known_step_ids))
     parsed = parse_expression(expression)
     if isinstance(parsed, InvalidExpression):
         return [parsed.message]

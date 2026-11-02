@@ -1,6 +1,7 @@
 """Authored step definition models."""
 
 import re
+from collections.abc import Sequence
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -459,3 +460,8 @@ def entry_steps(entry: BlueprintStep) -> list[StepDefinition]:
     if isinstance(entry, IfStepBlock):
         return [*entry.branch("then"), *entry.branch("else")]
     return [entry]
+
+
+def published_artifact_names(steps: Sequence[BlueprintStep]) -> frozenset[str]:
+    """Return the name of every `artifacts:` entry written on a step of steps, in a loop's 'do' and both 'if' branches included."""
+    return frozenset(spec.name for entry in steps for step in entry_steps(entry) for spec in step.artifacts)

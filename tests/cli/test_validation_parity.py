@@ -68,6 +68,13 @@ FIXTURES = [
         ],
         id="function_errors",
     ),
+    pytest.param(
+        [
+            {"id": "a", "run": "true", "artifacts": [{"name": "plan", "path": "plan.json"}]},
+            {"id": "b", "run": "true", "when": ["artifacts.verdict.revision >= 1"]},
+        ],
+        id="unpublished_artifact",
+    ),
 ]
 
 

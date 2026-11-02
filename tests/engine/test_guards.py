@@ -66,9 +66,9 @@ class GuardSkipTests:
     def test_skip_names_the_first_failing_expression_and_its_cause(
         self, expressions: list[str], skip: StepSkip | None
     ) -> None:
-        assert guard_skip(evaluate_guard(expressions, {"check": _CHECK})) == skip
+        assert guard_skip(evaluate_guard(expressions, {"check": _CHECK}, artifact_store=None)) == skip
 
     def test_iteration_operand_uses_the_given_iteration_index(self) -> None:
-        results = evaluate_guard(["iteration.index > 1"], {}, iteration_index=2)
+        results = evaluate_guard(["iteration.index > 1"], {}, iteration_index=2, artifact_store=None)
 
         assert [result.passed for result in results] == [True]

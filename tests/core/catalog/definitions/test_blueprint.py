@@ -54,6 +54,27 @@ class BlueprintDefinitionValidatorTests:
             caught.value
         )
 
+    def test_loop_until_unpublished_artifact_raises_blueprint_validation_error(self) -> None:
+        raw: dict[str, object] = {"steps": [_loop(until=["artifacts.verdict.revision >= 1"])]}
+
+        with pytest.raises(BlueprintValidationError) as caught:
+            BlueprintDefinition.from_document(raw, key="bp")
+
+        assert (
+            "Loop 'fix': Artifact 'verdict' read in until condition 'artifacts.verdict.revision >= 1' "
+            "is not published by any step's 'artifacts:' in the blueprint (published: none)."
+        ) in str(caught.value)
+
+    def test_loop_until_reads_an_artifact_published_in_its_do(self) -> None:
+        do = [{"id": "check", "run": "true", "artifacts": [{"name": "verdict", "path": "verdict.json"}]}]
+        raw: dict[str, object] = {"steps": [_loop(until=["artifacts.verdict.content.done == true"], do=do)]}
+
+        definition = BlueprintDefinition.from_document(raw, key="bp")
+
+        loop = definition.steps[0]
+        assert isinstance(loop, LoopStepBlock)
+        assert loop.until == ["artifacts.verdict.content.done == true"]
+
     def test_step_without_id_or_mode_gets_default_id_and_command_maps_to_run(self) -> None:
         raw: dict[str, object] = {"steps": [{"name": "Run Lint", "command": "ruff check ."}]}
 

@@ -197,6 +197,8 @@ class InputsPackageTests:
 
     def test_package_exports_named_functions_only(self) -> None:
         assert sorted(dovo.core.inputs.__all__) == [
+            "ARTIFACT_FIELDS",
+            "ArtifactReference",
             "ExecutionMetadataView",
             "InputResolveResult",
             "InputType",
@@ -206,6 +208,7 @@ class InputsPackageTests:
             "StepOutputValue",
             "UNDEFINED",
             "Undefined",
+            "artifact_reference",
             "build_providers",
             "coerce_input_value",
             "find_placeholders",
@@ -215,6 +218,7 @@ class InputsPackageTests:
             "interpolate_string",
             "parse_cli_input_args",
             "placeholder_texts",
+            "read_json_path",
             "render_step_output",
             "resolve_inputs",
             "resolve_step_output",

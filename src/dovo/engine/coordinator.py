@@ -589,7 +589,8 @@ class RunCoordinator:
         iteration = loop.iterations[-1] if loop is not None else None
         if iteration is not None:
             results.update(iteration_results(iteration))
-        return guard_skip(evaluate_guard(expressions, results, iteration.number if iteration is not None else 1))
+        index = iteration.number if iteration is not None else 1
+        return guard_skip(evaluate_guard(expressions, results, index, artifact_store=self._context.artifact_store))
 
     def _skip_node(
         self,
@@ -643,7 +644,9 @@ class RunCoordinator:
 
     def _choose_branch(self, node: ExecutionIfNode, block: IfStepBlock, *, idx: int, total: int) -> bool:
         """Evaluate the block's condition, save the chosen branch with its PENDING steps in one commit, and notify the observer."""
-        conditions = evaluate_guard(block.condition, scope_results(self._run.state))
+        conditions = evaluate_guard(
+            block.condition, scope_results(self._run.state), artifact_store=self._context.artifact_store
+        )
         branch = choose_branch(conditions, has_else=block.else_ is not None)
         node.branch = branch
         node.steps = [ExecutionLeafNode(id=step.id, name=step.name) for step in block.branch(branch.value)]
@@ -721,7 +724,9 @@ class RunCoordinator:
         self, loop: ExecutionLoopNode, iteration: ExecutionIterationRecord, events: LoopEventEmitter
     ) -> NodeTransitionKind | None:
         """Evaluate until over every terminal body result of iteration, persist until_passed with the iteration COMPLETED, and emit conditions_evaluated."""
-        conditions = LoopPolicy.evaluate_conditions(loop.until, iteration_results(iteration), iteration.number)
+        conditions = LoopPolicy.evaluate_conditions(
+            loop.until, iteration_results(iteration), iteration.number, artifact_store=self._context.artifact_store
+        )
         passed = all(condition.passed for condition in conditions)
         iteration.until_passed = passed
         iteration.state = NodeState.COMPLETED

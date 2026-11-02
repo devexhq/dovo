@@ -30,6 +30,12 @@ def _follow_path(root: object, path: Sequence[str | int]) -> StepOutputValue | N
     return StepOutputValue(current)
 
 
+def read_json_path(text: str, path: Sequence[str | int]) -> StepOutputValue | None:
+    """Parse text as JSON and follow path through its objects; None when text is not JSON or path misses, and an int segment always misses."""
+    parsed = _parse_json(text)
+    return None if parsed is _UNPARSABLE else _follow_path(parsed, path)
+
+
 def resolve_step_output(
     outputs: Mapping[str, str], stdout: str, key: str, path: Sequence[str | int] = ()
 ) -> StepOutputValue | None:
@@ -39,7 +45,7 @@ def resolve_step_output(
     """
     if key in outputs:
         recorded = outputs[key]
-        return _follow_path(_parse_json(recorded), path) if path else StepOutputValue(recorded)
+        return read_json_path(recorded, path) if path else StepOutputValue(recorded)
     parsed = _parse_json(stdout)
     if not isinstance(parsed, dict) or key not in parsed:
         return None

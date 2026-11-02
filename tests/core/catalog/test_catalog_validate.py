@@ -745,6 +745,18 @@ class CatalogValidatePlaceholderTests:
         assert (result.error_code, result.errors) == (ErrorCode.CATALOG_SCHEMA_INVALID, [message])
 
 
+class CatalogValidateArtifactConditionTests:
+    """The publisher check covers conditions only; a placeholder naming an artifact is not checked."""
+
+    def test_placeholder_naming_an_unpublished_artifact_is_no_finding(self, isolated_workspace: Path) -> None:
+        steps: list[dict[str, object]] = [{"id": "s1", "run": "echo {{ artifacts.ghost.content }}"}]
+        write_runnable_blueprint(isolated_workspace, key="ghost-flow", steps=steps)
+
+        result = _validate("ghost-flow", path=isolated_workspace)
+
+        assert (result.error_code, result.errors) == (None, [])
+
+
 class CatalogValidateIfBlockTests:
     """Branch steps take part in the duplicate-id and script_path audits."""
 

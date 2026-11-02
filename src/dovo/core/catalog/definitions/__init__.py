@@ -19,6 +19,7 @@ from dovo.core.catalog.definitions.step import (
     StepDefinition,
     StepType,
     entry_steps,
+    published_artifact_names,
 )
 
 __all__ = [
@@ -40,5 +41,6 @@ __all__ = [
     "StepDefinition",
     "StepType",
     "entry_steps",
+    "published_artifact_names",
     "validate_condition_expression",
 ]

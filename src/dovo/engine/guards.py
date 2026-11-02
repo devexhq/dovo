@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from dovo.core.artifacts.store import ArtifactStore
 from dovo.engine.executors import evaluate_condition
 from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
 from dovo.engine.models import IfBranch, SkipCause
@@ -11,11 +12,17 @@ from dovo.engine.state_models import StepSkip
 
 
 def evaluate_guard(
-    expressions: Sequence[str], step_results: dict[str, StepResult], iteration_index: int = 1
+    expressions: Sequence[str],
+    step_results: dict[str, StepResult],
+    iteration_index: int = 1,
+    *,
+    artifact_store: ArtifactStore | None,
 ) -> list[ConditionEvaluationResult]:
-    """Evaluate every expression against step_results, in the order written, with the evaluator loop `until` uses."""
+    """Evaluate every expression against step_results and the session's artifacts, in the order written, with the evaluator loop `until` uses."""
     return [
-        evaluate_condition(expression, iteration_index=iteration_index, step_results=step_results)
+        evaluate_condition(
+            expression, iteration_index=iteration_index, step_results=step_results, artifact_store=artifact_store
+        )
         for expression in expressions
     ]
 

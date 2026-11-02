@@ -45,6 +45,7 @@ from dovo.engine.models import (
     RunContext,
     RunObserver,
     RunOutcome,
+    SkipCause,
 )
 from dovo.engine.state_models import (
     ExecutionLeafNode,
@@ -52,6 +53,7 @@ from dovo.engine.state_models import (
     ExecutionStateTree,
     NodeState,
     StepAttemptRecord,
+    StepSkip,
 )
 from dovo.engine.writer import snapshot_blueprint_path
 from tests.engine.conftest import AgentRunnerBuild, SpySaveExecutionState
@@ -1494,6 +1496,69 @@ class CoordinatorLoopUntilTests:
         loop = _loop_node(_state(engine_paths, sessions_repo, "loop-until"))
         assert [(it.number, it.until_passed) for it in loop.iterations] == [(1, True)]
         assert ("loop_conditions_evaluated", "loop", [True, True], True, None) in observer.calls
+
+
+_PUBLISH_VERDICT = {"artifacts": [{"name": "verdict", "path": "verdict.json"}]}
+
+
+class CoordinatorArtifactConditionTests:
+    def test_until_on_artifact_content_ends_the_loop_on_the_matching_iteration(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, artifacts_repository: ArtifactsRepository
+    ) -> None:
+        write = _step(
+            "write",
+            'if [ "$DOVO_ITERATION_INDEX" -ge 2 ]; then echo \'{"done": true}\' > verdict.json; '
+            "else echo '{\"done\": false}' > verdict.json; fi",
+            **_PUBLISH_VERDICT,
+        )
+        steps = [_loop("loop", [write], max_iterations=3, until=["artifacts.verdict.content.done == true"])]
+
+        outcome = _run_new(engine_paths, sessions_repo, "loop-artifact", steps, artifacts_db=artifacts_repository)
+
+        assert outcome.status == SessionStatus.COMPLETED
+        loop = _loop_node(_state(engine_paths, sessions_repo, "loop-artifact"))
+        assert [(it.number, it.until_passed) for it in loop.iterations] == [(1, False), (2, True)]
+
+    def test_if_block_condition_reads_an_artifact(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        artifacts_repository: ArtifactsRepository,
+        engine_workspace: Path,
+    ) -> None:
+        steps: list[dict[str, object]] = [
+            _step("write", "echo '{\"done\": true}' > verdict.json", **_PUBLISH_VERDICT),
+            {
+                "id": "route",
+                "type": "if",
+                "condition": ["artifacts.verdict.content.done"],
+                "then": [_step("fix", "touch fix.marker")],
+                "else": [_step("ship", "touch ship.marker")],
+            },
+        ]
+
+        outcome = _run_new(engine_paths, sessions_repo, "if-artifact", steps, artifacts_db=artifacts_repository)
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert sorted(path.name for path in engine_workspace.glob("*.marker")) == ["fix.marker"]
+
+    def test_when_on_an_artifact_not_yet_published_skips_as_unresolved(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, artifacts_repository: ArtifactsRepository
+    ) -> None:
+        expression = "artifacts.verdict.content.done == true"
+        steps = [
+            _step("early", "true", when=[expression]),
+            _step("write", "echo '{\"done\": true}' > verdict.json", **_PUBLISH_VERDICT),
+        ]
+
+        outcome = _run_new(engine_paths, sessions_repo, "when-artifact", steps, artifacts_db=artifacts_repository)
+
+        early = _leaf(_state(engine_paths, sessions_repo, "when-artifact"), "early")
+        assert outcome.status == SessionStatus.COMPLETED
+        assert (early.state, early.skip) == (
+            NodeState.SKIPPED,
+            StepSkip(cause=SkipCause.WHEN_UNRESOLVED, expression=expression),
+        )
 
 
 class CoordinatorLoopTerminalTests:
