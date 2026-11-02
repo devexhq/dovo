@@ -23,8 +23,23 @@ PROMPTS_ROOT: Final[Path] = REPO_ROOT / ".dovo" / "catalog" / "prompts" / "sdlc"
 SCRIPTS_ROOT: Final[Path] = REPO_ROOT / ".dovo" / "catalog" / "scripts" / "sdlc"
 TESTS_ROOT: Final[Path] = REPO_ROOT / "tests" / "sdlc"
 BLUEPRINTS_DIR: Final[Path] = REPO_ROOT / ".dovo" / "catalog" / "blueprints"
-VERSIONS: Final[list[Path]] = sorted(path for path in PROMPTS_ROOT.iterdir() if path.is_dir())
+VERSIONS: Final[list[Path]] = sorted(
+    path for path in PROMPTS_ROOT.iterdir() if path.is_dir() and re.fullmatch(r"v\d+", path.name)
+)
 BLUEPRINTS: Final[list[Path]] = sorted(BLUEPRINTS_DIR.glob("*.yml"))
+SHIP_PROMPTS_DIR: Final[Path] = PROMPTS_ROOT / "ship"
+SHIP_SCRIPTS_DIR: Final[Path] = SCRIPTS_ROOT / "ship"
+SHIP_TESTS_DIR: Final[Path] = TESTS_ROOT / "ship"
+SHIP_SKILL_FILE: Final[Path] = REPO_ROOT / ".agents" / "skills" / "ship" / "SKILL.md"
+EXPECTED_SHIP_PROMPTS: Final[frozenset[str]] = frozenset(
+    {
+        "ticket-route.md",
+        "ticket-investigate.md",
+        "ticket-plan.md",
+        "ticket-implement.md",
+        "ticket-review.md",
+    }
+)
 
 STATUSES: Final = frozenset({"frozen", "dev"})
 SOURCE_SUFFIXES: Final = frozenset({".md", ".py", ".json"})
@@ -173,3 +188,44 @@ class SdlcVersionTests:
         for name, matches in naming.items():
             for match in matches:
                 assert (REPO_ROOT / match.group(0)).exists(), f"{name} names a missing path {match.group(0)}"
+
+
+class ShipBundleTests:
+    """The unversioned ship bundle is self-contained, documents stage.json contracts, and has valid links."""
+
+    def test_ship_bundle_directories_and_skill_exist(self) -> None:
+        assert SHIP_PROMPTS_DIR.is_dir()
+        assert SHIP_SCRIPTS_DIR.is_dir()
+        assert SHIP_TESTS_DIR.is_dir()
+        assert SHIP_SKILL_FILE.is_file()
+        assert (REPO_ROOT / ".claude" / "skills" / "ship" / "SKILL.md").is_file()
+        prompts = {path.name for path in SHIP_PROMPTS_DIR.glob("*.md")}
+        assert prompts == EXPECTED_SHIP_PROMPTS
+
+    def test_ship_prompts_document_stage_envelope(self) -> None:
+        required_tokens = (".agentic/ship/stage.json", '"stage"', '"disposition"', '"body_sha"', '"head_sha"')
+        for prompt_name in sorted(EXPECTED_SHIP_PROMPTS):
+            text = (SHIP_PROMPTS_DIR / prompt_name).read_text(encoding="utf-8")
+            for token in required_tokens:
+                assert token in text, f"{prompt_name} is missing required stage envelope token {token}"
+
+    def test_ship_bundle_references_no_versioned_sdlc_bundle(self) -> None:
+        ship_files = [*_bundle_files(SHIP_PROMPTS_DIR), SHIP_SKILL_FILE]
+        offenders = [
+            (path.relative_to(REPO_ROOT).as_posix(), match.group(0))
+            for path in ship_files
+            for match in VERSION_REF.finditer(path.read_text(encoding="utf-8"))
+        ]
+        assert not offenders, f"ship bundle references versioned sdlc paths: {offenders}"
+
+    def test_ship_bundle_links_resolve_within_repository(self) -> None:
+        markdown_files = [*sorted(SHIP_PROMPTS_DIR.glob("*.md")), SHIP_SKILL_FILE]
+        for path in markdown_files:
+            targets = _link_targets(path)
+            assert targets, f"{path.relative_to(REPO_ROOT)} has no relative links"
+            for target in targets:
+                assert target.exists(), f"{path.relative_to(REPO_ROOT)} links to missing path {target}"
+                assert target.is_relative_to(REPO_ROOT), f"{path.relative_to(REPO_ROOT)} links outside repo: {target}"
+                assert _version_of(target) in {None, "ship"}, (
+                    f"{path.relative_to(REPO_ROOT)} links into another sdlc bundle: {target}"
+                )
