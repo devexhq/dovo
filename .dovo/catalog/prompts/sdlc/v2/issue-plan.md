@@ -75,6 +75,9 @@ Write `.agentic/plan.json` alongside the markdown. It is the only place the open
       "challenge_answer": "",
       "challenge_details": [],
       "recommendation": "assumed",
+      "needs_human": true,
+      "human_reason": "tradeoff",
+      "recommendation_grounding": ["`dovo worktree list` hides removed worktrees (`worktree_list.py:41`)."],
       "alternatives": ["Show them with a `discarded` status column."],
       "phases": [1],
       "blocks": []
@@ -119,7 +122,10 @@ Write `.agentic/plan.json` alongside the markdown. It is the only place the open
   - `challenged`: `false` when the planner writes the question. The `fold-challenges` step sets it to `true` when the plan challenge disputes the assumed answer.
   - `challenge_answer`: `""`, until `fold-challenges` writes the answer the challenge proposes, one line of at most 200 characters.
   - `challenge_details`: `[]`, until `fold-challenges` writes the challenger's case here in the same caps as `details`.
-  - `recommendation`: `"assumed"`, until `fold-challenges` weighs a challenge and may set it to `"challenge"`. A question nobody answers settles to the recommended answer.
+  - `needs_human`: a required boolean, false exactly for `human_reason: "routine"`. A departure from an issue outcome/decision, an unsettled trade-off, or no grounded recommendation requires a person; prefer `departure`, then `tradeoff`, then `ungrounded` when several apply. Explain the classification with evidence in `details`, rather than repeating its label. Never infer classification from an absent field.
+  - `human_reason`: `"routine"`, `"departure"`, `"tradeoff"` or `"ungrounded"`. Reclassify changed questions after grounding, including challenge/finding folds, in both issue and slice modes. A recommendation alone does not make a departure or unsettled trade-off routine.
+  - `recommendation`: `"assumed"`, `"challenge"` only when challenged, or `"none"` when no recommendation can be grounded.
+  - `recommendation_grounding`: evidence for the recommended answer, under the `details` bullet caps, nonempty for `assumed`/`challenge`, and `[]` for `none`. Routine questions need a grounded recommendation; `ungrounded` requires `none`. Departure/tradeoff questions may recommend a grounded answer or `none`. Required questions always need explicit answers.
   - `alternatives`: the other options, one line each (`[]` when none), never the assumed or the challenge's answer.
   - `phases`: the phase numbers whose plan changes if the answer changes. `blocks`: the slice ids whose scope changes, on an epic, and otherwise `[]`.
   - `replaces`, only on a question raised from a `to_confirm` prior decision (Step 1 or 1b): `{"id": "<its id>", "session": "<its session>"}`, copied from `.agentic/prior-decisions.json`.

@@ -257,7 +257,11 @@ def _cell(text: str) -> str:
 
 def _question_row(question: OpenQuestion) -> str:
     """Return the summary table's row for question."""
-    recommended = "assumed" if question.recommendation == "assumed" else f"challenge: {question.recommended}"
+    recommended = {
+        "assumed": "assumed",
+        "challenge": f"challenge: {question.recommended}",
+        "none": "no grounded recommendation",
+    }[question.recommendation]
     cells = [question.id, question.summary, question.assumed, "yes" if question.challenged else "no", recommended]
     return f"| {' | '.join(_cell(cell) for cell in cells)} |"
 
@@ -284,7 +288,7 @@ def render_summary(plan: dict[str, object], questions: list[OpenQuestion], decis
     ]
     if questions:
         lines += [
-            "A question you do not tick settles to its recommended answer.",
+            "Required questions need explicit answers; unanswered routine questions settle to their recommendations.",
             "",
             "| ID | Question | Assumed answer | Challenged | Recommended |",
             "|---|---|---|---|---|",

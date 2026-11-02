@@ -445,7 +445,9 @@ steps:
             - Address every finding in .agentic/plan-review.json, by id, as each one describes.
             - Addressing a finding may make an open question moot, change its assumed answer or
               raise a new one: remove, rewrite or add entries in plan.json `open_questions` to
-              match. Open questions live only in plan.json.
+              match. Open questions live only in plan.json. Re-ground each new or changed question
+              and update needs_human, human_reason and recommendation_grounding under issue-plan.md
+              Step 5; a recommendation alone never waives a departure or unsettled trade-off.
             - Keep .agentic/plan.json in the shape Step 5 of
               `.dovo/catalog/prompts/sdlc/v2/issue-plan.md` defines for slice mode, and in agreement with .agentic/plan.md. Never
               change its contract or slices, or the plan's Feature contract and Slices sections,
@@ -489,7 +491,8 @@ steps:
           message: >-
             Which open questions do you want to answer instead of accepting the planner's recommended
             answer? The attached summary gives each one's assumed answer and recommendation. A question
-            you do not tick settles to its recommended answer.
+            you do not tick settles to its recommendation only when routine; required questions
+            need explicit answers.
           artifact: plan-summary
           options_from:
             artifact: plan-questions

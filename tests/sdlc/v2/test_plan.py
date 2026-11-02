@@ -295,6 +295,9 @@ QUESTION = {
     "challenge_answer": "",
     "challenge_details": [],
     "recommendation": "assumed",
+    "needs_human": False,
+    "human_reason": "routine",
+    "recommendation_grounding": ["The existing worktree list follows this convention (worktree_list.py:41)."],
     "alternatives": ["Show them with a `discarded` status column."],
     "phases": [1],
     "blocks": [],
@@ -307,6 +310,9 @@ CHALLENGED = {
     "challenge_answer": "Filter in Sessions.list.",
     "challenge_details": ["JSON output skips the formatter (session_list.py:12).", "C1 cites it."],
     "recommendation": "challenge",
+    "needs_human": True,
+    "human_reason": "tradeoff",
+    "recommendation_grounding": ["JSON output skips the formatter (session_list.py:12)."],
     "alternatives": ["Filter in the formatter."],
     "replaces": {"id": "D-1", "session": "blueprint_plan01"},
 }
@@ -328,6 +334,25 @@ class PlanQuestionsTests:
         assert capsys.readouterr() == ("", "")
         assert sorted(path.name for path in (workspace / ".agentic").iterdir()) == ["plan.json"]
 
+    @pytest.mark.parametrize("reason", ["ungrounded", "departure", "tradeoff"])
+    def test_questions_accepts_a_human_question_without_a_grounded_recommendation(
+        self, reason: str, workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        question = {
+            **QUESTION,
+            "needs_human": True,
+            "human_reason": reason,
+            "recommendation": "none",
+            "recommendation_grounding": [],
+        }
+        _write_plan(workspace, [question], [])
+
+        assert _questions(monkeypatch, "--summary", ".agentic/plan-summary.md") == 0
+
+        summary = (workspace / ".agentic/plan-summary.md").read_text(encoding="utf-8")
+        assert "| no | no grounded recommendation |" in summary
+        assert "Required questions need explicit answers" in summary
+
     def test_questions_writes_the_summary_of_questions_and_decisions(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -342,7 +367,7 @@ class PlanQuestionsTests:
             "\n"
             "## Open questions\n"
             "\n"
-            "A question you do not tick settles to its recommended answer.\n"
+            "Required questions need explicit answers; unanswered routine questions settle to their recommendations.\n"
             "\n"
             "| ID | Question | Assumed answer | Challenged | Recommended |\n"
             "|---|---|---|---|---|\n"
@@ -395,6 +420,61 @@ class PlanQuestionsTests:
                 id="missing-fields",
             ),
             pytest.param(
+                {key: value for key, value in QUESTION.items() if key != "needs_human"},
+                "Open question OQ-1 has no needs_human.",
+                id="missing-human-classification",
+            ),
+            pytest.param(
+                {key: value for key, value in QUESTION.items() if key != "human_reason"},
+                "Open question OQ-1 has no human_reason.",
+                id="missing-human-reason",
+            ),
+            pytest.param(
+                {key: value for key, value in QUESTION.items() if key != "recommendation_grounding"},
+                "Open question OQ-1 has no recommendation_grounding.",
+                id="missing-recommendation-grounding",
+            ),
+            pytest.param(
+                {**QUESTION, "needs_human": "false"},
+                "Open question OQ-1 has needs_human 'false'; it must be true or false.",
+                id="nonboolean-human-classification",
+            ),
+            pytest.param(
+                {**QUESTION, "human_reason": "unclear"},
+                "Open question OQ-1 has human_reason 'unclear'; it must be routine, departure, tradeoff, ungrounded.",
+                id="unknown-human-reason",
+            ),
+            pytest.param(
+                {**QUESTION, "needs_human": True},
+                "Open question OQ-1 needs_human contradicts human_reason 'routine'.",
+                id="required-routine",
+            ),
+            pytest.param(
+                {**QUESTION, "human_reason": "departure"},
+                "Open question OQ-1 needs_human contradicts human_reason 'departure'.",
+                id="automatic-departure",
+            ),
+            pytest.param(
+                {**QUESTION, "recommendation_grounding": []},
+                "Open question OQ-1 recommendation and recommendation_grounding disagree.",
+                id="ungrounded-recommendation",
+            ),
+            pytest.param(
+                {**QUESTION, "recommendation": "none"},
+                "Open question OQ-1 recommendation and recommendation_grounding disagree.",
+                id="none-with-grounding",
+            ),
+            pytest.param(
+                {**QUESTION, "recommendation": "none", "recommendation_grounding": []},
+                "Open question OQ-1 is routine but has no grounded recommendation.",
+                id="automatic-without-recommendation",
+            ),
+            pytest.param(
+                {**QUESTION, "needs_human": True, "human_reason": "ungrounded"},
+                "Open question OQ-1 is ungrounded but has a recommendation.",
+                id="ungrounded-with-recommendation",
+            ),
+            pytest.param(
                 {**QUESTION, "summary": "x" * 121},
                 "Open question OQ-1 summary is 121 characters long; at most 120.",
                 id="summary-too-long",
@@ -437,7 +517,7 @@ class PlanQuestionsTests:
             ),
             pytest.param(
                 {**QUESTION, "recommendation": "challenged"},
-                "Open question OQ-1 has recommendation 'challenged'; it must be assumed or challenge.",
+                "Open question OQ-1 has recommendation 'challenged'; it must be assumed, challenge or none.",
                 id="unknown-recommendation",
             ),
             pytest.param(

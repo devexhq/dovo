@@ -1,6 +1,6 @@
 # fold-answers
 
-Settle every open question of a plan written by `issue-plan`: a slice plan, or in issue mode the plan that slices an issue. The human has just been asked which open questions to answer: each one they ticked is settled by their answer, and each one they left is settled by the planner's recommended answer: the assumed one, or the challenge's. After this prompt the plan has no open questions, only decisions that say who settled them. The blueprint's next step, `check-questions`, stops the run if any question is left open or any decision is malformed.
+Settle every open question of a plan written by `issue-plan`: a slice plan, or in issue mode the plan that slices an issue. The human has just been asked which open questions to answer. Required questions always need an explicit answer, including explicit acceptance of a recommendation; unticked routine questions may use the planner's grounded recommendation. After this prompt the plan has no open questions, only decisions that say who settled them. The blueprint's next step, `check-questions`, stops the run if any question is left open or any decision is malformed.
 
 The blueprint gives you the ticked question ids, the human's answers (one comment, usually written as `OQ-1: <answer>`) and the slice id, or says the plan slices the issue in issue mode. The plan's issue is the slice's issue, the one the blueprint says the slice is worked on (its own issue when it has one, otherwise the sliced issue), or in issue mode the issue itself. The decisions stay in plan.json; nothing posts them to the issue.
 
@@ -12,10 +12,12 @@ The blueprint gives you the ticked question ids, the human's answers (one commen
 
 ## 1. Settle each question
 
+Before changing either file, preflight every question with `needs_human: true` and every ticked question: each needs an explicit answer in the comment, including explicit acceptance. If any answer is missing, settle nothing in either file, leave every question open and report the unanswered ids. Selection alone is not an answer, and `recommendation: none` never authorizes default settlement.
+
 For every entry of `plan.json` `open_questions`, in order:
 
-- **Ticked:** rewrite the plan against the human's answer, as if it had been the plan's answer from the start: every phase, test line and trap it changes (in issue mode, every slice and contract section). The decision is the answer as planned, with `settled_by` `"human"` and `answer` holding the human's words for that question, unedited. If the comment gives no answer for a ticked question, settle nothing in either file and report which question has no answer. `check-questions` then stops the run with that question still open.
-- **Not ticked:** the question settles to its recommended answer, with no `answer`. When `recommendation` is `"assumed"`, the plan already holds it: the decision is the question's `assumed` answer, with `settled_by` `"assumed_accepted"`. When it is `"challenge"`, rewrite the plan against `challenge_answer` as for a ticked question; the decision is that answer, with `settled_by` `"challenge_accepted"`.
+- **Explicitly answered (required or ticked):** rewrite the plan against the human's answer, as if it had been the plan's answer from the start: every phase, test line and trap it changes (in issue mode, every slice and contract section). The decision is the answer as planned, with `settled_by` `"human"` and `answer` holding the human's words for that question, unedited. If the comment gives no answer for a ticked question, settle nothing in either file and report which question has no answer. `check-questions` then stops the run with that question still open.
+- **Routine and not ticked:** the question settles to its recommended answer, with no `answer`. When `recommendation` is `"assumed"`, the plan already holds it: the decision is the question's `assumed` answer, with `settled_by` `"assumed_accepted"`. When it is `"challenge"`, rewrite the plan against `challenge_answer` as for a ticked question; the decision is that answer, with `settled_by` `"challenge_accepted"`.
 
 ## 2. Record the decisions
 

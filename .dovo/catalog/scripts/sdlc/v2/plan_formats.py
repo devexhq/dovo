@@ -20,9 +20,12 @@ the assumed answer; `challenge_answer` then holds the answer the challenge
 proposes, one line of at most 200 characters, and `challenge_details` the
 challenger's case, in the same caps as `details`. An unchallenged question has
 `challenge_answer` `""` and `challenge_details` `[]`. `alternatives` lists the
-other options, one line each. `recommendation` is `assumed` or `challenge`,
-the answer the planner recommends, which settles the question unless a person
-answers it; only a challenged question recommends the challenge. `phases` are
+other options, one line each. `needs_human` is false exactly when `human_reason`
+is `routine`; `departure`, `tradeoff` and `ungrounded` require an explicit answer.
+`recommendation` is `assumed`, `challenge` or `none`; a recommended answer has
+nonempty `recommendation_grounding` in the same bullet caps as `details`, while
+`none` has no grounding and always needs a person. Only a challenged question
+recommends the challenge. `phases` are
 the phase numbers and `blocks` the slice ids whose plan changes with the
 answer, and the optional `replaces` names the prior decision the question asks
 to confirm again. A question has no other field.
@@ -109,13 +112,17 @@ QUESTION_FIELDS = frozenset(
         "challenge_answer",
         "challenge_details",
         "recommendation",
+        "needs_human",
+        "human_reason",
+        "recommendation_grounding",
         "alternatives",
         "phases",
         "blocks",
         "replaces",
     }
 )
-RECOMMENDATIONS = ("assumed", "challenge")
+RECOMMENDATIONS = ("assumed", "challenge", "none")
+HUMAN_REASONS = ("routine", "departure", "tradeoff", "ungrounded")
 SUMMARY_CAP = 120
 ASSUMED_CAP = 200
 BULLET_CAP = 140
@@ -333,13 +340,18 @@ class OpenQuestion:
     challenge_answer: str
     challenge_details: tuple[str, ...]
     recommendation: str
+    needs_human: bool
+    human_reason: str
+    recommendation_grounding: tuple[str, ...]
     alternatives: tuple[str, ...]
     phases: tuple[int, ...]
     blocks: tuple[str, ...]
 
     @property
-    def recommended(self) -> str:
-        """Return the answer the planner recommends: the assumed one, or the challenge's."""
+    def recommended(self) -> str | None:
+        """Return the recommended answer, or None when no recommendation is grounded."""
+        if self.recommendation == "none":
+            return None
         return self.assumed if self.recommendation == "assumed" else self.challenge_answer
 
     @classmethod
@@ -362,7 +374,7 @@ class OpenQuestion:
             raise FormatError(f"{owner} has challenged {challenged!r}; it must be true or false.")
         recommendation = question.get("recommendation")
         if recommendation not in RECOMMENDATIONS:
-            raise FormatError(f"{owner} has recommendation {recommendation!r}; it must be assumed or challenge.")
+            raise FormatError(f"{owner} has recommendation {recommendation!r}; it must be assumed, challenge or none.")
         entry = cls(
             id=ident,
             summary=_capped(_text(question, "summary", owner), SUMMARY_CAP, owner, "summary"),
@@ -372,6 +384,9 @@ class OpenQuestion:
             challenge_answer=_challenge_answer(question, challenged=challenged, owner=owner),
             challenge_details=_bullets(question, "challenge_details", owner),
             recommendation=str(recommendation),
+            needs_human=_needs_human(question, owner),
+            human_reason=_text(question, "human_reason", owner),
+            recommendation_grounding=_bullets(question, "recommendation_grounding", owner),
             alternatives=tuple(
                 _one_line(item, owner, "alternatives item") for item in _texts(question, "alternatives", owner)
             ),
@@ -380,7 +395,25 @@ class OpenQuestion:
         )
         _replaces(question, owner)
         entry.check_challenge(owner)
+        entry.check_classification(owner)
         return entry
+
+    def check_classification(self, owner: str) -> None:
+        """Refuse missing grounding or a classification that contradicts its recommendation.
+
+        Raises:
+            FormatError: the reason, human requirement or grounding contradicts the question.
+        """
+        if self.human_reason not in HUMAN_REASONS:
+            raise FormatError(f"{owner} has human_reason {self.human_reason!r}; it must be {', '.join(HUMAN_REASONS)}.")
+        if self.needs_human != (self.human_reason != "routine"):
+            raise FormatError(f"{owner} needs_human contradicts human_reason {self.human_reason!r}.")
+        if (self.recommendation == "none") != (not self.recommendation_grounding):
+            raise FormatError(f"{owner} recommendation and recommendation_grounding disagree.")
+        if self.human_reason == "routine" and self.recommendation == "none":
+            raise FormatError(f"{owner} is routine but has no grounded recommendation.")
+        if self.human_reason == "ungrounded" and self.recommendation != "none":
+            raise FormatError(f"{owner} is ungrounded but has a recommendation.")
 
     def check_challenge(self, owner: str) -> None:
         """Refuse challenge fields that disagree with challenged.
@@ -392,11 +425,23 @@ class OpenQuestion:
         if not self.challenged:
             if self.challenge_details:
                 raise FormatError(f"{owner} has challenge_details but challenged is false.")
-            if self.recommendation != "assumed":
+            if self.recommendation == "challenge":
                 raise FormatError(f"{owner} recommends the challenge but challenged is false.")
             return
         if not self.challenge_details:
             raise FormatError(f"{owner} is challenged but has no challenge_details.")
+
+
+def _needs_human(raw: dict[str, object], owner: str) -> bool:
+    """Return the explicit boolean human requirement.
+
+    Raises:
+        FormatError: needs_human is not a boolean.
+    """
+    value = raw.get("needs_human")
+    if not isinstance(value, bool):
+        raise FormatError(f"{owner} has needs_human {value!r}; it must be true or false.")
+    return value
 
 
 def _challenge_answer(raw: dict[str, object], *, challenged: bool, owner: str) -> str:
