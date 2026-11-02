@@ -59,6 +59,24 @@ class ExpressionTokenizerTests:
         assert tokenize("steps.in.status") == (Token(TokenKind.NAME, "steps.in.status", 1, ("steps", "in", "status")),)
         assert tokenize('steps.a["in"]') == (Token(TokenKind.NAME, 'steps.a["in"]', 1, ("steps", "a", "in")),)
 
+    def test_integer_bracket_index_is_a_name_segment(self) -> None:
+        assert tokenize("steps[0].status") == (Token(TokenKind.NAME, "steps[0].status", 1, ("steps", 0, "status")),)
+        assert tokenize("steps[-1].id") == (Token(TokenKind.NAME, "steps[-1].id", 1, ("steps", -1, "id")),)
+        assert tokenize("steps['0'].id") == (Token(TokenKind.NAME, "steps['0'].id", 1, ("steps", "0", "id")),)
+        assert tokenize("steps[ 0 ]") == (
+            Token(TokenKind.NAME, "steps", 1, ("steps",)),
+            Token(TokenKind.SYMBOL, "[", 6, "["),
+            Token(TokenKind.NUMBER, "0", 8, 0),
+            Token(TokenKind.SYMBOL, "]", 10, "]"),
+        )
+        assert tokenize("x in[0]") == (
+            Token(TokenKind.NAME, "x", 1, ("x",)),
+            Token(TokenKind.OPERATOR, "in", 3, ComparisonOperator.IN),
+            Token(TokenKind.SYMBOL, "[", 5, "["),
+            Token(TokenKind.NUMBER, "0", 6, 0),
+            Token(TokenKind.SYMBOL, "]", 7, "]"),
+        )
+
     def test_run_of_not_words_reads_only_the_last_as_not_in(self) -> None:
         tokens = tokenize("not " * 300 + "in [1]")
 

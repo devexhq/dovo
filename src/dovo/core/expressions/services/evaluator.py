@@ -1,5 +1,6 @@
 """Evaluate an expression by its value's truthiness, reporting the comparison or operand that decided it.
 
+evaluate_expression reports how an expression passed or failed; evaluate_value returns the value itself.
 '&&' and '||' short-circuit: the side not taken is never evaluated, so its paths are never resolved.
 """
 
@@ -55,6 +56,15 @@ def evaluate_expression(expression: Expression, resolver: Resolver) -> Evaluatio
     value, deciding = _evaluate(expression, resolver)
     passed = is_truthy(value)
     return Evaluation(passed, deciding.resolved, deciding.actual, deciding.expected, _detail(passed, deciding.actual))
+
+
+def evaluate_value(expression: Expression, resolver: Resolver) -> object:
+    """Return expression's value, reading each path through resolver.
+
+    A literal's value; what resolver reads for a path, ABSENT included; a comparison's or a negation's bool; and for
+    '&&' and '||' the value of the side that decided it, the other side never evaluated.
+    """
+    return _evaluate(expression, resolver)[0]
 
 
 def is_truthy(value: object) -> bool:

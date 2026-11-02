@@ -20,20 +20,23 @@ def _parse_json(text: str) -> object:
         return _UNPARSABLE
 
 
-def _follow_path(root: object, path: Sequence[str]) -> StepOutputValue | None:
-    """Follow path through nested JSON objects from root; None when a segment is missing or crosses a non-object."""
+def _follow_path(root: object, path: Sequence[str | int]) -> StepOutputValue | None:
+    """Follow path through nested JSON objects from root; None when a segment is missing, crosses a non-object or is an int."""
     current = root
     for segment in path:
-        if not isinstance(current, dict) or segment not in current:
+        if isinstance(segment, int) or not isinstance(current, dict) or segment not in current:
             return None
         current = current[segment]
     return StepOutputValue(current)
 
 
 def resolve_step_output(
-    outputs: Mapping[str, str], stdout: str, key: str, path: Sequence[str] = ()
+    outputs: Mapping[str, str], stdout: str, key: str, path: Sequence[str | int] = ()
 ) -> StepOutputValue | None:
-    """Return the recorded output for key, else key of the stdout JSON object, following path through its parsed JSON; None when not found."""
+    """Return the recorded output for key, else key of the stdout JSON object, following path through its parsed JSON; None when not found.
+
+    path matches object keys only, so an int segment, an unquoted bracket index, finds nothing.
+    """
     if key in outputs:
         recorded = outputs[key]
         return _follow_path(_parse_json(recorded), path) if path else StepOutputValue(recorded)

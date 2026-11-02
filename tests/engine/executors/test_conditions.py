@@ -242,6 +242,20 @@ class ConditionExpressionEvaluatorTests:
 
         assert (result.resolved, result.passed, result.detail) == (False, False, "FALSE (not found)")
 
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            pytest.param('steps[0].status == "completed"', id="step_by_position"),
+            pytest.param('steps.build.outputs.files[0] == "a"', id="index_in_an_output_path"),
+        ],
+    )
+    def test_bracket_index_finds_no_value(self, expression: str) -> None:
+        build = _build_result(outputs={"files": '["a"]'})
+
+        result = evaluate_condition(expression, step_results={"build": build})
+
+        assert (result.passed, result.resolved, result.detail) == (False, False, "FALSE (not found)")
+
 
 def _build_result(
     *, step_id: str = "build", exit_code: int = 0, stdout: str = "", outputs: dict[str, str] | None = None

@@ -231,3 +231,16 @@ class ConditionExpressionValidatorTests:
     )
     def test_condition_valid_today_reports_no_errors(self, expression: str, step_id: str) -> None:
         assert validate_condition_expression(expression, known_step_ids={step_id}) == []
+
+    @pytest.mark.parametrize(
+        ("expression", "operand"),
+        [
+            pytest.param('steps[0].status == "x"', "steps[0].status", id="step_by_position"),
+            pytest.param('steps.a.outputs.files[0] == "x"', "steps.a.outputs.files[0]", id="index_in_an_output_path"),
+            pytest.param("x[1] == steps.a.stdout", "x[1]", id="index_on_a_word"),
+        ],
+    )
+    def test_bracket_index_is_rejected(self, expression: str, operand: str) -> None:
+        assert validate_condition_expression(expression, known_step_ids={"a"}) == [
+            f"Operand '{operand}' in until condition '{expression}' holds a bracket index, which a condition cannot read."
+        ]

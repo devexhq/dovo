@@ -23,7 +23,7 @@ class Token:
     """One token: its kind, its source text, its 1-based column and its value.
 
     The value is the unescaped text of a string, the int or float of a number, the (root, *segments) tuple of a
-    name, the text of a word, the ComparisonOperator of an operator, or the text of a symbol: '&&', '||', '!', '(',
+    name (each segment a str, or an int for an unquoted bracket index such as '[0]'), the text of a word, the ComparisonOperator of an operator, or the text of a symbol: '&&', '||', '!', '(',
     ')', '[', ']' or ','.
     """
 
@@ -60,10 +60,12 @@ class Path:
     """A name read from a namespace: its root, its segments and its source text.
 
     A bracket key is one segment, so 'steps.a.outputs["x.y"]' has root 'steps' and segments ('a', 'outputs', 'x.y').
+    An unquoted bracket index is an int segment, so 'steps[-1].status' has segments (-1, 'status') while
+    "steps['0'].status" has ('0', 'status').
     """
 
     root: str
-    segments: tuple[str, ...]
+    segments: tuple[str | int, ...]  # an int is an unquoted bracket index: 'steps[-1].status' -> (-1, 'status')
     text: str
 
 
