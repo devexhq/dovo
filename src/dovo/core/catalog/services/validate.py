@@ -17,6 +17,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
 from dovo.common.models import Remediation
 from dovo.core.catalog.definitions.blueprint import STEP_KIND_TAGS, BlueprintDefinition
+from dovo.core.catalog.definitions.placeholders import placeholder_syntax_errors
 from dovo.core.catalog.definitions.scopes import condition_reference_errors
 from dovo.core.catalog.exceptions import CatalogError, CatalogValidateFindings
 from dovo.core.catalog.models import CatalogItemType
@@ -306,7 +307,8 @@ def _semantic_findings(item_type: str, definition: object, repo_root: Path) -> t
     """Return (errors, warnings) from the semantic audits appropriate to item_type."""
     if item_type == CatalogItemType.STEP.value:
         step_errors, step_warnings = _audit_script_paths([definition], repo_root)
-        return [*_audit_catalog_step_when(definition), *step_errors], step_warnings
+        placeholder_errors = placeholder_syntax_errors([definition])
+        return [*_audit_catalog_step_when(definition), *placeholder_errors, *step_errors], step_warnings
 
     steps = getattr(definition, "steps", None) or []
     inputs = getattr(definition, "inputs", None) or {}
@@ -315,6 +317,7 @@ def _semantic_findings(item_type: str, definition: object, repo_root: Path) -> t
     errors = [*_audit_duplicate_step_ids(flat_steps), *_audit_duplicate_input_aliases(inputs)]
     if isinstance(definition, BlueprintDefinition):
         errors.extend(condition_reference_errors(definition.steps))
+    errors.extend(placeholder_syntax_errors(flat_steps))
     script_errors, warnings = _audit_script_paths(flat_steps, repo_root)
     errors.extend(script_errors)
 

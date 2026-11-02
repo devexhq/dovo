@@ -215,7 +215,7 @@ def interpolate_string(template: str, providers: Sequence[NamespaceProvider]) ->
         return template
     parts: list[str] = []
     position = 0
-    for start, end, body in _placeholders(template):
+    for start, end, body in find_placeholders(template):
         parts.append(template[position:start])
         parts.append(_replacement(template[start:end], body, providers))
         position = end
@@ -246,7 +246,7 @@ class _PlaceholderResolver:
         return ABSENT if value is UNDEFINED else value
 
 
-def _placeholders(template: str) -> Iterator[tuple[int, int, str]]:
+def find_placeholders(template: str) -> Iterator[tuple[int, int, str]]:
     """Yield the start, end and body of each placeholder: from `{{`, with a `$` straight before it, past its `}}`."""
     position = template.find("{{")
     while position != -1:
@@ -303,6 +303,20 @@ def _lookup(path: Path, providers: Sequence[NamespaceProvider]) -> object:
 def _render(value: object) -> str:
     """Render value as placeholder text: the empty string for ABSENT, else as recorded outputs hold it."""
     return "" if value is ABSENT else render_step_output(value)
+
+
+def placeholder_texts(step: object) -> list[tuple[str, str]]:
+    """Return (field, text) for each string run time interpolates in step, in field order.
+
+    The order is 'command', 'prompt', 'script_path' and 'run', each env value as 'env.<key>', then an ask step's
+    'interaction.message'. A field that is missing or not a non-empty string is left out.
+    """
+    texts = [(field_name, getattr(step, field_name, None)) for field_name in _INTERPOLATED_FIELDS]
+    env = getattr(step, "env", None)
+    if isinstance(env, dict):
+        texts.extend((f"env.{key}", value) for key, value in env.items())
+    texts.append(("interaction.message", getattr(getattr(step, "interaction", None), "message", None)))
+    return [(field_name, text) for field_name, text in texts if isinstance(text, str) and text]
 
 
 def _interpolated_field_updates(step: BaseModel, providers: Sequence[NamespaceProvider]) -> dict[str, object]:

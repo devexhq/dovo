@@ -60,6 +60,7 @@ FIXTURES = [
         [{"id": "a", "run": "true"}, {"id": "b", "run": "true", "when": ["steps.a.status == inputs.mode"]}],
         id="when_inputs_root",
     ),
+    pytest.param([{"id": "a", "run": "echo {{ a b }} ${{ c == }}"}], id="placeholder_syntax_error"),
 ]
 
 

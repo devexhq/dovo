@@ -45,7 +45,7 @@ dovo step delete <sha_or_name> [--force] [--format terminal|json]
 
 ### `dovo step validate`
 
-Validates a step definition (YAML syntax, schema, and semantic invariants such as an unsafe `script_path`) without executing it.
+Validates a step definition (YAML syntax, schema, and semantic invariants such as an unsafe `script_path` or a placeholder that is not a valid expression) without executing it.
 
 ```bash
 dovo step validate <target> [--format terminal|json]
