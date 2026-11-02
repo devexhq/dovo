@@ -4,7 +4,9 @@
 Reads the pull request's dovo-review comment by the authenticated `gh` user,
 takes the dovo session on its `Dovo session:` header line, downloads that
 session's plan, plan-questions, review and implementation-report artifacts into
-.agentic/, checks out the pull request's head commit, records its head branch
+.agentic/, copies the run's own reply scripts into .agentic/tools/ so later
+pr-fix steps run the base's scripts rather than the pull request's, checks
+out the pull request's head commit, records its head branch
 in .agentic/pr-branch and its URL in .agentic/pr-url, and writes
 .agentic/feedback.json: every unresolved review thread, with its thread id;
 every finding in the body of the pull request review the dovo-review
@@ -20,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -45,6 +48,9 @@ FEEDBACK_JSON = AGENTIC_DIR / "feedback.json"
 TRIAGE_JSON = AGENTIC_DIR / "triage.json"
 PR_BRANCH = AGENTIC_DIR / "pr-branch"
 PR_URL = AGENTIC_DIR / "pr-url"
+TOOLS_DIR = AGENTIC_DIR / "tools"
+# reply_threads.py and the modules it imports, run by pr-fix after the head is checked out.
+TOOL_SCRIPTS = ("reply_threads.py", "pr_feedback.py", "publish_review.py")
 RESTORED_ARTIFACTS = ("plan", "plan-questions", "review", "implementation-report")
 SUMMARY_CHARS = 200
 NO_AUTHOR_LABELS = {"review_finding": "dovo-review", "check": "ci"}
@@ -453,6 +459,17 @@ def download_artifacts(session: str) -> None:
             raise PrFeedbackError(artifact_problem(session, name)) from error
 
 
+def copy_tools() -> None:
+    """Copy TOOL_SCRIPTS from this script's directory into TOOLS_DIR.
+
+    pr-fix's blueprint comes from the run's base, so the scripts its later steps run must too:
+    the pull request's head may predate a change the blueprint relies on.
+    """
+    TOOLS_DIR.mkdir(parents=True, exist_ok=True)
+    for name in TOOL_SCRIPTS:
+        shutil.copyfile(Path(__file__).parent / name, TOOLS_DIR / name)
+
+
 def check_out_head(number: int, head_branch: str, head: str, url: str) -> None:
     """Detach the worktree at the pull request's head commit, and record its head branch and URL.
 
@@ -485,6 +502,7 @@ def collect(pr: int) -> str:
     own = review_comment(comments, viewer, number)
     session = comment_session(own, number)
     download_artifacts(session)
+    copy_tools()
     check_out_head(number, str(view["headRefName"]), head, url)
     reviews = list_pr_nodes(host, repository, number, REVIEWS_QUERY, "reviews")
     # The findings line links the review this comment's findings were posted in; `**Findings:** none` links none.

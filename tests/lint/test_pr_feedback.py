@@ -759,6 +759,8 @@ class PrFeedbackTests:
         assert (agentic / "pr-url").read_text(encoding="utf-8") == f"{PR_URL}\n"
         assert ("git", "switch", "-q", "--detach", HEAD) in ran
         assert not (agentic / "review.json").exists()
+        for name in ("reply_threads.py", "pr_feedback.py", "publish_review.py"):
+            assert (agentic / "tools" / name).read_bytes() == (REPO_ROOT / "scripts" / name).read_bytes()
 
     def test_main_lists_no_findings_when_comment_has_none(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
