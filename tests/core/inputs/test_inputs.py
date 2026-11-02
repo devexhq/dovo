@@ -218,6 +218,7 @@ class InputsPackageTests:
             "interpolate_string",
             "parse_cli_input_args",
             "placeholder_texts",
+            "read_json_path",
             "render_step_output",
             "resolve_inputs",
             "resolve_step_output",

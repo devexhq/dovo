@@ -7,7 +7,7 @@ from collections.abc import Sequence
 
 import pytest
 
-from dovo.core.inputs import StepOutputValue, render_step_output, resolve_step_output
+from dovo.core.inputs import StepOutputValue, read_json_path, render_step_output, resolve_step_output
 
 
 class StepOutputResolverTests:
@@ -80,3 +80,21 @@ class StepOutputResolverTests:
     )
     def test_render_step_output(self, value: object, rendered: str) -> None:
         assert render_step_output(value) == rendered
+
+
+class ReadJsonPathTests:
+    @pytest.mark.parametrize(
+        ("text", "path", "expected"),
+        [
+            pytest.param('{"done": true}', ("done",), StepOutputValue(True), id="object_key"),
+            pytest.param('{"report": {"score": 85}}', ("report", "score"), StepOutputValue(85), id="nested_key"),
+            pytest.param("[1, 2]", (), StepOutputValue([1, 2]), id="empty_path_is_the_parsed_value"),
+            pytest.param('{"done": true}', ("missing",), None, id="missing_key"),
+            pytest.param('{"0": "zero"}', (0,), None, id="int_segment"),
+            pytest.param("plain text", ("done",), None, id="not_json"),
+        ],
+    )
+    def test_path_reaches_into_parsed_json(
+        self, text: str, path: Sequence[str | int], expected: StepOutputValue | None
+    ) -> None:
+        assert read_json_path(text, path) == expected

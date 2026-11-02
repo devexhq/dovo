@@ -157,6 +157,8 @@ A `when` list holds condition expressions written exactly as loop `until` condit
 - an `artifacts.<name>.<field>` operand names no field (`content`, `digest`, `dir` or `revision`), as `artifacts.plan` does;
 - an operand reads an artifact that no step of the blueprint publishes through its `artifacts:`. A step anywhere in the blueprint counts, inside a loop's `do` or an `if` branch too, but on a `uses:` step only the `artifacts:` written in the blueprint.
 
+An `artifacts.<name>.<field>` operand reads the latest revision of `<name>` published in the current session, when the expression is evaluated. The field is the first of `content`, `digest`, `dir` or `revision` after the name, so a name may contain dots, and every field is text: `revision` is `"2"`, which compares as a number in `artifacts.plan.revision >= 2`. A path after `content` reads the content as JSON, as a path after an `outputs` key does: `artifacts.verdict.content.done == true` is true when the artifact's file holds `{"done": true}`. The operand has no value, and never fails the run, when no step has published the artifact yet, it reads `content` of an artifact that is not one UTF-8 file of at most 65536 bytes, the content is not JSON under a path, or a path follows `revision`, `digest` or `dir`.
+
 The list is evaluated just before the step or loop would start. A `when` inside `do` is evaluated again on every iteration, against the steps of the current iteration. When every expression is true the step runs normally. Otherwise it is skipped: it runs nothing and has no attempt, outputs, artifacts or step logs, a skipped `ask` shows no prompt and does not pause, and a skipped loop runs no iteration. A skip counts as successful, so a run whose remaining steps are all skipped ends `completed`. A step skipped before a run paused stays skipped when the run resumes.
 
 The skip records the first failing expression, in the order written, and its cause:
@@ -164,10 +166,10 @@ The skip records the first failing expression, in the order written, and its cau
 | Cause | Meaning |
 |---|---|
 | `when_false` | The comparison that decided the expression resolved, and the expression was false. |
-| `when_unresolved` | A step operand of the comparison that decided the expression had no value. |
+| `when_unresolved` | A step or artifact operand of the comparison that decided the expression had no value. |
 
 !!! note
-    A step operand has no value when its step was skipped or has not run, or when the step's result lacks the field or `outputs` key, such as a misspelled one; an `outputs` value that is JSON `null` is a value. A later comparison that references a skipped step is false, and a placeholder that references one interpolates to an empty string, as for a step that never ran.
+    A step operand has no value when its step was skipped or has not run, or when the step's result lacks the field or `outputs` key, such as a misspelled one; an `outputs` value that is JSON `null` is a value. An artifact operand has no value in the cases listed above, such as an artifact a later step publishes. A later comparison that references a skipped step is false, and a placeholder that references one interpolates to an empty string, as for a step that never ran.
 
 !!! warning
     A step catalog file cannot set `when`: its step references can only be checked in the blueprint that uses it. Set `when` on the blueprint step that `uses` the catalog step instead.

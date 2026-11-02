@@ -156,7 +156,9 @@ class LoopPolicyEvaluateConditionsTests:
     def test_evaluate_conditions_returns_one_result_per_expression_in_order(self) -> None:
         expressions = ["steps.a.exit_code == 0", "steps.b.exit_code == 0"]
 
-        results = LoopPolicy.evaluate_conditions(expressions, {"a": _result("a"), "b": _result("b", 1)}, 1)
+        results = LoopPolicy.evaluate_conditions(
+            expressions, {"a": _result("a"), "b": _result("b", 1)}, 1, artifact_store=None
+        )
 
         assert [(result.expression, result.passed) for result in results] == [
             ("steps.a.exit_code == 0", True),
@@ -164,8 +166,10 @@ class LoopPolicyEvaluateConditionsTests:
         ]
 
     def test_expression_referencing_absent_step_returns_failed_result(self) -> None:
-        missing = LoopPolicy.evaluate_conditions(["steps.ghost.exit_code == 0"], {"a": _result("a")}, 1)
-        by_index = LoopPolicy.evaluate_conditions(["iteration.index >= 2"], {}, 2)
+        missing = LoopPolicy.evaluate_conditions(
+            ["steps.ghost.exit_code == 0"], {"a": _result("a")}, 1, artifact_store=None
+        )
+        by_index = LoopPolicy.evaluate_conditions(["iteration.index >= 2"], {}, 2, artifact_store=None)
 
         assert [result.passed for result in missing] == [False]
         assert [result.passed for result in by_index] == [True]

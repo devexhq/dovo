@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from dovo.common.models import FailurePolicy
+from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.engine.executors import evaluate_condition
 from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
@@ -65,10 +66,17 @@ class LoopPolicy:
         until_expressions: Sequence[str],
         iteration_results: dict[str, StepResult],
         iteration_index: int,
+        *,
+        artifact_store: ArtifactStore | None,
     ) -> list[ConditionEvaluationResult]:
-        """Evaluate every `until` expression against the iteration's step results, in declaration order."""
+        """Evaluate every `until` expression against the iteration's step results and the session's artifacts, in declaration order."""
         return [
-            evaluate_condition(expression, iteration_index=iteration_index, step_results=iteration_results)
+            evaluate_condition(
+                expression,
+                iteration_index=iteration_index,
+                step_results=iteration_results,
+                artifact_store=artifact_store,
+            )
             for expression in until_expressions
         ]
 

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
 from dovo.core.agents import AgentResponseStatus
+from dovo.core.artifacts.models import ArtifactProvenance
+from dovo.core.artifacts.store import ArtifactStore
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.inputs import build_providers, interpolate_string
 from dovo.engine.executors import evaluate_condition
 from dovo.engine.executors.models import (
@@ -16,6 +20,7 @@ from dovo.engine.executors.models import (
     StepMetadata,
     StepResult,
 )
+from tests.conftest import PublishArtifact
 
 
 class ConditionExpressionEvaluatorTests:
@@ -381,3 +386,95 @@ class AgentStatusConditionTests:
             AgentResponseStatus.UNFIXABLE: False,
             AgentResponseStatus.PROVIDER_ERROR: False,
         }
+
+
+_NOT_FOUND = (False, False, "FALSE (not found)")
+
+
+class ArtifactConditionTests:
+    @pytest.mark.parametrize("field", ["content", "revision", "digest", "dir"])
+    def test_condition_reads_each_field_of_the_latest_revision(
+        self,
+        field: str,
+        artifact_store: ArtifactStore,
+        artifacts_repository: ArtifactsRepository,
+        publish_artifact: PublishArtifact,
+    ) -> None:
+        publish_artifact("plan", {"PLAN.md": "first"})
+        publish_artifact("plan", {"PLAN.md": "second"})
+        record = artifacts_repository.get("wf_1", "plan")
+        assert record is not None
+        expected = {"content": "second", "revision": "2", "digest": record.digest, "dir": str(record.path)}[field]
+        operand = "2" if field == "revision" else f"'{expected}'"
+
+        result = evaluate_condition(f"artifacts.plan.{field} == {operand}", artifact_store=artifact_store)
+
+        assert (result.passed, result.resolved, result.actual) == (True, True, expected)
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            pytest.param("artifacts.verdict.content.done == true", id="comparison_on_a_json_field"),
+            pytest.param("artifacts.verdict.content.done", id="lone_json_field"),
+            pytest.param("length(fromJSON(artifacts.findings.content)) == 2", id="function_on_content"),
+            pytest.param("contains(artifacts.findings.content.*.severity, 'high')", id="projection_into_content"),
+        ],
+    )
+    def test_condition_reads_a_field_of_json_content(
+        self, expression: str, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
+    ) -> None:
+        publish_artifact("verdict", {"verdict.json": '{"done": true}'})
+        publish_artifact("findings", {"findings.json": '[{"severity": "low"}, {"severity": "high"}]'})
+
+        result = evaluate_condition(expression, artifact_store=artifact_store)
+
+        assert (result.passed, result.resolved, result.detail) == (True, True, "TRUE")
+
+    @pytest.mark.parametrize(
+        ("expression", "with_store"),
+        [
+            pytest.param("artifacts.missing.content == 'x'", True, id="not_yet_published"),
+            pytest.param("artifacts.pair.content == 'x'", True, id="two_file_content"),
+            pytest.param("artifacts.binary.content == 'x'", True, id="content_not_utf8"),
+            pytest.param("artifacts.notes.content.done == true", True, id="path_into_content_not_json"),
+            pytest.param("artifacts.notes.revision.number == 1", True, id="path_after_revision"),
+            pytest.param("artifacts.notes.content == 'plain text'", False, id="no_store"),
+        ],
+    )
+    def test_unavailable_artifact_is_not_found(
+        self,
+        expression: str,
+        with_store: bool,
+        artifact_store: ArtifactStore,
+        publish_artifact: PublishArtifact,
+        tmp_path: Path,
+    ) -> None:
+        publish_artifact("notes", {"notes.txt": "plain text"})
+        publish_artifact("pair", {"a.txt": "a", "b.txt": "b"})
+        binary = tmp_path / "binary"
+        binary.mkdir()
+        (binary / "blob.bin").write_bytes(b"\xff\xfe")
+        published = artifact_store.publish(
+            binary, name="binary", path_glob="*", retention_days=None, provenance=ArtifactProvenance()
+        )
+        assert published.ok
+
+        result = evaluate_condition(expression, artifact_store=artifact_store if with_store else None)
+
+        assert (result.passed, result.resolved, result.detail) == _NOT_FOUND
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            pytest.param("join(artifacts.notes.content) == 'x'", id="join_on_text"),
+            pytest.param("fromJSON(artifacts.notes.content)", id="from_json_on_text"),
+        ],
+    )
+    def test_function_given_an_artifact_value_of_the_wrong_type_is_not_found(
+        self, expression: str, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
+    ) -> None:
+        publish_artifact("notes", {"notes.txt": "plain text"})
+
+        result = evaluate_condition(expression, artifact_store=artifact_store)
+
+        assert (result.passed, result.resolved, result.detail) == _NOT_FOUND
