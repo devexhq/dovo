@@ -96,6 +96,7 @@ Placeholders are replaced in these step fields:
 * `prompt`: `prompt: "Fix the bug in ${{ inputs.module }} according to issue ${{ inputs.issue_id }}"`
 * `script_path`: `script_path: scripts/${{ inputs.script_name }}.py`
 * `env`: String values inside step `env:` blocks.
+* `interaction.message`: an ask step's message
 
 ### Interpolation Namespaces & Behavior
 * **Inputs**: `${{ inputs.<name> }}` or `{{ inputs.<name> }}` insert declared input values.

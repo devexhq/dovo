@@ -107,16 +107,16 @@ def _list_item_errors(item: Operand, expression: str, scope: ConditionScope) -> 
     ]
 
 
-def _leaves(node: Expression | ValueList) -> Iterator[tuple[Operand, bool]]:
+def expression_leaves(node: Expression | ValueList) -> Iterator[tuple[Operand, bool]]:
     """Yield every operand of a tree, left to right, with whether it is an item of a list after 'in' or 'not in'."""
     if isinstance(node, Logical):
-        yield from _leaves(node.left)
-        yield from _leaves(node.right)
+        yield from expression_leaves(node.left)
+        yield from expression_leaves(node.right)
     elif isinstance(node, Negation):
-        yield from _leaves(node.operand)
+        yield from expression_leaves(node.operand)
     elif isinstance(node, Comparison):
-        yield from _leaves(node.left)
-        yield from _leaves(node.right)
+        yield from expression_leaves(node.left)
+        yield from expression_leaves(node.right)
     elif isinstance(node, ValueList):
         yield from ((item, True) for item in node.items)
     else:
@@ -127,7 +127,7 @@ def _tree_errors(expression: str, parsed: Expression, scope: ConditionScope) -> 
     """Return the operand and list-item errors of a parsed entry, and the dynamic-operand error unless one reads state."""
     errors: list[str] = []
     operands: list[Operand] = []
-    for operand, is_item in _leaves(parsed):
+    for operand, is_item in expression_leaves(parsed):
         if is_item:
             errors.extend(_list_item_errors(operand, expression, scope))
             continue

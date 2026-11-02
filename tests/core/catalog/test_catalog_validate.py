@@ -272,6 +272,23 @@ class CatalogValidateServiceTests:
         ]
         assert result.remediations == []
 
+    def test_undeclared_input_inside_an_expression_warns(self, isolated_workspace: Path) -> None:
+        _write_yaml(
+            isolated_workspace / "ph.yml",
+            {
+                "name": "ph",
+                "inputs": {"ok": {"type": "string"}},
+                "steps": [{"id": "s1", "run": "echo {{ inputs.x || 'y' }} {{ inputs.ok }}"}],
+            },
+        )
+
+        result = _validate("ph.yml", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
+
+        assert (result.error_code, result.ok) == (None, True)
+        assert result.warnings == [
+            "Placeholder 'inputs.x' is not declared in 'inputs:' (CATALOG_UNDECLARED_INPUT_PLACEHOLDER)."
+        ]
+
     def test_validate_unsafe_script_path_reports_error(self, isolated_workspace: Path) -> None:
         _write_yaml(
             isolated_workspace / "script.yml",
@@ -690,6 +707,42 @@ class CatalogValidateWhenTests:
         message = "Step 's' sets 'when' in a step catalog file; set 'when' on the blueprint step that uses it instead."
         assert (result.error_code, result.errors) == (ErrorCode.CATALOG_SCHEMA_INVALID, [message])
         assert result.remediations == [Remediation(message=f"Resolve: {message}")]
+
+
+class CatalogValidatePlaceholderTests:
+    """A placeholder whose body is not an expression fails blueprint and step-file validation."""
+
+    def test_blueprint_placeholder_syntax_error_fails_validation(self, isolated_workspace: Path) -> None:
+        steps = [
+            {"id": "a", "run": "echo {{ steps[0].id }}"},
+            {
+                "id": "l",
+                "type": "loop",
+                "until": ["steps.b.exit_code == 0"],
+                "do": [{"id": "b", "run": "true", "env": {"V": "{{ a b }}"}}],
+            },
+        ]
+        _write_yaml(isolated_workspace / "ph.yml", {"name": "ph", "steps": steps})
+
+        result = _validate("ph.yml", path=isolated_workspace)
+
+        message = (
+            "Step 'b', env.V: Invalid expression 'a b': unquoted text 'a b' at column 1; "
+            "quote a value of more than one word."
+        )
+        assert (result.error_code, result.errors) == (ErrorCode.CATALOG_SCHEMA_INVALID, [message])
+        assert result.remediations == [Remediation(message=f"Resolve: {message}")]
+
+    def test_step_file_placeholder_syntax_error_fails_validation(self, isolated_workspace: Path) -> None:
+        _write_yaml(isolated_workspace / "s.yml", {"id": "s", "run": "echo {{ a b }}"})
+
+        result = _validate("s.yml", path=isolated_workspace, item_type=CatalogItemType.STEP)
+
+        message = (
+            "Step 's', run: Invalid expression 'a b': unquoted text 'a b' at column 1; "
+            "quote a value of more than one word."
+        )
+        assert (result.error_code, result.errors) == (ErrorCode.CATALOG_SCHEMA_INVALID, [message])
 
 
 class CatalogValidateIfBlockTests:

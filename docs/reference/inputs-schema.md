@@ -70,6 +70,7 @@ Placeholders are replaced in:
 * `prompt` string values
 * `script_path` string values
 * String values within step `env` dictionaries
+* An ask step's `interaction.message`
 
 ### Unresolved Placeholders
 A placeholder that is only a reference to an identifier not declared in `inputs:` is left as literal text, with no error.
