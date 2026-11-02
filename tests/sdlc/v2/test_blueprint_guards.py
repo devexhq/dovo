@@ -305,14 +305,14 @@ class IssueCodeGuardTests:
         assert not run.reaches("next-hold")
         assert run.ends("pick-loop")
 
-    def test_iteration_after_every_phase_is_done_runs_only_the_gate(self, run: _Run) -> None:
+    def test_iteration_after_every_phase_is_done_runs_only_the_checks(self, run: _Run) -> None:
         run.record("phase", phase="done", phase_file="", remaining="0")
         run.record("verify")
 
         assert not run.reaches("code")
         assert run.ends("code-loop")
 
-    def test_coded_last_phase_that_passes_the_gate_ends_the_code_loop(self, run: _Run) -> None:
+    def test_coded_last_phase_that_passes_its_checks_ends_the_code_loop(self, run: _Run) -> None:
         run.record("code", status="proposed_patch")
         run.record("verify")
 
