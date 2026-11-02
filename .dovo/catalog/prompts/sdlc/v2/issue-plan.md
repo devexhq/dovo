@@ -10,7 +10,7 @@ Plan when the issue adds or changes a command, DTO/`*Result` model, status enum,
 
 ## Modes
 
-This file is the core both modes share. Each mode adds its own steps in its own file beside it, numbered as one sequence with this file's: read this file and your mode's file, and never the other mode's.
+This file is the core both modes share. Each mode's own steps are in a file of their own beside it, numbered in one sequence with this file's. Read this file and your mode's file, never the other mode's.
 
 | Invocation | Input | Job |
 |---|---|---|
