@@ -5,61 +5,23 @@ returning a diff. These helpers baseline the worktree before the agent runs,
 capture what changed, and discard agent edits back to that baseline. A dirty
 worktree is baselined by a snapshot commit that no branch points to, built in a
 temporary index, so taking a baseline never moves ``HEAD``, a branch or the
-worktree's index. All operations run with ``cwd`` set to the worktree path
-only, never the user's main worktree.
+worktree's index. Every git command runs through the given GitRunner with
+``cwd`` set to the worktree path only, never the user's main worktree, and a
+failed one raises the runner's GitError unchanged.
 """
 
 from __future__ import annotations
 
-import os
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 
-from dovo.common.constants import GIT_SUBPROCESS_TIMEOUT_SECONDS
-from dovo.common.error_codes import ErrorCode
-from dovo.core.agents.exceptions import AgentError
+from dovo.core.git import GitRunner, git_command_error
 
 BASELINE_SNAPSHOT_MESSAGE = "dovo: pre-agent baseline"
 
 
-def _run_git(
-    args: list[str], *, cwd: Path, env: dict[str, str] | None = None, stdin: bytes | None = None
-) -> subprocess.CompletedProcess[bytes]:
-    """Run git command in subprocess under cwd with timeout handling, using env and feeding stdin when given."""
-    try:
-        return subprocess.run(
-            ["git", *args],
-            cwd=str(cwd),
-            env=env,
-            input=stdin,
-            capture_output=True,
-            check=False,
-            timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise AgentError(
-            ErrorCode.GIT_TIMEOUT,
-            f"git {' '.join(args)} timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s",
-        ) from exc
-    except OSError as exc:
-        message = f"failed to run git {' '.join(args)}: {exc}"
-        if not cwd.is_dir():
-            # Chained: a vanished worktree is a broken workspace, so catch_failure records it.
-            raise AgentError(ErrorCode.GIT_FAILED, message) from exc
-        # Not chained: git itself could not start, which the message names, so catch_failure leaves no event file.
-        raise AgentError(ErrorCode.GIT_FAILED, message) from None
-
-
-def _require_ok(completed: subprocess.CompletedProcess[bytes], *, action: str) -> None:
-    """Verify that subprocess exit code is zero or raise AgentError(GIT_FAILED)."""
-    if completed.returncode != 0:
-        detail = completed.stderr.decode("utf-8", errors="replace").strip()
-        raise AgentError(ErrorCode.GIT_FAILED, f"{action} failed: {detail or completed.returncode}")
-
-
-def resolve_pre_agent_baseline(worktree_path: Path) -> str:
+def resolve_pre_agent_baseline(worktree_path: Path, *, git: GitRunner) -> str:
     """Return a commit SHA that captures worktree state before an agent runs.
 
     A clean tree baselines to ``HEAD``. A dirty tree (modified, staged, deleted
@@ -70,22 +32,23 @@ def resolve_pre_agent_baseline(worktree_path: Path) -> str:
 
     Args:
         worktree_path: Worktree checkout to baseline.
+        git: Runner for every git command.
 
     Returns:
         A commit SHA usable as a diff or discard target.
 
     Raises:
-        AgentError: When the underlying git commands fail; the
+        GitError: GIT_FAILED, GIT_TIMEOUT, GIT_BINARY_MISSING or GIT_WORKDIR_MISSING when a git command fails; the
             repository is left as it was.
     """
-    clean = _is_worktree_clean(worktree_path)
-    head = _head_sha(worktree_path)
+    clean = _is_worktree_clean(worktree_path, git=git)
+    head = _head_sha(worktree_path, git=git)
     if clean:
         return head
-    return _snapshot_worktree(worktree_path, head)
+    return _snapshot_worktree(worktree_path, head, git=git)
 
 
-def capture_diff_since(worktree_path: Path, baseline: str) -> tuple[str, list[str]]:
+def capture_diff_since(worktree_path: Path, baseline: str, *, git: GitRunner) -> tuple[str, list[str]]:
     """Stage all worktree changes and diff them against ``baseline``.
 
     Covers modified/new/deleted files and any commits the agent made between
@@ -95,40 +58,32 @@ def capture_diff_since(worktree_path: Path, baseline: str) -> tuple[str, list[st
     Args:
         worktree_path: Worktree checkout to inspect.
         baseline: Ref returned by :func:`resolve_pre_agent_baseline`.
+        git: Runner for every git command.
 
     Returns:
         Tuple of ``(unified_diff, touched_files)``.
 
     Raises:
-        AgentError: When the underlying git commands fail.
+        GitError: GIT_FAILED, GIT_TIMEOUT, GIT_BINARY_MISSING or GIT_WORKDIR_MISSING when a git command fails.
     """
-    add = _run_git(["add", "-A"], cwd=worktree_path)
-    _require_ok(add, action="git add -A (capture diff)")
-    diff = _run_git(["diff", "--cached", baseline], cwd=worktree_path)
-    _require_ok(diff, action="git diff --cached")
-    names = _run_git(["diff", "--cached", "--name-only", baseline], cwd=worktree_path)
-    _require_ok(names, action="git diff --cached --name-only")
-    touched = sorted(
-        {line.strip() for line in names.stdout.decode("utf-8", errors="replace").splitlines() if line.strip()}
-    )
-    return diff.stdout.decode("utf-8", errors="replace"), touched
+    git.run_bytes(["add", "-A"], worktree_path)
+    diff = git.run_bytes(["diff", "--cached", baseline], worktree_path)
+    names = git.run_bytes(["diff", "--cached", "--name-only", baseline], worktree_path)
+    touched = sorted({line.strip() for line in names.decode("utf-8", errors="replace").splitlines() if line.strip()})
+    return diff.decode("utf-8", errors="replace"), touched
 
 
-def capture_binary_patch_since(worktree_path: Path, baseline: str) -> bytes:
+def capture_binary_patch_since(worktree_path: Path, baseline: str, *, git: GitRunner) -> bytes:
     """Stage all worktree changes and return ``git diff --cached --binary`` against ``baseline`` as raw bytes.
 
     Raises:
-        AgentError: When the underlying git commands fail.
+        GitError: GIT_FAILED, GIT_TIMEOUT, GIT_BINARY_MISSING or GIT_WORKDIR_MISSING when a git command fails.
     """
-    add = _run_git(["add", "-A"], cwd=worktree_path)
-    _require_ok(add, action="git add -A (capture patch)")
-    diff = _run_git(["diff", "--cached", "--binary", baseline], cwd=worktree_path)
-    _require_ok(diff, action="git diff --cached --binary")
-
-    return diff.stdout
+    git.run_bytes(["add", "-A"], worktree_path)
+    return git.run_bytes(["diff", "--cached", "--binary", baseline], worktree_path)
 
 
-def discard_since(worktree_path: Path, baseline: str) -> None:
+def discard_since(worktree_path: Path, baseline: str, *, git: GitRunner) -> None:
     """Restore the worktree to ``baseline`` and move ``HEAD`` back to where it was when the baseline was taken.
 
     Every file returns to its content in ``baseline`` and files absent from it
@@ -142,106 +97,99 @@ def discard_since(worktree_path: Path, baseline: str) -> None:
     Args:
         worktree_path: Worktree checkout to restore.
         baseline: Commit returned by :func:`resolve_pre_agent_baseline`.
+        git: Runner for every git command.
 
     Raises:
-        AgentError: When the underlying git commands fail.
+        GitError: GIT_FAILED, GIT_TIMEOUT, GIT_BINARY_MISSING or GIT_WORKDIR_MISSING when a git command fails.
     """
-    baseline_sha, target = _head_at_baseline(worktree_path, baseline)
-    restore = _run_git(["read-tree", "-u", "--reset", baseline_sha], cwd=worktree_path)
-    _require_ok(restore, action="git read-tree -u --reset")
-    clean = _run_git(["clean", "-fd"], cwd=worktree_path)
-    _require_ok(clean, action="git clean -fd")
-    move_head = _run_git(["update-ref", "HEAD", target], cwd=worktree_path)
-    _require_ok(move_head, action="git update-ref HEAD")
+    baseline_sha, target = _head_at_baseline(worktree_path, baseline, git=git)
+    git.run_bytes(["read-tree", "-u", "--reset", baseline_sha], worktree_path)
+    git.run_bytes(["clean", "-fd"], worktree_path)
+    git.run_bytes(["update-ref", "HEAD", target], worktree_path)
     if target != baseline_sha:
-        index = _run_git(["read-tree", target], cwd=worktree_path)
-        _require_ok(index, action="git read-tree (restore index)")
-        _restage_ignored_wip(worktree_path, target, baseline_sha)
+        git.run_bytes(["read-tree", target], worktree_path)
+        _restage_ignored_wip(worktree_path, target, baseline_sha, git=git)
 
 
-def _restage_ignored_wip(worktree_path: Path, target: str, snapshot: str) -> None:
+def _restage_ignored_wip(worktree_path: Path, target: str, snapshot: str, *, git: GitRunner) -> None:
     """Stage the paths snapshot added over target that .gitignore matches, which an index reset would untrack."""
-    added = _run_git(
-        ["diff", "--no-renames", "--name-only", "-z", "--diff-filter=A", target, snapshot], cwd=worktree_path
+    added = git.run_bytes(
+        ["diff", "--no-renames", "--name-only", "-z", "--diff-filter=A", target, snapshot], worktree_path
     )
-    _require_ok(added, action="git diff --name-only (snapshot additions)")
-    if not added.stdout:
+    if not added:
         return
 
-    ignored = _run_git(["check-ignore", "--no-index", "-z", "--stdin"], cwd=worktree_path, stdin=added.stdout)
+    check_args = ["check-ignore", "--no-index", "-z", "--stdin"]
+    ignored = git.exec_bytes(check_args, worktree_path, input_bytes=added)
     if ignored.returncode == 1:
         return
-    _require_ok(ignored, action="git check-ignore")
+    _require_success(check_args, ignored.returncode, ignored.stdout, ignored.stderr)
 
-    stage = _run_git(["update-index", "--add", "-z", "--stdin"], cwd=worktree_path, stdin=ignored.stdout)
-    _require_ok(stage, action="git update-index --add (ignored WIP)")
+    git.run_bytes(["update-index", "--add", "-z", "--stdin"], worktree_path, input_bytes=ignored.stdout)
 
 
-def _is_worktree_clean(worktree_path: Path) -> bool:
+def _require_success(args: list[str], returncode: int, stdout: bytes, stderr: bytes) -> None:
+    """Raise the git package's GIT_FAILED error for `git <args>` when returncode is non-zero."""
+    if returncode != 0:
+        raise git_command_error(
+            args, returncode, stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace")
+        )
+
+
+def _is_worktree_clean(worktree_path: Path, *, git: GitRunner) -> bool:
     """Return whether git reports no changes, without letting the status probe rewrite the index."""
-    status = _run_git(["--no-optional-locks", "status", "--porcelain"], cwd=worktree_path)
-    _require_ok(status, action="git status")
-    return not status.stdout.strip()
+    status = git.run_bytes(["--no-optional-locks", "status", "--porcelain"], worktree_path)
+    return not status.strip()
 
 
-def _head_sha(worktree_path: Path) -> str:
+def _head_sha(worktree_path: Path, *, git: GitRunner) -> str:
     """Return the commit SHA HEAD resolves to."""
-    head = _run_git(["rev-parse", "HEAD"], cwd=worktree_path)
-    _require_ok(head, action="git rev-parse HEAD")
-    return head.stdout.decode("utf-8").strip()
+    return git.run_bytes(["rev-parse", "HEAD"], worktree_path).decode("utf-8").strip()
 
 
-def _snapshot_worktree(worktree_path: Path, head: str) -> str:
+def _snapshot_worktree(worktree_path: Path, head: str, *, git: GitRunner) -> str:
     """Commit the worktree contents as a child of head through a temporary copy of the index, updating no ref."""
-    real_index = _real_index_path(worktree_path)
+    real_index = _real_index_path(worktree_path, git=git)
     with tempfile.TemporaryDirectory(prefix="dovo-baseline-") as tmp:
         temp_index = Path(tmp) / "index"
         if real_index.exists():
             shutil.copyfile(real_index, temp_index)
-        env = {**os.environ, "GIT_INDEX_FILE": str(temp_index)}
-        add = _run_git(["add", "-A"], cwd=worktree_path, env=env)
-        _require_ok(add, action="git add -A (pre-agent baseline)")
-        tree = _run_git(["write-tree"], cwd=worktree_path, env=env)
-        _require_ok(tree, action="git write-tree (pre-agent baseline)")
+        env = {"GIT_INDEX_FILE": str(temp_index)}
+        git.run_bytes(["add", "-A"], worktree_path, env=env)
+        tree = git.run_bytes(["write-tree"], worktree_path, env=env)
 
-    tree_sha = tree.stdout.decode("utf-8").strip()
-    snapshot = _run_git(
-        ["commit-tree", tree_sha, "-p", head, "-m", BASELINE_SNAPSHOT_MESSAGE],
-        cwd=worktree_path,
-    )
-    _require_ok(snapshot, action="git commit-tree (pre-agent baseline)")
-    return snapshot.stdout.decode("utf-8").strip()
+    tree_sha = tree.decode("utf-8").strip()
+    snapshot = git.run_bytes(["commit-tree", tree_sha, "-p", head, "-m", BASELINE_SNAPSHOT_MESSAGE], worktree_path)
+    return snapshot.decode("utf-8").strip()
 
 
-def _real_index_path(worktree_path: Path) -> Path:
+def _real_index_path(worktree_path: Path, *, git: GitRunner) -> Path:
     """Return the absolute path of the worktree's index file, as git resolves it for linked worktrees."""
-    resolved = _run_git(["rev-parse", "--git-path", "index"], cwd=worktree_path)
-    _require_ok(resolved, action="git rev-parse --git-path index")
-    index = Path(resolved.stdout.decode("utf-8").strip())
+    resolved = git.run_bytes(["rev-parse", "--git-path", "index"], worktree_path)
+    index = Path(resolved.decode("utf-8").strip())
     return index if index.is_absolute() else worktree_path / index
 
 
-def _head_at_baseline(worktree_path: Path, baseline: str) -> tuple[str, str]:
+def _head_at_baseline(worktree_path: Path, baseline: str, *, git: GitRunner) -> tuple[str, str]:
     """Return (baseline SHA, SHA HEAD held when baseline was taken): the parent of a snapshot, else baseline itself."""
-    resolved = _run_git(["rev-parse", "--verify", f"{baseline}^{{commit}}"], cwd=worktree_path)
-    _require_ok(resolved, action="git rev-parse baseline")
-    sha = resolved.stdout.decode("utf-8").strip()
-    if _is_ancestor_of_head(worktree_path, sha):
+    resolved = git.run_bytes(["rev-parse", "--verify", f"{baseline}^{{commit}}"], worktree_path)
+    sha = resolved.decode("utf-8").strip()
+    if _is_ancestor_of_head(worktree_path, sha, git=git):
         return sha, sha
 
-    shown = _run_git(["show", "-s", "--format=%P%x00%s", sha], cwd=worktree_path)
-    _require_ok(shown, action="git show baseline")
-    parents, _, subject = shown.stdout.decode("utf-8").strip().partition("\x00")
+    shown = git.run_bytes(["show", "-s", "--format=%P%x00%s", sha], worktree_path)
+    parents, _, subject = shown.decode("utf-8").strip().partition("\x00")
     parent_shas = parents.split()
     if subject == BASELINE_SNAPSHOT_MESSAGE and len(parent_shas) == 1:
         return sha, parent_shas[0]
     return sha, sha
 
 
-def _is_ancestor_of_head(worktree_path: Path, sha: str) -> bool:
+def _is_ancestor_of_head(worktree_path: Path, sha: str, *, git: GitRunner) -> bool:
     """Return whether sha is HEAD or an ancestor of it; exit 1 means no, any other non-zero exit raises."""
-    check = _run_git(["merge-base", "--is-ancestor", sha, "HEAD"], cwd=worktree_path)
+    args = ["merge-base", "--is-ancestor", sha, "HEAD"]
+    check = git.exec_bytes(args, worktree_path)
     if check.returncode == 1:
         return False
-    _require_ok(check, action="git merge-base --is-ancestor")
+    _require_success(args, check.returncode, check.stdout, check.stderr)
     return True

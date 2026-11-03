@@ -10,8 +10,8 @@ import pytest
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import Failure, catch_failure
 from dovo.core.git.exceptions import GitError
-from dovo.core.git.models import GitProcessOutput, GitWorktreeEntry
-from dovo.core.git.runner import GitRunner
+from dovo.core.git.models import GitBytesOutput, GitProcessOutput, GitWorktreeEntry
+from dovo.core.git.runner import GitRunner, extract_conflicts
 from tests.harness.diagnostic_log import read_single_event
 from tests.harness.fakes import FakeGitRunner
 
@@ -253,20 +253,154 @@ class GitRunnerExecTests:
 
         assert excinfo.value is failure
 
+    def test_apply_check_returns_no_conflicts_when_the_check_passes(self, tmp_path: Path) -> None:
+        """Return [] and record calls == [("apply", "--check", "--binary", "-")] when the check exits 0."""
+        fake = FakeGitRunner({("apply", "--check"): GitProcessOutput(0, "", "")})
+
+        assert fake.apply_check(tmp_path, "diff --git a/a.txt b/a.txt") == []
+        assert fake.calls == [("apply", "--check", "--binary", "-")]
+
+    def test_apply_check_returns_the_conflicting_paths_it_names(self, tmp_path: Path) -> None:
+        """Return ["a.txt"] when the check exits 1 with stderr "error: patch failed: a.txt:1"."""
+        fake = FakeGitRunner({("apply", "--check"): GitProcessOutput(1, "", "error: patch failed: a.txt:1")})
+
+        assert fake.apply_check(tmp_path, "diff --git a/a.txt b/a.txt") == ["a.txt"]
+
     @pytest.mark.parametrize(
-        ("method", "key", "expected_args"),
+        ("output", "message"),
         [
-            pytest.param("apply_check", ("apply", "--check"), ("apply", "--check", "--binary", "-"), id="apply_check"),
-            pytest.param("apply", ("apply", "--binary"), ("apply", "--binary", "-"), id="apply"),
+            pytest.param(
+                GitProcessOutput(128, "", "error: No valid patches in input\n"),
+                "error: No valid patches in input",
+                id="stderr",
+            ),
+            pytest.param(GitProcessOutput(1, "", ""), "patch check failed", id="empty_stderr"),
         ],
     )
-    def test_apply_methods_run_through_exec(
-        self, tmp_path: Path, method: str, key: tuple[str, ...], expected_args: tuple[str, ...]
+    def test_apply_check_raises_git_failed_when_it_fails_naming_no_path(
+        self, tmp_path: Path, output: GitProcessOutput, message: str
     ) -> None:
-        """Return (1, "", "error: patch failed: a.txt:1") from the FakeGitRunner response and record calls == [expected_args]."""
-        fake = FakeGitRunner({key: GitProcessOutput(1, "", "error: patch failed: a.txt:1")})
+        """Raise GitError GIT_FAILED with the check's stripped stderr, else "patch check failed"."""
+        fake = FakeGitRunner({("apply", "--check"): output})
 
-        result = getattr(fake, method)(tmp_path, "diff --git a/a.txt b/a.txt")
+        with pytest.raises(GitError) as excinfo:
+            fake.apply_check(tmp_path, "diff --git a/a.txt b/a.txt")
 
-        assert result == (1, "", "error: patch failed: a.txt:1")
-        assert fake.calls == [expected_args]
+        assert excinfo.value.error_code is ErrorCode.GIT_FAILED
+        assert excinfo.value.message == message
+
+    @pytest.mark.parametrize(
+        ("stderr", "message"),
+        [
+            pytest.param("error: boom\n", "error: boom", id="stderr"),
+            pytest.param("", "patch failed", id="empty_stderr"),
+        ],
+    )
+    def test_apply_raises_git_failed_on_nonzero_exit(self, tmp_path: Path, stderr: str, message: str) -> None:
+        """Raise GitError GIT_FAILED with git apply's stripped stderr, else "patch failed", recording the apply call."""
+        fake = FakeGitRunner({("apply", "--binary"): GitProcessOutput(1, "", stderr)})
+
+        with pytest.raises(GitError) as excinfo:
+            fake.apply(tmp_path, "diff --git a/a.txt b/a.txt", index=True)
+
+        assert excinfo.value.error_code is ErrorCode.GIT_FAILED
+        assert excinfo.value.message == message
+        assert fake.calls == [("apply", "--binary", "--index", "-")]
+
+
+class GitRunnerBytesTests:
+    def test_run_bytes_feeds_stdin_and_returns_stdout_byte_exact(self, git_repo: Path) -> None:
+        """Store non-UTF-8 stdin bytes with hash-object -w, keeping its trailing newline, and read them back byte-exact."""
+        sha = GitRunner().run_bytes(["hash-object", "-w", "--stdin"], git_repo, input_bytes=b"\xff\x00raw")
+
+        assert sha.endswith(b"\n")
+        assert GitRunner().run_bytes(["cat-file", "blob", sha.decode().strip()], git_repo) == b"\xff\x00raw"
+
+    def test_exec_bytes_returns_nul_separated_output_for_any_exit_code(self, git_repo: Path) -> None:
+        """Return the -z NUL-separated listing for exit 0 and exit 1 without raising when nothing matches."""
+        (git_repo / "a b.txt").write_text("a\n", encoding="utf-8")
+
+        listed = GitRunner().exec_bytes(["ls-files", "-z", "--others"], git_repo)
+        absent = GitRunner().exec_bytes(["show-ref", "--verify", "--quiet", "refs/heads/absent"], git_repo)
+
+        assert listed == GitBytesOutput(returncode=0, stdout=b"a b.txt\0", stderr=b"")
+        assert absent == GitBytesOutput(returncode=1, stdout=b"", stderr=b"")
+
+    def test_run_bytes_raises_git_failed_naming_the_decoded_stderr(self, git_repo: Path) -> None:
+        """Raise GitError GIT_FAILED "Git execution failed ('git rev-parse --verify nope'): fatal: Needed a single revision"."""
+        with pytest.raises(GitError) as excinfo:
+            GitRunner().run_bytes(["rev-parse", "--verify", "nope"], git_repo)
+
+        assert excinfo.value.error_code is ErrorCode.GIT_FAILED
+        assert excinfo.value.message == (
+            "Git execution failed ('git rev-parse --verify nope'): fatal: Needed a single revision"
+        )
+
+    def test_exec_bytes_raises_git_timeout(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Raise GitError GIT_TIMEOUT whose message ends "('git status')" when subprocess.run times out."""
+
+        def _time_out(*args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            raise subprocess.TimeoutExpired(cmd=["git", "status"], timeout=1)
+
+        monkeypatch.setattr("dovo.core.git.runner.subprocess.run", _time_out)
+
+        with pytest.raises(GitError) as excinfo:
+            GitRunner().exec_bytes(["status"], git_repo)
+
+        assert str(excinfo.value).endswith("('git status')")
+        assert excinfo.value.error_code is ErrorCode.GIT_TIMEOUT
+
+    def test_exec_bytes_raises_git_binary_missing_unchained(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Raise GitError GIT_BINARY_MISSING "Git execution failed ('git status'): git not found" with no cause when PATH holds no git."""
+        empty_bin = tmp_path / "empty-bin"
+        empty_bin.mkdir()
+        monkeypatch.setenv("PATH", str(empty_bin))
+
+        with pytest.raises(GitError) as excinfo:
+            GitRunner().exec_bytes(["status"], git_repo)
+
+        assert excinfo.value.error_code is ErrorCode.GIT_BINARY_MISSING
+        assert excinfo.value.message == "Git execution failed ('git status'): git not found"
+        assert excinfo.value.__cause__ is None
+
+    def test_exec_bytes_raises_git_workdir_missing_chained(self, tmp_path: Path) -> None:
+        """Raise GitError GIT_WORKDIR_MISSING naming the directory, chained to the OSError, when path does not exist."""
+        missing = tmp_path / "gone"
+
+        with pytest.raises(GitError) as excinfo:
+            GitRunner().exec_bytes(["status"], missing)
+
+        assert excinfo.value.error_code is ErrorCode.GIT_WORKDIR_MISSING
+        assert excinfo.value.message == (
+            f"Git execution failed ('git status'): working directory '{missing}' does not exist"
+        )
+        assert isinstance(excinfo.value.__cause__, FileNotFoundError)
+
+
+class ExtractConflictsTests:
+    @pytest.mark.parametrize(
+        ("stderr", "expected"),
+        [
+            pytest.param("error: patch failed: src/main.py:12\n", ["src/main.py"], id="patch_failed"),
+            pytest.param("error: src/main.py: patch does not apply\n", ["src/main.py"], id="does_not_apply"),
+            pytest.param("cannot apply binary patch to 'assets/logo.png'\n", ["assets/logo.png"], id="binary_patch"),
+            pytest.param(
+                "error: src/new.py: already exists in working directory\n", ["src/new.py"], id="already_exists"
+            ),
+            pytest.param("error: src/gone.py: does not exist in index\n", ["src/gone.py"], id="not_in_index"),
+            pytest.param("error: src/gone.py: No such file or directory\n", ["src/gone.py"], id="missing_in_workspace"),
+            pytest.param("Applying patch\nnothing to see here\n", [], id="no_conflict_markers"),
+            pytest.param("", [], id="empty_stderr"),
+            pytest.param(
+                "error: patch failed: a.py:1\nerror: patch failed: b.py:5\nerror: a.py: patch does not apply",
+                ["a.py", "b.py"],
+                id="deduplicated_and_sorted",
+            ),
+        ],
+    )
+    def test_extracts_conflicting_paths_from_known_git_apply_stderr_patterns(
+        self, stderr: str, expected: list[str]
+    ) -> None:
+        assert extract_conflicts(stderr) == expected

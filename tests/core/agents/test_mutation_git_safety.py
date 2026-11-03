@@ -1,21 +1,22 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-import dovo.core.agents.mutation_git as mutation_mod
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import catch_failure
-from dovo.core.agents.exceptions import AgentError
 from dovo.core.agents.mutation_git import (
     capture_binary_patch_since,
     capture_diff_since,
     discard_since,
     resolve_pre_agent_baseline,
 )
+from dovo.core.git import GitError, GitProcessOutput, GitRunner
 from tests.harness.diagnostic_log import read_single_event
+from tests.harness.fakes import FakeGitRunner
 
 DIRTY_KINDS = ["modified", "staged", "deleted", "untracked", "ignored_force_added"]
 
@@ -112,24 +113,24 @@ class DirectMutationGitSafetyTests:
         wip_file = git_repo / "feature_wip.py"
         wip_file.write_text("print('uncommitted WIP code')\n", encoding="utf-8")
 
-        baseline = resolve_pre_agent_baseline(git_repo)
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
 
         readme_file.write_text("# Test Repo\nAgent corrupted README\n", encoding="utf-8")
         wip_file.write_text("print('agent modified this file')\n", encoding="utf-8")
         agent_junk = git_repo / "agent_garbage.tmp"
         agent_junk.write_text("agent temporary junk\n", encoding="utf-8")
 
-        agent_diff, agent_touched = capture_diff_since(git_repo, baseline)
+        agent_diff, agent_touched = capture_diff_since(git_repo, baseline, git=GitRunner())
         assert agent_diff != ""
         assert agent_touched == ["README.md", "agent_garbage.tmp", "feature_wip.py"]
 
-        discard_since(git_repo, baseline)
+        discard_since(git_repo, baseline, git=GitRunner())
 
         assert readme_file.read_text(encoding="utf-8") == "# Test Repo\nUncommitted WIP edit in README\n"
         assert wip_file.read_text(encoding="utf-8") == "print('uncommitted WIP code')\n"
         assert agent_junk.exists() is False
 
-        post_discard_diff, post_discard_touched = capture_diff_since(git_repo, baseline)
+        post_discard_diff, post_discard_touched = capture_diff_since(git_repo, baseline, git=GitRunner())
         assert post_discard_diff == ""
         assert post_discard_touched == []
 
@@ -138,11 +139,11 @@ class DirectMutationGitSafetyTests:
         _make_dirty(git_repo, "untracked")
         log_before = _git(git_repo, "log", "--oneline")
 
-        first_baseline = resolve_pre_agent_baseline(git_repo)
+        first_baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
         (git_repo / "README.md").write_text("kept agent edit\n", encoding="utf-8")
-        _, first_touched = capture_diff_since(git_repo, first_baseline)
-        second_baseline = resolve_pre_agent_baseline(git_repo)
-        _, second_touched = capture_diff_since(git_repo, second_baseline)
+        _, first_touched = capture_diff_since(git_repo, first_baseline, git=GitRunner())
+        second_baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
+        _, second_touched = capture_diff_since(git_repo, second_baseline, git=GitRunner())
 
         assert first_touched == ["README.md"]
         assert second_touched == []
@@ -157,7 +158,7 @@ class ResolvePreAgentBaselineTests:
         refs_before = _git(git_repo, "for-each-ref", "refs/heads")
         commit_count_before = _git(git_repo, "rev-list", "--all", "--count")
 
-        baseline = resolve_pre_agent_baseline(git_repo)
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
 
         assert baseline == head
         assert _git(git_repo, "for-each-ref", "refs/heads") == refs_before
@@ -172,7 +173,7 @@ class ResolvePreAgentBaselineTests:
         head = _git(repo, "rev-parse", "HEAD")
         worktree = _worktree_files(repo)
 
-        baseline = resolve_pre_agent_baseline(repo)
+        baseline = resolve_pre_agent_baseline(repo, git=GitRunner())
 
         assert _git(repo, "show", "-s", "--format=%P", baseline) == head
         assert _git(repo, "show", "-s", "--format=%B", baseline) == "dovo: pre-agent baseline"
@@ -195,110 +196,88 @@ class ResolvePreAgentBaselineTests:
         _make_dirty(repo, kind)
         before = _repository_state(repo)
 
-        resolve_pre_agent_baseline(repo)
+        resolve_pre_agent_baseline(repo, git=GitRunner())
 
         assert _repository_state(repo) == before
 
-    @pytest.mark.parametrize(
-        ("subcommand", "action"),
-        [
-            ("add", "git add -A \\(pre-agent baseline\\)"),
-            ("write-tree", "git write-tree \\(pre-agent baseline\\)"),
-            ("commit-tree", "git commit-tree \\(pre-agent baseline\\)"),
-        ],
-    )
-    def test_failed_snapshot_raises_and_leaves_repository_unchanged(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, subcommand: str, action: str
-    ) -> None:
-        """Raise AgentError(GIT_FAILED) matching `{action} failed` with HEAD, refs, index bytes, status, the worktree listing and the `.git` listing outside `objects/` unchanged when that git subcommand exits non-zero."""
+    @pytest.mark.parametrize("subcommand", ["add", "write-tree", "commit-tree"])
+    def test_failed_snapshot_raises_and_leaves_repository_unchanged(self, git_repo: Path, subcommand: str) -> None:
+        """Raise GitError GIT_FAILED "Git execution failed ('git <subcommand> …'): injected" with HEAD, refs, index bytes, status, the worktree listing and the `.git` listing outside `objects/` unchanged when that git subcommand exits non-zero."""
         _make_dirty(git_repo, "untracked")
         state_before = _repository_state(git_repo)
         worktree_before = _worktree_files(git_repo)
         git_dir_before = _git_dir_listing(git_repo)
-        real_run = subprocess.run
+        fake = FakeGitRunner({(subcommand,): GitProcessOutput(1, "", "injected")})
 
-        def _fail_subcommand(
-            args: list[str],
-            *,
-            cwd: str,
-            env: dict[str, str] | None,
-            input: bytes | None,
-            capture_output: bool,
-            check: bool,
-            timeout: float,
-        ) -> subprocess.CompletedProcess[bytes]:
-            if args[1] == subcommand:
-                return subprocess.CompletedProcess(args, 1, b"", b"injected")
-            return real_run(
-                args, cwd=cwd, env=env, input=input, capture_output=capture_output, check=check, timeout=timeout
-            )
-
-        monkeypatch.setattr(mutation_mod.subprocess, "run", _fail_subcommand)
-        with pytest.raises(AgentError, match=f"{action} failed: injected") as raised:
-            resolve_pre_agent_baseline(git_repo)
-        monkeypatch.undo()
+        with pytest.raises(GitError) as raised:
+            resolve_pre_agent_baseline(git_repo, git=fake)
 
         assert raised.value.error_code == ErrorCode.GIT_FAILED
+        assert raised.value.message.startswith(f"Git execution failed ('git {subcommand}")
+        assert raised.value.message.endswith("'): injected")
         assert _repository_state(git_repo) == state_before
         assert _worktree_files(git_repo) == worktree_before
         assert _git_dir_listing(git_repo) == git_dir_before
 
-    def test_raises_on_git_failure(self, tmp_path: Path) -> None:
+    def test_raises_git_failed_outside_a_repository(self, tmp_path: Path) -> None:
+        """Raise GitError GIT_FAILED when the worktree path is not a git repository."""
         not_a_repo = tmp_path / "not-a-repo"
         not_a_repo.mkdir()
 
-        with pytest.raises(AgentError):
-            resolve_pre_agent_baseline(not_a_repo)
+        with pytest.raises(GitError) as raised:
+            resolve_pre_agent_baseline(not_a_repo, git=GitRunner())
 
-    def test_raises_on_git_timeout(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        assert raised.value.error_code == ErrorCode.GIT_FAILED
+
+    def test_raises_git_timeout_when_git_times_out(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Raise GitError GIT_TIMEOUT when the git package's subprocess.run times out."""
+
         def _timeout(*_args: object, **_kwargs: object) -> object:
             raise subprocess.TimeoutExpired(cmd=["git"], timeout=120)
 
-        monkeypatch.setattr(mutation_mod.subprocess, "run", _timeout)
+        monkeypatch.setattr("dovo.core.git.runner.subprocess.run", _timeout)
 
-        with pytest.raises(AgentError) as raised:
-            resolve_pre_agent_baseline(git_repo)
+        with pytest.raises(GitError) as raised:
+            resolve_pre_agent_baseline(git_repo, git=GitRunner())
 
         assert raised.value.error_code == ErrorCode.GIT_TIMEOUT
 
-    def test_git_that_cannot_start_caught_with_catch_failure_leaves_no_event_file(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    def test_missing_git_caught_with_catch_failure_leaves_no_event_file(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, frozen_diagnostic_clock: Path
     ) -> None:
-        """Copy GIT_FAILED into caught.failure with no diagnostic when git cannot be started, and create no logs directory."""
-
-        def _cannot_start(*_args: object, **_kwargs: object) -> object:
-            raise PermissionError("git")
-
-        monkeypatch.setattr(mutation_mod.subprocess, "run", _cannot_start)
+        """Copy GIT_BINARY_MISSING into caught.failure with no diagnostic when PATH holds no git, and create no logs directory."""
+        empty_bin = tmp_path / "empty-bin"
+        empty_bin.mkdir()
+        monkeypatch.setenv("PATH", str(empty_bin))
 
         with catch_failure("agent.attempt") as caught:
-            resolve_pre_agent_baseline(git_repo)
+            resolve_pre_agent_baseline(git_repo, git=GitRunner())
 
         assert caught.failure is not None
-        assert caught.failure.error_code == ErrorCode.GIT_FAILED
+        assert caught.failure.error_code == ErrorCode.GIT_BINARY_MISSING
         assert caught.failure.diagnostic is None
         assert not frozen_diagnostic_clock.parent.parent.exists()
 
     def test_missing_worktree_caught_with_catch_failure_records_the_cause(
         self, tmp_path: Path, frozen_diagnostic_clock: Path
     ) -> None:
-        """Copy GIT_FAILED into caught.failure and record the OSError when the worktree directory does not exist."""
+        """Copy GIT_WORKDIR_MISSING into caught.failure and record the OSError when the worktree directory does not exist."""
         with catch_failure("agent.attempt") as caught:
-            resolve_pre_agent_baseline(tmp_path / "gone")
+            resolve_pre_agent_baseline(tmp_path / "gone", git=GitRunner())
 
         assert caught.failure is not None
-        assert caught.failure.error_code == ErrorCode.GIT_FAILED
+        assert caught.failure.error_code == ErrorCode.GIT_WORKDIR_MISSING
         assert caught.failure.diagnostic is not None
         assert read_single_event(frozen_diagnostic_clock)["operation"] == "agent.attempt"
 
 
 class CaptureDiffSinceTests:
     def test_captures_modified_and_new_files(self, git_repo: Path) -> None:
-        baseline = resolve_pre_agent_baseline(git_repo)
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
         (git_repo / "README.md").write_text("agent edit\n", encoding="utf-8")
         (git_repo / "new_file.py").write_text("new file\n", encoding="utf-8")
 
-        diff, touched = capture_diff_since(git_repo, baseline)
+        diff, touched = capture_diff_since(git_repo, baseline, git=GitRunner())
 
         assert touched == ["README.md", "new_file.py"]
         assert "agent edit" in diff
@@ -309,19 +288,19 @@ class CaptureDiffSinceTests:
         """Return touched == ["README.md"] and a diff containing the committed agent edit but not the pre-baseline `wip.py`."""
         if dirty:
             _make_dirty(git_repo, "untracked")
-        baseline = resolve_pre_agent_baseline(git_repo)
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
         _agent_commits_readme_edit(git_repo, "committed by agent\n")
 
-        diff, touched = capture_diff_since(git_repo, baseline)
+        diff, touched = capture_diff_since(git_repo, baseline, git=GitRunner())
 
         assert touched == ["README.md"]
         assert "committed by agent" in diff
         assert "wip.py" not in diff
 
     def test_empty_diff_when_no_changes(self, git_repo: Path) -> None:
-        baseline = resolve_pre_agent_baseline(git_repo)
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
 
-        diff, touched = capture_diff_since(git_repo, baseline)
+        diff, touched = capture_diff_since(git_repo, baseline, git=GitRunner())
 
         assert diff == ""
         assert touched == []
@@ -329,21 +308,21 @@ class CaptureDiffSinceTests:
 
 class DiscardSinceTests:
     def test_discards_agent_edits_on_clean_baseline(self, git_repo: Path) -> None:
-        baseline = resolve_pre_agent_baseline(git_repo)
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
         (git_repo / "README.md").write_text("bad agent edit\n", encoding="utf-8")
         (git_repo / "junk.txt").write_text("untracked\n", encoding="utf-8")
 
-        discard_since(git_repo, baseline)
+        discard_since(git_repo, baseline, git=GitRunner())
 
         assert (git_repo / "README.md").read_text(encoding="utf-8") == "# Test Repo\n"
         assert not (git_repo / "junk.txt").exists()
 
     def test_discard_preserves_wip_baseline(self, git_repo: Path) -> None:
         (git_repo / "README.md").write_text("wip content\n", encoding="utf-8")
-        baseline = resolve_pre_agent_baseline(git_repo)
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
         (git_repo / "README.md").write_text("agent overwrote wip\n", encoding="utf-8")
 
-        discard_since(git_repo, baseline)
+        discard_since(git_repo, baseline, git=GitRunner())
 
         assert (git_repo / "README.md").read_text(encoding="utf-8") == "wip content\n"
 
@@ -357,14 +336,14 @@ class DiscardSinceTests:
         files_before = _worktree_files(git_repo)
         status_before = _git(git_repo, "--no-optional-locks", "status", "--porcelain")
 
-        baseline = resolve_pre_agent_baseline(git_repo)
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
         if dirty:
             (git_repo / "wip.py").write_text("print('agent rewrote wip')\n", encoding="utf-8")
             (git_repo / "notes.local").write_text("agent notes\n", encoding="utf-8")
         (git_repo / "agent_new.py").write_text("print('agent')\n", encoding="utf-8")
         _agent_commits_readme_edit(git_repo, "agent edit\n")
 
-        discard_since(git_repo, baseline)
+        discard_since(git_repo, baseline, git=GitRunner())
 
         assert _worktree_files(git_repo) == files_before
         assert _git(git_repo, "rev-parse", "HEAD") == head_before
@@ -381,25 +360,56 @@ class DiscardSinceTests:
             _commit_file(git_repo, ".gitignore", "*.local\n")
             _git(git_repo, "mv", "README.md", "moved.local")
             ignored_path = git_repo / "moved.local"
-        first_baseline = resolve_pre_agent_baseline(git_repo)
+        first_baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
         ignored_path.write_text("rejected agent notes\n", encoding="utf-8")
-        discard_since(git_repo, first_baseline)
+        discard_since(git_repo, first_baseline, git=GitRunner())
 
-        second_baseline = resolve_pre_agent_baseline(git_repo)
+        second_baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
         ignored_path.write_text("kept agent notes\n", encoding="utf-8")
-        diff, touched = capture_diff_since(git_repo, second_baseline)
+        diff, touched = capture_diff_since(git_repo, second_baseline, git=GitRunner())
 
         assert touched == [ignored_path.name]
         assert "kept agent notes" in diff
 
-    def test_raises_on_git_failure(self, git_repo: Path) -> None:
-        with pytest.raises(AgentError, match="git rev-parse baseline failed"):
-            discard_since(git_repo, "not-a-real-ref")
+    def test_unknown_baseline_raises_git_failed(self, git_repo: Path) -> None:
+        """Raise GitError GIT_FAILED naming `git rev-parse --verify not-a-real-ref^{commit}` for an unknown baseline."""
+        with pytest.raises(GitError) as raised:
+            discard_since(git_repo, "not-a-real-ref", git=GitRunner())
+
+        assert raised.value.error_code == ErrorCode.GIT_FAILED
+        assert raised.value.message.startswith(
+            "Git execution failed ('git rev-parse --verify not-a-real-ref^{commit}'):"
+        )
+
+    def test_merge_base_fatal_exit_raises_git_failed(self, git_repo: Path) -> None:
+        """Raise GitError GIT_FAILED naming the merge-base command and its stderr when `merge-base --is-ancestor` exits 128."""
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
+        fake = FakeGitRunner({("merge-base",): GitProcessOutput(128, "", "fatal: bad object")})
+
+        with pytest.raises(GitError) as raised:
+            discard_since(git_repo, baseline, git=fake)
+
+        assert raised.value.error_code == ErrorCode.GIT_FAILED
+        assert raised.value.message == (
+            f"Git execution failed ('git merge-base --is-ancestor {baseline} HEAD'): fatal: bad object"
+        )
+
+    def test_check_ignore_fatal_exit_raises_git_failed(self, git_repo: Path) -> None:
+        """Raise GitError GIT_FAILED naming check-ignore and its stderr when it exits 128 while restaging ignored WIP."""
+        _make_dirty(git_repo, "ignored_force_added")
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
+        fake = FakeGitRunner({("check-ignore",): GitProcessOutput(128, "", "fatal: bad")})
+
+        with pytest.raises(GitError) as raised:
+            discard_since(git_repo, baseline, git=fake)
+
+        assert raised.value.error_code == ErrorCode.GIT_FAILED
+        assert raised.value.message == "Git execution failed ('git check-ignore --no-index -z --stdin'): fatal: bad"
 
 
 class CaptureBinaryPatchSinceTests:
     def test_tracked_untracked_and_binary_changes_yield_patch_that_applies_to_baseline(self, git_repo: Path) -> None:
-        baseline = resolve_pre_agent_baseline(git_repo)
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
         expected = {
             "README.md": b"# Test Repo\nagent edit\r\n",
             "new.txt": b"fresh\xff\n",
@@ -408,8 +418,8 @@ class CaptureBinaryPatchSinceTests:
         for name, content in expected.items():
             (git_repo / name).write_bytes(content)
 
-        patch = capture_binary_patch_since(git_repo, baseline)
-        discard_since(git_repo, baseline)
+        patch = capture_binary_patch_since(git_repo, baseline, git=GitRunner())
+        discard_since(git_repo, baseline, git=GitRunner())
         subprocess.run(["git", "apply"], cwd=git_repo, input=patch, check=True)
 
         assert {name: (git_repo / name).read_bytes() for name in expected} == expected
@@ -421,15 +431,107 @@ class CaptureBinaryPatchSinceTests:
         """Return a patch naming README.md with the committed agent edit and never naming the pre-baseline `wip.py`."""
         if dirty:
             _make_dirty(git_repo, "untracked")
-        baseline = resolve_pre_agent_baseline(git_repo)
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
         _agent_commits_readme_edit(git_repo, "agent edit\n")
 
-        patch = capture_binary_patch_since(git_repo, baseline)
+        patch = capture_binary_patch_since(git_repo, baseline, git=GitRunner())
 
         assert b"README.md" in patch
         assert b"agent edit" in patch
         assert b"wip.py" not in patch
 
-    def test_unknown_baseline_raises_mutation_git_error(self, git_repo: Path) -> None:
-        with pytest.raises(AgentError):
-            capture_binary_patch_since(git_repo, "not-a-real-ref")
+    def test_unknown_baseline_raises_git_failed(self, git_repo: Path) -> None:
+        """Raise GitError GIT_FAILED for a baseline git cannot resolve."""
+        with pytest.raises(GitError) as raised:
+            capture_binary_patch_since(git_repo, "not-a-real-ref", git=GitRunner())
+
+        assert raised.value.error_code == ErrorCode.GIT_FAILED
+
+
+def _resolve(repo: Path, baseline: str, git: GitRunner) -> object:
+    """Take the pre-agent baseline of repo, ignoring baseline."""
+    return resolve_pre_agent_baseline(repo, git=git)
+
+
+def _capture_diff(repo: Path, baseline: str, git: GitRunner) -> object:
+    """Capture the diff since baseline."""
+    return capture_diff_since(repo, baseline, git=git)
+
+
+def _capture_patch(repo: Path, baseline: str, git: GitRunner) -> object:
+    """Capture the binary patch since baseline."""
+    return capture_binary_patch_since(repo, baseline, git=git)
+
+
+def _discard(repo: Path, baseline: str, git: GitRunner) -> object:
+    """Discard the changes since baseline."""
+    discard_since(repo, baseline, git=git)
+    return None
+
+
+_OPERATIONS: dict[str, tuple[tuple[str, ...], Callable[[Path, str, GitRunner], object]]] = {
+    "baseline_clean": (("rev-parse", "HEAD"), _resolve),
+    "baseline_dirty": (("commit-tree",), _resolve),
+    "capture_diff": (("diff", "--cached"), _capture_diff),
+    "capture_patch": (("diff", "--cached", "--binary"), _capture_patch),
+    "discard": (("read-tree",), _discard),
+}
+
+
+def _prepare(repo: Path, operation: str) -> str:
+    """Leave repo ready for operation and return its baseline: WIP for a dirty baseline, an agent edit after one otherwise."""
+    if operation == "baseline_dirty":
+        _make_dirty(repo, "untracked")
+    if operation.startswith("baseline"):
+        return "HEAD"
+    baseline = resolve_pre_agent_baseline(repo, git=GitRunner())
+    (repo / "README.md").write_text("agent edit\n", encoding="utf-8")
+    return baseline
+
+
+class MutationGitFailureCodeTests:
+    @pytest.mark.parametrize("operation", list(_OPERATIONS))
+    @pytest.mark.parametrize(
+        ("response", "code"),
+        [
+            pytest.param(
+                GitError(ErrorCode.GIT_TIMEOUT, "Git timed out after 120s ('git x')"),
+                ErrorCode.GIT_TIMEOUT,
+                id="timeout",
+            ),
+            pytest.param(GitProcessOutput(1, "", "injected"), ErrorCode.GIT_FAILED, id="nonzero_exit"),
+            pytest.param(
+                GitError(ErrorCode.GIT_BINARY_MISSING, "Git execution failed ('git x'): git not found"),
+                ErrorCode.GIT_BINARY_MISSING,
+                id="binary_missing",
+            ),
+        ],
+    )
+    def test_git_failure_raises_its_code_and_leaves_worktree_unchanged(
+        self, git_repo: Path, operation: str, response: GitProcessOutput | GitError, code: ErrorCode
+    ) -> None:
+        """Raise GitError with code, and keep the worktree files, HEAD and branch refs as they were, when the operation's git command fails that way."""
+        baseline = _prepare(git_repo, operation)
+        key, run = _OPERATIONS[operation]
+        files_before = _worktree_files(git_repo)
+        head_before = _git(git_repo, "rev-parse", "HEAD")
+        refs_before = _git(git_repo, "for-each-ref", "refs/heads")
+
+        with pytest.raises(GitError) as raised:
+            run(git_repo, baseline, FakeGitRunner({key: response}))
+
+        assert raised.value.error_code == code
+        assert _worktree_files(git_repo) == files_before
+        assert _git(git_repo, "rev-parse", "HEAD") == head_before
+        assert _git(git_repo, "for-each-ref", "refs/heads") == refs_before
+
+    @pytest.mark.parametrize("operation", ["baseline_clean", "capture_diff", "capture_patch", "discard"])
+    def test_vanished_worktree_raises_git_workdir_missing(self, tmp_path: Path, operation: str) -> None:
+        """Raise GitError GIT_WORKDIR_MISSING chained to the OSError when the worktree directory no longer exists."""
+        _, run = _OPERATIONS[operation]
+
+        with pytest.raises(GitError) as raised:
+            run(tmp_path / "gone", "HEAD", GitRunner())
+
+        assert raised.value.error_code == ErrorCode.GIT_WORKDIR_MISSING
+        assert isinstance(raised.value.__cause__, FileNotFoundError)
