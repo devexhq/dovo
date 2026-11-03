@@ -229,7 +229,7 @@ class Catalog:
         before the definition's own, on success and failure alike.
         """
         resolution: tuple[Path, str, str, tuple[str, ...]] | None = None
-        with catch_failure("catalog.validate", target=target) as caught:
+        with catch_failure("catalog.validate", item_type=item_type.value, target=target) as caught:
             resolution = self._resolve_validate_target(target, item_type=item_type)
             resolved_path, item_type_value, key, resolution_warnings = resolution
             checked = check_catalog_item(

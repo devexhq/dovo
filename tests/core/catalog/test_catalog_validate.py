@@ -809,7 +809,7 @@ class CatalogValidateDiagnosticLogTests:
     def test_unexpected_schema_failure_is_internal_error_under_catalog_validate(
         self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return valid False, INTERNAL_ERROR, the unexpected-error message alone and its record in diagnostics, with one catalog.validate event naming the target."""
+        """Return valid False, INTERNAL_ERROR, the unexpected-error message alone and its record in diagnostics, with one catalog.validate event naming the item type and target."""
         target_path = _write_yaml(
             workspace_paths.root_dir / "demo.yml", {"name": "demo", "steps": [{"id": "s1", "run": "echo hi"}]}
         )
@@ -828,5 +828,5 @@ class CatalogValidateDiagnosticLogTests:
         event = json.loads(frozen_diagnostic_clock.read_text(encoding="utf-8"))
         assert event["level"] == "error"
         assert event["operation"] == "catalog.validate"
-        assert event["context"] == {"target": str(target_path)}
+        assert event["context"] == {"item_type": "blueprint", "target": str(target_path)}
         assert event["exception_type"] == "RuntimeError"
