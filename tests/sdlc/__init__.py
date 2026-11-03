@@ -1,1 +1,1 @@
-"""Tests for the versioned sdlc slice-flow scripts under .dovo/catalog/scripts/sdlc/."""
+"""Tests for the sdlc bundle scripts under .dovo/catalog/scripts/sdlc/."""

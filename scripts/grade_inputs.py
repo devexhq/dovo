@@ -63,11 +63,15 @@ def review_summary(review: dict[str, object] | None, pr_head: str) -> dict[str, 
     }
 
 
-def _loop_iterations(steps: list[dict[str, object]], loop_id: str) -> int | None:
-    """Return how many iterations the loop step loop_id ran, or None when the session has no such loop."""
-    loop = next((step for step in steps if step.get("kind") == "loop" and step.get("step_id") == loop_id), None)
-    iterations = loop.get("iterations") if loop is not None else None
-    return iterations if isinstance(iterations, int) else None
+def _loop_iterations(steps: list[dict[str, object]]) -> dict[str, int]:
+    """Return how many iterations each loop step of the session ran, by its step id."""
+    return {
+        str(step["step_id"]): step["iterations"]
+        for step in steps
+        if step.get("kind") == "loop"
+        and isinstance(step.get("iterations"), int)
+        and not isinstance(step["iterations"], bool)
+    }
 
 
 def _steps(payload: dict[str, object]) -> list[dict[str, object]]:
@@ -89,8 +93,7 @@ def process_summary(payload: dict[str, object]) -> dict[str, object]:
     return {
         "blueprint": session.get("blueprint_name"),
         "status": session.get("status"),
-        "code_loop_iterations": _loop_iterations(steps, "code-loop"),
-        "review_loop_iterations": _loop_iterations(steps, "review-loop"),
+        "loop_iterations": _loop_iterations(steps),
         "retried_steps": sorted({str(step["step_id"]) for step in attempts if (step.get("attempts") or 1) > 1}),
         "failed_steps": sorted({str(step["step_id"]) for step in attempts if step.get("state") == "failed"}),
     }

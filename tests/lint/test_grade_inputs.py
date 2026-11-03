@@ -39,22 +39,22 @@ INPUTS = _load_script("grade_inputs", "grade_inputs_under_test")
 SHOWN_SESSION = {
     "session": {"blueprint_name": "ship", "status": "completed"},
     "steps": [
-        {"kind": "step", "step_id": "plan", "state": "completed", "attempts": 1},
-        {"kind": "loop", "step_id": "code-loop", "iterations": 2},
-        {"kind": "step", "step_id": "verify", "state": "completed", "attempts": 1},
-        {"kind": "step", "step_id": "push", "state": "completed", "attempts": 2},
-        {"kind": "loop", "step_id": "review-loop", "iterations": 1},
-        {"kind": "step", "step_id": "post-review", "state": "failed", "attempts": 1},
+        {"kind": "step", "step_id": "prepare", "state": "completed", "attempts": 1},
+        {"kind": "loop", "step_id": "delivery", "iterations": 5},
+        {"kind": "step", "step_id": "assess", "state": "completed", "attempts": 1},
+        {"kind": "step", "step_id": "implement", "state": "completed", "attempts": 2},
+        {"kind": "step", "step_id": "validate", "state": "completed", "attempts": 1},
+        {"kind": "step", "step_id": "review", "state": "completed", "attempts": 1},
+        {"kind": "step", "step_id": "publish", "state": "failed", "attempts": 1},
     ],
 }
 PLAN_QUESTIONS = {"issue": 1259, "questions": []}
 PROCESS = {
     "blueprint": "ship",
     "status": "completed",
-    "code_loop_iterations": 2,
-    "review_loop_iterations": 1,
-    "retried_steps": ["push"],
-    "failed_steps": ["post-review"],
+    "loop_iterations": {"delivery": 5},
+    "retried_steps": ["implement"],
+    "failed_steps": ["publish"],
 }
 
 
@@ -123,8 +123,7 @@ class GradeInputsSummaryTests:
         assert INPUTS.process_summary({"session": None, "steps": None}) == {
             "blueprint": None,
             "status": None,
-            "code_loop_iterations": None,
-            "review_loop_iterations": None,
+            "loop_iterations": {},
             "retried_steps": [],
             "failed_steps": [],
         }

@@ -3,7 +3,7 @@
 Read this **before writing any code** for a GitHub issue. The plan document (`.agentic/ship/plan.md` in a `ship` run, written as `.agentic/plan.md` below) is the deliverable.
 While planning, remain **read-only**: do not edit `src/` or `tests/`, do not run tests or quality gates, and do not commit or push.
 
-A plan has two readers. The human approving it needs to see, at the top, what changes for existing users and what is still undecided. The agent implementing a phase needs the files and symbols that phase touches, the new public surface the issue does not already pin, and the tests that pin each requirement. Write for both, and repeat nothing the issue already says.
+A plan has two readers. The reviewer reading it needs to see, at the top, what changes for existing users and what is still undecided. The agent implementing a phase needs the files and symbols that phase touches, the new public surface the issue does not already pin, and the tests that pin each requirement. Write for both, and repeat nothing the issue already says.
 
 ## How an issue reaches a plan
 
@@ -84,7 +84,7 @@ The issue's contract is not repeated here; read it on #<n>. This plan covers how
 
 <Or "None.">
 
-Write one fact per bullet. **Challenged**, **Turns on** and **Recommended** appear only on a question a conflicting review finding raised, and are added when the review's findings are folded into the plan. **Note** appears only when there is one.
+Write one fact per bullet. **Challenged**, **Turns on** and **Recommended** appear only on a question a conflicting review finding raised; the plan stage adds them when it re-plans after a review routes to `plan`. **Note** appears only when there is one.
 
 **Changes to existing behaviour:**
 
