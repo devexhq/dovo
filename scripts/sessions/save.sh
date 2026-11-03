@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Copy session SESSION_ID's stored records (session.json, definitions, diff),
-# logs and step outputs into sessions/<SESSION_ID>/ of SESSION_DATA_REPO, then
+# logs, step outputs and, while its worktree is still on disk, the worktree's
+# .agentic/ directory into sessions/<SESSION_ID>/ of SESSION_DATA_REPO, then
 # commit and push them to SESSION_DATA_BRANCH. Saving a session again replaces
 # its folder; an unchanged session pushes nothing.
 set -euo pipefail
@@ -28,6 +29,16 @@ if [ ! -d "$storage/sessions/$SESSION_ID" ]; then
   exit 1
 fi
 
+# A session run in a worktree shares its ID with the worktree; its .agentic/
+# directory holds the run's handoff files and reports until the worktree is removed.
+agentic=$(uv run dovo worktree show "$SESSION_ID" --format json 2>/dev/null | python3 -c '
+import json, sys
+payload = json.loads(sys.stdin.read())["payload"]
+worktree = payload["worktree"]
+if payload["disk_present"] and worktree:
+    print(worktree["worktree_path"] + "/.agentic")
+' || true)
+
 clone=$(mktemp -d)
 trap 'rm -rf "$clone"' EXIT
 trap 'exit 143' TERM
@@ -48,6 +59,11 @@ mkdir -p "$target"
 cp -R "$storage/sessions/$SESSION_ID/." "$target/"
 [ -d "$storage/logs/$SESSION_ID" ] && cp -R "$storage/logs/$SESSION_ID" "$target/logs"
 [ -d "$storage/tmp/$SESSION_ID" ] && cp -R "$storage/tmp/$SESSION_ID" "$target/outputs"
+if [ -n "$agentic" ] && [ -d "$agentic" ]; then
+  cp -R "$agentic" "$target/.agentic"
+else
+  echo "No .agentic/ directory on disk for session '$SESSION_ID'; saving without it."
+fi
 
 git -C "$clone" add -A "sessions/$SESSION_ID"
 if git -C "$clone" diff --cached --quiet; then
