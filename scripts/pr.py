@@ -3,8 +3,9 @@
 
 Reads .agentic/commit-msg, .agentic/pr-title, and .agentic/pr-description
 (written by the /pr-prep skill) and turns them into a commit of any
-uncommitted change, a pushed branch, and a GitHub pull request via `gh`. A
-branch whose changes are already committed is pushed as it is. The pull
+uncommitted change, a pushed branch, and a GitHub pull request via the
+GitHub REST API (`gh api`), which also works where GitHub's GraphQL API is
+unavailable. A branch whose changes are already committed is pushed as it is. The pull
 request's URL is written to .agentic/pr-url, so later steps post to that
 pull request rather than looking it up again by branch.
 """
@@ -67,12 +68,12 @@ def get_current_branch() -> str:
 
 
 def get_default_branch() -> str:
-    """Return the repository's default branch name via `gh`.
+    """Return the repository's default branch name from the GitHub REST API.
 
     Raises:
         PrPrepError: If the default branch cannot be determined.
     """
-    result = run("gh", "repo", "view", "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name", check=False)
+    result = run("gh", "api", "repos/{owner}/{repo}", "--jq", ".default_branch", check=False)
     branch = result.stdout.strip()
     if result.returncode != 0 or not branch:
         raise PrPrepError(f"Could not determine the default branch via gh: {result.stderr.strip()}")
@@ -186,7 +187,8 @@ def push_branch(branch: str) -> None:
 
 def find_existing_pr(branch: str) -> str | None:
     """Return the URL of an open PR for this branch, if one exists."""
-    result = run("gh", "pr", "view", branch, "--json", "url", "-q", ".url", check=False)
+    endpoint = f"repos/{{owner}}/{{repo}}/pulls?head={{owner}}:{branch}&state=open"
+    result = run("gh", "api", endpoint, "--jq", ".[0].html_url // empty", check=False)
     if result.returncode != 0:
         return None
     return result.stdout.strip() or None
@@ -196,18 +198,22 @@ def create_pr(branch: str, base: str, title: str, description: str) -> str:
     """Open a new PR and return its URL."""
     result = run(
         "gh",
-        "pr",
-        "create",
-        "--base",
-        base,
-        "--head",
-        branch,
-        "--title",
-        title,
-        "--body",
-        description,
+        "api",
+        "--method",
+        "POST",
+        "repos/{owner}/{repo}/pulls",
+        "-f",
+        f"base={base}",
+        "-f",
+        f"head={branch}",
+        "-f",
+        f"title={title}",
+        "-f",
+        f"body={description}",
+        "--jq",
+        ".html_url",
     )
-    return result.stdout.strip().splitlines()[-1]
+    return result.stdout.strip()
 
 
 def cleanup_handoff_files() -> None:

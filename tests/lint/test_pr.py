@@ -64,8 +64,8 @@ class PrTests:
 def _fake_run(*, existing: bool) -> Callable[..., subprocess.CompletedProcess[str]]:
     """Return a `run` double answering the git and gh calls of one pr.py run on BRANCH.
 
-    The branch has a staged change and an upstream; `gh pr view` finds PR_URL when existing,
-    otherwise it fails and `gh pr create` prints PR_URL.
+    The branch has a staged change and an upstream; the open-PR lookup returns PR_URL when
+    existing, otherwise it returns nothing and creating the PR returns PR_URL.
     """
 
     def fake_run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -78,12 +78,14 @@ def _fake_run(*, existing: bool) -> Callable[..., subprocess.CompletedProcess[st
 def _answer(args: tuple[str, ...], existing: bool) -> tuple[int, str]:
     """Return the exit code and stdout of one git or gh call."""
     answers: dict[tuple[str, ...], tuple[int, str]] = {
-        ("gh", "repo", "view"): (0, "main\n"),
+        ("gh", "api", "repos/{owner}/{repo}", "--jq", ".default_branch"): (0, "main\n"),
         ("git", "rev-parse", "--abbrev-ref", "HEAD"): (0, f"{BRANCH}\n"),
         ("git", "diff", "--cached", "--quiet"): (1, ""),
         ("git", "rev-parse", "--short", "HEAD"): (0, "abc1234\n"),
-        ("gh", "pr", "view", BRANCH): (0, f"{PR_URL}\n") if existing else (1, ""),
-        ("gh", "pr", "create"): (0, f"Creating pull request\n{PR_URL}\n"),
+        ("gh", "api", f"repos/{{owner}}/{{repo}}/pulls?head={{owner}}:{BRANCH}&state=open"): (
+            (0, f"{PR_URL}\n") if existing else (0, "\n")
+        ),
+        ("gh", "api", "--method", "POST", "repos/{owner}/{repo}/pulls"): (0, f"{PR_URL}\n"),
     }
     for prefix, answer in answers.items():
         if args[: len(prefix)] == prefix:
