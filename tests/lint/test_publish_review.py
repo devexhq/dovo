@@ -20,6 +20,10 @@ PR_URL = "https://github.com/o/r/pull/7"
 REVIEW_URL = f"{PR_URL}#pullrequestreview-11"
 COMMENT_URL = f"{PR_URL}#issuecomment-5"
 TABLE_HEADER = "| ID | Location | Rule | Issue | Fix |"
+RANGE_RULE = "start_line is null for a single line, or a line from 1 to below line for a range"
+SEVERITIES = "BLOCKER, WARNING, SUGGESTION or NIT"
+RULES = "null or one word such as R4, conventions or architecture"
+APPROVE_REPORT = f"**Verdict:** APPROVE · **Action:** none\n**Reviewed commit:** `{PR_HEAD}`\n"
 
 
 def _load_publisher() -> ModuleType:
@@ -275,10 +279,13 @@ class PublishReviewTests:
                 id="uncommitted",
             ),
             pytest.param(
-                _review(drop="head"), "ok", "review.json has no 'head'; run /dovo-review again", id="missing-head"
+                _review(drop="head"), "ok", "review.json has no 'head'; correct .agentic/review.json", id="missing-head"
             ),
             pytest.param(
-                _review(drop="action"), "ok", "review.json has no 'action'; run /dovo-review again", id="missing-action"
+                _review(drop="action"),
+                "ok",
+                "review.json has no 'action'; correct .agentic/review.json",
+                id="missing-action",
             ),
             pytest.param(
                 _review(),
@@ -305,7 +312,10 @@ class PublishReviewTests:
                 id="approve-with-blockers",
             ),
             pytest.param(
-                _review(drop="counts"), "ok", "review.json has no 'counts'; run /dovo-review again", id="missing-counts"
+                _review(drop="counts"),
+                "ok",
+                "review.json has no 'counts'; correct .agentic/review.json",
+                id="missing-counts",
             ),
             pytest.param(
                 _review(round=None), "ok", "review.json round None is not a positive integer", id="round-null"
@@ -383,7 +393,7 @@ class PublishReviewTests:
             pytest.param(
                 _review(),
                 f"**Reviewed commit:** `{PR_HEAD}`\n",
-                "review.md has no Verdict line; run /dovo-review again",
+                "review.md has no Verdict line; correct .agentic/review.md",
                 id="no-verdict-line",
             ),
         ],
@@ -770,22 +780,22 @@ class PublishReviewTests:
             ),
             pytest.param(
                 _review(findings=[_finding("W1", "WARNING", "src/b.py", 5, start_line=5)]),
-                "review.json finding W1 has start_line 5, which is not a line before its line",
+                f"review.json finding W1 has start_line 5 with line 5; {RANGE_RULE}",
                 id="start-line-not-below",
             ),
             pytest.param(
                 _review(findings=[_finding("W1", "WARNING", "src/b.py", 5, start_line=True)]),
-                "review.json finding W1 has start_line True, which is not a line before its line",
+                f"review.json finding W1 has start_line True with line 5; {RANGE_RULE}",
                 id="start-line-bool",
             ),
             pytest.param(
                 _review(findings=[_finding("W1", "WARNING", "src/b.py", 5, start_line=0)]),
-                "review.json finding W1 has start_line 0, which is not a line before its line",
+                f"review.json finding W1 has start_line 0 with line 5; {RANGE_RULE}",
                 id="start-line-zero",
             ),
             pytest.param(
                 _review(findings=[_finding("W1", "WARNING", "src/b.py", None, start_line=3)]),
-                "review.json finding W1 has start_line 3, which is not a line before its line",
+                f"review.json finding W1 has start_line 3 with line None; {RANGE_RULE}",
                 id="start-line-without-line",
             ),
             pytest.param(
@@ -816,19 +826,39 @@ class PublishReviewTests:
             ),
             pytest.param(
                 _review(findings=[_finding("W1", "MAJOR", None, None)]),
-                "review.json finding W1 cannot be written as a finding marker",
+                f"review.json finding W1 has severity 'MAJOR', which is not {SEVERITIES}",
                 id="unknown-severity",
             ),
             pytest.param(
+                _review(findings=[_finding("W1", "suggestion", None, None)]),
+                f"review.json finding W1 has severity 'suggestion', which is not {SEVERITIES}",
+                id="lowercase-severity",
+            ),
+            pytest.param(
+                _review(findings=[_finding("W1", "WARNING", None, None) | {"severity": ["WARNING"]}]),
+                f"review.json finding W1 has severity ['WARNING'], which is not {SEVERITIES}",
+                id="list-severity",
+            ),
+            pytest.param(
                 _review(findings=[_finding("W1", "WARNING", None, None, rule="R12, R13")]),
-                "review.json finding W1 cannot be written as a finding marker",
+                f"review.json finding W1 has rule 'R12, R13', which is not {RULES}",
                 id="spaced-rule",
+            ),
+            pytest.param(
+                _review(findings=[_finding("W1", "WARNING", None, None, rule="-")]),
+                f"review.json finding W1 has rule '-', which is not {RULES}",
+                id="dash-rule",
+            ),
+            pytest.param(
+                _review(findings=[_finding("W1", "WARNING", None, None) | {"rule": 4}]),
+                f"review.json finding W1 has rule 4, which is not {RULES}",
+                id="number-rule",
             ),
         ],
     )
     def test_findings_problem(self, review: dict[str, object], expected: str | None) -> None:
         assert PUBLISHER.findings_problem(review) == (
-            None if expected is None else f"{expected}; run /dovo-review again"
+            None if expected is None else f"{expected}; correct .agentic/review.json"
         )
 
     @pytest.mark.parametrize(
@@ -1035,7 +1065,7 @@ class PublishReviewTests:
         assert PUBLISHER.main() == 1
 
         assert capsys.readouterr().err == (
-            "publish_review.py: review.json finding W1 has no issue; run /dovo-review again\n"
+            "publish_review.py: review.json finding W1 has no issue; correct .agentic/review.json\n"
         )
         assert writes == []
 
@@ -1065,9 +1095,108 @@ class PublishReviewTests:
         assert PUBLISHER.main() == 1
 
         assert capsys.readouterr().err == (
-            "publish_review.py: review.json finding W1 has no start_line; run /dovo-review again\n"
+            "publish_review.py: review.json finding W1 has no start_line; correct .agentic/review.json\n"
         )
         assert writes == []
+
+    def test_main_check_accepts_publishable_review(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write_review(tmp_path, _changes_required(), REPORT_HEAD)
+        _check_from(tmp_path, monkeypatch)
+
+        assert PUBLISHER.main() == 0
+
+        assert capsys.readouterr().out == "review.json and review.md can be published\n"
+
+    @pytest.mark.parametrize(
+        ("finding", "expected"),
+        [
+            pytest.param(
+                _finding("S1", "suggestion", "src/a.py", 94),
+                f"review.json finding S1 has severity 'suggestion', which is not {SEVERITIES}",
+                id="lowercase-severity",
+            ),
+            pytest.param(
+                _finding("S1", "SUGGESTION", "src/a.py", 94, start_line=94),
+                f"review.json finding S1 has start_line 94 with line 94; {RANGE_RULE}",
+                id="one-line-start-line",
+            ),
+        ],
+    )
+    def test_main_check_refuses_finding_publish_refuses(
+        self,
+        finding: dict[str, object],
+        expected: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _write_review(tmp_path, _review(findings=[finding]), APPROVE_REPORT)
+        _check_from(tmp_path, monkeypatch)
+
+        assert PUBLISHER.main() == 1
+
+        assert capsys.readouterr().err == f"publish_review.py: {expected}; correct .agentic/review.json\n"
+
+    def test_main_check_refuses_report_disagreeing_with_review(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write_review(tmp_path, _review(), REPORT_HEAD)
+        _check_from(tmp_path, monkeypatch)
+
+        assert PUBLISHER.main() == 1
+
+        assert capsys.readouterr().err == (
+            "publish_review.py: review.md Verdict line disagrees with review.json: "
+            "'**Verdict:** CHANGES REQUIRED · **Action:** fix'\n"
+        )
+
+    def test_main_check_refuses_uncommitted_review(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        report = "**Verdict:** APPROVE · **Action:** none\n**Reviewed commit:** uncommitted changes\n"
+        _write_review(tmp_path, _review(head=None), report)
+        _check_from(tmp_path, monkeypatch)
+
+        assert PUBLISHER.main() == 1
+
+        assert capsys.readouterr().err == (
+            "publish_review.py: the review covered uncommitted changes; commit them and review again\n"
+        )
+
+    def test_main_check_refuses_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _write_review(tmp_path, _review(), APPROVE_REPORT)
+        _check_from(tmp_path, monkeypatch, "--session", "blueprint_abba01ee")
+
+        assert PUBLISHER.main() == 1
+
+        assert capsys.readouterr().err == "publish_review.py: --session needs --pr\n"
+
+    @pytest.mark.parametrize(
+        "argv",
+        [pytest.param([], id="neither"), pytest.param(["--check", "--pr", "7"], id="both")],
+    )
+    def test_main_needs_exactly_one_of_pr_and_check(self, argv: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sys, "argv", ["publish_review.py", *argv])
+
+        with pytest.raises(SystemExit) as exited:
+            PUBLISHER.main()
+
+        assert exited.value.code == 2
+
+
+def _check_from(root: Path, monkeypatch: pytest.MonkeyPatch, *extra: str) -> None:
+    """Run `--check` with extra arguments from root, failing the test on any command it runs."""
+
+    def no_run(*args: str) -> str:
+        pytest.fail(f"ran {args}")
+
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(sys, "argv", ["publish_review.py", "--check", *extra])
+    monkeypatch.setattr(PUBLISHER, "run", no_run)
 
 
 def _setup(

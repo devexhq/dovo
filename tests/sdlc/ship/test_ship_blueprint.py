@@ -32,6 +32,8 @@ NEW_HEAD_SHA = "b" * 40
 PR_HEAD_SHA = "c" * 40
 ISSUE_BODY = "## Why\nGrounded ticket body.\n"
 ISSUE_BODY_SHA = hashlib.sha256(ISSUE_BODY.encode("utf-8")).hexdigest()
+REVIEW_CHECK = ("uv", "run", "python", "scripts/publish_review.py", "--check")
+REAL_RUN = subprocess.run
 
 EXPECTED_STEP_KEYS: frozenset[str] = frozenset(
     {
@@ -87,7 +89,7 @@ def _completed(
 
 
 def _mock_git_and_gh(monkeypatch: pytest.MonkeyPatch, head_sha_ref: list[str]) -> None:
-    """Mock git rev-parse HEAD and gh api issue lookup boundary calls."""
+    """Mock git rev-parse HEAD and gh api issue lookup boundary calls, running the real review check."""
 
     def fake_run(
         args: Sequence[str],
@@ -101,6 +103,9 @@ def _mock_git_and_gh(monkeypatch: pytest.MonkeyPatch, head_sha_ref: list[str]) -
         cmd = tuple(args)
         if cmd[:3] == ("git", "rev-parse", "HEAD"):
             return _completed(cmd, stdout=f"{head_sha_ref[0]}\n")
+        if cmd == REVIEW_CHECK:
+            script = str(REPO_ROOT / "scripts" / "publish_review.py")
+            return REAL_RUN([sys.executable, script, "--check"], check=False, capture_output=True, text=True)
         if cmd[:3] == ("gh", "api", "repos/{owner}/{repo}/issues/1373"):
             return _completed(
                 cmd,
@@ -270,16 +275,21 @@ def _write_stage_result(
 
 
 def _write_ready_review_json(workspace: Path, *, head_sha: str) -> None:
-    """Write a clean .agentic/review.json matching head_sha and ISSUE_BODY_SHA."""
+    """Write an approving .agentic/review.json and review.md for head_sha that scripts/publish_review.py accepts."""
     _write_json(
         workspace / ".agentic" / "review.json",
         {
-            "issue": 1373,
-            "verdict": "ready",
-            "body_sha": ISSUE_BODY_SHA,
-            "head_sha": head_sha,
+            "head": head_sha,
+            "verdict": "APPROVE",
+            "action": "none",
+            "round": 1,
+            "counts": {"blocking": 0, "warnings": 0, "suggestions": 0, "nits": 0},
             "findings": [],
+            "coverage": [],
         },
+    )
+    (workspace / ".agentic" / "review.md").write_text(
+        f"**Verdict:** APPROVE · **Action:** none\n**Reviewed commit:** `{head_sha}`\n", encoding="utf-8"
     )
 
 

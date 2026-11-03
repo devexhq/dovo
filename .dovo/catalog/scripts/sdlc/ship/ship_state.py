@@ -42,6 +42,7 @@ STEP_ENV_PREFIXES: Final[tuple[str, ...]] = (
 )
 
 MAX_REVIEW_ROUNDS: Final[int] = 3
+REVIEW_CHECK_COMMAND: Final[tuple[str, ...]] = ("uv", "run", "python", "scripts/publish_review.py", "--check")
 ACTIONS: Final[tuple[str, ...]] = ("assess", "investigate", "plan", "implement", "validate", "review", "ask")
 AGENT_AND_CHECK_ACTIONS: Final[frozenset[str]] = frozenset(
     {"assess", "investigate", "plan", "implement", "validate", "review"}
@@ -556,12 +557,37 @@ def _record_review_changes_requested(progress: dict[str, object], summary: str, 
     return "incomplete", ""
 
 
+def _review_record_problem() -> str | None:
+    """Return why scripts/publish_review.py would refuse .agentic/review.json and review.md, or None when it would publish them."""
+    res = _run_cmd(*REVIEW_CHECK_COMMAND, check=False)
+    if res.returncode == 0:
+        return None
+    return (res.stderr or res.stdout).strip() or f"scripts/publish_review.py --check exited {res.returncode}"
+
+
+def _record_rejected_review(progress: dict[str, object], problem: str, head_sha: str) -> tuple[str, str]:
+    """Record a ready review the publisher refuses and send it back to `review`, or end incomplete on a repeat."""
+    progress["last_review"] = {"head_sha": head_sha, "status": "rejected", "summary": problem}
+    fingerprint = f"review_record:{head_sha}:{_sha256_text(problem)[:16]}"
+    if _record_fingerprint(progress, fingerprint):
+        progress["summary"] = f"Review record rejected twice at {head_sha[:12]}: {problem}"
+        return "incomplete", ""
+    return "working", "review"
+
+
 def _transition_review(
     progress: dict[str, object], stage_data: dict[str, object], disposition: str, head_sha: str
 ) -> tuple[str, str]:
-    """Compute (outcome, next_action) for a `review` stage result."""
+    """Compute (outcome, next_action) for a `review` stage result.
+
+    A ready review is first checked with `scripts/publish_review.py --check`, so one publish would refuse
+    goes back to `review`, where it can still be corrected, instead of failing at publish.
+    """
     summary = str(stage_data.get("summary", "")).strip()
     if disposition in ("ready", "approved"):
+        problem = _review_record_problem()
+        if problem is not None:
+            return _record_rejected_review(progress, problem, head_sha)
         progress["last_review"] = {"head_sha": head_sha, "status": "ready", "summary": summary}
         if _has_matching_stage_status(progress.get("last_validation"), "passed", head_sha):
             return "ready", ""

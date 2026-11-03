@@ -23,6 +23,9 @@ ISSUE_BODY = "## Why\nGrounded ticket body.\n"
 ISSUE_BODY_SHA = hashlib.sha256(ISSUE_BODY.encode("utf-8")).hexdigest()
 GH_ISSUE_VIEW = ("gh", "api", "repos/{owner}/{repo}/issues/1367")
 GH_PR_LIST = ("gh", "api", "--paginate")
+REVIEW_CHECK = ("uv", "run", "python", "scripts/publish_review.py", "--check")
+REAL_RUN = subprocess.run
+RANGE_RULE = "start_line is null for a single line, or a line from 1 to below line for a range"
 
 
 def _load_ship_state() -> ModuleType:
@@ -121,13 +124,19 @@ def _mock_pr_continuation(
     monkeypatch.setattr(subprocess, "run", fake_run)
 
 
+def _run_review_check(cmd: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
+    """Run the real scripts/publish_review.py --check from the current directory, standing in for `uv run`."""
+    script = str(REPO_ROOT / "scripts" / "publish_review.py")
+    return REAL_RUN([sys.executable, script, *cmd[4:]], check=False, capture_output=True, text=True)
+
+
 def _mock_git_and_issue(
     monkeypatch: pytest.MonkeyPatch,
     *,
     head_sha: str = HEAD_SHA,
     issue_body: str = ISSUE_BODY,
 ) -> None:
-    """Patch subprocess.run at the boundary for git rev-parse HEAD and the gh api issue lookup."""
+    """Patch subprocess.run at the boundary for git rev-parse HEAD, the gh api issue lookup and the review check."""
 
     def fake_subprocess_run(
         args: Sequence[str],
@@ -141,6 +150,8 @@ def _mock_git_and_issue(
         cmd = tuple(args)
         if cmd[:3] == ("git", "rev-parse", "HEAD"):
             return _completed(cmd, stdout=f"{head_sha}\n")
+        if cmd == REVIEW_CHECK:
+            return _run_review_check(cmd)
         if cmd[:3] == GH_ISSUE_VIEW:
             return _completed(
                 cmd,
@@ -219,6 +230,43 @@ def _write_stage(
     stage_file = root / ".agentic" / "ship" / "stage.json"
     stage_file.parent.mkdir(parents=True, exist_ok=True)
     stage_file.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _finding(**overrides: object) -> dict[str, object]:
+    """Return a publishable one-line SUGGESTION finding S-1 on src/a.py:94, then overrides."""
+    finding: dict[str, object] = {
+        "id": "S-1",
+        "severity": "SUGGESTION",
+        "path": "src/a.py",
+        "start_line": None,
+        "line": 94,
+        "rule": "R5",
+        "summary": "Name the helper after its result.",
+        "issue": "The helper name hides what it returns.",
+        "fix": "Rename it.",
+        "also_affects": [],
+    }
+    finding.update(overrides)
+    return finding
+
+
+def _write_review(root: Path, *, head_sha: str = HEAD_SHA, findings: Sequence[dict[str, object]] = ()) -> None:
+    """Write an approving .agentic/review.json and review.md for head_sha in root, holding findings."""
+    review = {
+        "head": head_sha,
+        "verdict": "APPROVE",
+        "action": "none",
+        "round": 1,
+        "counts": {"blocking": 0, "warnings": 0, "suggestions": len(findings), "nits": 0},
+        "findings": list(findings),
+        "coverage": [],
+    }
+    agentic = root / ".agentic"
+    agentic.mkdir(parents=True, exist_ok=True)
+    (agentic / "review.json").write_text(json.dumps(review), encoding="utf-8")
+    (agentic / "review.md").write_text(
+        f"**Verdict:** APPROVE · **Action:** none\n**Reviewed commit:** `{head_sha}`\n", encoding="utf-8"
+    )
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -466,12 +514,95 @@ class NextAndRecordTransitionTests:
         _write_stage(workspace, "validate", "passed", summary="All checks passed")
         assert SHIP.main(["record", "--action", "validate"]) == 0
 
+        _write_review(workspace)
         _write_stage(workspace, "review", "ready", summary="LGTM")
         assert SHIP.main(["record", "--action", "review"]) == 0
 
         progress = _read_json(workspace / ".agentic/ship/progress.json")
         assert progress["outcome"] == "ready"
         assert progress["next_action"] == ""
+
+    @pytest.mark.parametrize(
+        ("finding", "refusal"),
+        [
+            pytest.param(
+                _finding(severity="suggestion"),
+                "review.json finding S-1 has severity 'suggestion', which is not BLOCKER, WARNING, SUGGESTION or NIT",
+                id="lowercase-severity",
+            ),
+            pytest.param(
+                _finding(start_line=94),
+                f"review.json finding S-1 has start_line 94 with line 94; {RANGE_RULE}",
+                id="one-line-start-line",
+            ),
+        ],
+    )
+    def test_record_sends_ready_review_publish_would_refuse_back_to_review(
+        self,
+        finding: dict[str, object],
+        refusal: str,
+        workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        _seed_prepared_state(workspace)
+        _mock_git_and_issue(monkeypatch, head_sha=HEAD_SHA)
+        _write_stage(workspace, "validate", "passed", summary="All checks passed")
+        assert SHIP.main(["record", "--action", "validate"]) == 0
+        capsys.readouterr()
+
+        _write_review(workspace, findings=[finding])
+        _write_stage(workspace, "review", "ready", summary="APPROVE round 1")
+        assert SHIP.main(["record", "--action", "review"]) == 0
+
+        assert json.loads(capsys.readouterr().out) == {"outcome": "working", "next_action": "review"}
+        progress = _read_json(workspace / ".agentic/ship/progress.json")
+        assert progress["last_review"] == {
+            "head_sha": HEAD_SHA,
+            "status": "rejected",
+            "summary": f"publish_review.py: {refusal}; correct .agentic/review.json",
+        }
+        assert progress["review_rounds"] == 0
+
+    def test_record_accepts_corrected_review_after_rejection(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _seed_prepared_state(workspace)
+        _mock_git_and_issue(monkeypatch, head_sha=HEAD_SHA)
+        _write_stage(workspace, "validate", "passed", summary="All checks passed")
+        assert SHIP.main(["record", "--action", "validate"]) == 0
+        _write_review(workspace, findings=[_finding(severity="suggestion")])
+        _write_stage(workspace, "review", "ready", summary="APPROVE round 1")
+        assert SHIP.main(["record", "--action", "review"]) == 0
+        capsys.readouterr()
+
+        _write_review(workspace, findings=[_finding()])
+        _write_stage(workspace, "review", "ready", summary="APPROVE round 1")
+        assert SHIP.main(["record", "--action", "review"]) == 0
+
+        assert json.loads(capsys.readouterr().out) == {"outcome": "ready", "next_action": ""}
+        progress = _read_json(workspace / ".agentic/ship/progress.json")
+        assert progress["last_review"] == {"head_sha": HEAD_SHA, "status": "ready", "summary": "APPROVE round 1"}
+
+    def test_record_stops_on_same_review_refusal_twice_at_same_head(
+        self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _seed_prepared_state(workspace)
+        _mock_git_and_issue(monkeypatch, head_sha=HEAD_SHA)
+        _write_review(workspace, findings=[_finding(start_line=94)])
+        _write_stage(workspace, "review", "ready")
+        assert SHIP.main(["record", "--action", "review"]) == 0
+        capsys.readouterr()
+
+        _write_stage(workspace, "review", "ready")
+        assert SHIP.main(["record", "--action", "review"]) == 0
+
+        assert json.loads(capsys.readouterr().out) == {"outcome": "incomplete", "next_action": ""}
+        progress = _read_json(workspace / ".agentic/ship/progress.json")
+        assert progress["summary"] == (
+            f"Review record rejected twice at {HEAD_SHA[:12]}: publish_review.py: review.json finding S-1 has "
+            f"start_line 94 with line 94; {RANGE_RULE}; correct .agentic/review.json"
+        )
 
     def test_serial_questions_presented_one_per_iteration_and_returned_to_origin_stage(
         self, workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -620,6 +751,7 @@ class PublicationGateAndReportTests:
 
         _write_stage(workspace, "validate", "passed", summary="Checks green")
         assert SHIP.main(["record", "--action", "validate"]) == 0
+        _write_review(workspace)
         _write_stage(workspace, "review", "ready", summary="Approved")
         assert SHIP.main(["record", "--action", "review"]) == 0
         capsys.readouterr()
@@ -664,6 +796,7 @@ class PublicationGateAndReportTests:
         _mock_git_and_issue(monkeypatch, head_sha=HEAD_SHA, issue_body=ISSUE_BODY)
         _write_stage(workspace, "validate", "passed")
         assert SHIP.main(["record", "--action", "validate"]) == 0
+        _write_review(workspace)
         _write_stage(workspace, "review", "ready")
         assert SHIP.main(["record", "--action", "review"]) == 0
         capsys.readouterr()
@@ -679,6 +812,7 @@ class PublicationGateAndReportTests:
         _mock_git_and_issue(monkeypatch, head_sha=HEAD_SHA, issue_body=ISSUE_BODY)
         _write_stage(workspace, "validate", "passed")
         assert SHIP.main(["record", "--action", "validate"]) == 0
+        _write_review(workspace)
         _write_stage(workspace, "review", "ready")
         assert SHIP.main(["record", "--action", "review"]) == 0
         capsys.readouterr()

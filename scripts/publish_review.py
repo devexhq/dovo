@@ -19,6 +19,10 @@ agree and the pull request head is the commit the review covered. With
 pr-fix can restore that run's state. Every API call targets the pull request's
 own repository, and every call goes through GitHub's REST API, never GraphQL, which
 some environments (such as Claude Code cloud sessions) refuse.
+
+With --check instead of --pr, it posts nothing and calls no API: it runs every
+check publishing makes of review.json and review.md that needs no pull request,
+so a caller such as ship can refuse a review while it can still be corrected.
 """
 
 from __future__ import annotations
@@ -58,7 +62,7 @@ SEVERITY_LABELS = {  # (count of one, any other count)
 }
 FINDING_SECTIONS = ("### Blocking", "### Warnings", "### Suggestions", "### Nits", "### Earlier rounds")
 HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,\d+)? @@")
-FINDINGS_FIX = "; run /dovo-review again"
+FINDINGS_FIX = "; correct .agentic/review.json"
 FINDING_KEYS = ("severity", "path", "start_line", "line", "rule", "summary", "issue", "fix", "also_affects")
 FINDING_MARKER_LINE = re.compile(
     r"^<!-- dovo-finding id=(?P<id>\S+) severity=(?P<severity>BLOCKER|WARNING|SUGGESTION|NIT) rule=(?P<rule>\S+) -->$"
@@ -66,6 +70,7 @@ FINDING_MARKER_LINE = re.compile(
 ALSO_AFFECTS_ENTRY = re.compile(r"^\S+:[1-9]\d*(?:-[1-9]\d*)?$")
 BACKTICK_RUN = re.compile(r"`+")
 SEVERITY_NAMES = {"BLOCKER": "Blocker", "WARNING": "Warning", "SUGGESTION": "Suggestion", "NIT": "Nit"}
+SEVERITY_CHOICES = f"{', '.join(list(SEVERITY_NAMES)[:-1])} or {list(SEVERITY_NAMES)[-1]}"
 SEVERITY_DOTS = {"BLOCKER": "🔴", "WARNING": "🟠", "SUGGESTION": "🔵", "NIT": "⚪"}
 BUG_SEVERITIES = ("BLOCKER", "WARNING")
 PROMPT = (
@@ -401,7 +406,7 @@ def record_problem(review: dict[str, object]) -> str | None:
     """
     for key in REQUIRED_KEYS:
         if key not in review:
-            return f"review.json has no {key!r}; run /dovo-review again"
+            return f"review.json has no {key!r}{FINDINGS_FIX}"
     verdict = review["verdict"]
     if verdict not in VERDICTS:
         return f"review.json verdict {verdict!r} is not APPROVE or CHANGES_REQUIRED"
@@ -444,7 +449,7 @@ def report_problem(review: dict[str, object], report: str) -> str | None:
     for label, fragments in expected.items():
         line = next((line for line in lines if line.startswith(label)), None)
         if line is None:
-            return f"review.md has no {label.strip('*:')} line; run /dovo-review again"
+            return f"review.md has no {label.strip('*:')} line; correct .agentic/review.md"
         if not all(fragment in line for fragment in fragments):
             return f"review.md {label.strip('*:')} line disagrees with review.json: {line!r}"
     return None
@@ -456,13 +461,35 @@ def _is_text(value: object) -> bool:
 
 
 def _range_problem(finding: dict[str, object]) -> str | None:
-    """Return Error 4's message when start_line is set but not an integer from 1 to below an integer line; None otherwise."""
+    """Return Error 4's message, naming start_line, line and the accepted shapes, when start_line is set but not an integer from 1 to below an integer line; None otherwise."""
     finding_id = finding["id"]
     start, line = finding["start_line"], finding.get("line")
     if start is None or (_is_count(start) and _is_count(line) and 0 < int(str(start)) < int(str(line))):
         return None
     return (
-        f"review.json finding {finding_id} has start_line {start!r}, which is not a line before its line{FINDINGS_FIX}"
+        f"review.json finding {finding_id} has start_line {start!r} with line {line!r}; start_line is null "
+        f"for a single line, or a line from 1 to below line for a range{FINDINGS_FIX}"
+    )
+
+
+def _severity_problem(finding: dict[str, object]) -> str | None:
+    """Return why the finding's severity is not one of SEVERITY_NAMES, naming the value and the accepted ones; None otherwise."""
+    severity = finding["severity"]
+    if isinstance(severity, str) and severity in SEVERITY_NAMES:
+        return None
+    return (
+        f"review.json finding {finding['id']} has severity {severity!r}, which is not {SEVERITY_CHOICES}{FINDINGS_FIX}"
+    )
+
+
+def _rule_problem(finding: dict[str, object]) -> str | None:
+    """Return why the finding's rule is neither null nor one word other than `-`, naming the value; None otherwise."""
+    rule = finding["rule"]
+    if rule is None or (isinstance(rule, str) and rule != "-" and rule.split() == [rule]):
+        return None
+    return (
+        f"review.json finding {finding['id']} has rule {rule!r}, "
+        f"which is not null or one word such as R4, conventions or architecture{FINDINGS_FIX}"
     )
 
 
@@ -490,13 +517,12 @@ def _finding_problem(finding: dict[str, object]) -> str | None:
     for key in ("summary", "issue", "fix"):
         if not _is_text(finding.get(key)):
             return f"review.json finding {finding_id} has no {key}{FINDINGS_FIX}"
-    problem = _range_problem(finding) or _also_affects_problem(finding)
-    if problem is not None:
-        return problem
-    expected = {key: finding.get(key) for key in ("id", "severity", "rule")}
-    if parse_finding_marker(finding_marker(finding)) != expected:
-        return f"review.json finding {finding_id} cannot be written as a finding marker{FINDINGS_FIX}"
-    return None
+    return (
+        _range_problem(finding)
+        or _also_affects_problem(finding)
+        or _severity_problem(finding)
+        or _rule_problem(finding)
+    )
 
 
 def findings_problem(review: dict[str, object]) -> str | None:
@@ -504,7 +530,8 @@ def findings_problem(review: dict[str, object]) -> str | None:
 
     Each finding needs an `id` with no whitespace, every key in FINDING_KEYS, non-empty `summary`, `issue`
     and `fix`, a `start_line` that is null or a line before `line`, an `also_affects` list of `path:line` or
-    `path:start-end` entries, and an `id`, `severity` and `rule` that its finding marker parses back to.
+    `path:start-end` entries, a `severity` of BLOCKER, WARNING, SUGGESTION or NIT, and a `rule` that is null
+    or one word other than `-`. Each refusal names the finding, the field and the value it rejected.
     """
     findings = review.get("findings")
     if not isinstance(findings, list):
@@ -540,6 +567,26 @@ def size_problem(payload: dict[str, object] | None) -> str | None:
     return None
 
 
+def review_problem(review: dict[str, object]) -> str | None:
+    """Return why review.json cannot be published to any pull request, or None when it can.
+
+    These are the checks of publish_problem that need no pull request: the record, the findings, and a
+    reviewed commit rather than uncommitted changes.
+
+    Args:
+        review: The parsed review.json.
+
+    Returns:
+        The first problem found, or None when review.json can be published.
+    """
+    problem = record_problem(review) or findings_problem(review)
+    if problem is not None:
+        return problem
+    if review["head"] is None:
+        return "the review covered uncommitted changes; commit them and review again"
+    return None
+
+
 def publish_problem(review: dict[str, object], body: str, pr_head: str) -> str | None:
     """Return why body, built from review, must not be posted to a PR at pr_head, or None when it may be.
 
@@ -551,12 +598,10 @@ def publish_problem(review: dict[str, object], body: str, pr_head: str) -> str |
     Returns:
         The first problem found, or None when the comment may be posted.
     """
-    problem = record_problem(review) or findings_problem(review)
+    problem = review_problem(review)
     if problem is not None:
         return problem
     head = review["head"]
-    if head is None:
-        return "the review covered uncommitted changes; commit them and review again"
     if head != pr_head:
         return f"the review covered {head}, but the pull request head is {pr_head}"
     if len(body) > MAX_COMMENT_CHARS:
@@ -866,25 +911,50 @@ def publish(pr: str, *, session: str | None) -> str:
     return apply(prepare(pr, session=session))
 
 
+def check() -> str:
+    """Run every check publish makes of review.json and review.md that needs no pull request, and return the line to report.
+
+    Raises:
+        PublishReviewError: If either file is missing or malformed, or publish would refuse it.
+    """
+    review, report = read_review()
+    _raise_on(review_problem(review) or report_problem(review, report))
+    return "review.json and review.md can be published\n"
+
+
+def _session_problem(session: str | None, *, checking: bool) -> str | None:
+    """Return why --session cannot be used as given, or None when it can."""
+    if session is None:
+        return None
+    if checking:
+        return "--session needs --pr"
+    return None if session.strip() else "--session must not be empty"
+
+
 def main() -> int:
-    """Post this round's findings as a pull request review, then post or update the pull request's one dovo-review comment."""
+    """Post this round's findings as a pull request review, then post or update the pull request's one dovo-review comment, or with --check only check them."""
     parser = argparse.ArgumentParser(
         description=(
             "Post this round's findings as a pull request review, "
             "then post or update the pull request's one dovo-review comment."
         )
     )
-    parser.add_argument("--pr", required=True, help="Pull request number, URL or branch.")
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--pr", help="Pull request number, URL or branch.")
+    target.add_argument(
+        "--check", action="store_true", help="Only check that review.json and review.md can be published."
+    )
     parser.add_argument("--session", metavar="SESSION", help="Dovo session ID to stamp on the comment header.")
     args = parser.parse_args()
-    pr: str = args.pr
+    pr: str | None = args.pr
     session: str | None = args.session
-    if session is not None and not session.strip():
-        sys.stderr.write("publish_review.py: --session must not be empty\n")
+    problem = _session_problem(session, checking=pr is None)
+    if problem is not None:
+        sys.stderr.write(f"publish_review.py: {problem}\n")
         return 1
 
     try:
-        sys.stdout.write(publish(pr, session=session))
+        sys.stdout.write(check() if pr is None else publish(pr, session=session))
     except PublishReviewError as error:
         sys.stderr.write(f"publish_review.py: {error}\n")
         return 1

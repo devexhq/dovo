@@ -41,6 +41,9 @@ Choose one disposition accepted by [ship_state.py](../../../scripts/sdlc/ship/sh
      **Reviewed commit:** `<full HEAD sha>`
      ```
    - `.agentic/review.json` must include `head` (full `HEAD` SHA), `verdict` (`"APPROVE"` or `"CHANGES_REQUIRED"`), `action` (`"none"`, `"fix"`, `"replan"`, or `"needs_human"`), `round` (`review_rounds + 1`), `counts` (`blocking`, `warnings`, `suggestions`, `nits`), `findings` (each with `id`, `severity`, `path`, `start_line`, `line`, `rule`, `summary`, `issue`, `fix`, `also_affects`), and `coverage`.
+   - Each finding's `severity` is exactly `"BLOCKER"`, `"WARNING"`, `"SUGGESTION"` or `"NIT"`, in uppercase. `rule` is an R-id, `"conventions"`, `"architecture"` or `null`. A one-line location sets `line` to that line and `start_line` to `null`. A range sets `start_line` to its first line and `line` to its last, so `start_line` is below `line`. A finding with no line sets both to `null`. `summary`, `issue` and `fix` are non-empty strings, and `also_affects` is a list of `path:line` or `path:start-end` entries (`[]` when there are none).
+   - Before writing `.agentic/ship/stage.json` with `ready`, run `uv run python scripts/publish_review.py --check` and fix every refusal it prints. The recorder runs the same check on a `ready` review and sends a refused one back to this stage.
+   - When `last_review.status` in `.agentic/ship/progress.json` is `rejected` for the current `HEAD`, its `summary` is the publisher's refusal. Correct `.agentic/review.json` and `.agentic/review.md` for the same `HEAD` and record the review again.
 2. Write `.agentic/ship/stage.json` tying the review verdict to the exact `body_sha` and `head_sha`:
 
 ```json
