@@ -21,6 +21,13 @@ class ConfigTierSource(FailureData):
 
 
 @dataclass(frozen=True, slots=True)
+class ConfigRawObject(FailureData):
+    """The parsed JSON object of a config.json that failed schema validation."""
+
+    raw: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
 class ConfigLoadDiagnostics(FailureData):
     """The diagnostic records the failed config load wrote, carried to the caller that reports it."""
 

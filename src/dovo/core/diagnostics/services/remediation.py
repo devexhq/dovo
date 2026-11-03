@@ -10,9 +10,11 @@ from dovo.core.diagnostics.models import CheckStatus, DiagnosticCheckResult
 
 
 def resolve_remediations(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return deterministic remediation actions for a failed or warning diagnostic check."""
+    """Return a failed or warning check's own remediations, or the deterministic ones for its error code."""
     if result.status not in (CheckStatus.FAILED, CheckStatus.WARNING):
         return []
+    if result.remediations:
+        return list(result.remediations)
     builder = _ERROR_CODE_BUILDERS.get(result.error_code or "")
     if builder is None:
         return [_fallback_remediation(result)]
@@ -48,40 +50,6 @@ def _git_binary_missing(result: DiagnosticCheckResult) -> list[Remediation]:
                 "Install Git via your operating system's package manager and ensure the 'git' executable "
                 "is available on 'PATH'."
             ),
-        )
-    ]
-
-
-def _config_not_found(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return the remediation for a missing '.dovo/config.json' (DOCTOR_CONFIG_NOT_FOUND)."""
-    return [
-        Remediation(
-            message="Run 'dovo init' to create '.dovo/config.json' and the required workspace directory structure.",
-            command="dovo init",
-        )
-    ]
-
-
-def _config_malformed(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return the manual-fix and overwrite remediations for a '.dovo/config.json' with invalid JSON syntax (DOCTOR_CONFIG_MALFORMED)."""
-    return [
-        Remediation(message="Edit '.dovo/config.json' by hand to fix the invalid JSON syntax."),
-        Remediation(
-            message="Run 'dovo init --overwrite' to replace it with a default configuration, discarding its contents.",
-            command="dovo init --overwrite",
-        ),
-    ]
-
-
-def _config_schema_invalid(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return the remediation for a '.dovo/config.json' failing schema V1 validation (DOCTOR_CONFIG_SCHEMA_INVALID)."""
-    return [
-        Remediation(
-            message=(
-                "Run 'dovo config validate' to see detailed schema errors, then fix '.dovo/config.json' "
-                "or run 'dovo init --repair' to restore missing defaults."
-            ),
-            command="dovo config validate",
         )
     ]
 
@@ -192,9 +160,6 @@ def _agent_no_model(result: DiagnosticCheckResult) -> list[Remediation]:
 _ERROR_CODE_BUILDERS: Final[dict[str, Callable[[DiagnosticCheckResult], list[Remediation]]]] = {
     "DOCTOR_GIT_NOT_REPO": _git_not_repo,
     "DOCTOR_GIT_BINARY_MISSING": _git_binary_missing,
-    "DOCTOR_CONFIG_NOT_FOUND": _config_not_found,
-    "DOCTOR_CONFIG_MALFORMED": _config_malformed,
-    "DOCTOR_CONFIG_SCHEMA_INVALID": _config_schema_invalid,
     "DOCTOR_FS_UNWRITABLE": _fs_unwritable,
     "DOCTOR_WORKTREE_STALE": _worktree_stale,
     "DOCTOR_WORKTREE_ORPHAN": _worktree_orphan,

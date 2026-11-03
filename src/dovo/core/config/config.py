@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from dovo.common.error_codes import ErrorCode
-from dovo.common.exceptions import catch_failure
+from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.filesystem import WorkspacePaths
-from dovo.core.config.exceptions import ConfigError, ConfigLoadDiagnostics, ConfigTierSource
-from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus, load_config
+from dovo.core.config.exceptions import ConfigError, ConfigLoadDiagnostics, ConfigRawObject, ConfigTierSource
+from dovo.core.config.loader import ConfigLoadResult, load_config
 from dovo.core.config.models import (
     ConcurrencyConfig,
     DoctorConfig,
@@ -27,10 +27,12 @@ from dovo.core.config.mutate import (
     unset_config_value_result,
 )
 from dovo.core.config.tiers import load_tiered_config
-from dovo.core.config.validate import (
-    ConfigValidationResult,
-    validate_config_result,
-)
+from dovo.core.config.validate import ConfigValidationResult, validate_config
+
+
+def _failed_raw(failure: Failure) -> dict[str, object] | None:
+    """Return the parsed JSON object a schema failure carries, or None for any other failure."""
+    return failure.data.raw if isinstance(failure.data, ConfigRawObject) else None
 
 
 def _require_config(result: ConfigLoadResult, root_dir: Path) -> DovoConfig:
@@ -66,32 +68,42 @@ class Config:
 
     def load(self) -> ConfigLoadResult:
         """Load the repo config, then merge the Packaged, Global, User and Repo tiers; never raises."""
-        repo_result = load_config(self._paths)
-        if not repo_result.ok:
-            return repo_result
+        config_path = self._paths.config_file
+        with catch_failure("config.read", path=str(config_path)) as caught:
+            load_config(self._paths)
+        if caught.failure is not None:
+            return ConfigLoadResult(
+                config_path=config_path, raw=_failed_raw(caught.failure), **caught.failure.result_fields()
+            )
 
         with catch_failure("config.load", root=str(self._paths.root_dir)) as caught:
             config = load_tiered_config(self._paths)
         if caught.failure is not None:
             source = caught.failure.data
             return ConfigLoadResult(
-                status=ConfigLoadStatus.TIER_INVALID,
-                config_path=source.path if isinstance(source, ConfigTierSource) else repo_result.config_path,
+                config_path=source.path if isinstance(source, ConfigTierSource) else config_path,
                 **caught.failure.result_fields(),
             )
 
-        return ConfigLoadResult(
-            status=ConfigLoadStatus.OK,
-            config_path=repo_result.config_path,
-            raw=config.model_dump(mode="json"),
-            config=config,
-            errors=[],
-        )
+        return ConfigLoadResult(config_path=config_path, raw=config.model_dump(mode="json"), config=config)
 
     def validate(self, *, config_path: Path | None = None) -> ConfigValidationResult:
-        """Validate ``config.json`` against schema constraints and return structured report."""
+        """Validate ``config.json`` against schema and semantic rules; never raises."""
         target_cfg = config_path if config_path is not None else self._paths.config_file
-        return validate_config_result(target_cfg)
+        with catch_failure("config.validate", path=str(target_cfg)) as caught:
+            validated = validate_config(target_cfg)
+        if caught.failure is not None:
+            return ConfigValidationResult(
+                config_path=target_cfg, raw=_failed_raw(caught.failure), **caught.failure.result_fields()
+            )
+
+        return ConfigValidationResult(
+            config_path=validated.loaded.config_path,
+            raw=validated.loaded.raw,
+            config=validated.loaded.config,
+            warnings=validated.warnings,
+            remediations=validated.remediations,
+        )
 
     def set(self, key: str, raw_value: str) -> ConfigSetResult:
         """Set a dot-path configuration key from the raw CLI token and persist to disk."""

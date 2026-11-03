@@ -26,9 +26,7 @@ NO_MODEL_MESSAGE = (
     "Run 'dovo config set agents.copilot.model \"<model>\"' to set 'agents.copilot.model' in "
     "'.dovo/config.json' to a model supported by that provider."
 )
-CONFIG_NOT_FOUND_MESSAGE = (
-    "Run 'dovo init' to create '.dovo/config.json' and the required workspace directory structure."
-)
+CONFIG_NOT_FOUND_MESSAGE = "Run 'dovo init' to create '.dovo/config.json'"
 
 OK_CHECK = DiagnosticCheckResult(
     check_id="git.repo",
@@ -71,7 +69,7 @@ FAILED_CHECK = DiagnosticCheckResult(
     message="Configuration file not found at '/workspace/my-repo/.dovo/config.json'.",
     details={},
     duration_seconds=0.0003,
-    error_code="DOCTOR_CONFIG_NOT_FOUND",
+    error_code="CONFIG_NOT_FOUND",
     errors=["Configuration file not found at '/workspace/my-repo/.dovo/config.json'."],
     warnings=[],
     remediations=[Remediation(message=CONFIG_NOT_FOUND_MESSAGE, command="dovo init")],
@@ -186,7 +184,7 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                     "message": "Configuration file not found at '/workspace/my-repo/.dovo/config.json'.",
                     "details": {},
                     "duration_seconds": 0.0003,
-                    "error_code": "DOCTOR_CONFIG_NOT_FOUND",
+                    "error_code": "CONFIG_NOT_FOUND",
                     "errors": ["Configuration file not found at '/workspace/my-repo/.dovo/config.json'."],
                     "warnings": [],
                     "remediations": [{"message": CONFIG_NOT_FOUND_MESSAGE, "command": "dovo init"}],

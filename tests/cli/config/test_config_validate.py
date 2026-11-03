@@ -65,9 +65,7 @@ class ConfigValidateCliIntegrationTests:
         assert json.loads(res.stdout) == {
             "event_type": "ConfigValidationResult",
             "payload": {
-                "status": "valid",
                 "config_path": str(config_path),
-                "status_label": "valid",
                 "raw": raw_payload,
                 "config": raw_payload,
                 "error_code": None,
@@ -81,7 +79,7 @@ class ConfigValidateCliIntegrationTests:
     def test_config_validate_cli_missing_config_json_reports_config_not_found(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """Exit 1 with status not_found, CONFIG_NOT_FOUND, the not-found error and the dovo init remediation."""
+        """Exit 1 with CONFIG_NOT_FOUND, the not-found error and the dovo init remediation."""
         config_path = isolated_workspace / ".dovo" / "config.json"
 
         res = cli_runner.invoke(
@@ -93,9 +91,7 @@ class ConfigValidateCliIntegrationTests:
         assert json.loads(res.stdout) == {
             "event_type": "ConfigValidationResult",
             "payload": {
-                "status": "not_found",
                 "config_path": str(config_path),
-                "status_label": "invalid",
                 "raw": None,
                 "config": None,
                 "error_code": "CONFIG_NOT_FOUND",

@@ -8,7 +8,6 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from dovo.common.models import BaseResult, Remediation
-from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.config.models import DovoConfig
 
 
@@ -28,7 +27,7 @@ class ConfigStatusInfo(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: ConfigLoadStatus
+    error_code: str | None
     config_path: Path
     is_valid: bool
     raw: dict[str, Any] | None = None

@@ -5,17 +5,6 @@ from __future__ import annotations
 from rich.table import Table
 
 from dovo.cli.ui.formatters.status.status_view import StatusHealth, StatusView
-from dovo.core.config.loader import ConfigLoadStatus
-
-CONFIG_STATUS_DISPLAY: dict[ConfigLoadStatus, str] = {
-    ConfigLoadStatus.OK: "ok",
-    ConfigLoadStatus.NOT_FOUND: "[yellow]CONFIG_NOT_FOUND[/yellow]",
-    ConfigLoadStatus.MALFORMED_JSON: "[red]CONFIG_MALFORMED_JSON[/red]",
-    ConfigLoadStatus.SCHEMA_INVALID: "[red]CONFIG_SCHEMA_INVALID[/red]",
-    ConfigLoadStatus.ROOT_NOT_OBJECT: "[red]CONFIG_ROOT_NOT_OBJECT[/red]",
-    ConfigLoadStatus.PATH_IS_DIRECTORY: "[red]PATH_IS_DIRECTORY[/red]",
-    ConfigLoadStatus.UNREADABLE: "[red]CONFIG_UNREADABLE[/red]",
-}
 
 
 def get_table_title(view: StatusView) -> str:
@@ -31,7 +20,7 @@ def format_project_name(view: StatusView) -> str:
     """Format project name with uninitialized fallback."""
     if view.project_name:
         return view.project_name
-    if view.config_status == ConfigLoadStatus.OK:
+    if view.config_error_code is None:
         return "[dim]unnamed_project[/dim]"
     if view.health != StatusHealth.UNINITIALIZED:
         return "[dim]unknown (invalid config)[/dim]"
@@ -39,13 +28,11 @@ def format_project_name(view: StatusView) -> str:
 
 
 def format_config_status(view: StatusView) -> str:
-    """Format config status with color-coded codes or relative path."""
-    if view.config_status == ConfigLoadStatus.OK:
+    """Format the config cell: ok with the relative path, or the load's error code, yellow when uninitialized."""
+    if view.config_error_code is None:
         return f"ok ({view.config_path_relative})"
-    return CONFIG_STATUS_DISPLAY.get(
-        view.config_status,
-        f"[red]{view.config_status.value.upper()}[/red]",
-    )
+    colour = "yellow" if view.health == StatusHealth.UNINITIALIZED else "red"
+    return f"[{colour}]{view.config_error_code}[/{colour}]"
 
 
 def format_git_branch(view: StatusView) -> str:

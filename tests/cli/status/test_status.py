@@ -66,6 +66,20 @@ class StatusCliIntegrationTests:
         assert event["payload"]["health"] == "ok"
         assert event["payload"]["root_dir"] == str(status_workspace)
 
+    def test_status_cli_json_broken_config_reports_config_error_code_and_exits_zero(
+        self, cli_runner: CliRunner, status_workspace: Path
+    ) -> None:
+        """Exit 0 with health degraded, config_error_code CONFIG_JSON_INVALID and no config_status key."""
+        (status_workspace / ".dovo" / "config.json").write_text("{not valid json", encoding="utf-8")
+
+        result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", "json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["health"] == "degraded"
+        assert payload["config_error_code"] == "CONFIG_JSON_INVALID"
+        assert "config_status" not in payload
+
     def test_status_cli_json_reports_reconciliation_record_in_diagnostics(
         self,
         cli_runner: CliRunner,

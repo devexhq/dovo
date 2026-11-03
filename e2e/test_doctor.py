@@ -45,5 +45,7 @@ class DoctorCliTests:
         config_check = next((c for c in checks if c["check_id"] == "config.schema"), None)
         assert config_check is not None
         assert config_check["status"] == "failed"
-        assert config_check["error_code"] == "DOCTOR_CONFIG_MALFORMED"
-        assert len(config_check["remediations"]) > 0
+        assert config_check["error_code"] == "CONFIG_JSON_INVALID"
+        assert config_check["remediations"] == [
+            {"message": "Repair JSON syntax, or restore from backup", "command": None}
+        ]

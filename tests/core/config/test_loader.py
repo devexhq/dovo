@@ -9,12 +9,9 @@ import pytest
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.models import Remediation
+from dovo.core.config import Config, ConfigLoadResult
 from dovo.core.config.generator import build_default_config
-from dovo.core.config.loader import (
-    ConfigLoadStatus,
-    clear_config_cache,
-    load_config,
-)
+from dovo.core.config.loader import clear_config_cache, load_config
 from dovo.core.config.models import DovoConfig
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
@@ -60,10 +57,14 @@ def _write_trailing_newline_entry(config_path: Path) -> None:
     Filesystem.atomic_write_json(config_path, payload)
 
 
+def _load(paths: WorkspacePaths) -> ConfigLoadResult:
+    """Load the workspace config through the Config entrypoint, which reports a failure in its result."""
+    return Config(paths).load()
+
+
 LOAD_FAILURE_CASES = [
     pytest.param(
         lambda path: None,
-        ConfigLoadStatus.NOT_FOUND,
         ErrorCode.CONFIG_NOT_FOUND,
         "Configuration file not found at '{path}'.",
         [Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")],
@@ -71,7 +72,6 @@ LOAD_FAILURE_CASES = [
     ),
     pytest.param(
         lambda path: path.mkdir(),
-        ConfigLoadStatus.PATH_IS_DIRECTORY,
         ErrorCode.CONFIG_PATH_INVALID,
         "Config path is a directory, not a file: '{path}'.",
         [Remediation(message="Remove the directory or point config_path at a file")],
@@ -79,7 +79,6 @@ LOAD_FAILURE_CASES = [
     ),
     pytest.param(
         lambda path: path.write_text("{not valid json", encoding="utf-8"),
-        ConfigLoadStatus.MALFORMED_JSON,
         ErrorCode.CONFIG_JSON_INVALID,
         "Malformed config.json at '{path}': Expecting property name enclosed in double quotes at line 1 column 2 (char 1).",
         [Remediation(message="Repair JSON syntax, or restore from backup")],
@@ -87,7 +86,6 @@ LOAD_FAILURE_CASES = [
     ),
     pytest.param(
         lambda path: path.write_text("[]", encoding="utf-8"),
-        ConfigLoadStatus.ROOT_NOT_OBJECT,
         ErrorCode.CONFIG_ROOT_INVALID,
         "Malformed config.json at '{path}': root must be an object.",
         [Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")],
@@ -95,7 +93,6 @@ LOAD_FAILURE_CASES = [
     ),
     pytest.param(
         lambda path: Filesystem.atomic_write_json(path, {"version": 1}),
-        ConfigLoadStatus.SCHEMA_INVALID,
         ErrorCode.CONFIG_SCHEMA_INVALID,
         "Config schema validation failed:\n- (root): 'project' is a required property",
         SCHEMA_REMEDIATIONS,
@@ -103,7 +100,6 @@ LOAD_FAILURE_CASES = [
     ),
     pytest.param(
         _write_trailing_newline_entry,
-        ConfigLoadStatus.SCHEMA_INVALID,
         ErrorCode.CONFIG_SCHEMA_INVALID,
         "Config schema validation failed:\n"
         "- environment.sensitive_variables[1]: String should match pattern '^[A-Za-z_][A-Za-z0-9_]*$'",
@@ -116,23 +112,21 @@ LOAD_FAILURE_CASES = [
 class ConfigLoaderTests:
     """Integration tests verifying config.json loading and schema parsing contracts."""
 
-    @pytest.mark.parametrize(("write", "status", "error_code", "error", "remediations"), LOAD_FAILURE_CASES)
-    def test_load_failure_reports_status_and_error_code(
+    @pytest.mark.parametrize(("write", "error_code", "error", "remediations"), LOAD_FAILURE_CASES)
+    def test_load_failure_reports_error_code(
         self,
         workspace_paths: WorkspacePaths,
         write: Callable[[Path], object],
-        status: ConfigLoadStatus,
         error_code: ErrorCode,
         error: str,
         remediations: list[Remediation],
     ) -> None:
-        """Report the row's status, error_code, errors and remediations, with no diagnostics recorded."""
+        """Report the row's error_code, errors and remediations, with no diagnostics recorded."""
         config_path = workspace_paths.config_file
         write(config_path)
 
-        result = load_config(workspace_paths)
+        result = _load(workspace_paths)
 
-        assert result.status == status
         assert result.error_code == error_code
         assert result.errors == [error.format(path=config_path)]
         assert result.remediations == remediations
@@ -155,9 +149,8 @@ class ConfigLoaderTests:
 
         monkeypatch.setattr(Path, "read_text", _denied_read)
 
-        result = load_config(workspace_paths, bypass_cache=True)
+        result = _load(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.UNREADABLE
         assert result.error_code == ErrorCode.CONFIG_UNREADABLE
         assert result.errors == [f"Unable to read config.json at '{config_path}': denied."]
         assert result.remediations == [Remediation(message="Check file permissions and that the path is readable")]
@@ -175,21 +168,16 @@ class ConfigLoaderTests:
 
         result = load_config(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.OK
         assert result.config_path == config_path
         assert result.raw == payload
         assert result.config == DovoConfig.model_validate(payload)
-        assert result.error_code is None
-        assert result.errors == []
-        assert result.warnings == []
-        assert result.remediations == []
 
     def test_load_missing_config_returns_failure_result(self, workspace_paths: WorkspacePaths) -> None:
         config_path = workspace_paths.config_file
 
-        result = load_config(workspace_paths)
+        result = _load(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.NOT_FOUND
+        assert result.error_code == ErrorCode.CONFIG_NOT_FOUND
         assert result.config_path == config_path
         assert result.raw is None
         assert result.config is None
@@ -207,9 +195,6 @@ class ConfigLoaderTests:
 
         result = load_config(workspace_paths)
         generated_payload = build_default_config("demo-workspace")
-
-        assert result.status == ConfigLoadStatus.OK
-        assert result.config is not None
         assert result.config.ignore_global_root_error is False
         assert generated_payload["ignore_global_root_error"] is False
 
@@ -224,12 +209,10 @@ class ConfigLoaderTests:
         invalid_payload = build_default_config("demo-workspace")
         invalid_payload["ignore_global_root_error"] = "true"
         Filesystem.atomic_write_json(config_path, invalid_payload)
-        invalid_result = load_config(workspace_paths, bypass_cache=True)
+        invalid_result = _load(workspace_paths)
 
-        assert enabled_result.status == ConfigLoadStatus.OK
-        assert enabled_result.config is not None
         assert enabled_result.config.ignore_global_root_error is True
-        assert invalid_result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert invalid_result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert "is not of type 'boolean'" in invalid_result.errors[0]
 
     @pytest.mark.parametrize(("payload", "expected_error"), SCHEMA_VIOLATION_PAYLOADS)
@@ -242,9 +225,9 @@ class ConfigLoaderTests:
         config_path = workspace_paths.config_file
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = load_config(workspace_paths)
+        result = _load(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert result.config_path == config_path
         assert result.raw == payload
         assert result.config is None
@@ -258,15 +241,15 @@ class ConfigLoaderTests:
             ),
         ]
 
-    def test_load_malformed_json_returns_malformed_json_status_with_location_detail(
+    def test_load_malformed_json_reports_config_json_invalid_with_location_detail(
         self, workspace_paths: WorkspacePaths
     ) -> None:
         config_path = workspace_paths.config_file
         config_path.write_text("{not valid json", encoding="utf-8")
 
-        result = load_config(workspace_paths)
+        result = _load(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.MALFORMED_JSON
+        assert result.error_code == ErrorCode.CONFIG_JSON_INVALID
         assert result.raw is None
         assert result.config is None
         assert f"Malformed config.json at '{config_path}'" in result.errors[0]
@@ -282,9 +265,9 @@ class LoadConfigTests:
         Filesystem.atomic_write_json(workspace_paths.config_file, payload)
         before = workspace_paths.config_file.read_bytes()
 
-        result = load_config(workspace_paths)
+        result = _load(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert "Additional properties are not allowed ('agent' was unexpected)" in result.errors[0]
         assert workspace_paths.config_file.read_bytes() == before
 
@@ -293,9 +276,9 @@ class LoadConfigTests:
         payload = {**build_default_config("test-project"), "agents": {"gemini": {}}}
         Filesystem.atomic_write_json(workspace_paths.config_file, payload)
 
-        result = load_config(workspace_paths)
+        result = _load(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert "agents: 'gemini' is not one of ['copilot', 'claude']" in result.errors[0]
 
     @pytest.mark.parametrize(
@@ -313,9 +296,9 @@ class LoadConfigTests:
         payload = {**build_default_config("test-project"), "agents": {"copilot": {field: "x"}}}
         Filesystem.atomic_write_json(workspace_paths.config_file, payload)
 
-        result = load_config(workspace_paths)
+        result = _load(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert f"agents.copilot: Additional properties are not allowed ('{field}' was unexpected)" in result.errors[0]
 
     def test_load_config_defaults_default_agent_and_agents(self, workspace_paths: WorkspacePaths) -> None:
@@ -325,7 +308,6 @@ class LoadConfigTests:
 
         result = load_config(workspace_paths)
 
-        assert result.config is not None
         assert (result.config.default_agent, result.config.agents) == ("copilot", {})
 
 
@@ -345,8 +327,6 @@ class ConfigEnvironmentSectionTests:
 
         result = load_config(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.OK
-        assert result.config is not None
         assert result.config.environment.sensitive_variables == []
 
     def test_load_returns_listed_names_and_accepts_duplicates(self, workspace_paths: WorkspacePaths) -> None:
@@ -355,8 +335,6 @@ class ConfigEnvironmentSectionTests:
 
         result = load_config(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.OK
-        assert result.config is not None
         assert result.config.environment.sensitive_variables == names
 
     @pytest.mark.parametrize(
@@ -370,9 +348,9 @@ class ConfigEnvironmentSectionTests:
     def test_load_rejects_non_list_or_non_string_entry(self, workspace_paths: WorkspacePaths, value: object) -> None:
         self._write_payload(workspace_paths, {"sensitive_variables": value})
 
-        result = load_config(workspace_paths)
+        result = _load(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert "environment.sensitive_variables" in result.errors[0]
 
     @pytest.mark.parametrize(
@@ -390,9 +368,9 @@ class ConfigEnvironmentSectionTests:
     ) -> None:
         self._write_payload(workspace_paths, {"sensitive_variables": ["GOOD", entry]})
 
-        result = load_config(workspace_paths)
+        result = _load(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert "environment.sensitive_variables[1]" in result.errors[0]
         assert f"'{entry}'" not in result.errors[0]
 
@@ -401,18 +379,18 @@ class ConfigEnvironmentSectionTests:
     ) -> None:
         self._write_payload(workspace_paths, {"sensitive_variables": ["GOOD", "SOMEVALUE\n"]})
 
-        result = load_config(workspace_paths)
+        result = _load(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert "environment.sensitive_variables[1]" in result.errors[0]
         assert "SOMEVALUE" not in result.errors[0]
 
     def test_load_rejects_unknown_key_under_environment(self, workspace_paths: WorkspacePaths) -> None:
         self._write_payload(workspace_paths, {"other": []})
 
-        result = load_config(workspace_paths)
+        result = _load(workspace_paths)
 
-        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert "environment: Additional properties are not allowed" in result.errors[0]
 
 
@@ -423,14 +401,13 @@ class ClearConfigCacheTests:
         config_path = workspace_paths.config_file
         Filesystem.atomic_write_json(config_path, build_default_config("first-name"))
         first = load_config(workspace_paths)
-        assert first.config is not None
+
         assert first.config.project.name == "first-name"
 
         Filesystem.atomic_write_json(config_path, build_default_config("second-name"))
         clear_config_cache(config_path)
         second = load_config(workspace_paths)
 
-        assert second.config is not None
         assert second.config.project.name == "second-name"
 
     def test_clearing_with_no_path_clears_every_cached_entry(
@@ -446,5 +423,4 @@ class ClearConfigCacheTests:
         clear_config_cache()
         reloaded = load_config(workspace_a)
 
-        assert reloaded.config is not None
         assert reloaded.config.project.name == "renamed-a"

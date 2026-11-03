@@ -8,10 +8,10 @@ from dovo.core.status.models import ConfigStatusInfo
 
 
 def probe_config(paths: WorkspacePaths) -> ConfigStatusInfo:
-    """Load config.json read-only and return its load status, parsed model, errors and loader remediations."""
+    """Load config.json read-only and return its load error code, parsed model, errors and remediations."""
     result = Config(paths).load()
     return ConfigStatusInfo(
-        status=result.status,
+        error_code=result.error_code,
         config_path=result.config_path,
         is_valid=result.ok,
         raw=result.raw,

@@ -21,7 +21,7 @@ from dovo.core.config.mutate import (
     unset_config_value_result,
     unset_nested_value,
 )
-from dovo.core.config.validate import ConfigValidationStatus, validate_config_result
+from dovo.core.config.validate import validate_config
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
 NOT_FOUND_REMEDIATIONS = [Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")]
@@ -583,7 +583,7 @@ class ConfigUnsetMutationTests:
         assert result.remediations == []
         data = json.loads(config_path.read_text())
         assert data["agents"] == {"copilot": {}}
-        assert validate_config_result(config_path).status == ConfigValidationStatus.VALID
+        assert validate_config(config_path).loaded.config_path == config_path
 
     def test_unset_missing_key_returns_ok_without_write(self, isolated_workspace: Path) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"

@@ -18,12 +18,12 @@ dovo status [--format terminal|json]
 
 It shows:
 - **Project Name**: Name of the configured Dovo project.
-- **Config Status**: Validation status and relative path to `.dovo/config.json`.
+- **Config Status**: `ok` with the relative path to `.dovo/config.json` when the config loads, or the config load's error code (for example `CONFIG_JSON_INVALID`) when it does not.
 - **Active Git Branch**: Current Git branch (with dirty indicator if uncommitted changes exist).
 - **Agent Model**: Configured agent model name.
 - **Active Worktrees**: Active worktrees count and concurrency ceiling (`active / max`).
 - **Catalog Items**: Total valid blueprints and inventory breakdown (`valid / total`).
-- **Warnings**: Configuration warnings and remediation steps.
+- **Warnings**: Configuration warnings and remediation steps. When the config fails to load, its remediations are the ones `dovo config show` reports for the same failure, followed by `git init` outside a Git repository.
 
 Before it reports, `dovo status` settles sessions left `running` by a `dovo` process that no longer exists: it marks one `paused` when it saved its progress, its worktree still exists if it used one, and none of its processes is still running, and marks every other one `failed`. It adds `Paused 1 interrupted session; continue it with 'dovo resume <session_id>'.`, `Marked 1 interrupted session failed (session_id: <id>).`, or both sentences, paused first, to its warnings. If another `dovo` process holds the workspace lock until the wait times out, `dovo status` stops with a workspace lock timeout error and exits 1.
 
@@ -73,7 +73,7 @@ Dovo Workspace Status (Uninitialized)
   • Dovo workspace is not initialized. Run 'dovo init' to configure.
 
 Fix:
-- Run 'dovo init' to initialize Dovo in this repository.
+- Run 'dovo init' to create '.dovo/config.json'
 ```
 
 ### Degraded workspace output
@@ -86,7 +86,7 @@ Dovo Workspace Status (Degraded)
 │ Property             │ Value                                  │
 ├──────────────────────┼────────────────────────────────────────┤
 │ Project Name         │ Uninitialized               │
-│ Config Status        │ CONFIG_MALFORMED_JSON       │
+│ Config Status        │ CONFIG_JSON_INVALID         │
 │ Active Git Branch    │ main                                   │
 │ Agent Model          │ Not Configured               │
 │ Active Worktrees     │ N/A                         │
@@ -97,7 +97,7 @@ Dovo Workspace Status (Degraded)
   • Malformed config.json: Expecting property name enclosed in double quotes (line 2 col 1)
 
 Fix:
-- Repair JSON syntax in '.dovo/config.json' or restore from backup.
+- Repair JSON syntax, or restore from backup
 ```
 
 ### JSON structured output
@@ -106,8 +106,8 @@ Fix:
 dovo status --format json
 ```
 
-Emits a JSON payload for automation:
+Emits a JSON payload for automation. `config_error_code` is the config load's error code, or `null` when the config loaded; `health` is `uninitialized` exactly when it is `CONFIG_NOT_FOUND` or `.dovo/` is absent. `dovo status` exits `0` whatever the config error code:
 
 ```json
-{"event_type": "DovoStatusResult", "payload": {"health": "ok", "root_dir": "/path/to/project", "project_name": "my-project", "config_status": "ok", "config_path_relative": ".dovo/config.json", "git_branch": "main", "git_is_dirty": false, "uncommitted_files": 0, "agent_model": null, "active_worktrees": 1, "max_active_worktrees": 5, "valid_catalog_items": 2, "total_catalog_items": 2, "total_sessions": 3, "errors": [], "warnings": [], "remediations": [], "diagnostics": []}}
+{"event_type": "DovoStatusResult", "payload": {"health": "ok", "root_dir": "/path/to/project", "project_name": "my-project", "config_error_code": null, "config_path_relative": ".dovo/config.json", "git_branch": "main", "git_is_dirty": false, "uncommitted_files": 0, "agent_model": null, "active_worktrees": 1, "max_active_worktrees": 5, "valid_catalog_items": 2, "total_catalog_items": 2, "total_sessions": 3, "errors": [], "warnings": [], "remediations": [], "diagnostics": []}}
 ```
