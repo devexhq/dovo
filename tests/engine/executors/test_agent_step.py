@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import itertools
 import json
-import os
 import subprocess
 import threading
 from collections.abc import Callable
@@ -49,6 +48,7 @@ from dovo.engine.executors.models import (
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, RecordingProgressSink, new_file_diff
 from tests.harness.builders import StepBuilder
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
+from tests.harness.permissions import deny_entry_creation
 
 _NO_OP_SUMMARY = "Inspected the repository; no edits were required."
 _METADATA = ExecutionMetadata(step=StepMetadata(id="plan", name="plan", index=1))
@@ -437,19 +437,15 @@ class ExecuteAgentStepScratchTests:
         )
         assert requested == []
 
-    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permission bits")
     def test_directory_creation_failure_leaves_worktree_files_unchanged(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
         requested = _use_provider(monkeypatch, FakeAgentProvider(_patch("a.txt")))
         session_tmp = _session_tmp_dir(git_repo)
-        session_tmp.chmod(0o500)
+        deny_entry_creation(monkeypatch, session_tmp)
         readme_before = (git_repo / "README.md").read_bytes()
 
-        try:
-            outcome = _run(git_repo, session_tmp_dir=session_tmp)
-        finally:
-            session_tmp.chmod(0o700)
+        outcome = _run(git_repo, session_tmp_dir=session_tmp)
 
         assert outcome.exit_code == 203
         assert "Cannot prepare private scratch for agent step" in (outcome.error_message or "")

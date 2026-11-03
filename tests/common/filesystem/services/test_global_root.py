@@ -9,6 +9,7 @@ import pytest
 
 from dovo.common.filesystem import InvalidGlobalRootError
 from dovo.common.filesystem.services.global_root import ensure_global_layout, resolve_global_paths
+from tests.harness.permissions import deny_entry_creation
 
 REQUIRED_LAYOUT_RELATIVE_PATHS = (
     Path("."),
@@ -109,16 +110,16 @@ class GlobalRootTests:
 
         assert root.is_file()
 
-    def test_ensure_global_layout_unwritable_parent_raises_diagnostic_permission_error(self, tmp_path: Path) -> None:
+    def test_ensure_global_layout_unwritable_parent_raises_diagnostic_permission_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         parent = tmp_path / "unwritable"
         parent.mkdir()
-        parent.chmod(0o555)
+        deny_entry_creation(monkeypatch, parent)
         root = parent / "global-root"
-        try:
-            with pytest.raises(PermissionError) as exc_info:
-                ensure_global_layout(root)
-        finally:
-            parent.chmod(0o755)
+
+        with pytest.raises(PermissionError) as exc_info:
+            ensure_global_layout(root)
 
         assert str(root) in str(exc_info.value)
         assert "Check directory permissions." in str(exc_info.value)

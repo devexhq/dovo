@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,6 +33,7 @@ from dovo.engine.writer import (
 )
 from tests.harness.builders import BlueprintBuilder, StepBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
+from tests.harness.permissions import deny_read
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
@@ -136,11 +136,10 @@ class SnapshotDefinitionsTests:
         assert diagnostics == []
         assert not (session_dir / "definitions").exists()
 
-    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
     def test_snapshot_definitions_unreadable_uses_step_warns_without_diagnostic(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """For a uses: step whose indexed file is 0o000, return None, warn with show's read error alone, add no diagnostic and write no event file."""
+        """For a uses: step whose indexed file cannot be read, return None, warn with show's read error alone, add no diagnostic and write no event file."""
         workspace = tmp_path / "workspace"
         write_runnable_step(workspace, key="locked-step", definition={"id": "locked-step", "run": "echo hi"})
         write_runnable_blueprint(workspace, key="locked-task", steps=[{"id": "s1", "uses": "locked-step"}])
@@ -153,13 +152,11 @@ class SnapshotDefinitionsTests:
             lambda paths: CatalogScan(records=(), skipped_files=()),
         )
         step_file = paths.catalog_dir / "steps" / "locked-step.yml"
-        step_file.chmod(0o000)
+        deny_read(monkeypatch, step_file)
         warnings: list[str] = []
         diagnostics: list[DiagnosticRecord] = []
-        try:
-            manifest = snapshot_definitions(catalog, blueprint, tmp_path / "session", warnings, diagnostics)
-        finally:
-            step_file.chmod(0o644)
+
+        manifest = snapshot_definitions(catalog, blueprint, tmp_path / "session", warnings, diagnostics)
 
         assert manifest is None
         assert warnings == [

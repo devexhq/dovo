@@ -42,4 +42,5 @@ Static AST and architectural boundary checks: layer direction, output routing, a
 - **Shared fixtures (`tests/conftest.py` & `tests/cli/conftest.py`):** `isolated_workspace(tmp_path)`, `git_repo(tmp_path)`, `cli_runner()` (`NO_COLOR=1`, `COLUMNS=160`), `cli_workspace`, `workspace_config`.
 - **Builders & Doubles (`tests/harness/`):** Use fluent builders (`tests/harness/builders/`) and typed fakes (`tests/harness/fakes.py`).
 - **Determinism (R16):** Inject clocks and ID generators; use `wait_until` in `tests/harness/poll.py` only for OS process-group reaping.
+- **Permission failures:** Simulate a read-only directory or an unreadable file with `deny_entry_creation` or `deny_read` in `tests/harness/permissions.py`, never with `chmod`: root ignores permission bits, so a `chmod` test fails or must be skipped in containers that run as root.
 - **Parameterization:** Use `@pytest.mark.parametrize` with `pytest.param(..., id="descriptive_case_id")` for input/error matrices. Never loop with `for` inside a test or branch with `if/else` on divergent assertions.

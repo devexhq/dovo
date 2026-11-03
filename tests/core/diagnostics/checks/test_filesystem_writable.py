@@ -15,6 +15,7 @@ from dovo.core.diagnostics.models import CheckCategory, CheckStatus, Diagnostics
 from dovo.core.git.runner import GitRunner
 from dovo.core.project.models import ProjectIdentity
 from dovo.core.project.services.identity import save_project_identity
+from tests.harness.permissions import deny_entry_creation
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -48,20 +49,17 @@ class FilesystemWritableCheckTests:
         }
 
     def test_execute_readonly_directory_returns_unwritable_failure(
-        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         worktrees_dir = tmp_path / ".dovo" / "worktrees"
         worktrees_dir.mkdir(parents=True, exist_ok=True)
-        worktrees_dir.chmod(0o500)
+        deny_entry_creation(monkeypatch, worktrees_dir)
         config = DovoConfig(version=1, project=ProjectConfig(name="demo"))
         check = FilesystemWritableCheck()
         paths = workspace_paths_factory(tmp_path, None)
         context = DiagnosticsContext(cwd=tmp_path, config=config, paths=paths, git=GitRunner())
 
-        try:
-            result = check.execute(context)
-        finally:
-            worktrees_dir.chmod(0o700)
+        result = check.execute(context)
 
         message = "1 configured path(s) are not writable."
         assert result.check_id == "filesystem.writable"
@@ -72,19 +70,16 @@ class FilesystemWritableCheckTests:
         assert result.errors == [message]
 
     def test_execute_readonly_parent_directory_returns_unwritable_failure(
-        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         config = DovoConfig(version=1, project=ProjectConfig(name="demo"))
         check = FilesystemWritableCheck()
         paths = workspace_paths_factory(tmp_path, None)
         dovo_dir = tmp_path / ".dovo"
-        dovo_dir.chmod(0o500)
+        deny_entry_creation(monkeypatch, dovo_dir)
         context = DiagnosticsContext(cwd=tmp_path, config=config, paths=paths, git=GitRunner())
 
-        try:
-            result = check.execute(context)
-        finally:
-            dovo_dir.chmod(0o700)
+        result = check.execute(context)
 
         unwritable_paths = [
             str(tmp_path / ".dovo"),
