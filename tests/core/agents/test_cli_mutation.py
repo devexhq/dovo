@@ -37,14 +37,13 @@ from dovo.core.agents.cli_mutation import (
     validate_request_patch,
 )
 from dovo.core.agents.environment import env_filtered_prompt_line
-from dovo.core.agents.exceptions import AgentError
 from dovo.core.agents.models import AgentDenial
 from dovo.core.agents.mutation_git import (
     capture_diff_since,
     discard_since,
     resolve_pre_agent_baseline,
 )
-from dovo.core.git import GitError
+from dovo.core.git import GitError, GitProcessOutput, GitRunner
 from tests.harness import (
     AgentRequestBuilder,
     FakeAgentRunner,
@@ -53,6 +52,14 @@ from tests.harness import (
     new_file_diff,
 )
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
+from tests.harness.fakes import FakeGitRunner
+
+_INDEX_LOCKED = GitProcessOutput(128, "", "fatal: index locked")
+
+
+def _use_git(monkeypatch: pytest.MonkeyPatch, fake: FakeGitRunner) -> None:
+    """Make the adapter build fake as the GitRunner for every git command it runs."""
+    monkeypatch.setattr("dovo.core.agents.cli_mutation.GitRunner", lambda: fake)
 
 
 def _fake_run(
@@ -355,7 +362,7 @@ class CliMutationProgressMapperPropagationTests:
 class ScratchDiffIsolationTests:
     def test_scratch_file_never_appears_in_the_captured_diff(self, git_repo: Path, tmp_path: Path) -> None:
         invocation = _invocation(tmp_path)
-        baseline = resolve_pre_agent_baseline(git_repo)
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
 
         def _write(request: CliMutationRunRequest) -> CliMutationOutcome:
             assert request.invocation is not None
@@ -370,7 +377,7 @@ class ScratchDiffIsolationTests:
         assert response.unified_diff is not None
         assert "src/a.py" in response.unified_diff
         assert "notes.py" not in response.unified_diff
-        assert capture_diff_since(git_repo, baseline)[1] == ["src/a.py"]
+        assert capture_diff_since(git_repo, baseline, git=GitRunner())[1] == ["src/a.py"]
 
     def test_control_directory_content_never_appears_in_worktree_status(self, git_repo: Path, tmp_path: Path) -> None:
         invocation = _invocation(tmp_path)
@@ -388,12 +395,12 @@ class ScratchDiffIsolationTests:
 
     def test_scratch_survives_discard_since(self, git_repo: Path, tmp_path: Path) -> None:
         invocation = _invocation(tmp_path)
-        baseline = resolve_pre_agent_baseline(git_repo)
+        baseline = resolve_pre_agent_baseline(git_repo, git=GitRunner())
         (invocation.scratch_path / "notes.txt").write_text("scratch", encoding="utf-8")
         (invocation.control_path / "settings.json").write_text("control", encoding="utf-8")
         (git_repo / "edit.txt").write_text("edit\n", encoding="utf-8")
 
-        discard_since(git_repo, baseline)
+        discard_since(git_repo, baseline, git=GitRunner())
 
         assert not (git_repo / "edit.txt").exists()
         assert (invocation.scratch_path / "notes.txt").read_text(encoding="utf-8") == "scratch"
@@ -522,11 +529,7 @@ class SharedMutationAdapterTests:
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"}))
-
-        def _fail_discard(*a: object, **k: object) -> None:
-            raise AgentError(ErrorCode.GIT_FAILED, "git reset failed: index locked")
-
-        monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
+        _use_git(monkeypatch, FakeGitRunner({("read-tree", "-u"): _INDEX_LOCKED}))
 
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
 
@@ -536,40 +539,71 @@ class SharedMutationAdapterTests:
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
         assert resp.errors == [
-            "Agent provider error: Failed to discard rejected worktree edit: git reset failed: index locked",
+            "Agent provider error: Failed to discard rejected worktree edit: "
+            f"Git execution failed ('git read-tree -u --reset {resp.mutation_baseline_ref}'): fatal: index locked",
             "Patch touches 2 files; max_files is 1.",
             f"Rejected edit saved to {destination}.",
         ]
+        assert (git_repo / "a.txt").read_text(encoding="utf-8") == "1\n"
 
     @pytest.mark.parametrize(
-        ("patched_name", "expected_error"),
+        ("key", "expected_error"),
         [
             pytest.param(
-                "resolve_pre_agent_baseline",
-                "Agent provider error: Failed to resolve worktree baseline: git broke",
+                ("--no-optional-locks", "status"),
+                "Agent provider error: Failed to resolve worktree baseline: "
+                "Git execution failed ('git --no-optional-locks status --porcelain'): fatal: broke",
                 id="baseline",
             ),
             pytest.param(
-                "capture_diff_since",
-                "Agent provider error: Failed to capture worktree diff: git broke",
+                ("diff", "--cached"),
+                "Agent provider error: Failed to capture worktree diff: "
+                "Git execution failed ('git diff --cached {baseline}'): fatal: broke",
                 id="capture-diff",
             ),
         ],
     )
     def test_git_failure_before_proposal_returns_provider_error(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, patched_name: str, expected_error: str
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, key: tuple[str, ...], expected_error: str
     ) -> None:
-
-        def _fail_git(*a: object, **k: object) -> None:
-            raise AgentError(ErrorCode.GIT_FAILED, "git broke")
-
-        monkeypatch.setattr(f"dovo.core.agents.cli_mutation.{patched_name}", _fail_git)
-        adapter = UnitTestAdapter(run_fn=_fake_run())
+        """Return PROVIDER_ERROR whose error names the git package's GIT_FAILED message, leaving the agent's edit in place."""
+        _use_git(monkeypatch, FakeGitRunner({key: GitProcessOutput(128, "", "fatal: broke")}))
+        adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "edit\n"}))
 
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
-        assert resp.errors == [expected_error]
+        assert resp.errors == [expected_error.format(baseline=resp.mutation_baseline_ref)]
+        if resp.mutation_baseline_ref is not None:
+            assert (git_repo / "a.txt").read_text(encoding="utf-8") == "edit\n"
+
+    def test_missing_git_binary_reaches_the_provider_error(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return PROVIDER_ERROR naming the git package's GIT_BINARY_MISSING message when PATH holds no git."""
+        empty_bin = tmp_path / "empty-bin"
+        empty_bin.mkdir()
+        monkeypatch.setenv("PATH", str(empty_bin))
+
+        resp = UnitTestAdapter(run_fn=_fake_run()).invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert resp.status == AgentResponseStatus.PROVIDER_ERROR
+        assert resp.errors == [
+            "Agent provider error: Failed to resolve worktree baseline: "
+            "Git execution failed ('git --no-optional-locks status --porcelain'): git not found"
+        ]
+
+    def test_vanished_worktree_reaches_the_provider_error(self, tmp_path: Path) -> None:
+        """Return PROVIDER_ERROR naming the git package's GIT_WORKDIR_MISSING message when the worktree directory is gone."""
+        gone = tmp_path / "gone"
+
+        resp = UnitTestAdapter(run_fn=_fake_run()).invoke(AgentRequestBuilder().with_worktree_path(gone).build())
+
+        assert resp.status == AgentResponseStatus.PROVIDER_ERROR
+        assert resp.errors == [
+            "Agent provider error: Failed to resolve worktree baseline: "
+            f"Git execution failed ('git --no-optional-locks status --porcelain'): working directory '{gone}' does not exist"
+        ]
 
     def test_gate_violation_preserves_wip(self, git_repo: Path, tmp_path: Path) -> None:
         (git_repo / "a.txt").write_text("wip content\n", encoding="utf-8")
@@ -706,7 +740,7 @@ class PreflightOrderingTests:
         baseline_calls: list[Path] = []
         monkeypatch.setattr(
             "dovo.core.agents.cli_mutation.resolve_pre_agent_baseline",
-            lambda worktree_path: baseline_calls.append(worktree_path) or "ref",
+            lambda worktree_path, **_: baseline_calls.append(worktree_path) or "ref",
         )
         adapter = CredentialedAdapter(run_fn=_fake_run())
 
@@ -958,11 +992,7 @@ class RejectedPatchDiscardOrderTests:
     def test_discard_failure_after_save_reports_rejected_line_and_keeps_path(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-
-        def _fail_discard(*args: object, **kwargs: object) -> None:
-            raise AgentError(ErrorCode.GIT_FAILED, "git reset failed: index locked")
-
-        monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
+        _use_git(monkeypatch, FakeGitRunner({("read-tree", "-u"): _INDEX_LOCKED}))
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
 
         response = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"})).invoke(
@@ -970,11 +1000,13 @@ class RejectedPatchDiscardOrderTests:
         )
 
         assert response.errors == [
-            "Agent provider error: Failed to discard rejected worktree edit: git reset failed: index locked",
+            "Agent provider error: Failed to discard rejected worktree edit: "
+            f"Git execution failed ('git read-tree -u --reset {response.mutation_baseline_ref}'): fatal: index locked",
             "Patch touches 2 files; max_files is 1.",
             f"Rejected edit saved to {destination}.",
         ]
         assert response.rejected_patch_path == str(destination)
+        assert (git_repo / "a.txt").read_text(encoding="utf-8") == "1\n"
 
 
 def _unfixable_request(git_repo: Path, tmp_path: Path, destination: Path | None) -> AgentRequest:
@@ -1065,11 +1097,7 @@ class UnfixableClassificationTests:
     def test_unfixable_discard_failure_reports_rejected_line_and_keeps_path(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-
-        def _fail_discard(*args: object, **kwargs: object) -> None:
-            raise AgentError(ErrorCode.GIT_FAILED, "git reset failed: index locked")
-
-        monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
+        _use_git(monkeypatch, FakeGitRunner({("read-tree", "-u"): _INDEX_LOCKED}))
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
 
         response = UnitTestAdapter(run_fn=_reporting_run("no SSH key", edits={"a.txt": "edit\n"})).invoke(
@@ -1078,9 +1106,11 @@ class UnfixableClassificationTests:
 
         assert response.status == AgentResponseStatus.UNFIXABLE
         assert response.errors == [
-            "Failed to discard rejected worktree edit: git reset failed: index locked",
+            "Failed to discard rejected worktree edit: "
+            f"Git execution failed ('git read-tree -u --reset {response.mutation_baseline_ref}'): fatal: index locked",
             f"Rejected edit saved to {destination}.",
         ]
+        assert (git_repo / "a.txt").read_text(encoding="utf-8") == "edit\n"
         assert response.rejected_patch_path == str(destination)
 
     @pytest.mark.parametrize(

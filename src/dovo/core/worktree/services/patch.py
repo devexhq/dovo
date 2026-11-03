@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -26,24 +25,6 @@ from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.core.worktree.services.show import find_worktree
 from dovo.core.worktree.services.wip import list_wip_paths
 
-_CONFLICT_PATTERNS = (
-    re.compile(r"^error:\s+patch failed:\s+([^:]+)"),
-    re.compile(r"^error:\s+([^:]+):\s+patch does not apply"),
-    re.compile(r"cannot apply binary patch to '([^']+)'"),
-    re.compile(r"^error:\s+([^:]+):\s+(?:already exists in working directory|does not exist in index)"),
-    re.compile(r"^error:\s+([^:]+):\s+No such file or directory"),
-)
-
-
-def _match_conflict_line(line: str) -> str | None:
-    """Return conflicting file path from a single line of git stderr, or None."""
-    trimmed = line.strip()
-    for pattern in _CONFLICT_PATTERNS:
-        match = pattern.search(trimmed)
-        if match:
-            return match.group(1).strip()
-    return None
-
 
 @contextmanager
 def _reraise_git(worktree_id: str, activity: str) -> Generator[None]:
@@ -58,23 +39,6 @@ def _reraise_git(worktree_id: str, activity: str) -> Generator[None]:
         raise WorktreeError(
             exc.error_code, f"Git {verb} {activity} for worktree '{worktree_id}': {exc}"
         ) from exc.__cause__
-
-
-def extract_conflicts(stderr: str) -> list[str]:
-    """Extract conflicting file paths from git apply stderr output.
-
-    Args:
-        stderr: Standard error output from git apply or git apply --check.
-
-    Returns:
-        Sorted list of unique conflicting file paths.
-    """
-    conflicts: set[str] = set()
-    for line in stderr.splitlines():
-        path = _match_conflict_line(line)
-        if path:
-            conflicts.add(path)
-    return sorted(conflicts)
 
 
 class WorktreePatch:
@@ -206,21 +170,14 @@ class WorktreePatch:
 
         Raises:
             WorktreeError: WORKTREE_APPLY_CONFLICT with WorktreeApplyConflict data when the check fails and its
-                stderr names conflicting paths; GIT_FAILED when the check exits non-zero without naming a
-                conflicting path, or a git code during the conflict check.
+                stderr names conflicting paths, or the check's git code (GIT_FAILED when it exits non-zero
+                without naming a conflicting path).
         """
         with _reraise_git(worktree_id, "during conflict check"):
-            returncode, _, stderr = self.git.apply_check(self.path, diff_text, binary=True)
-        if returncode == 0:
+            conflicts = self.git.apply_check(self.path, diff_text, binary=True)
+        if not conflicts:
             return
 
-        conflicts = extract_conflicts(stderr)
-        if not conflicts:
-            raise WorktreeError(
-                ErrorCode.GIT_FAILED,
-                f"Git failed during conflict check for worktree '{worktree_id}': "
-                f"{stderr.strip() or 'patch check failed'}",
-            )
         try:
             self.db.update_status(worktree_id, WorktreeStatus.CONFLICT)
         except Exception as exc:
@@ -252,17 +209,11 @@ class WorktreePatch:
         """Apply the patch and, for squash, commit only the patch paths; return the squash commit SHA or None.
 
         Raises:
-            WorktreeError: GIT_FAILED when git apply exits non-zero, or a git code during patch apply or squash commit.
+            WorktreeError: The git code of a failed patch apply (GIT_FAILED when git apply exits non-zero) or
+                squash commit.
         """
         with _reraise_git(worktree_id, "during patch apply"):
-            returncode, _, stderr = self.git.apply(
-                self.path, diff_text, binary=True, index=strategy == WorktreeApplyStrategy.SQUASH
-            )
-        if returncode != 0:
-            raise WorktreeError(
-                ErrorCode.GIT_FAILED,
-                f"Git failed during patch apply for worktree '{worktree_id}': {stderr.strip() or 'patch failed'}",
-            )
+            self.git.apply(self.path, diff_text, binary=True, index=strategy == WorktreeApplyStrategy.SQUASH)
 
         if strategy != WorktreeApplyStrategy.SQUASH:
             return None

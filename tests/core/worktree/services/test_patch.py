@@ -1,4 +1,4 @@
-"""Contract tests for worktree conflict extraction, diff inspection, and patch application."""
+"""Contract tests for worktree diff inspection and patch application."""
 
 from __future__ import annotations
 
@@ -19,37 +19,11 @@ from dovo.core.git.exceptions import GitError, git_command_error
 from dovo.core.git.models import GitProcessOutput
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeApplyStrategy
-from dovo.core.worktree.services.patch import extract_conflicts
 from dovo.core.worktree.worktree import Worktree
 from tests.harness import WorkspaceBuilder
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id
 from tests.harness.git_index import snapshot_index, temp_index_files
-
-
-class ExtractConflictsTests:
-    @pytest.mark.parametrize(
-        ("stderr", "expected"),
-        [
-            pytest.param("error: patch failed: src/main.py:12\n", ["src/main.py"], id="patch_failed"),
-            pytest.param("error: src/main.py: patch does not apply\n", ["src/main.py"], id="does_not_apply"),
-            pytest.param("cannot apply binary patch to 'assets/logo.png'\n", ["assets/logo.png"], id="binary_patch"),
-            pytest.param(
-                "error: src/new.py: already exists in working directory\n", ["src/new.py"], id="already_exists"
-            ),
-            pytest.param("error: src/gone.py: does not exist in index\n", ["src/gone.py"], id="not_in_index"),
-            pytest.param("error: src/gone.py: No such file or directory\n", ["src/gone.py"], id="missing_in_workspace"),
-            pytest.param("Applying patch\nnothing to see here\n", [], id="no_conflict_markers"),
-        ],
-    )
-    def test_extracts_conflicting_paths_from_known_git_apply_stderr_patterns(
-        self, stderr: str, expected: list[str]
-    ) -> None:
-        assert extract_conflicts(stderr) == expected
-
-    def test_deduplicates_and_sorts_multiple_conflicting_paths(self) -> None:
-        stderr = "error: patch failed: zeta.py\nerror: patch failed: alpha.py\nerror: patch failed: zeta.py\n"
-        assert extract_conflicts(stderr) == ["alpha.py", "zeta.py"]
 
 
 @pytest.fixture
@@ -845,6 +819,32 @@ class WorktreePatchGitFailureTests:
 
         assert result.error_code == ErrorCode.GIT_FAILED
         assert result.errors == ["Git failed during patch apply for worktree 'dovo_t': error: boom"]
+
+    @pytest.mark.parametrize(
+        ("key", "message"),
+        [
+            pytest.param(
+                ("apply", "--check"),
+                "Git failed during conflict check for worktree 'dovo_t': patch check failed",
+                id="conflict_check",
+            ),
+            pytest.param(
+                ("apply", "--binary"), "Git failed during patch apply for worktree 'dovo_t': patch failed", id="apply"
+            ),
+        ],
+    )
+    def test_nonzero_git_apply_without_stderr_reports_git_failed_with_fallback(
+        self, worktree_workspace_paths: WorkspacePaths, key: tuple[str, ...], message: str
+    ) -> None:
+        """Return GIT_FAILED and errors == [message] ending in "patch check failed" or "patch failed" when key exits 1 with empty stderr."""
+        _create_worktree_with_change(worktree_workspace_paths, "dovo_t")
+        fake = FakeGitRunner({key: GitProcessOutput(returncode=1, stdout="", stderr="")})
+        worktree = _worktree(worktree_workspace_paths, _repo(worktree_workspace_paths), git=fake)
+
+        result = worktree.apply("dovo_t")
+
+        assert result.error_code == ErrorCode.GIT_FAILED
+        assert result.errors == [message]
 
 
 def _raise_boom(*args: object, **kwargs: object) -> NoReturn:

@@ -17,6 +17,15 @@ class GitProcessOutput:
     stderr: str
 
 
+@dataclass(frozen=True, slots=True)
+class GitBytesOutput:
+    """Exit code and captured undecoded output of one git subprocess."""
+
+    returncode: int
+    stdout: bytes
+    stderr: bytes
+
+
 class GitWorktreeEntry(BaseModel):
     """Parsed entry from `git worktree list --porcelain`."""
 

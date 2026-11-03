@@ -11,7 +11,6 @@ from dovo.common.models import Remediation
 from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeApplyStrategy
-from dovo.core.worktree.services.patch import extract_conflicts
 from dovo.core.worktree.worktree import Worktree
 from tests.harness.builders import WorkspaceBuilder
 from tests.harness.diagnostic_log import diagnostic_record
@@ -30,47 +29,6 @@ def worktree_workspace_paths(
 ) -> WorkspacePaths:
     """Resolve the command-scoped paths for this module's worktree workspace."""
     return workspace_paths_factory(worktree_workspace, None)
-
-
-class WorktreeConflictExtractionTests:
-    """Integration tests verifying git apply stderr line parsing."""
-
-    @pytest.mark.parametrize(
-        ("stderr_input", "expected_conflicts"),
-        [
-            pytest.param(
-                "error: patch failed: src/main.py:12\nerror: src/main.py: patch does not apply",
-                ["src/main.py"],
-                id="patch_failed_and_does_not_apply",
-            ),
-            pytest.param(
-                "error: cannot apply binary patch to 'assets/logo.png' without full index line",
-                ["assets/logo.png"],
-                id="binary_patch_failure",
-            ),
-            pytest.param(
-                "error: new_file.txt: already exists in working directory\nerror: deleted_file.txt: does not exist in index",
-                ["deleted_file.txt", "new_file.txt"],
-                id="already_exists_and_not_in_index",
-            ),
-            pytest.param(
-                "error: patch failed: a.py:1\nerror: patch failed: b.py:5\nerror: a.py: patch does not apply",
-                ["a.py", "b.py"],
-                id="multiline_deduplication",
-            ),
-            pytest.param(
-                "",
-                [],
-                id="empty_stderr",
-            ),
-        ],
-    )
-    def test_extract_conflicts_parses_git_apply_stderr_lines(
-        self,
-        stderr_input: str,
-        expected_conflicts: list[str],
-    ) -> None:
-        assert extract_conflicts(stderr_input) == expected_conflicts
 
 
 class WorktreeApplyRollbackTests:
