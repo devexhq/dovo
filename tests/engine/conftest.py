@@ -20,7 +20,7 @@ from dovo.core.worktree import Worktree, WorktreeSession
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.models import AgentStepRunner, StepExecutionContext
 from dovo.engine.executors.step_executor import StepExecution
-from dovo.engine.models import FailurePrompter, InteractionPrompter, RunFailure, RunObserver, RunOutcome, RunSettings
+from dovo.engine.models import FailurePrompter, InteractionPrompter, RunObserver, RunOutcome, RunSettings
 from dovo.engine.state_models import ExecutionStateTree
 from dovo.engine.workspace import Workspace
 from tests.harness.builders import WorkspaceBuilder
@@ -221,13 +221,12 @@ def worktree_paths(worktree_root: Path) -> WorkspacePaths:
 
 
 class WorktreeSetup(NamedTuple):
-    """A Workspace over worktree_root and the (target_dir, manager, session, error) its setup() returned."""
+    """A Workspace over worktree_root and the (target_dir, manager, session) its setup() returned."""
 
     workspace: Workspace
     target_dir: Path
     manager: Worktree | None
     session: WorktreeSession | None
-    error: RunFailure | None
 
 
 type WorktreeSetupFactory = Callable[..., WorktreeSetup]

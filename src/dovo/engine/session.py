@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from dovo.common.clock import Clock
 from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
@@ -17,6 +19,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.core.worktree import Worktree, WorktreeSession
 from dovo.engine.coordinator import RunCoordinator
+from dovo.engine.exceptions import EngineError
 from dovo.engine.executors.session_log import append_session_log_event
 from dovo.engine.models import (
     AgentSettingsResolution,
@@ -159,6 +162,21 @@ def _workspace_context(
     )
 
 
+def _setup_failed(
+    error: EngineError, warnings: list[str], diagnostics: list[DiagnosticRecord], worktree_path: Path
+) -> RunOutcome:
+    """Build the FAILED outcome for a run whose workspace could not be set up, carrying the error's code and message."""
+    return RunOutcome(
+        status=SessionStatus.FAILED,
+        errors=[error.message],
+        error_code=error.error_code,
+        warnings=warnings,
+        diagnostics=diagnostics,
+        worktree_kept=False,
+        worktree_path=worktree_path,
+    )
+
+
 class SessionRunner:
     """One run's lifecycle: owns its Workspace and the infrastructure it opened, executes through RunCoordinator, auto-applies changes, and closes by outcome."""
 
@@ -214,29 +232,15 @@ class SessionRunner:
         workspace = Workspace(_workspace_context(row, paths, observer, sensitive_variables, git, clock, new_id))
         setup_warnings: list[str] = []
         setup_diagnostics: list[DiagnosticRecord] = []
-        target_dir, manager, worktree, setup_failure = workspace.setup(setup_warnings, setup_diagnostics)
-        if setup_failure is not None:
-            return RunOutcome(
-                status=SessionStatus.FAILED,
-                errors=[setup_failure.message],
-                error_code=setup_failure.error_code,
-                warnings=setup_warnings,
-                diagnostics=setup_diagnostics,
-                worktree_kept=False,
-                worktree_path=target_dir,
-            )
+        try:
+            target_dir, manager, worktree = workspace.setup(setup_warnings, setup_diagnostics)
+        except EngineError as error:
+            return _setup_failed(error, setup_warnings, setup_diagnostics, workspace.context.cwd.resolve())
 
-        link_failure = workspace.link_session_dir(manager, worktree, setup_warnings, setup_diagnostics)
-        if link_failure is not None:
-            return RunOutcome(
-                status=SessionStatus.FAILED,
-                errors=[link_failure.message],
-                error_code=link_failure.error_code,
-                warnings=setup_warnings,
-                diagnostics=setup_diagnostics,
-                worktree_kept=False,
-                worktree_path=paths.root_dir,
-            )
+        try:
+            workspace.link_session_dir(manager, worktree, setup_warnings, setup_diagnostics)
+        except EngineError as error:
+            return _setup_failed(error, setup_warnings, setup_diagnostics, paths.root_dir)
 
         session_tmp_dir = workspace.prepare_session_tmp_dir(setup_warnings)
         session_log_dir = workspace.prepare_session_log_dir(setup_warnings)

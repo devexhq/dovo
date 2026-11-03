@@ -346,14 +346,6 @@ class RunObserver(Protocol):
         ...
 
 
-@dataclass(frozen=True, slots=True)
-class RunFailure:
-    """A failure that ends a run outside its coordinator: the code it carries and its message."""
-
-    error_code: str
-    message: str
-
-
 class RunOutcome(BaseModel):
     """Structured result of ``drive_run``."""
 
@@ -369,7 +361,7 @@ class RunOutcome(BaseModel):
     session_id: str | None = None
     worktree_id: str | None = None
     paused_prompt_id: str | None = None
-    error_code: str | None = None  # the code of errors[0]; None exactly when the run did not fail
+    error_code: str | None = None  # the code of errors[0]; None exactly when the run neither failed nor was cancelled
 
     @property
     def ok(self) -> bool:
