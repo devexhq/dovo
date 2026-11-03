@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Copy session SESSION_ID's stored records (session.json, definitions, diff),
-# logs, step outputs and, while its worktree is still on disk, the worktree's
-# .agentic/ directory into sessions/<SESSION_ID>/ of SESSION_DATA_REPO, then
+# logs, step outputs (without agents' scratch/ temp files) and, while its
+# worktree is still on disk, the worktree's .agentic/ directory into
+# sessions/<SESSION_ID>/ of SESSION_DATA_REPO, then
 # record the session against pull request SESSION_PR (of SESSION_PR_REPO) in
 # ledger.md beside sessions/, then commit and push them to SESSION_DATA_BRANCH.
 # Saving a session again replaces its folder and its ledger row; an unchanged
@@ -68,7 +69,13 @@ stage() {
   mkdir -p "$target"
   cp -R "$storage/sessions/$SESSION_ID/." "$target/"
   if [ -d "$storage/logs/$SESSION_ID" ]; then cp -R "$storage/logs/$SESSION_ID" "$target/logs"; fi
-  if [ -d "$storage/tmp/$SESSION_ID" ]; then cp -R "$storage/tmp/$SESSION_ID" "$target/outputs"; fi
+  if [ -d "$storage/tmp/$SESSION_ID" ]; then
+    cp -R "$storage/tmp/$SESSION_ID" "$target/outputs"
+    # An agent's scratch/ holds only its temporary files, which can include whole
+    # git repositories that cannot be committed; keep its control/ and step outputs.
+    find "$target/outputs/steps" -mindepth 4 -maxdepth 4 -type d -name scratch -path '*/agent/*' \
+      -exec rm -rf {} + 2>/dev/null || true
+  fi
   if [ -n "$agentic" ] && [ -d "$agentic" ]; then
     cp -R "$agentic" "$target/.agentic"
   fi
