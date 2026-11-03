@@ -180,6 +180,7 @@ Model new work on these.
 uv sync --all-extras            # install dependencies
 uv run dovo run tests --path tests/core/   # scoped tests while iterating (also --fast-fail, --coverage)
 uv run dovo run quality         # all quality gates against the working tree
+DOVO_PYTEST_CONCURRENCY=4 uv run dovo run quality   # pytest-xdist workers for quality and tests (default auto; 0 runs serially)
 uv run ruff format .            # format (the gate only checks it)
 uv run ruff check .             # lint
 uv run ty check src tests e2e .dovo/catalog/scripts   # typecheck (must report no diagnostics)
