@@ -21,6 +21,7 @@ from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, St
 from dovo.core.catalog.models import CatalogItemType, CatalogTier
 from dovo.core.catalog.services.inventory import scan_and_index_tier
 from dovo.core.catalog.services.resolve_step import resolve_step_definition
+from dovo.core.inputs import resolve_inputs
 from dovo.engine.executors.conditions import evaluate_condition
 from dovo.engine.executors.models import StepResult
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -323,6 +324,7 @@ class ShipBlueprintCatalogResolutionTests:
         assert blueprint.inputs["issue"].required is True
         assert blueprint.inputs["issue"].aliases == ["-i", "--issue"]
         assert blueprint.inputs["pull_request"].default == ""
+        assert blueprint.inputs["pull_request"].aliases == ["-p", "--pull-request"]
         assert blueprint.defaults.on_failure is not None
         assert blueprint.defaults.on_failure.action == FailurePolicy.ABORT
 
@@ -352,6 +354,13 @@ class ShipBlueprintCatalogResolutionTests:
         assert human_step.interaction.mode == "text"
         assert human_step.interaction.artifact == "ship-decision"
         assert human_step.interaction.message == "{{ steps.next.outputs.question }}"
+
+    @pytest.mark.parametrize("flag", ["-p", "--pull-request"])
+    def test_pull_request_flag_binds_the_pull_request_input(self, flag: str) -> None:
+        result = resolve_inputs(_load_ship_blueprint().inputs, cli_args=["-i", "1394", flag, "1399"])
+
+        assert result.values == {"issue": "1394", "pull_request": "1399"}
+        assert (result.missing, result.errors, result.warnings) == ([], [], [])
 
     def test_every_uses_step_resolves_preserving_when_env_and_artifacts(self, isolated_workspace: Path) -> None:
         paths = _seed_ship_catalog(isolated_workspace)

@@ -15,6 +15,7 @@ inputs:
     type: string
     description: Existing PR to continue; otherwise discover one from the issue
     default: ""
+    aliases: ["-p", "--pull-request"]
 
 # Operational failures preserve work and fail the run. They are not automatically
 # turned into human questions. Expected check failures are typed stage results.
