@@ -11,7 +11,7 @@ from dovo.cli.ui.formatters.catalog.catalog_validate import CatalogValidateForma
 from dovo.cli.ui.formatters.catalog.catalog_views import CatalogValidateView
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
-from dovo.core.catalog.models import CatalogValidateResult
+from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -24,7 +24,7 @@ VALID_CASE = FormatterCase(
         valid=True,
         target="my-flow",
         resolved_path=Path(".dovo/catalog/blueprints/my-flow.yml"),
-        item_type="blueprint",
+        item_type=CatalogItemType.BLUEPRINT,
         errors=[],
         warnings=[],
         remediations=[],
@@ -48,7 +48,7 @@ INVALID_CASE = FormatterCase(
         error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
         target="dup.yml",
         resolved_path=Path("/workspace/dup.yml"),
-        item_type="blueprint",
+        item_type=CatalogItemType.BLUEPRINT,
         errors=["Step id 'run-tests' is used by more than one step."],
         warnings=["Step 's1' script_path 'scripts/none.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
         remediations=[Remediation(message="Resolve: Step id 'run-tests' is used by more than one step.")],
@@ -79,7 +79,7 @@ MORE_ERRORS_THAN_REMEDIATIONS_CASE = FormatterCase(
         error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
         target="two.yml",
         resolved_path=Path("/workspace/two.yml"),
-        item_type="blueprint",
+        item_type=CatalogItemType.BLUEPRINT,
         errors=[
             "Step id 'build' is used by more than one step.",
             "Alias '-f' is declared by both 'foo' and 'bar'.",

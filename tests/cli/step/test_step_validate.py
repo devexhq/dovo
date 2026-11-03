@@ -48,6 +48,7 @@ class StepValidateCliIntegrationTests:
         payload = json.loads(result.stdout)
         assert payload["event_type"] == "CatalogValidateResult"
         assert payload["payload"]["valid"] is True
+        assert payload["payload"]["item_type"] == "step"
 
     def test_step_validate_cli_invalid_step_schema_exits_one(
         self, cli_runner: CliRunner, isolated_workspace: Path
@@ -74,6 +75,7 @@ class StepValidateCliIntegrationTests:
         payload = json.loads(result.stdout)["payload"]
         assert payload["error_code"] == "CATALOG_NOT_FOUND"
         assert payload["errors"] == ["Catalog item 'missing-step' not found."]
+        assert payload["item_type"] == "step"
 
 
 class StepValidateCliTests:

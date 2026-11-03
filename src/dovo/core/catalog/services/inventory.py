@@ -10,6 +10,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths, YamlFile
 from dovo.common.filesystem.services.operations import delete_file
 from dovo.common.lock import WorkspaceLock, resolve_lock_file_path
+from dovo.common.models import Remediation
 from dovo.core.catalog.exceptions import CatalogError
 from dovo.core.catalog.models import (
     CatalogIndex,
@@ -343,8 +344,27 @@ def coerce_catalog_item_type(item_type: CatalogItemType | str) -> CatalogItemTyp
         ) from None
 
 
+def resolve_create_tier(*, user: bool, global_: bool) -> CatalogTier:
+    """Return the tier the --user/--global flags select: USER, GLOBAL, or REPO when neither is set.
+
+    Raises:
+        CatalogError: CATALOG_TIER_CONFLICT when both are set.
+    """
+    if user and global_:
+        raise CatalogError(
+            ErrorCode.CATALOG_TIER_CONFLICT,
+            "--user and --global are mutually exclusive.",
+            [Remediation(message="Pass at most one of --user and --global.")],
+        )
+    if user:
+        return CatalogTier.USER
+    if global_:
+        return CatalogTier.GLOBAL
+    return CatalogTier.REPO
+
+
 def create_catalog_item(
-    item_type: CatalogItemType | str,
+    item_type: CatalogItemType,
     name: str,
     tier: CatalogTier,
     paths: WorkspacePaths,
@@ -352,22 +372,21 @@ def create_catalog_item(
     """Create a new catalog item under the selected tier's `<type>s/<name>.yml` and reindex that tier.
 
     Raises:
-        CatalogError: CATALOG_TYPE_INVALID for an unknown item_type, CATALOG_ALREADY_EXISTS when the file exists,
-            CATALOG_WRITE_FAILED when writing or reindexing it fails.
+        CatalogError: CATALOG_ALREADY_EXISTS when the file exists, CATALOG_WRITE_FAILED when writing or
+            reindexing it fails.
     """
     lock_path = paths.lock_file if tier is CatalogTier.REPO else _global_tier_lock_path(paths)
     with WorkspaceLock(lock_path):
-        type_enum = coerce_catalog_item_type(item_type)
         tier_dir = ensure_tier_catalog_dirs(tier, paths)
         stem = name[:-4] if name.endswith(".yml") or name.endswith(".yaml") else name
         filename = f"{stem}.yml"
-        target_path = tier_dir / f"{type_enum.value}s" / filename
+        target_path = tier_dir / f"{item_type.value}s" / filename
 
         if target_path.exists():
             rel_path = target_path.relative_to(tier_dir)
             raise CatalogError(ErrorCode.CATALOG_ALREADY_EXISTS, f"Catalog blueprint collision at path '{rel_path}'")
 
-        content = _get_initial_template_content(type_enum, stem, paths.catalog_templates_dir)
+        content = _get_initial_template_content(item_type, stem, paths.catalog_templates_dir)
         try:
             Filesystem.atomic_write_text(target_path, content)
         except OSError as exc:

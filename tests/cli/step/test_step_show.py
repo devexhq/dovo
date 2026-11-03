@@ -40,6 +40,7 @@ class StepShowCliIntegrationTests:
         payload = json.loads(result.stdout)
         assert payload["event_type"] == "CatalogShowResult"
         assert payload["payload"]["item"]["tier"] == "repo"
+        assert payload["payload"]["item_type"] == "step"
 
     def test_step_show_cli_scopes_to_step_type(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "shared-name")
@@ -63,5 +64,6 @@ class StepShowCliIntegrationTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["item"] is None
+        assert payload["item_type"] == "step"
         assert payload["error_code"] == "CATALOG_NOT_FOUND"
         assert payload["errors"] == ["Catalog item 'missing-step' not found."]

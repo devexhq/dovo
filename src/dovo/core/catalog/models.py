@@ -142,11 +142,17 @@ class SeedSummary:
     overwritten_files: tuple[Path, ...]
 
 
-class CatalogListResult(BaseResult):
-    """Result of listing catalog blueprints and templates."""
+class CatalogResult(BaseResult):
+    """Base of every catalog command result, naming the item type the command worked on."""
+
+    item_type: CatalogItemType
+
+
+class CatalogListResult(CatalogResult):
+    """Result of listing catalog blueprints or steps."""
 
     items: list[CatalogRecord] = Field(default_factory=list)
-    type_filter: CatalogItemType | str | None = None
+    type_filter: CatalogItemType | None = None
     templates: list[tuple[str, str]] = Field(default_factory=list)
 
     @property
@@ -155,7 +161,7 @@ class CatalogListResult(BaseResult):
         return not self.errors
 
 
-class CatalogShowResult(BaseResult):
+class CatalogShowResult(CatalogResult):
     """Result of showing a catalog blueprint or packaged template."""
 
     item: CatalogRecord | None = None
@@ -168,7 +174,7 @@ class CatalogShowResult(BaseResult):
         return not self.errors and (self.item is not None or self.content is not None or bool(self.template_matches))
 
 
-class CatalogDeleteResult(BaseResult):
+class CatalogDeleteResult(CatalogResult):
     """Result of deleting a catalog blueprint or step."""
 
     item: CatalogRecord | None = None
@@ -181,7 +187,7 @@ class CatalogDeleteResult(BaseResult):
         return self.error_code is None
 
 
-class CatalogCreateResult(BaseResult):
+class CatalogCreateResult(CatalogResult):
     """Result of creating a catalog blueprint or step."""
 
     item: CatalogRecord | None = None
@@ -193,13 +199,12 @@ class CatalogCreateResult(BaseResult):
         return self.error_code is None
 
 
-class CatalogValidateResult(BaseResult):
+class CatalogValidateResult(CatalogResult):
     """Non-raising result of validating one catalog blueprint or step definition."""
 
     valid: bool
     target: str
     resolved_path: Path | None = None
-    item_type: str | None = None
 
     @property
     def ok(self) -> bool:

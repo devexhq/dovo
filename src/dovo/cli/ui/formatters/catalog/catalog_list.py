@@ -24,7 +24,7 @@ from dovo.core.catalog.models import CatalogListResult
 
 def _render_list_empty(view: CatalogListView) -> RenderableType:
     """Render empty state message and any warnings for catalog list."""
-    label = catalog_type_label(view.type_filter, view.items).lower()
+    label = catalog_type_label(view.item_type).lower()
     renderables: list[RenderableType] = [Text(f"No {label} found.")]
     for warning in view.warnings:
         renderables.append(Panel(warning, title="Catalog Scan Warning", border_style="red"))
@@ -33,7 +33,7 @@ def _render_list_empty(view: CatalogListView) -> RenderableType:
 
 def _render_list_items(view: CatalogListView) -> RenderableType:
     """Render table of catalog items along with any warnings."""
-    table = build_catalog_table(view.items, type_filter=view.type_filter)
+    table = build_catalog_table(view.items, item_type=view.item_type)
     if not view.warnings:
         return table
     renderables: list[RenderableType] = [table]
@@ -49,9 +49,6 @@ def _render(view: CatalogListView) -> RenderableType:
 
     if view.templates:
         return build_catalog_template_table(view.templates)
-
-    if view.type_filter == "template":
-        return Text("No packaged templates found.")
 
     if not view.items:
         return _render_list_empty(view)
@@ -87,6 +84,7 @@ class CatalogListFormatter(ComponentFormatter[CatalogListResult, CatalogListView
             for template_type, template_path in data.templates
         ]
         return CatalogListView(
+            item_type=enum_value(data.item_type),
             items=items,
             type_filter=enum_value(data.type_filter) if data.type_filter else None,
             templates=templates,

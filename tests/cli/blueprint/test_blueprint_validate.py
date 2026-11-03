@@ -64,6 +64,7 @@ class BlueprintValidateCliIntegrationTests:
         payload = json.loads(result.stdout)
         assert payload["event_type"] == "CatalogValidateResult"
         assert payload["payload"]["valid"] is True
+        assert payload["payload"]["item_type"] == "blueprint"
 
     def test_blueprint_validate_cli_missing_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "validate", "missing-blueprint"])
@@ -80,6 +81,7 @@ class BlueprintValidateCliIntegrationTests:
         payload = json.loads(result.stdout)["payload"]
         assert payload["error_code"] == "CATALOG_NOT_FOUND"
         assert payload["errors"] == ["Catalog item 'missing-blueprint' not found."]
+        assert payload["item_type"] == "blueprint"
 
 
 class BlueprintValidateAskCliIntegrationTests:

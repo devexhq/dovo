@@ -10,23 +10,22 @@ from dovo.cli.ui.formatters.catalog.catalog_views import (
 )
 
 
-def catalog_type_label(type_filter: str | None, items: list[CatalogItemView]) -> str:
-    """Derive a plural item-type label (e.g. 'Blueprints', 'Steps') from a type filter or a sample item."""
-    resolved = type_filter or (items[0].item_type if items else None)
-    return f"{resolved.capitalize()}s" if resolved else "Items"
+def catalog_type_label(item_type: str) -> str:
+    """Return the plural label of item_type, e.g. 'Blueprints' for 'blueprint' and 'Steps' for 'step'."""
+    return f"{item_type.capitalize()}s"
 
 
-def build_catalog_table(items: list[CatalogItemView], *, type_filter: str | None = None) -> Table:
+def build_catalog_table(items: list[CatalogItemView], *, item_type: str) -> Table:
     """Build the Rich table displaying catalog items of one type.
 
     Args:
         items: List of CatalogItemView instances.
-        type_filter: The item type the caller filtered on ('blueprint' or 'step'), used for the table title.
+        item_type: The item type listed ('blueprint' or 'step'), used for the table title.
 
     Returns:
         A Rich Table with Name, Type, Path, SHA columns.
     """
-    table = Table(title=f"{catalog_type_label(type_filter, items)}:", title_justify="left", show_header=True)
+    table = Table(title=f"{catalog_type_label(item_type)}:", title_justify="left", show_header=True)
     table.add_column("Name")
     table.add_column("Type", no_wrap=True)
     table.add_column("Tier", no_wrap=True)

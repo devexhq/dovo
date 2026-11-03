@@ -29,9 +29,9 @@ from dovo.core.catalog.services.inventory import (
     create_catalog_item,
     delete_catalog_item,
     find_catalog_record_matches,
-    list_packaged_template_defaults,
     resolve_catalog_record_path,
     resolve_catalog_records,
+    resolve_create_tier,
     resolve_deletable_catalog_item,
     scan_and_index_catalog,
 )
@@ -55,75 +55,38 @@ class Catalog:
         self.paths = paths
         self.path = paths.root_dir
 
-    def list(
-        self,
-        kind: CatalogItemType | str | None = None,
-        *,
-        type_filter: CatalogItemType | str | None = None,
-    ) -> CatalogListResult:
-        """Return indexed catalog records across all tiers, optionally filtered by item type.
+    def list(self, item_type: CatalogItemType) -> CatalogListResult:
+        """Return indexed catalog records of item_type across all tiers.
 
         Raises:
             LockTimeoutError: If another process holds a tier's workspace lock while reindexing.
         """
-        filter_value = type_filter if type_filter is not None else kind
-        with catch_failure("catalog.list", type_filter=None if filter_value is None else str(filter_value)) as caught:
-            listed = self._list(filter_value)
+        with catch_failure("catalog.list", item_type=item_type.value) as caught:
+            listed = self._list(item_type)
         if caught.failure is not None:
-            return CatalogListResult(
-                **caught.failure.result_fields(),
-            )
+            return CatalogListResult(item_type=item_type, **caught.failure.result_fields())
         return listed
 
-    def _list(self, filter_value: CatalogItemType | str | None) -> CatalogListResult:
-        """Reindex and list records matching filter_value, raising CatalogError on failure."""
+    def _list(self, item_type: CatalogItemType) -> CatalogListResult:
+        """Reindex and list records of item_type, raising CatalogError on failure."""
         scan = self.sync()
-        records = resolve_catalog_records(self.paths)
-
-        if filter_value is not None and str(filter_value).lower() == "template":
-            return self._list_packaged_templates_result(records, scan)
-
-        parsed_type = self._parse_filter_type(filter_value)
-        if parsed_type is not None:
-            records = [record for record in records if record.item_type == parsed_type]
-
+        records = [record for record in resolve_catalog_records(self.paths) if record.item_type == item_type]
         return CatalogListResult(
+            item_type=item_type,
             items=records,
-            type_filter=parsed_type,
-            warnings=list(scan.skipped_files),
+            type_filter=item_type,
+            warnings=builtins.list(scan.skipped_files),
         )
 
-    def _list_packaged_templates_result(
-        self, records: builtins.list[CatalogRecord], scan: CatalogScan
-    ) -> CatalogListResult:
-        """Build the CatalogListResult for the '--type template' sugar filter."""
-        packaged_items = [record for record in records if record.tier == CatalogTier.PACKAGED]
-        return CatalogListResult(
-            items=packaged_items,
-            templates=list_packaged_template_defaults(self.paths.catalog_templates_dir),
-            type_filter="template",
-            warnings=list(scan.skipped_files),
-        )
-
-    def _parse_filter_type(self, filter_value: CatalogItemType | str | None) -> CatalogItemType | None:
-        """Parse the optional type filter.
-
-        Raises:
-            CatalogError: CATALOG_TYPE_INVALID for an unknown type.
-        """
-        return coerce_catalog_item_type(filter_value) if filter_value is not None else None
-
-    def show(self, sha_or_name: str, item_type: CatalogItemType | str | None = None) -> CatalogShowResult:
-        """Show details and definition content of a catalog blueprint or packaged template."""
-        with catch_failure("catalog.show", name=sha_or_name) as caught:
+    def show(self, sha_or_name: str, item_type: CatalogItemType) -> CatalogShowResult:
+        """Show details and definition content of the catalog item of item_type named sha_or_name."""
+        with catch_failure("catalog.show", item_type=item_type.value, name=sha_or_name) as caught:
             shown = self._show(sha_or_name, item_type)
         if caught.failure is not None:
-            return CatalogShowResult(
-                **caught.failure.result_fields(),
-            )
+            return CatalogShowResult(item_type=item_type, **caught.failure.result_fields())
         return shown
 
-    def _show(self, sha_or_name: str, item_type: CatalogItemType | str | None) -> CatalogShowResult:
+    def _show(self, sha_or_name: str, item_type: CatalogItemType) -> CatalogShowResult:
         """Resolve sha_or_name and read its file into a CatalogShowResult, raising CatalogError on failure."""
         item = self.get(sha_or_name, item_type=item_type).record
         file_path = resolve_catalog_record_path(item, self.paths)
@@ -135,7 +98,7 @@ class Catalog:
             ) from None
 
         template_matches = [(item.path.as_posix(), content)] if item.tier == CatalogTier.PACKAGED else []
-        return CatalogShowResult(item=item, content=content, template_matches=template_matches)
+        return CatalogShowResult(item_type=item_type, item=item, content=content, template_matches=template_matches)
 
     def get(
         self,
@@ -180,29 +143,32 @@ class Catalog:
 
     def create(
         self,
-        item_type: CatalogItemType | str,
+        item_type: CatalogItemType,
         name: str,
         *,
-        tier: CatalogTier = CatalogTier.REPO,
+        user: bool = False,
+        global_: bool = False,
     ) -> CatalogCreateResult:
-        """Create a new catalog blueprint or step file at the selected tier and reindex.
+        """Create a new catalog blueprint or step file and reindex: at the REPO tier, or the USER or GLOBAL tier when user or global_ is set.
+
+        Setting both user and global_ fails with CATALOG_TIER_CONFLICT before anything is read or written.
 
         Raises:
             LockTimeoutError: If another process holds the tier's workspace lock.
         """
-        with catch_failure("catalog.create", item_type=str(item_type), name=name, tier=tier.value) as caught:
-            created = self._create(item_type, name, tier)
+        with catch_failure(
+            "catalog.create", item_type=item_type.value, name=name, user=user, global_=global_
+        ) as caught:
+            created = self._create(item_type, name, resolve_create_tier(user=user, global_=global_))
         if caught.failure is not None:
-            return CatalogCreateResult(
-                **caught.failure.result_fields(),
-            )
+            return CatalogCreateResult(item_type=item_type, **caught.failure.result_fields())
         return created
 
-    def _create(self, item_type: CatalogItemType | str, name: str, tier: CatalogTier) -> CatalogCreateResult:
+    def _create(self, item_type: CatalogItemType, name: str, tier: CatalogTier) -> CatalogCreateResult:
         """Create the item and return the ok result, raising CatalogError on failure."""
         record = create_catalog_item(item_type, name, tier, self.paths)
         resolved_path = resolve_catalog_record_path(record, self.paths)
-        return CatalogCreateResult(item=record, resolved_path=resolved_path)
+        return CatalogCreateResult(item_type=item_type, item=record, resolved_path=resolved_path)
 
     def delete(
         self,
@@ -218,7 +184,8 @@ class Catalog:
         only the matches of item_type. An unknown name, a dovo/-namespaced template and a non-REPO-tier match
         fail without being confirmed.
         No lock is held while the prompt waits; the delete's workspace lock is taken after it. A declined
-        confirmation returns cancelled True, and a file removed after confirmation fails with CATALOG_NOT_FOUND.
+        confirmation returns the resolved, kept item with cancelled True, and a file removed after confirmation
+        fails with CATALOG_NOT_FOUND.
 
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
@@ -226,13 +193,11 @@ class Catalog:
         with catch_failure("catalog.delete", item_type=item_type.value, name=sha_or_name) as caught:
             item = resolve_deletable_catalog_item(item_type, sha_or_name, self.paths)
             if confirm is not None and not confirm(item):
-                return CatalogDeleteResult(cancelled=True)
+                return CatalogDeleteResult(item_type=item_type, item=item, cancelled=True)
             delete_catalog_item(sha_or_name, item, self.paths)
         if caught.failure is not None:
-            return CatalogDeleteResult(
-                **caught.failure.result_fields(),
-            )
-        return CatalogDeleteResult(item=item, deleted=True)
+            return CatalogDeleteResult(item_type=item_type, **caught.failure.result_fields())
+        return CatalogDeleteResult(item_type=item_type, item=item, deleted=True)
 
     def sync(self) -> CatalogScan:
         """Synchronize each disk-backed tier's index.json with its on-disk YAML blueprints.
@@ -278,12 +243,12 @@ class Catalog:
         if caught.failure is not None:
             if resolution is None:
                 return _target_lookup_failure(target, item_type, caught.failure)
-            return _definition_failure(target, resolution, caught.failure)
+            return _definition_failure(target, item_type, resolution, caught.failure)
         return CatalogValidateResult(
             valid=True,
             target=target,
             resolved_path=resolved_path,
-            item_type=item_type_value,
+            item_type=item_type,
             warnings=builtins.list(checked.warnings),
         )
 
@@ -349,14 +314,16 @@ def _target_lookup_failure(target: str, item_type: CatalogItemType, failure: Fai
                 message=f"Check that '{target}' names an indexed {item_type.value}, or pass a file path instead."
             )
         ]
-    return CatalogValidateResult(valid=False, target=target, resolved_path=None, item_type=None, warnings=[], **fields)
+    return CatalogValidateResult(
+        valid=False, target=target, resolved_path=None, item_type=item_type, warnings=[], **fields
+    )
 
 
 def _definition_failure(
-    target: str, resolution: tuple[Path, str, str, tuple[str, ...]], failure: Failure
+    target: str, item_type: CatalogItemType, resolution: tuple[Path, str, str, tuple[str, ...]], failure: Failure
 ) -> CatalogValidateResult:
     """Build the failed validate result for a resolved target: the failure's fields with every error and warning its findings carry, which start with the resolution warnings, or the resolution warnings alone for an unexpected failure."""
-    resolved_path, item_type_value, _, warnings = resolution
+    resolved_path, _, _, warnings = resolution
     fields = failure.result_fields()
     findings = failure.data
     if isinstance(findings, CatalogValidateFindings):
@@ -366,7 +333,7 @@ def _definition_failure(
         valid=False,
         target=target,
         resolved_path=resolved_path,
-        item_type=item_type_value,
+        item_type=item_type,
         warnings=builtins.list(warnings),
         **fields,
     )

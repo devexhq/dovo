@@ -33,6 +33,7 @@ class CatalogListView(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
+    item_type: str
     items: list[CatalogItemView] = Field(default_factory=list)
     type_filter: str | None = None
     templates: list[CatalogTemplateView] = Field(default_factory=list)
@@ -48,6 +49,7 @@ class CatalogShowView(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
+    item_type: str
     item: CatalogItemView | None = None
     content: str | None = None
     template_matches: list[CatalogTemplateView] = Field(default_factory=list)
@@ -68,7 +70,7 @@ class CatalogValidateView(BaseModel):
     status_label: str
     target: str
     resolved_path: str | None = None
-    item_type: str | None = None
+    item_type: str
     error_code: str | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

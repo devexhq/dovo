@@ -21,6 +21,6 @@ def step_list_command(
     Returns:
         CatalogListResult containing listed records and errors.
     """
-    result = Catalog(context.paths).list(type_filter=CatalogItemType.STEP)
+    result = Catalog(context.paths).list(CatalogItemType.STEP)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

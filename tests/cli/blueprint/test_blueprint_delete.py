@@ -25,7 +25,7 @@ _CANCELLED_PAYLOAD = {
     "remediations": [],
     "diagnostics": [],
     "error_code": None,
-    "item": None,
+    "item_type": "blueprint",
     "deleted": False,
     "cancelled": True,
 }
@@ -35,6 +35,7 @@ _NOT_FOUND_PAYLOAD = {
     "remediations": [],
     "diagnostics": [],
     "error_code": "CATALOG_NOT_FOUND",
+    "item_type": "blueprint",
     "item": None,
     "deleted": False,
     "cancelled": False,
@@ -44,6 +45,14 @@ _NOT_FOUND_PAYLOAD = {
 def _payload(stdout: str) -> dict[str, object]:
     """Return the JSON event payload that follows any prompt text in stdout."""
     return json.loads(stdout[stdout.index("{") :])["payload"]
+
+
+def _assert_cancelled_keeping(payload: dict[str, object], key: str) -> None:
+    """Assert payload is the declined-delete JSON whose item is the kept blueprint key."""
+    item = payload.pop("item")
+    assert isinstance(item, dict)
+    assert (item["key"], item["item_type"], item["tier"]) == (key, "blueprint", "repo")
+    assert payload == _CANCELLED_PAYLOAD
 
 
 class BlueprintDeleteCliIntegrationTests:
@@ -92,6 +101,7 @@ class BlueprintDeleteCliIntegrationTests:
         payload = json.loads(result.stdout)
         assert payload["event_type"] == "CatalogDeleteResult"
         assert payload["payload"]["deleted"] is True
+        assert payload["payload"]["item_type"] == "blueprint"
 
     def test_blueprint_delete_cli_missing_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         result = cli_runner.invoke(
@@ -135,7 +145,7 @@ class BlueprintDeleteCliTests:
     def test_declined_confirmation_returns_cancelled_json(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """Exit 0 with payload == the declined-delete JSON when stdin answers 'n', and keep the file on disk."""
+        """Exit 0 with payload == the declined-delete JSON, item the kept record, when stdin answers 'n', and keep the file on disk."""
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "kept-blueprint")
 
         result = cli_runner.invoke(
@@ -146,11 +156,11 @@ class BlueprintDeleteCliTests:
 
         assert result.exit_code == 0
         assert _PROMPT.format(name="kept-blueprint") in result.stdout
-        assert _payload(result.stdout) == _CANCELLED_PAYLOAD
+        _assert_cancelled_keeping(_payload(result.stdout), "kept-blueprint")
         assert (isolated_workspace / ".dovo" / "catalog" / "blueprints" / "kept-blueprint.yml").is_file()
 
     def test_unanswered_prompt_returns_cancelled_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """Exit 0 with payload == the declined-delete JSON when stdin is closed without an answer, and keep the file."""
+        """Exit 0 with payload == the declined-delete JSON, item the kept record, when stdin is closed without an answer, and keep the file."""
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "kept-blueprint")
 
         result = cli_runner.invoke(
@@ -158,7 +168,7 @@ class BlueprintDeleteCliTests:
         )
 
         assert result.exit_code == 0
-        assert _payload(result.stdout) == _CANCELLED_PAYLOAD
+        _assert_cancelled_keeping(_payload(result.stdout), "kept-blueprint")
         assert (isolated_workspace / ".dovo" / "catalog" / "blueprints" / "kept-blueprint.yml").is_file()
 
     @pytest.mark.parametrize(
@@ -197,6 +207,7 @@ class BlueprintDeleteCliTests:
             "remediations": [],
             "diagnostics": [],
             "error_code": None,
+            "item_type": "blueprint",
             "deleted": True,
             "cancelled": False,
         }

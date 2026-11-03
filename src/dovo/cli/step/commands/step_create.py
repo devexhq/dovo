@@ -6,16 +6,7 @@ from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.common.models import OutputFormatOptions
 from dovo.core.catalog import Catalog
-from dovo.core.catalog.models import CatalogCreateResult, CatalogItemType, CatalogTier
-
-
-def _resolve_create_tier(*, user: bool, global_: bool) -> CatalogTier:
-    """Coerce the --user/--global flags, which the handler has already checked are not both set, into a CatalogTier."""
-    if user:
-        return CatalogTier.USER
-    if global_:
-        return CatalogTier.GLOBAL
-    return CatalogTier.REPO
+from dovo.core.catalog.models import CatalogCreateResult, CatalogItemType
 
 
 def step_create_command(
@@ -37,7 +28,6 @@ def step_create_command(
     Returns:
         CatalogCreateResult containing created record or errors.
     """
-    tier = _resolve_create_tier(user=user, global_=global_)
-    result = Catalog(context.paths).create(item_type=CatalogItemType.STEP, name=name, tier=tier)
+    result = Catalog(context.paths).create(CatalogItemType.STEP, name, user=user, global_=global_)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

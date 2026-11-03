@@ -49,8 +49,11 @@ def _sample_step_record() -> CatalogRecord:
 
 
 BLUEPRINT_FOUND = FormatterCase(
-    data=CatalogShowResult(item=_sample_catalog_record(), content="name: test-blueprint\nversion: 1\n"),
+    data=CatalogShowResult(
+        item_type=CatalogItemType.BLUEPRINT, item=_sample_catalog_record(), content="name: test-blueprint\nversion: 1\n"
+    ),
     view=CatalogShowView(
+        item_type="blueprint",
         item=CatalogItemView(
             sha="blueprint_1234567",
             item_type="blueprint",
@@ -78,8 +81,11 @@ BLUEPRINT_FOUND = FormatterCase(
 )
 
 STEP_FOUND = FormatterCase(
-    data=CatalogShowResult(item=_sample_step_record(), content="name: test-step\naction: run\n"),
+    data=CatalogShowResult(
+        item_type=CatalogItemType.STEP, item=_sample_step_record(), content="name: test-step\naction: run\n"
+    ),
     view=CatalogShowView(
+        item_type="step",
         item=CatalogItemView(
             sha="step_1234567",
             item_type="step",
@@ -100,10 +106,12 @@ STEP_FOUND = FormatterCase(
 
 TEMPLATE_MATCH = FormatterCase(
     data=CatalogShowResult(
+        item_type=CatalogItemType.BLUEPRINT,
         template_matches=[("blueprints/default.yml", "name: default-blueprint\n")],
         content="name: default-blueprint\n",
     ),
     view=CatalogShowView(
+        item_type="blueprint",
         item=None,
         content="name: default-blueprint\n",
         template_matches=[CatalogTemplateView(item_type="template", path="blueprints/default.yml")],
@@ -116,8 +124,13 @@ TEMPLATE_MATCH = FormatterCase(
 )
 
 ERRORS = FormatterCase(
-    data=CatalogShowResult(error_code="CATALOG_NOT_FOUND", errors=["Catalog item 'missing' not found."]),
+    data=CatalogShowResult(
+        item_type=CatalogItemType.BLUEPRINT,
+        error_code="CATALOG_NOT_FOUND",
+        errors=["Catalog item 'missing' not found."],
+    ),
     view=CatalogShowView(
+        item_type="blueprint",
         item=None,
         content=None,
         template_matches=[],
@@ -146,6 +159,7 @@ PAYLOAD_CASES = [
             "warnings": [],
             "remediations": [],
             "diagnostics": [],
+            "item_type": "blueprint",
             "item": {
                 "sha": "blueprint_1234567",
                 "item_type": "blueprint",
@@ -168,6 +182,7 @@ PAYLOAD_CASES = [
             "warnings": [],
             "remediations": [],
             "diagnostics": [],
+            "item_type": "blueprint",
             "item": None,
             "content": None,
             "template_matches": [],
@@ -183,6 +198,7 @@ PAYLOAD_CASES = [
             "warnings": [],
             "remediations": [],
             "diagnostics": [],
+            "item_type": "blueprint",
             "item": None,
             "content": "name: default-blueprint\n",
             "template_matches": [{"item_type": "template", "path": "blueprints/default.yml"}],

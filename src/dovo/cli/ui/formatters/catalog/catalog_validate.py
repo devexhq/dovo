@@ -12,6 +12,7 @@ from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import CatalogValidateView
 from dovo.cli.ui.formatters.common import with_diagnostics
 from dovo.common.models import Remediation
+from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogValidateResult
 
 _CODE_SUFFIX_RE = re.compile(r"\s*\(([A-Z][A-Z0-9_]*)\)\.?\s*$")
@@ -32,9 +33,7 @@ def _build_status_banner(view: CatalogValidateView) -> Text:
     function is a display color for an already-known label, never a pass/fail verdict from raw fields.
     """
     color = "green" if view.status_label == "PASSED" else "red"
-    lines = [f"[bold {color}]{view.status_label}[/]", f"Target: {view.target}"]
-    if view.item_type is not None:
-        lines.append(f"Type: {view.item_type}")
+    lines = [f"[bold {color}]{view.status_label}[/]", f"Target: {view.target}", f"Type: {view.item_type}"]
     if view.resolved_path is not None:
         lines.append(f"Path: {view.resolved_path}")
     return Text.from_markup("\n".join(lines))
@@ -96,7 +95,7 @@ class CatalogValidateFormatter(ComponentFormatter[CatalogValidateResult, Catalog
             status_label="PASSED" if data.ok else "FAILED",
             target=data.target,
             resolved_path=data.resolved_path.as_posix() if data.resolved_path is not None else None,
-            item_type=data.item_type,
+            item_type=enum_value(data.item_type),
             error_code=data.error_code,
             errors=list(data.errors),
             warnings=list(data.warnings),

@@ -33,18 +33,35 @@ _RECORD = CatalogRecord(
     tier=CatalogTier.REPO,
 )
 
+_STEP_RECORD = CatalogRecord(
+    key="test-step",
+    sha="step_1234567",
+    item_type=CatalogItemType.STEP,
+    name="test-step",
+    namespace=None,
+    path=Path("steps/test-step.yml"),
+    checksum="abcdef1234567890",
+    tier=CatalogTier.REPO,
+)
+
 DELETED = FormatterCase.identity(
-    data=CatalogDeleteResult(item=_RECORD, deleted=True, cancelled=False),
-    render_expectations=[_RECORD.sha, str(_RECORD.path)],
+    data=CatalogDeleteResult(item_type=CatalogItemType.BLUEPRINT, item=_RECORD, deleted=True, cancelled=False),
+    render_expectations=["Deleted catalog blueprint", _RECORD.sha, str(_RECORD.path)],
+)
+
+DELETED_STEP = FormatterCase.identity(
+    data=CatalogDeleteResult(item_type=CatalogItemType.STEP, item=_STEP_RECORD, deleted=True, cancelled=False),
+    render_expectations=["Deleted catalog step", _STEP_RECORD.sha, str(_STEP_RECORD.path)],
 )
 
 CANCELLED = FormatterCase.identity(
-    data=CatalogDeleteResult(cancelled=True),
+    data=CatalogDeleteResult(item_type=CatalogItemType.BLUEPRINT, item=_RECORD, cancelled=True),
     render_expectations=["Deletion cancelled."],
 )
 
 DELETE_ERROR = FormatterCase.identity(
     data=CatalogDeleteResult(
+        item_type=CatalogItemType.BLUEPRINT,
         error_code=ErrorCode.CATALOG_NOT_FOUND,
         item=None,
         deleted=False,
@@ -63,6 +80,7 @@ DELETE_ERROR = FormatterCase.identity(
 
 CATALOG_DELETE_CASES = [
     pytest.param(DELETED, id="deleted"),
+    pytest.param(DELETED_STEP, id="deleted_step"),
     pytest.param(CANCELLED, id="cancelled"),
     pytest.param(DELETE_ERROR, id="delete_error"),
 ]
@@ -76,6 +94,7 @@ CATALOG_DELETE_PAYLOAD_CASES = [
             "remediations": [],
             "diagnostics": [],
             "error_code": None,
+            "item_type": "blueprint",
             "item": {
                 "key": "test-blueprint",
                 "sha": "blueprint_1234567",
@@ -101,6 +120,7 @@ CATALOG_DELETE_PAYLOAD_CASES = [
             ],
             "diagnostics": [],
             "error_code": "CATALOG_NOT_FOUND",
+            "item_type": "blueprint",
             "item": None,
             "deleted": False,
             "cancelled": False,
@@ -115,7 +135,17 @@ CATALOG_DELETE_PAYLOAD_CASES = [
             "remediations": [],
             "diagnostics": [],
             "error_code": None,
-            "item": None,
+            "item_type": "blueprint",
+            "item": {
+                "key": "test-blueprint",
+                "sha": "blueprint_1234567",
+                "item_type": "blueprint",
+                "name": "test-blueprint",
+                "namespace": None,
+                "path": "blueprints/test-blueprint.yml",
+                "checksum": "1234567890abcdef",
+                "tier": "repo",
+            },
             "deleted": False,
             "cancelled": True,
         },
