@@ -14,7 +14,6 @@ from dovo.core.catalog.definitions import (
     StepType,
 )
 from dovo.core.catalog.definitions.step import interaction_spec_errors
-from dovo.core.catalog.exceptions import AskStepInvalidError
 
 
 class StepDefinitionArtifactsFieldTests:
@@ -107,11 +106,11 @@ class StepToolsContractTests:
 
 
 def _ask_error(payload: dict[str, object]) -> str:
-    """Return the AskStepInvalidError message raised while validating payload as a step."""
+    """Return the ValueError message the step validator raised while validating payload as a step."""
     with pytest.raises(ValidationError) as excinfo:
         StepDefinition.model_validate(payload)
     cause = excinfo.value.errors()[0].get("ctx", {}).get("error")
-    assert isinstance(cause, AskStepInvalidError)
+    assert isinstance(cause, ValueError)
     return str(cause)
 
 

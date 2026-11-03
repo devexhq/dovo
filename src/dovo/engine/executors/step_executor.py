@@ -23,7 +23,6 @@ from dovo.common.process import (
 from dovo.common.redact import SecretRedactor
 from dovo.common.timing import Stopwatch
 from dovo.core.catalog.definitions import StepDefinition, StepType
-from dovo.core.catalog.exceptions import StepValidationError
 from dovo.core.catalog.services.resolve_step import resolve_step_definition
 from dovo.core.inputs import NamespaceProvider, NamespaceResolutionError, build_providers, interpolate_step_fields
 from dovo.engine.executors.agent_progress import AgentProgressReporter
@@ -207,22 +206,15 @@ class StepExecution:
         return None
 
     def _resolve_shorthand(self) -> StepDefinition | str:
-        """Resolve a uses/run step, catching a uses step's catalog load once, or return the step error and add its record to the diagnostics list."""
+        """Resolve a uses/run step, catching a uses step's resolution once, or return its failure message and add its record to the diagnostics list."""
         if self.step.uses is None:
-            return self._resolve_step()
+            return resolve_step_definition(self.step, paths=self.paths)
         with catch_failure("engine.step", step=self.step.uses) as caught:
-            resolved = self._resolve_step()
+            resolved = resolve_step_definition(self.step, paths=self.paths)
         if caught.failure is None:
             return resolved
         self._diagnostics.extend(error_diagnostics(caught.failure.diagnostic))
         return caught.failure.message
-
-    def _resolve_step(self) -> StepDefinition | str:
-        """Resolve the step's shorthand, or return the step error when it cannot be resolved."""
-        try:
-            return resolve_step_definition(self.step, paths=self.paths)
-        except StepValidationError:
-            return f"Could not resolve step '{self.step.id}'."
 
     def _run_attempts(self) -> StepDispatchOutcome:
         """Run attempts up to max_attempts times, sleeping backoff_ms between failures."""

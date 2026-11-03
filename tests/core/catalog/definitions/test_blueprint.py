@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import FailurePolicy
 from dovo.core.catalog.definitions import BlueprintDefinition, IfStepBlock, LoopStepBlock, StepDefinition
-from dovo.core.catalog.exceptions import BlueprintValidationError
+from dovo.core.catalog.exceptions import CatalogError
 
 
 class BlueprintDefinitionValidatorTests:
@@ -41,15 +42,16 @@ class BlueprintDefinitionValidatorTests:
             ],
         }
 
-        with pytest.raises(BlueprintValidationError, match="Step id 'ghost' referenced in until condition"):
+        with pytest.raises(CatalogError, match="Step id 'ghost' referenced in until condition"):
             BlueprintDefinition.from_document(raw, key="bp")
 
     def test_loop_until_syntax_error_raises_blueprint_validation_error(self) -> None:
         raw: dict[str, object] = {"steps": [_loop(until=["steps.check.exit_code =="])]}
 
-        with pytest.raises(BlueprintValidationError) as caught:
+        with pytest.raises(CatalogError) as caught:
             BlueprintDefinition.from_document(raw, key="bp")
 
+        assert caught.value.error_code is ErrorCode.CATALOG_SCHEMA_INVALID
         assert "Loop 'fix': Invalid expression 'steps.check.exit_code ==': missing value after '=='." in str(
             caught.value
         )
@@ -57,7 +59,7 @@ class BlueprintDefinitionValidatorTests:
     def test_loop_until_unpublished_artifact_raises_blueprint_validation_error(self) -> None:
         raw: dict[str, object] = {"steps": [_loop(until=["artifacts.verdict.revision >= 1"])]}
 
-        with pytest.raises(BlueprintValidationError) as caught:
+        with pytest.raises(CatalogError) as caught:
             BlueprintDefinition.from_document(raw, key="bp")
 
         assert (
@@ -111,7 +113,7 @@ class LoopBlockDefinitionTests:
     def test_unknown_keys_fail_naming_the_loop_and_every_key_sorted(self) -> None:
         raw: dict[str, object] = {"steps": [_loop(untill=["x"], for_each={"artifact": "plan"})]}
 
-        with pytest.raises(BlueprintValidationError, match=r"Loop 'fix' has unknown keys: for_each, untill\."):
+        with pytest.raises(CatalogError, match=r"Loop 'fix' has unknown keys: for_each, untill\."):
             BlueprintDefinition.from_document(raw, key="bp")
 
     def test_loop_name_is_accepted(self) -> None:
@@ -219,11 +221,11 @@ class IfBlockDefinitionTests:
     def test_invalid_block_fails_naming_it(self, block: dict[str, object], message: str) -> None:
         raw: dict[str, object] = {"steps": [{"id": "check", "run": "true"}, block]}
 
-        with pytest.raises(BlueprintValidationError, match=message):
+        with pytest.raises(CatalogError, match=message):
             BlueprintDefinition.from_document(raw, key="bp")
 
     def test_if_block_inside_a_loop_fails_naming_the_loop(self) -> None:
         raw: dict[str, object] = {"steps": [_loop(do=[{"id": "check", "run": "true"}, _route()])]}
 
-        with pytest.raises(BlueprintValidationError, match="Loop 'fix': step 2 of 'do' is a 'type: if' block"):
+        with pytest.raises(CatalogError, match="Loop 'fix': step 2 of 'do' is a 'type: if' block"):
             BlueprintDefinition.from_document(raw, key="bp")

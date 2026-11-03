@@ -1,4 +1,4 @@
-"""Shared exceptions: catalog definition errors, the DomainError base, Failure and its data, and catch_failure for entrypoints."""
+"""Shared exceptions: the DomainError base, Failure and its data, and catch_failure for entrypoints."""
 
 from __future__ import annotations
 
@@ -13,22 +13,6 @@ from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
 
 _ContextValue = str | int | float | bool | None
-
-
-class DefinitionError(Exception):
-    """Base class for domain definition errors."""
-
-
-class DefinitionNotFoundError(DefinitionError):
-    """Raised when a definition file or identifier cannot be found."""
-
-
-class DefinitionLoadError(DefinitionError):
-    """Raised when definition YAML syntax is invalid or cannot be parsed/loaded."""
-
-
-class DefinitionValidationError(DefinitionError):
-    """Raised when definition schema or model validation fails."""
 
 
 @dataclass(frozen=True, slots=True)

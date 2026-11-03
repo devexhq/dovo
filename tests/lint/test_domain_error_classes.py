@@ -1,16 +1,20 @@
-"""Invariant: each package in src/dovo defines at most one DomainError class, and no class derives from one.
+"""Invariant: each package in src/dovo defines at most one DomainError class, and no Dovo exception class derives
+from another Dovo exception class except a package's DomainError class deriving from DomainError itself.
 
-Scope: classes are matched by the simple name of each base (`DomainError`, `GitError`, `errors.GitError`), across
-every module in src/dovo, so a base imported from another package is still resolved. A package is `core/<name>` or
-`cli/<name>` for code under those folders, and the top-level folder (`engine`, `common`) otherwise. Not detected: a
-base written as a call or subscript, a class created with `type(...)`, and a base imported under an alias
-(`from dovo.core.git import GitError as X`, then `class Y(X)`). Because classes are matched by name only, an unrelated
-class that reuses a DomainError class's name (`class EngineError(Exception)` elsewhere) is counted as one.
+Scope: a Dovo exception class is a class in src/dovo deriving, directly or through other src/dovo classes, from a
+built-in exception such as `Exception` or `ValueError`. Classes are matched by the simple name of each base
+(`DomainError`, `GitError`, `errors.GitError`), across every module in src/dovo, so a base imported from another
+package is still resolved. A package is `core/<name>` or `cli/<name>` for code under those folders, and the top-level
+folder (`engine`, `common`) otherwise. Not detected: a base written as a call or subscript, a class created with
+`type(...)`, a base imported under an alias (`from dovo.core.git import GitError as X`, then `class Y(X)`), and a class
+whose only exception ancestry is a third-party exception. Because classes are matched by name only, an unrelated class
+that reuses a Dovo exception class's name is counted as one.
 """
 
 from __future__ import annotations
 
 import ast
+import builtins
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Final
@@ -21,6 +25,9 @@ from tests.lint.astlib import REPO_ROOT, SRC_ROOT, collect_python_files, package
 
 ENTRY: Final[str] = "docs/agents/architecture/exceptions.md#one-domainerror-class-per-package"
 ROOT_CLASS: Final[str] = "DomainError"
+BUILTIN_EXCEPTIONS: Final[frozenset[str]] = frozenset(
+    name for name, value in vars(builtins).items() if isinstance(value, type) and issubclass(value, BaseException)
+)
 
 _DERIVED_FIXTURE: Final[str] = """
 class GitError(DomainError):
@@ -42,7 +49,15 @@ _ONE_CLASS_FIXTURE: Final[str] = """
 class GitError(DomainError):
     pass
 
-class MalformedDiffHeader(Exception):
+class MalformedDiffHeader(ValueError):
+    pass
+"""
+
+_PLAIN_DERIVED_FIXTURE: Final[str] = """
+class DiagnosticsError(Exception):
+    pass
+
+class CheckRegistrationError(DiagnosticsError, ValueError):
     pass
 """
 
@@ -76,23 +91,24 @@ def _classes(modules: dict[str, str]) -> list[_ClassDef]:
     ]
 
 
-def _domain_error_classes(classes: list[_ClassDef]) -> set[str]:
-    """Return the names of every class that derives from DomainError, directly or through another class."""
+def _derived_classes(classes: list[_ClassDef], roots: frozenset[str]) -> set[str]:
+    """Return the names of every class that derives from a name in roots, directly or through another class."""
     derived: set[str] = set()
     pending = list(classes)
-    while found := [cls for cls in pending if any(base == ROOT_CLASS or base in derived for base in cls.bases)]:
+    while found := [cls for cls in pending if any(base in roots or base in derived for base in cls.bases)]:
         derived.update(cls.name for cls in found)
         pending = [cls for cls in pending if cls.name not in derived]
     return derived
 
 
-def _subclass_violations(classes: list[_ClassDef], derived: set[str]) -> list[str]:
-    """Return '<path>:<line>: <name> derives from the DomainError class <base>' for each such base."""
+def _subclass_violations(classes: list[_ClassDef]) -> list[str]:
+    """Return '<path>:<line>: <name> derives from the exception class <base>' for each Dovo exception base but DomainError."""
+    exceptions = _derived_classes(classes, BUILTIN_EXCEPTIONS | {ROOT_CLASS})
     return [
-        f"{cls.rel_path}:{cls.line}: {cls.name} derives from the DomainError class {base}"
+        f"{cls.rel_path}:{cls.line}: {cls.name} derives from the exception class {base}"
         for cls in classes
         for base in cls.bases
-        if base in derived
+        if base in exceptions and base != ROOT_CLASS
     ]
 
 
@@ -111,21 +127,22 @@ def _package_violations(classes: list[_ClassDef], derived: set[str]) -> list[str
 
 
 def _violations(modules: dict[str, str]) -> list[str]:
-    """Return every class deriving from a DomainError class and every package class after the first, sorted."""
+    """Return every class deriving from a Dovo exception class but DomainError and every package class after the first, sorted."""
     classes = _classes(modules)
-    derived = _domain_error_classes(classes)
-    return sorted([*_subclass_violations(classes, derived), *_package_violations(classes, derived)])
+    derived = _derived_classes(classes, frozenset({ROOT_CLASS}))
+    return sorted([*_subclass_violations(classes), *_package_violations(classes, derived)])
 
 
 class DomainErrorClassTests:
     def test_src_defines_one_domain_error_class_per_package_with_no_subclasses(self) -> None:
-        """Report no class deriving from a DomainError class and no package defining two in src/dovo."""
+        """Report no class deriving from a Dovo exception class but DomainError and no package defining two in src/dovo."""
         files = collect_python_files(SRC_ROOT)
         assert files, f"{SRC_ROOT} contains no Python files, so the rule would pass vacuously"
         modules = {str(path.relative_to(REPO_ROOT)): path.read_text(encoding="utf-8") for path in files}
 
         assert _violations(modules) == [], (
-            f"raise the package's one DomainError class with its ErrorCode and branch on error_code; see {ENTRY}"
+            "raise the package's one DomainError class with its ErrorCode and branch on error_code, or derive a "
+            f"programmer-error class from a built-in exception; see {ENTRY}"
         )
 
     @pytest.mark.parametrize(
@@ -134,7 +151,7 @@ class DomainErrorClassTests:
             pytest.param(
                 _DERIVED_FIXTURE,
                 [
-                    "src/dovo/core/git/exceptions.py:5: GitTimeoutError derives from the DomainError class GitError",
+                    "src/dovo/core/git/exceptions.py:5: GitTimeoutError derives from the exception class GitError",
                     "src/dovo/core/git/exceptions.py:5: core/git defines 2 DomainError classes "
                     "(GitError, GitTimeoutError)",
                 ],
@@ -146,9 +163,17 @@ class DomainErrorClassTests:
                 id="two-classes",
             ),
             pytest.param(_ONE_CLASS_FIXTURE, [], id="one-class"),
+            pytest.param(
+                _PLAIN_DERIVED_FIXTURE,
+                [
+                    "src/dovo/core/git/exceptions.py:5: CheckRegistrationError derives from the exception class "
+                    "DiagnosticsError"
+                ],
+                id="plain-derived",
+            ),
         ],
     )
-    def test_rule_flags_subclasses_and_second_classes(self, source: str, expected: list[str]) -> None:
+    def test_rule_flags_exception_subclasses_and_second_classes(self, source: str, expected: list[str]) -> None:
         """Return expected from _violations for source placed at src/dovo/core/git/exceptions.py."""
         assert _violations({"src/dovo/core/git/exceptions.py": source}) == expected
 
@@ -160,5 +185,5 @@ class DomainErrorClassTests:
         }
 
         assert _violations(modules) == [
-            "src/dovo/core/worktree/exceptions.py:1: WorktreeGitError derives from the DomainError class GitError"
+            "src/dovo/core/worktree/exceptions.py:1: WorktreeGitError derives from the exception class GitError"
         ]

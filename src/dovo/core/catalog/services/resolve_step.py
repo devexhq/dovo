@@ -11,7 +11,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.catalog.catalog import Catalog
 from dovo.core.catalog.definitions import StepDefinition, StepType
-from dovo.core.catalog.exceptions import CatalogError, StepValidationError
+from dovo.core.catalog.exceptions import CatalogError
 from dovo.core.catalog.models import CatalogItemType
 
 
@@ -112,15 +112,19 @@ def resolve_step_definition(
 ) -> StepDefinition:
     """Resolve a step's 'run' or 'uses' shorthand into a concrete StepDefinition.
 
-    Raises StepValidationError when the step cannot be resolved, and CatalogError when its 'uses'
-    reference is missing, unparsable or fails validation.
+    Raises:
+        CatalogError: CATALOG_SCHEMA_INVALID when a step mapping fails validation or the step resolves to no valid
+            step, and the catalog failure of a 'uses' reference that is missing, unparsable or fails validation.
+        ValueError: When a 'uses' step is resolved with neither workspace paths nor a catalog.
     """
     if isinstance(step, dict):
         try:
             step_definition = StepDefinition.model_validate(step)
         except (ValidationError, ValueError) as exc:
             step_id = str(step.get("id", "<unknown>"))
-            raise StepValidationError(f"Step validation failed for '{step_id}': {exc}") from exc
+            raise CatalogError(
+                ErrorCode.CATALOG_SCHEMA_INVALID, f"Step validation failed for '{step_id}': {exc}"
+            ) from exc
     else:
         step_definition = step
 
@@ -128,8 +132,10 @@ def resolve_step_definition(
     if resolved is None:
         step_id = step_definition.id
         if step_definition.uses is not None and paths is None and catalog is None:
-            raise StepValidationError(f"Cannot resolve step '{step_id}' using 'uses' without workspace paths.")
-        raise StepValidationError(f"Step '{step_id}' must specify one of 'run', 'uses', or 'type'.")
+            raise ValueError(f"Cannot resolve step '{step_id}' using 'uses' without workspace paths.")
+        raise CatalogError(
+            ErrorCode.CATALOG_SCHEMA_INVALID, f"Step '{step_id}' must specify one of 'run', 'uses', or 'type'."
+        )
 
     return resolved
 

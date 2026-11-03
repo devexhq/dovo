@@ -8,6 +8,7 @@ from typing import Annotated, Any, Final
 
 from pydantic import BaseModel, Discriminator, Field, Tag, ValidationError, field_validator, model_validator
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import OnFailureSpec
 from dovo.core.catalog.definitions.conditions import ConditionScope, validate_condition_expression
 from dovo.core.catalog.definitions.step import (
@@ -17,7 +18,7 @@ from dovo.core.catalog.definitions.step import (
     StepDefinition,
     published_artifact_names,
 )
-from dovo.core.catalog.exceptions import BlueprintValidationError
+from dovo.core.catalog.exceptions import CatalogError
 from dovo.core.inputs import ParameterInput
 
 _SLUG_RE = re.compile(r"[^\w-]+")
@@ -124,16 +125,23 @@ class BlueprintDefinition(BaseModel):
 
     @classmethod
     def from_document(cls, raw: dict[str, object], *, key: str) -> BlueprintDefinition:
-        """Validate a Catalog-loaded document, defaulting an omitted name to key."""
+        """Validate a Catalog-loaded document, defaulting an omitted name to key.
+
+        Raises:
+            CatalogError: CATALOG_SCHEMA_INVALID when raw is not a mapping or fails validation, chained to the
+                pydantic ValidationError in the second case.
+        """
         if not isinstance(raw, dict):
-            raise BlueprintValidationError("Blueprint document must be a mapping.")
+            raise CatalogError(ErrorCode.CATALOG_SCHEMA_INVALID, "Blueprint document must be a mapping.")
         payload = dict(raw)
         if "name" not in payload:
             payload["name"] = key
         try:
             return cls.model_validate(payload)
         except (ValidationError, ValueError) as exc:
-            raise BlueprintValidationError(f"Blueprint definition validation failed: {exc}") from exc
+            raise CatalogError(
+                ErrorCode.CATALOG_SCHEMA_INVALID, f"Blueprint definition validation failed: {exc}"
+            ) from exc
 
     @field_validator("description", "summary", mode="before")
     @classmethod

@@ -9,7 +9,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
-from dovo.core.catalog.exceptions import CatalogError, StepValidationError
+from dovo.core.catalog.exceptions import CatalogError
 from dovo.core.catalog.services.resolve_step import (
     load_step,
     load_step_by_name,
@@ -112,17 +112,23 @@ class StepResolutionTests:
         assert resolved.type == StepType.COMMAND
         assert resolved.command == "echo root"
 
-    def test_resolve_step_without_path_raises_validation_error(self) -> None:
-        with pytest.raises(StepValidationError, match="without workspace paths"):
+    def test_resolve_uses_step_without_paths_or_catalog_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match=r"^Cannot resolve step 'd' using 'uses' without workspace paths\.$"):
             resolve_step_definition({"id": "d", "uses": "base"})
 
-    def test_resolve_step_missing_shorthand_or_type_raises_validation_error(self) -> None:
-        with pytest.raises(StepValidationError, match="must specify one of 'run', 'uses', or 'type'"):
+    def test_resolve_step_missing_shorthand_or_type_raises_schema_invalid(self) -> None:
+        with pytest.raises(CatalogError) as caught:
             resolve_step_definition(StepDefinition.model_construct(id="empty"))
 
-    def test_resolve_step_malformed_dict_raises_validation_error(self) -> None:
-        with pytest.raises(StepValidationError, match="Step validation failed"):
+        assert caught.value.error_code is ErrorCode.CATALOG_SCHEMA_INVALID
+        assert caught.value.message == "Step 'empty' must specify one of 'run', 'uses', or 'type'."
+
+    def test_resolve_step_malformed_dict_raises_schema_invalid(self) -> None:
+        with pytest.raises(CatalogError) as caught:
             resolve_step_definition({"id": "bad", "timeout_seconds": "invalid-int"})
+
+        assert caught.value.error_code is ErrorCode.CATALOG_SCHEMA_INVALID
+        assert caught.value.message.startswith("Step validation failed for 'bad': ")
 
 
 class StepLoadingTests:

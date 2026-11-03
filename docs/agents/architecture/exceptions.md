@@ -6,7 +6,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 
 - **Decision:** each package that raises business failures defines exactly one `DomainError` subclass in its `exceptions.py`.
   - The `ErrorCode`, the message and any remediations are passed at the raise. A failure that needs a built message gets a factory function returning the package class, never a subclass.
-  - No subclass per code, and no class derives from the package's class.
+  - No subclass per code. No Dovo exception class derives from another Dovo exception class, except each package's one `DomainError` subclass deriving from `DomainError`; a class raised only for a programmer error or a broken invariant derives from a built-in exception such as `ValueError`. `tests/lint/test_domain_error_classes.py` reports any other derivation as `<path>:<line>: <name> derives from the exception class <base>`.
   - Code branches on `error_code`, never on the exception class. `except GitError` or `isinstance(exc, GitError)` only names the package; the branch reads `error_code`.
   - A handler that catches the package class handles a set of codes and re-raises every other code unchanged.
 - **Why:** a failure carries one classification, its `error_code`; a class per code is a second one that drifts from it.

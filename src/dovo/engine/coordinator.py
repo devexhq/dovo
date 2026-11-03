@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from dovo.common.diagnostic_log import DiagnosticRecord
-from dovo.common.error_codes import ErrorCode
 from dovo.common.lock import WorkspaceLock
 from dovo.common.models import FailurePolicy
 from dovo.common.process import process_registry
@@ -16,7 +15,6 @@ from dovo.common.timing import TimeSpan
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import BlueprintStep, IfStepBlock, LoopStepBlock, StepDefinition, StepType
-from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
@@ -78,7 +76,7 @@ from dovo.engine.state_models import (
 )
 from dovo.engine.state_store import SessionStateStore, new_iteration
 from dovo.engine.state_validation import validate_block_structure
-from dovo.engine.writer import load_blueprint_from_snapshot
+from dovo.engine.writer import SNAPSHOT_FAILURE_CODES, load_blueprint_from_snapshot
 
 _RERUN_WARNING = (
     "Step '{step_id}' was interrupted before it recorded a result and was run again as attempt {number}; "
@@ -515,10 +513,10 @@ class RunCoordinator:
 
         try:
             blueprint = load_blueprint_from_snapshot(self._context.paths.session_dir(session_id), state.manifest)
-        except (EngineError, BlueprintLoadError, BlueprintValidationError) as exc:
-            if isinstance(exc, EngineError) and exc.error_code is not ErrorCode.SESSION_SNAPSHOT_MISSING:
+        except EngineError as error:
+            if error.error_code not in SNAPSHOT_FAILURE_CODES:
                 raise
-            self._errors.append(str(exc))
+            self._errors.append(error.message)
             return False
 
         structure_errors = validate_block_structure(state, blueprint)

@@ -23,7 +23,8 @@ from dovo.engine.state_models import (
     SessionJsonPayload,
     StepAttemptRecord,
 )
-from dovo.engine.writer import snapshot_blueprint_path
+from dovo.engine.writer import snapshot_blueprint_path, snapshot_step_path
+from tests.harness.catalog import write_runnable_step
 from tests.harness.sessions import (
     SEEDED_FAILURE,
     SEEDED_SPAN,
@@ -220,6 +221,30 @@ class EngineLoaderTests:
 
         assert exc_info.value.error_code is code
         assert exc_info.value.message == message.format(snapshot=snapshot)
+
+    def test_unparsable_step_snapshot_raises_snapshot_invalid(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        """Raise SESSION_SNAPSHOT_INVALID "Cannot resume session '<id>': <snapshot failure>" for a broken uses: step snapshot."""
+        write_runnable_step(engine_paths.root_dir, key="base", definition={"id": "base", "run": "true"})
+        seed_paused_session(
+            engine_paths,
+            sessions_repo,
+            session_id="paused-1",
+            steps=[{"id": "a", "uses": "base"}, {"id": "b", "run": "exit 1"}],
+            paused_step_id="b",
+        )
+        step_snapshot = snapshot_step_path(engine_paths.session_dir("paused-1"), "base")
+        step_snapshot.write_text("- not a mapping\n", encoding="utf-8")
+
+        with pytest.raises(EngineError) as exc_info:
+            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
+
+        assert exc_info.value.error_code is ErrorCode.SESSION_SNAPSHOT_INVALID
+        assert exc_info.value.message == (
+            f"Cannot resume session 'paused-1': Failed to parse snapshot definition '{step_snapshot}': "
+            "invalid or non-object YAML content."
+        )
 
     @pytest.mark.parametrize("case", ["failed-step", "exhausted-loop"])
     def test_state_with_a_failed_node_and_no_step_left_finalizes_the_row_and_raises(

@@ -23,13 +23,25 @@ from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
 
 class StepExecutionResolutionTests:
-    def test_unresolvable_uses_step_returns_failed_result_with_could_not_resolve_message(self, tmp_path: Path) -> None:
-        step = StepDefinition(id="s1", uses="base-step")
+    def test_uses_merge_with_no_valid_step_fails_step_with_resolving_message(
+        self, tmp_path: Path, engine_paths: WorkspacePaths
+    ) -> None:
+        """Fail a uses: step whose merge onto an ask base yields no valid step with the resolving failure's message."""
+        write_runnable_step(
+            engine_paths.root_dir,
+            key="ask-base",
+            definition={"id": "ask-base", "type": "ask", "interaction": {"mode": "confirm", "message": "Go?"}},
+        )
+        step = StepDefinition(id="s1", uses="ask-base")
+        sink: list[DiagnosticRecord] = []
 
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, paths=engine_paths, diagnostics=sink)
+        ).run()
 
         assert result.status == "failed"
-        assert result.error_message == "Could not resolve step 's1'."
+        assert result.error_message == "Step 's1' must specify one of 'run', 'uses', or 'type'."
+        assert sink == []
 
     def test_uses_step_failure_fails_step_with_failure_message(
         self, tmp_path: Path, engine_paths: WorkspacePaths

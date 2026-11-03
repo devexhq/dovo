@@ -8,7 +8,7 @@ from importlib.resources import files
 import pytest
 
 from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock
-from dovo.core.catalog.exceptions import BlueprintValidationError
+from dovo.core.catalog.exceptions import CatalogError
 
 
 class BlueprintSchemaLoopParityTests:
@@ -68,7 +68,7 @@ def _loads_without(entry: dict[str, object], key: str) -> bool:
     trimmed = {name: value for name, value in entry.items() if name != key}
     try:
         BlueprintDefinition.from_document({"steps": [{"id": "check", "run": "true"}, trimmed]}, key="bp")
-    except BlueprintValidationError:
+    except CatalogError:
         return False
     return True
 
