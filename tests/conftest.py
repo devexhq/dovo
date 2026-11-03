@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import subprocess
+import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -31,21 +33,46 @@ pytest_plugins = ["tests.harness.diagnostic_log"]
 PublishArtifact = Callable[[str, dict[str, str]], None]
 
 
-@pytest.fixture(autouse=True)
-def _isolated_dovo_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Redirect DOVO_HOME to an ephemeral per-test directory.
+_TEMP_ROOT_ENV_NAMES = ("TMPDIR", "TEMP", "TMP")
 
-    The centralized database and other global-path resolution default to
-    DOVO_HOME (or ~/.dovo). Without this override every test would
-    read and write the real machine's global Dovo directory.
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Keep pytest's temp root out of any Dovo workspace or git repository unless --basetemp names one.
+
+    A `dovo run` step hands its child a TMPDIR inside the global Dovo home
+    (~/.dovo/storage/projects/<project>/tmp/<session>/...). A tmp_path there
+    has the real ~/.dovo and any enclosing repository as ancestors, so
+    workspace-root discovery from it finds them. Dropping the inherited temp
+    variables before the base temp is created puts it under the system
+    default; xdist workers inherit the cleaned environment and the base temp.
     """
-    monkeypatch.setenv("DOVO_HOME", str(tmp_path_factory.mktemp("dovo_home")))
+    if config.option.basetemp is not None or not _has_workspace_ancestor(Path(tempfile.gettempdir())):
+        return
+    for name in _TEMP_ROOT_ENV_NAMES:
+        os.environ.pop(name, None)
+    tempfile.tempdir = None
+
+
+def _has_workspace_ancestor(directory: Path) -> bool:
+    """Return True when directory or an ancestor contains a .dovo directory or a .git entry."""
+    resolved = directory.resolve()
+    return any((parent / ".dovo").is_dir() or (parent / ".git").exists() for parent in (resolved, *resolved.parents))
 
 
 @pytest.fixture(autouse=True)
-def _default_review_thread_backend(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Unset DOVO_GITHUB_THREADS, so the review thread scripts use their default backend whatever the shell sets."""
-    monkeypatch.delenv("DOVO_GITHUB_THREADS", raising=False)
+def _isolated_dovo_environment(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unset every inherited DOVO_* variable and redirect DOVO_HOME to an ephemeral per-test directory.
+
+    A `dovo run` step exports DOVO_TEMP, DOVO_STEP_* and the other step
+    variables to its child, and a shell may set DOVO_GITHUB_THREADS or
+    DOVO_LOCK_TIMEOUT_SECONDS; tests set any they need themselves. The
+    centralized database and other global-path resolution default to
+    DOVO_HOME (or ~/.dovo), so without the override every test would read
+    and write the real machine's global Dovo directory.
+    """
+    for name in [name for name in os.environ if name.startswith("DOVO_")]:
+        monkeypatch.delenv(name)
+    monkeypatch.setenv("DOVO_HOME", str(tmp_path_factory.mktemp("dovo_home")))
 
 
 @pytest.fixture(autouse=True)

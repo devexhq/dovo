@@ -32,9 +32,6 @@ steps:
       COLUMNS: "160"
       PYTHONIOENCODING: utf-8
     run: |
-      # Dovo's per-step variables leak into the test process and break tests that
-      # assert they are unset; clear them so the suite sees a plain environment.
-      unset_args=$(env | sed -n 's/^\(DOVO_\(STEP\|STEPS\|ITERATION\|BLUEPRINT\|PREVIOUS\|TEMP\|RUNNER\|OUTPUT\)[A-Z_]*\)=.*/-u \1/p' | tr '\n' ' ')
       # Split the paths on whitespace, with globbing off so a node id's brackets stay literal.
       set -f
       set -- $TEST_PATH
@@ -49,5 +46,5 @@ steps:
       trap 'exit 130' INT
       trap 'exit 129' HUP
       # Worker count for pytest-xdist: DOVO_PYTEST_CONCURRENCY (a number, or 0 for serial), else one per core.
-      env $unset_args uv run python -m pytest "$@" -n "${DOVO_PYTEST_CONCURRENCY:-auto}" --basetemp="$basetemp"
+      uv run python -m pytest "$@" -n "${DOVO_PYTEST_CONCURRENCY:-auto}" --basetemp="$basetemp"
     timeout_seconds: 900
