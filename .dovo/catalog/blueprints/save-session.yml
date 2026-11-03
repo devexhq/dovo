@@ -1,0 +1,24 @@
+version: 1
+name: save-session
+id: save-session
+description: Push a finished session's records, logs and step outputs to the session-data repository.
+summary: Archive one session under sessions/<session_id>/ in devexhq/dovo-session-data
+use_worktree: false
+
+inputs:
+  session_id:
+    type: string
+    description: ID of the session to save (as shown by `dovo session list`)
+    required: true
+    aliases: ["-s", "--session"]
+
+steps:
+  - id: save
+    name: Copy the session into the session-data repository and push it
+    type: script
+    script_path: scripts/sessions/save.sh
+    env:
+      SESSION_ID: ${{ inputs.session_id }}
+      SESSION_DATA_REPO: https://github.com/devexhq/dovo-session-data.git
+      SESSION_DATA_BRANCH: main
+    timeout_seconds: 600
