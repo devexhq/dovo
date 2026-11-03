@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths
@@ -20,9 +21,13 @@ from dovo.core.catalog.models import (
     CatalogCreateResult,
     CatalogDeleteResult,
     CatalogItemType,
+    CatalogListResult,
     CatalogRecord,
+    CatalogResult,
     CatalogScan,
+    CatalogShowResult,
     CatalogTier,
+    CatalogValidateResult,
 )
 from dovo.core.catalog.services.inventory import compute_catalog_sha
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
@@ -111,7 +116,7 @@ class CatalogDiscoveryFallbackTests:
         self, workspace_paths: WorkspacePaths, template_name: str
     ) -> None:
         catalog = Catalog(workspace_paths)
-        result = catalog.show(template_name)
+        result = catalog.show(template_name, CatalogItemType.BLUEPRINT)
 
         expected_file = Filesystem().catalog_templates_dir / "blueprints" / "dovo" / "fix-tests.yml"
         expected_content = expected_file.read_text(encoding="utf-8")
@@ -303,7 +308,7 @@ class CatalogShowTests:
 
     def test_show_failure_copies_error(self, workspace_paths: WorkspacePaths) -> None:
         """Return CatalogShowResult with error_code CATALOG_NOT_FOUND, errors == ["Catalog item 'ghost' not found."], item None, ok False."""
-        result = Catalog(workspace_paths).show("ghost")
+        result = Catalog(workspace_paths).show("ghost", CatalogItemType.BLUEPRINT)
 
         assert result.error_code == ErrorCode.CATALOG_NOT_FOUND
         assert result.errors == ["Catalog item 'ghost' not found."]
@@ -325,7 +330,7 @@ class CatalogShowTests:
         blueprint_file = workspace_paths.catalog_blueprints_dir / "demo.yml"
         blueprint_file.chmod(0o000)
         try:
-            result = catalog.show("demo")
+            result = catalog.show("demo", CatalogItemType.BLUEPRINT)
         finally:
             blueprint_file.chmod(0o644)
 
@@ -404,8 +409,8 @@ def _run_classified_case(
     catalog: Catalog, monkeypatch: pytest.MonkeyPatch, case: str
 ) -> CatalogCreateResult | CatalogDeleteResult:
     """Drive catalog into the failure named by case and return its result."""
-    if case == "invalid_type":
-        return catalog.create("widget", "demo")
+    if case == "tier_conflict":
+        return catalog.create(CatalogItemType.BLUEPRINT, "demo", user=True, global_=True)
     if case == "collision":
         catalog.create(CatalogItemType.BLUEPRINT, "demo")
         return catalog.create(CatalogItemType.BLUEPRINT, "demo")
@@ -429,7 +434,7 @@ class CatalogMutationOutcomeTests:
     @pytest.mark.parametrize(
         ("case", "expected_code"),
         [
-            pytest.param("invalid_type", ErrorCode.CATALOG_TYPE_INVALID, id="invalid_type"),
+            pytest.param("tier_conflict", ErrorCode.CATALOG_TIER_CONFLICT, id="tier_conflict"),
             pytest.param("collision", ErrorCode.CATALOG_ALREADY_EXISTS, id="already_exists"),
             pytest.param("reindex_miss", ErrorCode.CATALOG_WRITE_FAILED, id="write_failed"),
             pytest.param("not_found", ErrorCode.CATALOG_NOT_FOUND, id="not_found"),
@@ -617,7 +622,7 @@ class CatalogDeleteConfirmTests:
         assert not (workspace_paths.catalog_blueprints_dir / "demo.yml").exists()
 
     def test_declined_confirm_returns_cancelled_and_keeps_file(self, workspace_paths: WorkspacePaths) -> None:
-        """Return the declined payload (cancelled True, item None, no error_code) with ok True, and keep the file, when confirm returns False."""
+        """Return the declined payload (cancelled True, item the kept 'demo' record, item_type blueprint, no error_code) with ok True, and keep the file, when confirm returns False."""
         catalog = Catalog(workspace_paths)
         catalog.create(CatalogItemType.BLUEPRINT, "demo")
 
@@ -629,7 +634,17 @@ class CatalogDeleteConfirmTests:
             "remediations": [],
             "diagnostics": [],
             "error_code": None,
-            "item": None,
+            "item_type": "blueprint",
+            "item": {
+                "key": "demo",
+                "sha": result.item.sha if result.item is not None else None,
+                "item_type": "blueprint",
+                "name": "demo",
+                "namespace": None,
+                "path": "blueprints/demo.yml",
+                "checksum": result.item.checksum if result.item is not None else None,
+                "tier": "repo",
+            },
             "deleted": False,
             "cancelled": True,
         }
@@ -704,7 +719,7 @@ class CatalogListTests:
         bad_file = workspace_paths.catalog_blueprints_dir / "bad.yml"
         bad_file.chmod(0o000)
         try:
-            result = catalog.list(type_filter=CatalogItemType.BLUEPRINT)
+            result = catalog.list(CatalogItemType.BLUEPRINT)
         finally:
             bad_file.chmod(0o644)
 
@@ -725,7 +740,7 @@ class CatalogListTests:
 
         monkeypatch.setattr(Filesystem, "atomic_write_json", _disk_full)
 
-        result = Catalog(workspace_paths).list()
+        result = Catalog(workspace_paths).list(CatalogItemType.BLUEPRINT)
 
         index_path = workspace_paths.global_paths.global_catalog_dir / "index.json"
         assert result.error_code == ErrorCode.CATALOG_WRITE_FAILED
@@ -735,13 +750,13 @@ class CatalogListTests:
         assert event["level"] == "error"
         assert event["operation"] == "catalog.list"
 
-    def test_invalid_type_filter_is_catalog_type_invalid(self, workspace_paths: WorkspacePaths) -> None:
-        """Return CATALOG_TYPE_INVALID with coerce_catalog_item_type's message for list(type_filter="widget"), and leave <DOVO_HOME>/logs absent."""
-        result = Catalog(workspace_paths).list(type_filter="widget")
+    def test_unknown_item_type_is_catalog_type_invalid(self, workspace_paths: WorkspacePaths) -> None:
+        """Raise CatalogError CATALOG_TYPE_INVALID with coerce_catalog_item_type's message for get("x", item_type="widget")."""
+        with pytest.raises(CatalogError) as raised:
+            Catalog(workspace_paths).get("x", item_type="widget")
 
-        assert result.error_code == ErrorCode.CATALOG_TYPE_INVALID
-        assert result.errors == ["Invalid item_type 'widget'. Allowed choices: blueprint, step"]
-        assert not resolve_global_paths(None).logs_dir.exists()
+        assert raised.value.error_code == ErrorCode.CATALOG_TYPE_INVALID
+        assert raised.value.message == "Invalid item_type 'widget'. Allowed choices: blueprint, step"
 
 
 class CatalogFailureDiagnosticsTests:
@@ -768,7 +783,84 @@ class CatalogFailureDiagnosticsTests:
 
     def test_not_found_has_empty_diagnostics(self, workspace_paths: WorkspacePaths) -> None:
         """Return CATALOG_NOT_FOUND for show('missing') with diagnostics []."""
-        result = Catalog(workspace_paths).show("missing")
+        result = Catalog(workspace_paths).show("missing", CatalogItemType.BLUEPRINT)
 
         assert result.error_code == ErrorCode.CATALOG_NOT_FOUND
         assert result.diagnostics == []
+
+
+def _failing_result(catalog: Catalog, item_type: CatalogItemType, command: str) -> CatalogResult:
+    """Drive command into a failure for item_type and return its result."""
+    if command == "list":
+        return catalog.list(item_type)
+    if command == "show":
+        return catalog.show("ghost", item_type)
+    if command == "create":
+        return catalog.create(item_type, "both", user=True, global_=True)
+    if command == "delete":
+        return catalog.delete(item_type, "ghost")
+    return catalog.validate("ghost", item_type=item_type, blueprint_cls=BlueprintDefinition, step_cls=StepDefinition)
+
+
+class CatalogResultItemTypeTests:
+    """Tests verifying every catalog result names the item type it was built for."""
+
+    @pytest.mark.parametrize("item_type", [CatalogItemType.BLUEPRINT, CatalogItemType.STEP])
+    @pytest.mark.parametrize("command", ["list", "show", "create", "delete", "validate"])
+    def test_failure_carries_requested_item_type(
+        self,
+        workspace_paths: WorkspacePaths,
+        monkeypatch: pytest.MonkeyPatch,
+        item_type: CatalogItemType,
+        command: str,
+    ) -> None:
+        """Return an error_code with item_type == the requested type for a failed list, show, create, delete or validate."""
+        if command == "list":
+            monkeypatch.setattr(Filesystem, "atomic_write_json", _raise_disk_full)
+
+        result = _failing_result(Catalog(workspace_paths), item_type, command)
+
+        assert result.error_code is not None
+        assert result.item_type is item_type
+
+    def test_tier_conflict_writes_nothing_and_records_no_diagnostic(self, workspace_paths: WorkspacePaths) -> None:
+        """Return CATALOG_TIER_CONFLICT with its message, remediation, item_type step and diagnostics [], write demo.yml to no tier, and leave <DOVO_HOME>/logs absent."""
+        result = Catalog(workspace_paths).create(CatalogItemType.STEP, "demo", user=True, global_=True)
+
+        assert result.model_dump(mode="json") == {
+            "errors": ["--user and --global are mutually exclusive."],
+            "warnings": [],
+            "remediations": [{"message": "Pass at most one of --user and --global.", "command": None}],
+            "diagnostics": [],
+            "error_code": "CATALOG_TIER_CONFLICT",
+            "item_type": "step",
+            "item": None,
+            "resolved_path": None,
+        }
+        global_paths = resolve_global_paths(None)
+        for catalog_dir in (
+            workspace_paths.catalog_dir,
+            global_paths.user_catalog_dir,
+            global_paths.global_catalog_dir,
+        ):
+            assert not (catalog_dir / "steps" / "demo.yml").exists()
+        assert not global_paths.logs_dir.exists()
+
+    @pytest.mark.parametrize(
+        "result_cls",
+        [CatalogListResult, CatalogShowResult, CatalogCreateResult, CatalogDeleteResult],
+    )
+    def test_result_without_item_type_is_rejected(self, result_cls: type[CatalogResult]) -> None:
+        """Raise ValidationError naming item_type when a catalog result is built without one."""
+        with pytest.raises(ValidationError, match="item_type"):
+            result_cls.model_validate({})
+
+    def test_validate_result_without_item_type_is_rejected(self) -> None:
+        """Raise ValidationError naming item_type when a CatalogValidateResult is built without one."""
+        with pytest.raises(ValidationError, match="item_type"):
+            CatalogValidateResult.model_validate({"valid": True, "target": "demo"})
+
+
+def _raise_disk_full(path: Path, data: object) -> None:
+    """Stand in for Filesystem.atomic_write_json, failing as a full disk would."""
+    raise OSError("disk full")

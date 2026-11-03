@@ -43,6 +43,7 @@ class BlueprintShowCliIntegrationTests:
         payload = json.loads(result.stdout)
         assert payload["event_type"] == "CatalogShowResult"
         assert payload["payload"]["item"]["tier"] == "repo"
+        assert payload["payload"]["item_type"] == "blueprint"
 
     def test_blueprint_show_cli_scopes_to_blueprint_type(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "shared-name")
@@ -66,5 +67,6 @@ class BlueprintShowCliIntegrationTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["item"] is None
+        assert payload["item_type"] == "blueprint"
         assert payload["error_code"] == "CATALOG_NOT_FOUND"
         assert payload["errors"] == ["Catalog item 'missing-blueprint' not found."]

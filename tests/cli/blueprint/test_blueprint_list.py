@@ -38,6 +38,7 @@ class BlueprintListCliIntegrationTests:
         payload = json.loads(result.stdout)
         assert payload["event_type"] == "CatalogListResult"
         assert payload["payload"]["items"][0]["tier"] == "repo"
+        assert payload["payload"]["item_type"] == "blueprint"
 
     def test_blueprint_list_cli_only_returns_blueprint_items(
         self, cli_runner: CliRunner, isolated_workspace: Path
@@ -62,3 +63,12 @@ class BlueprintListCliIntegrationTests:
         assert list_result.exit_code == 0
         assert ls_result.exit_code == 0
         assert list_result.stdout == ls_result.stdout
+
+    def test_blueprint_ls_alias_cli_renders_item_type_json(
+        self, cli_runner: CliRunner, isolated_workspace: Path
+    ) -> None:
+        """Exit 0 with payload item_type 'blueprint' for `blueprint ls --format json`."""
+        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "ls", "--format", "json"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.stdout)["payload"]["item_type"] == "blueprint"

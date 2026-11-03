@@ -37,6 +37,7 @@ class StepCreateCliIntegrationTests:
         assert payload["event_type"] == "CatalogCreateResult"
         assert payload["payload"]["item"]["tier"] == "repo"
         assert payload["payload"]["item"]["item_type"] == "step"
+        assert payload["payload"]["item_type"] == "step"
 
     @pytest.mark.parametrize(
         ("tier", "catalog_dir_attr"),
@@ -72,16 +73,39 @@ class StepCreateCliIntegrationTests:
 
 
 class StepCreateCliTests:
-    """Typer runner tests for dovo step create's usage error and classified failures."""
+    """Typer runner tests for dovo step create's classified failures."""
 
-    def test_user_and_global_together_is_usage_error(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """Exit 2 with '--user and --global are mutually exclusive.' in output and no both-step.yml in any tier."""
+    def test_user_and_global_together_is_tier_conflict_json(
+        self, cli_runner: CliRunner, isolated_workspace: Path
+    ) -> None:
+        """Exit 1 with the CATALOG_TIER_CONFLICT JSON naming item_type 'step' and no both-step.yml in any tier."""
         result = cli_runner.invoke(
-            app, ["-p", str(isolated_workspace), "step", "create", "--name", "both-step", "--user", "--global"]
+            app,
+            [
+                "-p",
+                str(isolated_workspace),
+                "step",
+                "create",
+                "--name",
+                "both-step",
+                "--user",
+                "--global",
+                "--format",
+                "json",
+            ],
         )
 
-        assert result.exit_code == 2
-        assert "--user and --global are mutually exclusive." in result.output
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["payload"] == {
+            "errors": ["--user and --global are mutually exclusive."],
+            "warnings": [],
+            "remediations": [{"message": "Pass at most one of --user and --global.", "command": None}],
+            "diagnostics": [],
+            "error_code": "CATALOG_TIER_CONFLICT",
+            "item_type": "step",
+            "item": None,
+            "resolved_path": None,
+        }
         global_paths = resolve_global_paths(None)
         assert not (isolated_workspace / ".dovo" / "catalog" / "steps" / "both-step.yml").exists()
         assert not (global_paths.user_catalog_dir / "steps" / "both-step.yml").exists()

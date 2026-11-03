@@ -7,6 +7,7 @@ from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
+from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogDeleteResult
 
 
@@ -24,7 +25,7 @@ def _render(data: CatalogDeleteResult) -> RenderableType:
         )
 
     if data.deleted and data.item is not None:
-        return Text(f"Deleted catalog blueprint '{data.item.sha}' ({data.item.path}).")
+        return Text(f"Deleted catalog {enum_value(data.item_type)} '{data.item.sha}' ({data.item.path}).")
 
     return Text("")
 

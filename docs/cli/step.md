@@ -4,6 +4,8 @@ The `dovo step` command inspects, creates, deletes, and validates executable ste
 
 `dovo step` requires an explicit subcommand; there is no bare-invocation default.
 
+With `--format json`, every `dovo step` payload carries `item_type: "step"`, on success and on failure, so a consumer can tell it from a [`dovo blueprint`](blueprint.md) payload.
+
 When `list`, `show`, `create`, `delete` or `validate` fails with an unexpected error, or with an operating-system error writing or deleting a catalog file, and Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record for it, the error message is unchanged and a `Details logged: <path> (event <event_id>)` line naming that file follows it. With `--format json`, the record is listed in `diagnostics` as `{"event_id": …, "log_path": …}`. If the record cannot be written, there is no line and `diagnostics` is empty.
 
 If another Dovo process holds the workspace lock, `create` and `delete` exit with code 1 and print a Workspace Lock Timeout panel; wait for that process to finish and retry.
@@ -21,7 +23,7 @@ dovo step ls [--format terminal|json]
 
 ### `dovo step create`
 
-Creates a new step file, seeded from the packaged `default.yml` scaffold. By default it writes under the REPO tier (`.dovo/catalog/steps/<name>.yml`). Pass `--user` to write into the USER tier (`~/.dovo/user/catalog/steps/<name>.yml`) or `--global` for the GLOBAL tier (`~/.dovo/global/catalog/steps/<name>.yml`) instead; the two flags are mutually exclusive: passing both exits `2` with a usage error and writes no file.
+Creates a new step file, seeded from the packaged `default.yml` scaffold. By default it writes under the REPO tier (`.dovo/catalog/steps/<name>.yml`). Pass `--user` to write into the USER tier (`~/.dovo/user/catalog/steps/<name>.yml`) or `--global` for the GLOBAL tier (`~/.dovo/global/catalog/steps/<name>.yml`) instead; the two flags are mutually exclusive: passing both fails with `--user and --global are mutually exclusive.`, exits `1` (`CATALOG_TIER_CONFLICT` with `--format json`) and writes no file.
 
 ```bash
 dovo step create --name <name> [--user | --global] [--format terminal|json]
@@ -37,7 +39,7 @@ dovo step show <sha_or_name> [--format terminal|json]
 
 ### `dovo step delete`
 
-Deletes a REPO-tier step file and reindexes that tier. The name or sha is looked up among steps only: a blueprint with that name or sha is never deleted, and a name that matches only a blueprint fails like an unknown name, with `Catalog step '<name>' not found.` and exit `1` (`CATALOG_NOT_FOUND` with `--format json`). The tier and namespace checks that follow judge only matching steps. A match resolved from USER or GLOBAL tier is refused rather than deleted. Bundled templates in the `dovo/` namespace are protected and cannot be deleted regardless of tier. Without `--force`, it asks for confirmation once the name resolves to a catalog item it can delete; an unknown name, a protected template or a USER or GLOBAL match fails with exit `1` without asking. Declining, or closing the prompt without an answer, deletes nothing, exits `0` and prints `Deletion cancelled.`; with `--format json`, the payload has `cancelled: true`.
+Deletes a REPO-tier step file and reindexes that tier. The name or sha is looked up among steps only: a blueprint with that name or sha is never deleted, and a name that matches only a blueprint fails like an unknown name, with `Catalog step '<name>' not found.` and exit `1` (`CATALOG_NOT_FOUND` with `--format json`). The tier and namespace checks that follow judge only matching steps. A match resolved from USER or GLOBAL tier is refused rather than deleted. Bundled templates in the `dovo/` namespace are protected and cannot be deleted regardless of tier. Without `--force`, it asks for confirmation once the name resolves to a catalog item it can delete; an unknown name, a protected template or a USER or GLOBAL match fails with exit `1` without asking. Declining, or closing the prompt without an answer, deletes nothing, exits `0` and prints `Deletion cancelled.`; with `--format json`, the payload has `cancelled: true`, `deleted: false`, and the kept step in `item`.
 
 ```bash
 dovo step delete <sha_or_name> [--force] [--format terminal|json]

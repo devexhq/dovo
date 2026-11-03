@@ -25,6 +25,7 @@ from dovo.core.catalog import (
     CatalogShowResult,
     CatalogValidateResult,
 )
+from dovo.core.catalog.models import CatalogItemType
 from dovo.core.config import (
     ConfigLoadResult,
     ConfigSetResult,
@@ -101,11 +102,13 @@ SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
         error_code=ErrorCode.ARTIFACT_DOWNLOAD_FAILED, diagnostics=[RECORD]
     ),
     ArtifactsPruneResult: lambda: ArtifactsPruneResult(diagnostics=[RECORD]),
-    CatalogListResult: lambda: CatalogListResult(diagnostics=[RECORD]),
-    CatalogShowResult: lambda: CatalogShowResult(diagnostics=[RECORD]),
-    CatalogDeleteResult: lambda: CatalogDeleteResult(diagnostics=[RECORD]),
-    CatalogCreateResult: lambda: CatalogCreateResult(diagnostics=[RECORD]),
-    CatalogValidateResult: lambda: CatalogValidateResult(valid=False, target="my-bp", diagnostics=[RECORD]),
+    CatalogListResult: lambda: CatalogListResult(item_type=CatalogItemType.BLUEPRINT, diagnostics=[RECORD]),
+    CatalogShowResult: lambda: CatalogShowResult(item_type=CatalogItemType.BLUEPRINT, diagnostics=[RECORD]),
+    CatalogDeleteResult: lambda: CatalogDeleteResult(item_type=CatalogItemType.BLUEPRINT, diagnostics=[RECORD]),
+    CatalogCreateResult: lambda: CatalogCreateResult(item_type=CatalogItemType.BLUEPRINT, diagnostics=[RECORD]),
+    CatalogValidateResult: lambda: CatalogValidateResult(
+        valid=False, target="my-bp", item_type=CatalogItemType.BLUEPRINT, diagnostics=[RECORD]
+    ),
     ConfigLoadResult: lambda: ConfigLoadResult(
         error_code=ErrorCode.CONFIG_UNREADABLE, config_path=CONFIG_PATH, diagnostics=[RECORD]
     ),

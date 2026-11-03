@@ -39,6 +39,7 @@ class StepListCliIntegrationTests:
         payload = json.loads(result.stdout)
         assert payload["event_type"] == "CatalogListResult"
         assert payload["payload"]["items"][0]["tier"] == "repo"
+        assert payload["payload"]["item_type"] == "step"
 
     def test_step_list_cli_only_returns_step_items(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """Exclude blueprints from the step listing; the packaged default.yml step still appears per tier."""
@@ -61,3 +62,10 @@ class StepListCliIntegrationTests:
         assert list_result.exit_code == 0
         assert ls_result.exit_code == 0
         assert list_result.stdout == ls_result.stdout
+
+    def test_step_ls_alias_cli_renders_item_type_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        """Exit 0 with payload item_type 'step' for `step ls --format json`."""
+        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "ls", "--format", "json"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.stdout)["payload"]["item_type"] == "step"

@@ -41,6 +41,7 @@ class BlueprintCreateCliIntegrationTests:
         assert payload["event_type"] == "CatalogCreateResult"
         assert payload["payload"]["item"]["tier"] == "repo"
         assert payload["payload"]["item"]["item_type"] == "blueprint"
+        assert payload["payload"]["item_type"] == "blueprint"
 
     def test_blueprint_create_cli_collision_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "create", "--name", "dup-blueprint"])
@@ -96,17 +97,39 @@ class BlueprintCreateCliIntegrationTests:
 
 
 class BlueprintCreateCliTests:
-    """Typer runner tests for dovo blueprint create's usage error and classified failures."""
+    """Typer runner tests for dovo blueprint create's classified failures."""
 
-    def test_user_and_global_together_is_usage_error(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """Exit 2 with '--user and --global are mutually exclusive.' in output and no both-blueprint.yml in any tier."""
+    def test_user_and_global_together_is_tier_conflict_json(
+        self, cli_runner: CliRunner, isolated_workspace: Path
+    ) -> None:
+        """Exit 1 with the CATALOG_TIER_CONFLICT JSON naming item_type 'blueprint' and no both-blueprint.yml in any tier."""
         result = cli_runner.invoke(
             app,
-            ["-p", str(isolated_workspace), "blueprint", "create", "--name", "both-blueprint", "--user", "--global"],
+            [
+                "-p",
+                str(isolated_workspace),
+                "blueprint",
+                "create",
+                "--name",
+                "both-blueprint",
+                "--user",
+                "--global",
+                "--format",
+                "json",
+            ],
         )
 
-        assert result.exit_code == 2
-        assert "--user and --global are mutually exclusive." in result.output
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["payload"] == {
+            "errors": ["--user and --global are mutually exclusive."],
+            "warnings": [],
+            "remediations": [{"message": "Pass at most one of --user and --global.", "command": None}],
+            "diagnostics": [],
+            "error_code": "CATALOG_TIER_CONFLICT",
+            "item_type": "blueprint",
+            "item": None,
+            "resolved_path": None,
+        }
         global_paths = resolve_global_paths(None)
         assert not (isolated_workspace / ".dovo" / "catalog" / "blueprints" / "both-blueprint.yml").exists()
         assert not (global_paths.user_catalog_dir / "blueprints" / "both-blueprint.yml").exists()

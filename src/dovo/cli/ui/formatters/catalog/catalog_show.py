@@ -99,6 +99,7 @@ class CatalogShowFormatter(ComponentFormatter[CatalogShowResult, CatalogShowView
         ]
 
         return CatalogShowView(
+            item_type=enum_value(data.item_type),
             item=item_view,
             content=data.content,
             template_matches=template_matches,

@@ -47,17 +47,18 @@ _USER_RECORD = CatalogRecord(
 _USER_RESOLVED_PATH = Path("/home/user/.dovo/user/catalog/blueprints/user-blueprint.yml")
 
 CREATED_BLUEPRINT = FormatterCase.identity(
-    data=CatalogCreateResult(item=_RECORD, resolved_path=_REPO_RESOLVED_PATH),
+    data=CatalogCreateResult(item_type=CatalogItemType.BLUEPRINT, item=_RECORD, resolved_path=_REPO_RESOLVED_PATH),
     render_expectations=["blueprint", "test-blueprint", "repo", ".dovo/catalog/blueprints/test-blueprint.yml"],
 )
 
 CREATED_USER_BLUEPRINT = FormatterCase.identity(
-    data=CatalogCreateResult(item=_USER_RECORD, resolved_path=_USER_RESOLVED_PATH),
+    data=CatalogCreateResult(item_type=CatalogItemType.BLUEPRINT, item=_USER_RECORD, resolved_path=_USER_RESOLVED_PATH),
     render_expectations=["blueprint", "user-blueprint", "user", str(_USER_RESOLVED_PATH)],
 )
 
 CREATION_ERROR = FormatterCase.identity(
     data=CatalogCreateResult(
+        item_type=CatalogItemType.BLUEPRINT,
         error_code=ErrorCode.CATALOG_ALREADY_EXISTS,
         item=None,
         errors=["Naming collision on blueprint."],
@@ -81,6 +82,7 @@ CATALOG_CREATE_PAYLOAD_CASES = [
             "remediations": [],
             "diagnostics": [],
             "error_code": None,
+            "item_type": "blueprint",
             "item": {
                 "key": "test-blueprint",
                 "sha": "blueprint_1234567",
@@ -103,6 +105,7 @@ CATALOG_CREATE_PAYLOAD_CASES = [
             "remediations": [{"message": "Choose a different name", "command": None}],
             "diagnostics": [],
             "error_code": "CATALOG_ALREADY_EXISTS",
+            "item_type": "blueprint",
             "item": None,
             "resolved_path": None,
         },
