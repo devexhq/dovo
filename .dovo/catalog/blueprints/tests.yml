@@ -48,5 +48,6 @@ steps:
       trap 'exit 143' TERM
       trap 'exit 130' INT
       trap 'exit 129' HUP
-      env $unset_args uv run python -m pytest "$@" --basetemp="$basetemp"
+      # Worker count for pytest-xdist: DOVO_PYTEST_CONCURRENCY (a number, or 0 for serial), else one per core.
+      env $unset_args uv run python -m pytest "$@" -n "${DOVO_PYTEST_CONCURRENCY:-auto}" --basetemp="$basetemp"
     timeout_seconds: 900
