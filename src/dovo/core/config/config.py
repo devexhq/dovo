@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import JsonValue
+
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.config.exceptions import ConfigError, ConfigLoadDiagnostics, ConfigRawObject, ConfigTierSource
-from dovo.core.config.loader import ConfigLoadResult, load_config
+from dovo.core.config.loader import ConfigLoadResult, load_config, read_config_object
 from dovo.core.config.models import (
     ConcurrencyConfig,
     DoctorConfig,
@@ -21,11 +23,14 @@ from dovo.core.config.models import (
     WorktreeConfig,
 )
 from dovo.core.config.mutate import (
+    ConfigRemoval,
     ConfigSetResult,
     ConfigUnsetResult,
-    set_config_value_result,
-    unset_config_value_result,
+    with_value_set,
+    without_value,
+    write_mutated_config,
 )
+from dovo.core.config.parser import parse_config_value
 from dovo.core.config.tiers import load_tiered_config
 from dovo.core.config.validate import ConfigValidationResult, validate_config
 
@@ -106,18 +111,40 @@ class Config:
         )
 
     def set(self, key: str, raw_value: str) -> ConfigSetResult:
-        """Set a dot-path configuration key from the raw CLI token and persist to disk."""
-        result = set_config_value_result(key, raw_value, config_path=self._paths.config_file)
-        if result.ok:
-            self._cached_config = None
-        return result
+        """Coerce raw_value once, set it at the dot-path key in ``config.json`` and persist it; never raises."""
+        config_path = self._paths.config_file
+        value: JsonValue = None
+        with catch_failure("config.set", path=str(config_path)) as caught:
+            loaded = read_config_object(config_path)
+            value = parse_config_value(raw_value)
+            write_mutated_config(config_path, with_value_set(loaded, key, value))
+        if caught.failure is not None:
+            return ConfigSetResult(config_path=config_path, key=key, value=value, **caught.failure.result_fields())
+
+        self._cached_config = None
+        return ConfigSetResult(config_path=config_path, key=key, value=value)
 
     def unset(self, key: str) -> ConfigUnsetResult:
-        """Remove a dot-path configuration key and persist to disk."""
-        result = unset_config_value_result(key, config_path=self._paths.config_file)
-        if result.ok:
-            self._cached_config = None
-        return result
+        """Remove the dot-path key from ``config.json`` and persist it, writing nothing when absent; never raises."""
+        config_path = self._paths.config_file
+        removal: ConfigRemoval | None = None
+        with catch_failure("config.unset", path=str(config_path)) as caught:
+            removal = without_value(read_config_object(config_path), key)
+            if removal is not None:
+                write_mutated_config(config_path, removal.updated)
+        existed = removal is not None
+        previous_value = removal.previous_value if removal is not None else None
+        if caught.failure is not None:
+            return ConfigUnsetResult(
+                config_path=config_path,
+                key=key,
+                existed=existed,
+                previous_value=previous_value,
+                **caught.failure.result_fields(),
+            )
+
+        self._cached_config = None
+        return ConfigUnsetResult(config_path=config_path, key=key, existed=existed, previous_value=previous_value)
 
     # ------------------------------------------------------------------ #
     # Accessor properties (load-once, raise on failure)                  #

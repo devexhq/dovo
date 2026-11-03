@@ -10,17 +10,12 @@ from typing import Any
 import pytest
 
 from dovo.common.error_codes import ErrorCode
-from dovo.common.filesystem import Filesystem
+from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.models import Remediation
+from dovo.core.config.config import Config
+from dovo.core.config.exceptions import ConfigError
 from dovo.core.config.generator import build_default_config
-from dovo.core.config.mutate import (
-    ConfigSetStatus,
-    ConfigUnsetResult,
-    ConfigUnsetStatus,
-    set_config_value_result,
-    unset_config_value_result,
-    unset_nested_value,
-)
+from dovo.core.config.mutate import ConfigUnsetResult, unset_nested_value
 from dovo.core.config.validate import validate_config
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
@@ -96,7 +91,6 @@ SET_FAILURE_CASES = [
         lambda path: None,
         "agents.copilot.model",
         "m",
-        ConfigSetStatus.NOT_FOUND,
         ErrorCode.CONFIG_NOT_FOUND,
         "Configuration file not found at '{path}'.",
         NOT_FOUND_REMEDIATIONS,
@@ -106,7 +100,6 @@ SET_FAILURE_CASES = [
         lambda path: path.mkdir(),
         "agents.copilot.model",
         "m",
-        ConfigSetStatus.PATH_IS_DIRECTORY,
         ErrorCode.CONFIG_PATH_INVALID,
         "Config path is a directory, not a file: '{path}'.",
         DIRECTORY_REMEDIATIONS,
@@ -116,7 +109,6 @@ SET_FAILURE_CASES = [
         lambda path: path.write_text("{not valid json", encoding="utf-8"),
         "agents.copilot.model",
         "m",
-        ConfigSetStatus.MALFORMED_JSON,
         ErrorCode.CONFIG_JSON_INVALID,
         MALFORMED_JSON_ERROR,
         JSON_REMEDIATIONS,
@@ -126,7 +118,6 @@ SET_FAILURE_CASES = [
         lambda path: path.write_text("[]", encoding="utf-8"),
         "agents.copilot.model",
         "m",
-        ConfigSetStatus.ROOT_NOT_OBJECT,
         ErrorCode.CONFIG_ROOT_INVALID,
         "Malformed config.json at '{path}': root must be an object.",
         ROOT_REMEDIATIONS,
@@ -136,7 +127,6 @@ SET_FAILURE_CASES = [
         _write_default,
         "worktree.max_active_worktrees",
         "not_an_int",
-        ConfigSetStatus.SCHEMA_INVALID,
         ErrorCode.CONFIG_SCHEMA_INVALID,
         "Config schema validation failed:\n- worktree.max_active_worktrees: 'not_an_int' is not of type 'integer'",
         SCHEMA_REMEDIATIONS,
@@ -146,7 +136,6 @@ SET_FAILURE_CASES = [
         _write_default,
         "environment.sensitive_variables",
         '["SOMEVALUE\\n"]',
-        ConfigSetStatus.SCHEMA_INVALID,
         ErrorCode.CONFIG_SCHEMA_INVALID,
         SENSITIVE_PATTERN_ERROR.format(index=0),
         SCHEMA_REMEDIATIONS,
@@ -156,7 +145,6 @@ SET_FAILURE_CASES = [
         _write_scalar_agents,
         "agents.copilot.model",
         "m",
-        ConfigSetStatus.TYPE_COLLISION,
         ErrorCode.CONFIG_TYPE_CONFLICT,
         "Cannot set 'agents.copilot.model'. 'agents' is already defined as a scalar value.",
         [],
@@ -166,7 +154,6 @@ SET_FAILURE_CASES = [
         _write_default,
         "",
         "m",
-        ConfigSetStatus.INVALID_PATH,
         ErrorCode.CONFIG_KEY_PATH_INVALID,
         "Cannot set '': config key path must be a non-empty dot path.",
         [],
@@ -176,7 +163,6 @@ SET_FAILURE_CASES = [
         _write_default,
         "agents..model",
         "m",
-        ConfigSetStatus.INVALID_PATH,
         ErrorCode.CONFIG_KEY_PATH_INVALID,
         "Cannot set 'agents..model': config key path contains an empty segment.",
         [],
@@ -186,7 +172,6 @@ SET_FAILURE_CASES = [
         lambda path: None,
         "",
         "m",
-        ConfigSetStatus.NOT_FOUND,
         ErrorCode.CONFIG_NOT_FOUND,
         "Configuration file not found at '{path}'.",
         NOT_FOUND_REMEDIATIONS,
@@ -199,7 +184,6 @@ UNSET_FAILURE_CASES = [
     pytest.param(
         lambda path: None,
         "agents.copilot.model",
-        ConfigUnsetStatus.NOT_FOUND,
         ErrorCode.CONFIG_NOT_FOUND,
         "Configuration file not found at '{path}'.",
         NOT_FOUND_REMEDIATIONS,
@@ -209,7 +193,6 @@ UNSET_FAILURE_CASES = [
     pytest.param(
         lambda path: path.mkdir(),
         "agents.copilot.model",
-        ConfigUnsetStatus.PATH_IS_DIRECTORY,
         ErrorCode.CONFIG_PATH_INVALID,
         "Config path is a directory, not a file: '{path}'.",
         DIRECTORY_REMEDIATIONS,
@@ -219,7 +202,6 @@ UNSET_FAILURE_CASES = [
     pytest.param(
         lambda path: path.write_text("{not valid json", encoding="utf-8"),
         "agents.copilot.model",
-        ConfigUnsetStatus.MALFORMED_JSON,
         ErrorCode.CONFIG_JSON_INVALID,
         MALFORMED_JSON_ERROR,
         JSON_REMEDIATIONS,
@@ -229,7 +211,6 @@ UNSET_FAILURE_CASES = [
     pytest.param(
         lambda path: path.write_text("[]", encoding="utf-8"),
         "agents.copilot.model",
-        ConfigUnsetStatus.ROOT_NOT_OBJECT,
         ErrorCode.CONFIG_ROOT_INVALID,
         "Malformed config.json at '{path}': root must be an object.",
         ROOT_REMEDIATIONS,
@@ -239,7 +220,6 @@ UNSET_FAILURE_CASES = [
     pytest.param(
         _write_default,
         "project",
-        ConfigUnsetStatus.SCHEMA_INVALID,
         ErrorCode.CONFIG_SCHEMA_INVALID,
         "Config schema validation failed:\n- (root): 'project' is a required property",
         SCHEMA_REMEDIATIONS,
@@ -249,7 +229,6 @@ UNSET_FAILURE_CASES = [
     pytest.param(
         _write_trailing_newline_entry,
         "telemetry",
-        ConfigUnsetStatus.SCHEMA_INVALID,
         ErrorCode.CONFIG_SCHEMA_INVALID,
         SENSITIVE_PATTERN_ERROR.format(index=1),
         SCHEMA_REMEDIATIONS,
@@ -259,7 +238,6 @@ UNSET_FAILURE_CASES = [
     pytest.param(
         _write_scalar_agents,
         "agents.copilot.model",
-        ConfigUnsetStatus.TYPE_COLLISION,
         ErrorCode.CONFIG_TYPE_CONFLICT,
         "Cannot unset 'agents.copilot.model'. 'agents' is already defined as a scalar value.",
         [],
@@ -269,7 +247,6 @@ UNSET_FAILURE_CASES = [
     pytest.param(
         _write_default,
         "",
-        ConfigUnsetStatus.INVALID_PATH,
         ErrorCode.CONFIG_KEY_PATH_INVALID,
         "Cannot unset '': config key path must be a non-empty dot path.",
         [],
@@ -279,7 +256,6 @@ UNSET_FAILURE_CASES = [
     pytest.param(
         _write_default,
         "agents..model",
-        ConfigUnsetStatus.INVALID_PATH,
         ErrorCode.CONFIG_KEY_PATH_INVALID,
         "Cannot unset 'agents..model': config key path contains an empty segment.",
         [],
@@ -289,7 +265,6 @@ UNSET_FAILURE_CASES = [
     pytest.param(
         lambda path: None,
         "",
-        ConfigUnsetStatus.NOT_FOUND,
         ErrorCode.CONFIG_NOT_FOUND,
         "Configuration file not found at '{path}'.",
         NOT_FOUND_REMEDIATIONS,
@@ -302,16 +277,16 @@ UNSET_FAILURE_CASES = [
 class ConfigMutationTests:
     """Integration tests verifying config mutation, atomic updates, and type casting."""
 
-    def test_set_agents_model_creates_intermediate_objects(self, isolated_workspace: Path) -> None:
+    def test_set_agents_model_creates_intermediate_objects(self, workspace_paths: WorkspacePaths) -> None:
         """Write {"agents": {"copilot": {"model": "m"}}} into a config without agents and keep default_agent."""
-        config_path = isolated_workspace / ".dovo" / "config.json"
+        config_path = workspace_paths.config_file
         payload = build_default_config("demo-workspace")
         del payload["agents"]
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = set_config_value_result("agents.copilot.model", "m", config_path=config_path)
+        result = Config(workspace_paths).set("agents.copilot.model", "m")
 
-        assert result.status == ConfigSetStatus.OK
+        assert result.error_code is None
         assert result.config_path == config_path
         assert result.key == "agents.copilot.model"
         assert result.value == "m"
@@ -323,27 +298,27 @@ class ConfigMutationTests:
         assert data["agents"] == {"copilot": {"model": "m"}}
         assert data["default_agent"] == payload["default_agent"]
 
-    def test_set_default_agent_rejects_unregistered_token(self, isolated_workspace: Path) -> None:
-        """Return SCHEMA_INVALID naming the registered tokens and leave the file bytes unchanged for "gemini"."""
-        config_path = isolated_workspace / ".dovo" / "config.json"
+    def test_set_default_agent_rejects_unregistered_token(self, workspace_paths: WorkspacePaths) -> None:
+        """Return CONFIG_SCHEMA_INVALID naming the registered tokens and leave the file bytes unchanged for "gemini"."""
+        config_path = workspace_paths.config_file
         Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
         before = config_path.read_bytes()
 
-        result = set_config_value_result("default_agent", "gemini", config_path=config_path)
+        result = Config(workspace_paths).set("default_agent", "gemini")
 
-        assert result.status == ConfigSetStatus.SCHEMA_INVALID
+        assert result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert result.errors == [
             "Config schema validation failed:\n- default_agent: 'gemini' is not one of ['copilot', 'claude']"
         ]
         assert config_path.read_bytes() == before
 
-    def test_set_dot_path_converts_and_validates_types(self, isolated_workspace: Path) -> None:
-        config_path = isolated_workspace / ".dovo" / "config.json"
+    def test_set_dot_path_converts_and_validates_types(self, workspace_paths: WorkspacePaths) -> None:
+        config_path = workspace_paths.config_file
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
-        bool_result = set_config_value_result("telemetry.enabled", "true", config_path=config_path)
-        assert bool_result.status == ConfigSetStatus.OK
+        bool_result = Config(workspace_paths).set("telemetry.enabled", "true")
+        assert bool_result.error_code is None
         assert bool_result.config_path == config_path
         assert bool_result.key == "telemetry.enabled"
         assert bool_result.value is True
@@ -352,10 +327,8 @@ class ConfigMutationTests:
         assert bool_result.remediations == []
         assert json.loads(config_path.read_text())["telemetry"]["enabled"] is True
 
-        schema_error_result = set_config_value_result(
-            "worktree.max_active_worktrees", "not_an_int", config_path=config_path
-        )
-        assert schema_error_result.status == ConfigSetStatus.SCHEMA_INVALID
+        schema_error_result = Config(workspace_paths).set("worktree.max_active_worktrees", "not_an_int")
+        assert schema_error_result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert schema_error_result.config_path == config_path
         assert schema_error_result.key == "worktree.max_active_worktrees"
         assert schema_error_result.value == "not_an_int"
@@ -376,8 +349,8 @@ class ConfigMutationTests:
         disk_data["agents"] = "scalar"
         Filesystem.atomic_write_json(config_path, disk_data)
 
-        collision_result = set_config_value_result("agents.copilot.model", "qwen2.5-coder", config_path=config_path)
-        assert collision_result.status == ConfigSetStatus.TYPE_COLLISION
+        collision_result = Config(workspace_paths).set("agents.copilot.model", "qwen2.5-coder")
+        assert collision_result.error_code == ErrorCode.CONFIG_TYPE_CONFLICT
         assert collision_result.config_path == config_path
         assert collision_result.key == "agents.copilot.model"
         assert collision_result.value == "qwen2.5-coder"
@@ -395,15 +368,15 @@ class ConfigMutationTests:
         ],
     )
     def test_set_stores_single_coercion_of_raw_value(
-        self, isolated_workspace: Path, key: str, raw_value: str, expected: object
+        self, workspace_paths: WorkspacePaths, key: str, raw_value: str, expected: object
     ) -> None:
-        """Return OK with value == expected (same type) and write exactly that JSON value at key."""
-        config_path = isolated_workspace / ".dovo" / "config.json"
+        """Succeed with value == expected (same type) and write exactly that JSON value at key."""
+        config_path = workspace_paths.config_file
         Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
 
-        result = set_config_value_result(key, raw_value, config_path=config_path)
+        result = Config(workspace_paths).set(key, raw_value)
 
-        assert result.status == ConfigSetStatus.OK
+        assert result.error_code is None
         assert result.errors == []
         assert result.value == expected
         assert type(result.value) is type(expected)
@@ -412,42 +385,40 @@ class ConfigMutationTests:
         assert stored == expected
         assert type(stored) is type(expected)
 
-    def test_set_unquoted_numeric_for_string_key_returns_schema_invalid(self, isolated_workspace: Path) -> None:
-        """Return SCHEMA_INVALID with value 12345 and the base_ref type error, leaving file bytes unchanged."""
-        config_path = isolated_workspace / ".dovo" / "config.json"
+    def test_set_unquoted_numeric_for_string_key_returns_config_schema_invalid(
+        self, workspace_paths: WorkspacePaths
+    ) -> None:
+        """Return CONFIG_SCHEMA_INVALID with value 12345 and the base_ref type error, leaving file bytes unchanged."""
+        config_path = workspace_paths.config_file
         Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
         before = config_path.read_bytes()
 
-        result = set_config_value_result("worktree.base_ref", "12345", config_path=config_path)
+        result = Config(workspace_paths).set("worktree.base_ref", "12345")
 
-        assert result.status == ConfigSetStatus.SCHEMA_INVALID
+        assert result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert result.value == 12345
         assert type(result.value) is int
         assert result.errors == ["Config schema validation failed:\n- worktree.base_ref: 12345 is not of type 'string'"]
         assert config_path.read_bytes() == before
 
-    @pytest.mark.parametrize(
-        ("write", "key", "raw_value", "status", "error_code", "error", "remediations"), SET_FAILURE_CASES
-    )
-    def test_set_failure_reports_status_and_error_code(
+    @pytest.mark.parametrize(("write", "key", "raw_value", "error_code", "error", "remediations"), SET_FAILURE_CASES)
+    def test_set_failure_reports_error_code(
         self,
-        isolated_workspace: Path,
+        workspace_paths: WorkspacePaths,
         write: Callable[[Path], object],
         key: str,
         raw_value: str,
-        status: ConfigSetStatus,
         error_code: ErrorCode,
         error: str,
         remediations: list[Remediation],
     ) -> None:
-        """Report the row's status, error_code, errors and remediations, record nothing, and leave the path unchanged."""
-        config_path = isolated_workspace / ".dovo" / "config.json"
+        """Report the row's error_code, errors and remediations, record nothing, and leave the path unchanged."""
+        config_path = workspace_paths.config_file
         write(config_path)
         before = _snapshot(config_path)
 
-        result = set_config_value_result(key, raw_value, config_path=config_path)
+        result = Config(workspace_paths).set(key, raw_value)
 
-        assert result.status == status
         assert result.error_code == error_code
         assert result.errors == [error.format(path=config_path)]
         assert result.remediations == remediations
@@ -455,44 +426,42 @@ class ConfigMutationTests:
         assert _snapshot(config_path) == before
 
     def test_set_unreadable_config_reports_config_unreadable_with_one_record(
-        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+        self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Report CONFIG_UNREADABLE with one config.read record naming the path."""
-        config_path = isolated_workspace / ".dovo" / "config.json"
+        """Report CONFIG_UNREADABLE with one config.set record naming the path."""
+        config_path = workspace_paths.config_file
         _write_default(config_path)
         _deny_config_read(monkeypatch, config_path)
 
-        result = set_config_value_result("agents.copilot.model", "m", config_path=config_path)
+        result = Config(workspace_paths).set("agents.copilot.model", "m")
 
-        assert result.status == ConfigSetStatus.UNREADABLE
         assert result.error_code == ErrorCode.CONFIG_UNREADABLE
         assert result.errors == [f"Unable to read config.json at '{config_path}': denied."]
         assert result.remediations == [Remediation(message="Check file permissions and that the path is readable")]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
-        assert event["operation"] == "config.read"
+        assert event["operation"] == "config.set"
         assert event["context"] == {"path": str(config_path)}
         assert event["exception_type"] == "PermissionError"
 
     def test_set_write_failure_reports_config_write_failed_and_leaves_file(
-        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+        self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Report write_failed and CONFIG_WRITE_FAILED with one config.write record, leaving the file bytes unchanged."""
-        config_path = isolated_workspace / ".dovo" / "config.json"
+        """Report CONFIG_WRITE_FAILED with one config.set record, leaving the file bytes unchanged."""
+        config_path = workspace_paths.config_file
         _write_default(config_path)
         before = config_path.read_bytes()
         _fail_writes(monkeypatch)
 
-        result = set_config_value_result("agents.copilot.model", "m", config_path=config_path)
+        result = Config(workspace_paths).set("agents.copilot.model", "m")
 
-        assert result.status == ConfigSetStatus.WRITE_FAILED
         assert result.error_code == ErrorCode.CONFIG_WRITE_FAILED
         assert result.value == "m"
         assert result.errors == [f"Unable to write config.json at '{config_path}': disk full."]
         assert result.remediations == [Remediation(message="Check file permissions and free disk space")]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
-        assert event["operation"] == "config.write"
+        assert event["operation"] == "config.set"
         assert event["context"] == {"path": str(config_path)}
         assert config_path.read_bytes() == before
 
@@ -535,45 +504,59 @@ class ConfigUnsetNestedValueTests:
         assert config_dict == before
 
     @pytest.mark.parametrize(
-        "dot_path",
-        [pytest.param("", id="empty"), pytest.param("   ", id="whitespace")],
+        ("dot_path", "error_code", "message"),
+        [
+            pytest.param(
+                "",
+                ErrorCode.CONFIG_KEY_PATH_INVALID,
+                "Cannot unset '': config key path must be a non-empty dot path.",
+                id="empty",
+            ),
+            pytest.param(
+                "   ",
+                ErrorCode.CONFIG_KEY_PATH_INVALID,
+                "Cannot unset '': config key path must be a non-empty dot path.",
+                id="whitespace",
+            ),
+            pytest.param(
+                "agents..model",
+                ErrorCode.CONFIG_KEY_PATH_INVALID,
+                "Cannot unset 'agents..model': config key path contains an empty segment.",
+                id="empty_segment",
+            ),
+            pytest.param(
+                "agents.copilot.model",
+                ErrorCode.CONFIG_TYPE_CONFLICT,
+                "Cannot unset 'agents.copilot.model'. 'agents' is already defined as a scalar value.",
+                id="scalar_traversal",
+            ),
+        ],
     )
-    def test_empty_or_blank_path_raises_value_error(self, dot_path: str) -> None:
-        with pytest.raises(ValueError, match=r"Cannot unset '': config key path must be a non-empty dot path\."):
-            unset_nested_value({}, dot_path)
+    def test_invalid_path_raises_config_error_and_leaves_dict(
+        self, dot_path: str, error_code: ErrorCode, message: str
+    ) -> None:
+        config_dict: dict[str, object] = {"agents": "scalar"}
 
-    def test_empty_segment_raises_value_error(self) -> None:
-        with pytest.raises(
-            ValueError,
-            match=r"Cannot unset 'agents\.\.model': config key path contains an empty segment\.",
-        ):
-            unset_nested_value({}, "agents..model")
+        with pytest.raises(ConfigError) as raised:
+            unset_nested_value(config_dict, dot_path)
 
-    def test_scalar_traversal_collision_raises_value_error(self) -> None:
-        config_dict: dict[str, Any] = {"agents": "scalar"}
-
-        with pytest.raises(
-            ValueError,
-            match=r"Cannot unset 'agents\.copilot\.model'\. 'agents' is already defined as a scalar value\.",
-        ):
-            unset_nested_value(config_dict, "agents.copilot.model")
-
+        assert (raised.value.error_code, raised.value.message) == (error_code, message)
         assert config_dict == {"agents": "scalar"}
 
 
 class ConfigUnsetMutationTests:
     """Integration tests verifying config unset mutation, atomic updates, and no-op safety."""
 
-    def test_unset_agents_model_keeps_emptied_provider_block(self, isolated_workspace: Path) -> None:
+    def test_unset_agents_model_keeps_emptied_provider_block(self, workspace_paths: WorkspacePaths) -> None:
         """Leave "copilot": {} under agents after removing its only key, and the file still validates."""
-        config_path = isolated_workspace / ".dovo" / "config.json"
+        config_path = workspace_paths.config_file
         payload = build_default_config("demo-workspace")
         payload["agents"] = {"copilot": {"model": "gpt-4.1"}}
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = unset_config_value_result("agents.copilot.model", config_path=config_path)
+        result = Config(workspace_paths).unset("agents.copilot.model")
 
-        assert result.status == ConfigUnsetStatus.OK
+        assert result.error_code is None
         assert result.config_path == config_path
         assert result.key == "agents.copilot.model"
         assert result.existed is True
@@ -585,15 +568,15 @@ class ConfigUnsetMutationTests:
         assert data["agents"] == {"copilot": {}}
         assert validate_config(config_path).loaded.config_path == config_path
 
-    def test_unset_missing_key_returns_ok_without_write(self, isolated_workspace: Path) -> None:
-        config_path = isolated_workspace / ".dovo" / "config.json"
+    def test_unset_missing_key_returns_ok_without_write(self, workspace_paths: WorkspacePaths) -> None:
+        config_path = workspace_paths.config_file
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
         before = config_path.read_bytes()
 
-        result = unset_config_value_result("telemetry.nonexistent", config_path=config_path)
+        result = Config(workspace_paths).unset("telemetry.nonexistent")
 
-        assert result.status == ConfigUnsetStatus.OK
+        assert result.error_code is None
         assert result.config_path == config_path
         assert result.key == "telemetry.nonexistent"
         assert result.existed is False
@@ -603,30 +586,26 @@ class ConfigUnsetMutationTests:
         assert result.remediations == []
         assert config_path.read_bytes() == before
 
-    @pytest.mark.parametrize(
-        ("write", "key", "status", "error_code", "error", "remediations", "existed"), UNSET_FAILURE_CASES
-    )
-    def test_unset_failure_reports_status_and_error_code(
+    @pytest.mark.parametrize(("write", "key", "error_code", "error", "remediations", "existed"), UNSET_FAILURE_CASES)
+    def test_unset_failure_reports_error_code(
         self,
-        isolated_workspace: Path,
+        workspace_paths: WorkspacePaths,
         write: Callable[[Path], object],
         key: str,
-        status: ConfigUnsetStatus,
         error_code: ErrorCode,
         error: str,
         remediations: list[Remediation],
         existed: bool,
     ) -> None:
-        """Report the row's status, error_code, errors, remediations, existed and previous value, record nothing, and leave the path unchanged."""
-        config_path = isolated_workspace / ".dovo" / "config.json"
+        """Report the row's error_code, errors, remediations, existed and previous value, record nothing, and leave the path unchanged."""
+        config_path = workspace_paths.config_file
         write(config_path)
         before = _snapshot(config_path)
         previous_value = json.loads(config_path.read_text(encoding="utf-8"))[key] if existed else None
 
-        result = unset_config_value_result(key, config_path=config_path)
+        result = Config(workspace_paths).unset(key)
 
         assert result == ConfigUnsetResult(
-            status=status,
             error_code=error_code,
             config_path=config_path,
             key=key,
@@ -638,35 +617,33 @@ class ConfigUnsetMutationTests:
         assert _snapshot(config_path) == before
 
     def test_unset_unreadable_config_copies_code_and_record(
-        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+        self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Copy the read failure's CONFIG_UNREADABLE, errors, remediations and one config.read record."""
-        config_path = isolated_workspace / ".dovo" / "config.json"
+        """Copy the read failure's CONFIG_UNREADABLE, errors, remediations and one config.unset record."""
+        config_path = workspace_paths.config_file
         _write_default(config_path)
         _deny_config_read(monkeypatch, config_path)
 
-        result = unset_config_value_result("agents.copilot.model", config_path=config_path)
+        result = Config(workspace_paths).unset("agents.copilot.model")
 
-        assert result.status == ConfigUnsetStatus.UNREADABLE
         assert result.error_code == ErrorCode.CONFIG_UNREADABLE
         assert result.errors == [f"Unable to read config.json at '{config_path}': denied."]
         assert result.remediations == [Remediation(message="Check file permissions and that the path is readable")]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
-        assert read_single_event(frozen_diagnostic_clock)["operation"] == "config.read"
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "config.unset"
 
-    def test_unset_write_failure_returns_write_failed(
-        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    def test_unset_write_failure_reports_config_write_failed(
+        self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        config_path = isolated_workspace / ".dovo" / "config.json"
+        config_path = workspace_paths.config_file
         payload = build_default_config("demo-workspace")
         payload["agents"] = {"copilot": {"model": "gpt-4.1"}}
         Filesystem.atomic_write_json(config_path, payload)
         before = config_path.read_bytes()
         _fail_writes(monkeypatch)
 
-        result = unset_config_value_result("agents.copilot.model", config_path=config_path)
+        result = Config(workspace_paths).unset("agents.copilot.model")
 
-        assert result.status == ConfigUnsetStatus.WRITE_FAILED
         assert result.error_code == ErrorCode.CONFIG_WRITE_FAILED
         assert result.config_path == config_path
         assert result.key == "agents.copilot.model"
@@ -677,6 +654,6 @@ class ConfigUnsetMutationTests:
         assert result.remediations == [Remediation(message="Check file permissions and free disk space")]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
-        assert event["operation"] == "config.write"
+        assert event["operation"] == "config.unset"
         assert event["context"] == {"path": str(config_path)}
         assert config_path.read_bytes() == before

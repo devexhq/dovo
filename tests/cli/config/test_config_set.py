@@ -117,7 +117,7 @@ class ConfigSetCliIntegrationTests:
     def test_config_set_cli_missing_config_json_reports_config_not_found(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """Exit 1 with status not_found and error_code CONFIG_NOT_FOUND."""
+        """Exit 1 with error_code CONFIG_NOT_FOUND and no status key."""
         res = cli_runner.invoke(
             app,
             ["-p", str(isolated_workspace), "config", "set", "agents.copilot.model", "m", "--format", "json"],
@@ -125,7 +125,7 @@ class ConfigSetCliIntegrationTests:
 
         assert res.exit_code == 1
         payload = json.loads(res.stdout)["payload"]
-        assert payload["status"] == "not_found"
+        assert "status" not in payload
         assert payload["error_code"] == "CONFIG_NOT_FOUND"
 
     def test_config_set_cli_format_json_emits_event(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
@@ -151,7 +151,6 @@ class ConfigSetCliIntegrationTests:
         assert json.loads(res.stdout) == {
             "event_type": "ConfigSetResult",
             "payload": {
-                "status": "ok",
                 "config_path": str(config_path),
                 "key": "agents.copilot.model",
                 "value": "qwen2.5-coder",

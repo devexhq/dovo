@@ -153,6 +153,16 @@ def _read_and_validate_disk_config(target_path: Path) -> LoadedConfig:
     return LoadedConfig(config_path=target_path, raw=data, config=config)
 
 
+def read_config_object(target_path: Path) -> dict[str, object]:
+    """Return the JSON object in config.json at target_path, without schema validation.
+
+    Raises:
+        ConfigError: When the path is a directory or missing, or the file is unreadable, malformed or not an object.
+    """
+    _check_path_existence(target_path)
+    return _parse_config_object(_read_config_text(target_path), target_path)
+
+
 def _check_path_existence(target_path: Path) -> None:
     """Require target_path to exist as a file.
 
