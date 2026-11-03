@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from dovo.common.models import FailurePolicy, OnFailureSpec
 from dovo.common.tool_policy import ToolPolicy, coerce_tool_policy
-from dovo.core.catalog.exceptions import AskStepInvalidError
 
 _DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:/")
 DEFAULT_STEP_TIMEOUT_SECONDS = 120
@@ -234,19 +233,19 @@ def _options_from_errors(spec: InteractionSpec) -> list[str]:
 
 
 def _validate_ask_shape(step: "StepDefinition") -> None:
-    """Raise AskStepInvalidError for ask-step field conflicts, a missing interaction, or any interaction rule violation."""
+    """Raise ValueError for ask-step field conflicts, a missing interaction, or any interaction rule violation."""
     if step.type != StepType.ASK:
         if step.interaction is not None:
-            raise AskStepInvalidError(f"Step '{step.id}': 'interaction' is only valid with 'type: ask'.")
+            raise ValueError(f"Step '{step.id}': 'interaction' is only valid with 'type: ask'.")
         return
     conflicting = [name for name in _ASK_INCOMPATIBLE_FIELDS if _ask_conflicts(step, name)]
     if conflicting:
-        raise AskStepInvalidError(f"Step '{step.id}': 'type: ask' cannot be combined with {', '.join(conflicting)}.")
+        raise ValueError(f"Step '{step.id}': 'type: ask' cannot be combined with {', '.join(conflicting)}.")
     if step.interaction is None:
-        raise AskStepInvalidError(f"Step '{step.id}': 'type: ask' requires 'interaction'.")
+        raise ValueError(f"Step '{step.id}': 'type: ask' requires 'interaction'.")
     errors = interaction_spec_errors(step.interaction)
     if errors:
-        raise AskStepInvalidError("; ".join(f"Step '{step.id}': {error}" for error in errors))
+        raise ValueError("; ".join(f"Step '{step.id}': {error}" for error in errors))
 
 
 def _ask_conflicts(step: "StepDefinition", name: str) -> bool:

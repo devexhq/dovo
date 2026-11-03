@@ -1,7 +1,7 @@
 """Diagnostic check registry and execution engine."""
 
 from dovo.core.diagnostics.diagnostics import Diagnostics
-from dovo.core.diagnostics.exceptions import CheckRegistrationError, DiagnosticsError
+from dovo.core.diagnostics.exceptions import CheckRegistrationError
 from dovo.core.diagnostics.models import (
     CheckCategory,
     CheckStatus,
@@ -19,6 +19,5 @@ __all__ = [
     "DiagnosticCheckResult",
     "Diagnostics",
     "DiagnosticsContext",
-    "DiagnosticsError",
     "DiagnosticsReport",
 ]

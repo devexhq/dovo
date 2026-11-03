@@ -1887,6 +1887,21 @@ class CoordinatorPausedGateTests:
 
 
 class CoordinatorInvalidStateTests:
+    def test_unparsable_blueprint_snapshot_fails_run_with_snapshot_message(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
+    ) -> None:
+        seed_new_session(engine_paths, sessions_repo, session_id="bad-snap", steps=[_step("a", "touch a.ran")])
+        snapshot = snapshot_blueprint_path(engine_paths.session_dir("bad-snap"), "bad-snap")
+        snapshot.write_text("- not a mapping\n", encoding="utf-8")
+
+        outcome = _coordinator(engine_paths, sessions_repo, "bad-snap").execute()
+
+        assert outcome.status == SessionStatus.FAILED
+        assert outcome.errors == [
+            f"Failed to parse snapshot definition '{snapshot}': invalid or non-object YAML content."
+        ]
+        assert not (engine_workspace / "a.ran").exists()
+
     def test_step_missing_from_snapshot_definitions_fails_run_without_executing(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:

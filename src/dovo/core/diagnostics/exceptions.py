@@ -1,9 +1,5 @@
-"""Domain exceptions for Dovo doctor subsystem."""
+"""Exceptions of the doctor subsystem."""
 
 
-class DiagnosticsError(Exception):
-    """Base exception for doctor domain errors."""
-
-
-class CheckRegistrationError(DiagnosticsError):
-    """Raised when registering a check with an existing check_id."""
+class CheckRegistrationError(ValueError):
+    """Raised when registering a check with an existing check_id, a programmer error."""

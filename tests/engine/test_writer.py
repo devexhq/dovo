@@ -28,6 +28,7 @@ from dovo.engine.writer import (
     load_blueprint_from_snapshot,
     snapshot_blueprint_path,
     snapshot_definitions,
+    snapshot_step_path,
     write_session_diff,
     write_session_projection,
 )
@@ -223,6 +224,47 @@ class LoadBlueprintFromSnapshotTests:
 
         assert excinfo.value.error_code is ErrorCode.SESSION_SNAPSHOT_MISSING
         assert excinfo.value.message == f"Snapshot definition file is missing: '{snapshot}'."
+
+    @pytest.mark.parametrize(
+        ("target", "content", "prefix"),
+        [
+            pytest.param(
+                "blueprint", "- not a mapping\n", "Failed to parse snapshot definition '{path}': ", id="unparsable"
+            ),
+            pytest.param(
+                "blueprint", "steps: not-a-list\n", "Blueprint definition validation failed: ", id="invalid-blueprint"
+            ),
+            pytest.param(
+                "step",
+                "id: lint-check\ntimeout_seconds: soon\n",
+                "Snapshot step 'lint-check' failed validation: ",
+                id="invalid-step",
+            ),
+        ],
+    )
+    def test_invalid_snapshot_raises_snapshot_invalid_with_its_message(
+        self, tmp_path: Path, target: str, content: str, prefix: str
+    ) -> None:
+        """Raise EngineError SESSION_SNAPSHOT_INVALID whose message names the snapshot failure."""
+        workspace = tmp_path / "workspace"
+        write_runnable_step(workspace, key="lint-check", definition={"id": "lint-check", "run": "echo lint"})
+        write_runnable_blueprint(workspace, key="broken-task", steps=[{"id": "s1", "uses": "lint-check"}])
+        catalog = Catalog(initialized_workspace_paths(workspace))
+        session_dir = tmp_path / "session"
+        manifest = snapshot_definitions(catalog, Blueprint.load("broken-task", catalog=catalog), session_dir, [], [])
+        assert manifest is not None
+        path = (
+            snapshot_blueprint_path(session_dir, "broken-task")
+            if target == "blueprint"
+            else snapshot_step_path(session_dir, "lint-check")
+        )
+        path.write_text(content, encoding="utf-8")
+
+        with pytest.raises(EngineError) as excinfo:
+            load_blueprint_from_snapshot(session_dir, manifest)
+
+        assert excinfo.value.error_code is ErrorCode.SESSION_SNAPSHOT_INVALID
+        assert excinfo.value.message.startswith(prefix.format(path=path))
 
 
 class WriteSessionRunProjectionTests:

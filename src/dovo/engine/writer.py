@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import yaml
 from pydantic import ValidationError
@@ -23,12 +23,17 @@ from dovo.core.catalog.definitions import (
     StepDefinition,
     entry_steps,
 )
-from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError, StepValidationError
+from dovo.core.catalog.exceptions import CatalogError
 from dovo.core.catalog.models import CatalogItemType, CatalogRecord
 from dovo.core.catalog.services.resolve_step import merge_uses_step, resolve_step_definition
 from dovo.engine.exceptions import EngineError
 from dovo.engine.models import DefinitionRef, DefinitionsManifest
 from dovo.engine.state_models import SessionJsonPayload
+
+SNAPSHOT_FAILURE_CODES: Final[frozenset[ErrorCode]] = frozenset(
+    {ErrorCode.SESSION_SNAPSHOT_MISSING, ErrorCode.SESSION_SNAPSHOT_INVALID}
+)
+"""The codes load_blueprint_from_snapshot raises."""
 
 
 def _collect_uses_refs(steps: list[BlueprintStep]) -> list[str]:
@@ -176,13 +181,19 @@ def snapshot_definitions(
 
 
 def _read_snapshot_yaml(path: Path) -> dict[str, Any]:
-    """Return the parsed YAML mapping at path, or raise EngineError(SESSION_SNAPSHOT_MISSING) / BlueprintLoadError."""
+    """Return the parsed YAML mapping at path.
+
+    Raises:
+        EngineError: SESSION_SNAPSHOT_MISSING when the file is missing, SESSION_SNAPSHOT_INVALID when it is not a
+            YAML mapping.
+    """
     if not path.is_file():
         raise EngineError(ErrorCode.SESSION_SNAPSHOT_MISSING, f"Snapshot definition file is missing: '{path}'.")
     yaml_file = Filesystem.read_yaml_file(path)
     if yaml_file.error or not isinstance(yaml_file.parsed, dict):
-        raise BlueprintLoadError(
-            f"Failed to parse snapshot definition '{path}': {yaml_file.error or 'invalid or non-object YAML content.'}"
+        raise EngineError(
+            ErrorCode.SESSION_SNAPSHOT_INVALID,
+            f"Failed to parse snapshot definition '{path}': {yaml_file.error or 'invalid or non-object YAML content.'}",
         )
     return yaml_file.parsed
 
@@ -192,15 +203,19 @@ def _resolve_step_from_snapshot(step: StepDefinition, step_snapshots: dict[str, 
     if step.uses is None:
         return step
     if step.uses not in step_snapshots:
-        raise BlueprintValidationError(
-            f"Step '{step.id}' uses snapshot step '{step.uses}' that was not captured in the session manifest."
+        raise EngineError(
+            ErrorCode.SESSION_SNAPSHOT_INVALID,
+            f"Step '{step.id}' uses snapshot step '{step.uses}' that was not captured in the session manifest.",
         )
 
     base = step_snapshots[step.uses]
     base_resolved = _resolve_step_from_snapshot(base, step_snapshots)
     merged = merge_uses_step(step, base_resolved)
     if merged is None:
-        raise BlueprintValidationError(f"Step '{step.id}' uses snapshot step '{step.uses}' that failed validation.")
+        raise EngineError(
+            ErrorCode.SESSION_SNAPSHOT_INVALID,
+            f"Step '{step.id}' uses snapshot step '{step.uses}' that failed validation.",
+        )
     return merged
 
 
@@ -226,23 +241,41 @@ def _resolve_snapshot_steps(
     return [_resolve_snapshot_entry(step, step_snapshots) for step in steps]
 
 
+def _snapshot_blueprint_definition(raw: dict[str, object], key: str) -> BlueprintDefinition:
+    """Validate the blueprint snapshot document raw, raising EngineError(SESSION_SNAPSHOT_INVALID) when it is invalid."""
+    try:
+        return BlueprintDefinition.from_document(raw, key=key)
+    except CatalogError as error:
+        raise EngineError(ErrorCode.SESSION_SNAPSHOT_INVALID, error.message) from error.__cause__
+
+
+def _snapshot_step_definition(raw_step: dict[str, object], step_key: str) -> StepDefinition:
+    """Validate one step snapshot document, expanding a run: shorthand, or raise EngineError(SESSION_SNAPSHOT_INVALID)."""
+    message = f"Snapshot step '{step_key}' failed validation"
+    try:
+        snapshot_step = StepDefinition.model_validate(raw_step)
+        return resolve_step_definition(snapshot_step) if snapshot_step.run is not None else snapshot_step
+    except ValidationError as exc:
+        raise EngineError(ErrorCode.SESSION_SNAPSHOT_INVALID, f"{message}: {exc}") from exc
+    except CatalogError as error:
+        raise EngineError(ErrorCode.SESSION_SNAPSHOT_INVALID, f"{message}: {error}") from error.__cause__
+
+
 def load_blueprint_from_snapshot(session_dir: Path, manifest: DefinitionsManifest) -> Blueprint:
-    """Rebuild a Blueprint from its session snapshot, resolving each uses: step from the snapshot's own step files."""
+    """Rebuild a Blueprint from its session snapshot, resolving each uses: step from the snapshot's own step files.
+
+    Raises:
+        EngineError: SESSION_SNAPSHOT_MISSING when a snapshot file is missing, and SESSION_SNAPSHOT_INVALID when
+            one cannot be parsed or validated or a uses: step cannot be resolved from the snapshot.
+    """
     _, _, key = manifest.blueprint.ref.split(":", 2)
-    raw = _read_snapshot_yaml(snapshot_blueprint_path(session_dir, key))
-    definition = BlueprintDefinition.from_document(raw, key=key)
+    definition = _snapshot_blueprint_definition(_read_snapshot_yaml(snapshot_blueprint_path(session_dir, key)), key)
 
     step_snapshots: dict[str, StepDefinition] = {}
     for step_ref in manifest.steps:
         _, _, step_key = step_ref.ref.split(":", 2)
         raw_step = _read_snapshot_yaml(snapshot_step_path(session_dir, step_key))
-        try:
-            snapshot_step = StepDefinition.model_validate(raw_step)
-            step_snapshots[step_key] = (
-                resolve_step_definition(snapshot_step) if snapshot_step.run is not None else snapshot_step
-            )
-        except (ValidationError, StepValidationError) as exc:
-            raise BlueprintValidationError(f"Snapshot step '{step_key}' failed validation: {exc}") from exc
+        step_snapshots[step_key] = _snapshot_step_definition(raw_step, step_key)
 
     resolved_steps = _resolve_snapshot_steps(definition.steps, step_snapshots)
     return Blueprint(definition.model_copy(update={"steps": resolved_steps}), key=key)
@@ -270,6 +303,7 @@ def write_session_projection(session_dir: Path, payload: SessionJsonPayload) -> 
 
 
 __all__ = [
+    "SNAPSHOT_FAILURE_CODES",
     "DefinitionRef",
     "DefinitionsManifest",
     "get_session_dir",

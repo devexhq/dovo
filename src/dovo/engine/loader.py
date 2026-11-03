@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog.definitions import BlueprintDefinition
-from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError
 from dovo.core.catalog.models import CatalogItemType
 from dovo.core.catalog.services.validate import check_catalog_item
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
@@ -23,7 +22,12 @@ from dovo.engine.state_models import (
 )
 from dovo.engine.state_store import SessionStateStore
 from dovo.engine.state_validation import validate_block_structure
-from dovo.engine.writer import get_session_dir, load_blueprint_from_snapshot, snapshot_blueprint_path
+from dovo.engine.writer import (
+    SNAPSHOT_FAILURE_CODES,
+    get_session_dir,
+    load_blueprint_from_snapshot,
+    snapshot_blueprint_path,
+)
 
 _FINISHED_NODE_STATES = frozenset({NodeState.COMPLETED, NodeState.IGNORED, NodeState.SKIPPED})
 
@@ -189,17 +193,9 @@ class EngineLoader:
         try:
             blueprint = load_blueprint_from_snapshot(get_session_dir(paths, session_id), state.manifest)
         except EngineError as error:
-            if error.error_code is not ErrorCode.SESSION_SNAPSHOT_MISSING:
+            if error.error_code not in SNAPSHOT_FAILURE_CODES:
                 raise
-            raise EngineError(
-                ErrorCode.SESSION_SNAPSHOT_MISSING,
-                f"Cannot resume session '{session_id}': {error}",
-            ) from error.__cause__
-        except (BlueprintLoadError, BlueprintValidationError) as exc:
-            raise EngineError(
-                ErrorCode.SESSION_SNAPSHOT_INVALID,
-                f"Cannot resume session '{session_id}': {exc}",
-            ) from exc
+            raise EngineError(error.error_code, f"Cannot resume session '{session_id}': {error}") from error.__cause__
 
         structure_errors = validate_block_structure(state, blueprint)
         if structure_errors:

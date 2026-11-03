@@ -14,7 +14,6 @@ from pydantic import ValidationError
 from pydantic_core import ErrorDetails
 
 from dovo.common.error_codes import ErrorCode
-from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
 from dovo.common.models import Remediation
 from dovo.core.catalog.definitions.blueprint import STEP_KIND_TAGS, BlueprintDefinition
 from dovo.core.catalog.definitions.placeholders import placeholder_input_names, placeholder_syntax_errors
@@ -148,14 +147,17 @@ def _validate_schema(
     try:
         from_document = getattr(definition_cls, "from_document", None)
         return from_document(parsed, key=key) if callable(from_document) else definition_cls.model_validate(parsed)
-    except (DefinitionLoadError, DefinitionValidationError, ValidationError) as exc:
+    except CatalogError as error:
+        if error.error_code is not ErrorCode.CATALOG_SCHEMA_INVALID:
+            raise
+        errors, remediations = _format_schema_exception(error, key)
+        raise _schema_invalid(errors, remediations, warnings) from error.__cause__
+    except ValidationError as exc:
         errors, remediations = _format_schema_exception(exc, key)
         raise _schema_invalid(errors, remediations, warnings) from exc
 
 
-def _format_schema_exception(
-    exc: DefinitionLoadError | DefinitionValidationError | ValidationError, key: str
-) -> tuple[list[str], list[Remediation]]:
+def _format_schema_exception(exc: CatalogError | ValidationError, key: str) -> tuple[list[str], list[Remediation]]:
     """Format a schema-validation exception into (errors, remediations), one remediation per error."""
     pydantic_error = _extract_validation_error(exc)
     if pydantic_error is not None:
