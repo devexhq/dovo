@@ -1,7 +1,7 @@
 version: 1
 name: save-session
 id: save-session
-description: Push a finished session's records, logs and step outputs to the session-data repository.
+description: Push a finished session's records, logs, step outputs and worktree .agentic/ directory to the session-data repository.
 summary: Archive one session under sessions/<session_id>/ in devexhq/dovo-session-data
 use_worktree: false
 
