@@ -72,6 +72,9 @@ stage() {
   if [ -n "$agentic" ] && [ -d "$agentic" ]; then
     cp -R "$agentic" "$target/.agentic"
   fi
+  # Agent scratch can hold repositories its tests created; git refuses to add
+  # a nested repository, so save their files without their .git entries.
+  find "$target" -mindepth 2 -name .git -prune -exec rm -rf {} +
   record_ledger
   git -C "$clone" add -A "sessions/$SESSION_ID" ledger.md
 }
