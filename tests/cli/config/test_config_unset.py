@@ -62,6 +62,34 @@ class ConfigUnsetCliIntegrationTests:
         assert "Config Error" in res.stdout
         assert "Config schema validation failed" in res.stdout
 
+    def test_config_unset_cli_absent_key_on_schema_invalid_config_reports_show_failure(
+        self, cli_runner: CliRunner, isolated_workspace: Path
+    ) -> None:
+        """Exit 1 with the CONFIG_SCHEMA_INVALID failure config show reports, leaving the file unchanged."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
+        payload = build_default_config("demo-workspace")
+        payload["worktree"]["max_active_worktrees"] = "three"
+        Filesystem.atomic_write_json(config_path, payload)
+        before = config_path.read_bytes()
+        shown = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "show", "--format", "json"])
+
+        res = cli_runner.invoke(
+            app,
+            ["-p", str(isolated_workspace), "config", "unset", "telemetry.nosuch", "--format", "json"],
+        )
+
+        assert res.exit_code == 1
+        unset_payload = json.loads(res.stdout)["payload"]
+        show_payload = json.loads(shown.stdout)["payload"]
+        assert unset_payload["error_code"] == "CONFIG_SCHEMA_INVALID"
+        assert "worktree.max_active_worktrees: 'three' is not of type 'integer'" in "\n".join(unset_payload["errors"])
+        assert (unset_payload["errors"], unset_payload["remediations"], unset_payload["diagnostics"]) == (
+            show_payload["errors"],
+            show_payload["remediations"],
+            show_payload["diagnostics"],
+        )
+        assert config_path.read_bytes() == before
+
     def test_config_unset_cli_missing_config_json_reports_config_not_found(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
