@@ -205,19 +205,26 @@ class Catalog:
         return CatalogCreateResult(item=record, resolved_path=resolved_path)
 
     def delete(
-        self, sha_or_name: str, *, confirm: Callable[[CatalogRecord], bool] | None = None
+        self,
+        item_type: CatalogItemType,
+        sha_or_name: str,
+        *,
+        confirm: Callable[[CatalogRecord], bool] | None = None,
     ) -> CatalogDeleteResult:
-        """Resolve, confirm and delete a REPO-tier catalog file, then reindex; confirm=None skips confirmation.
+        """Resolve, confirm and delete a REPO-tier catalog file of item_type, then reindex; confirm=None skips confirmation.
 
-        An unknown name, a dovo/-namespaced template and a non-REPO-tier match fail without being confirmed.
+        sha_or_name is matched against items of item_type only: a name or sha of the other type fails with
+        CATALOG_NOT_FOUND ("Catalog <item_type> '<name>' not found."), and the tier and namespace checks judge
+        only the matches of item_type. An unknown name, a dovo/-namespaced template and a non-REPO-tier match
+        fail without being confirmed.
         No lock is held while the prompt waits; the delete's workspace lock is taken after it. A declined
         confirmation returns cancelled True, and a file removed after confirmation fails with CATALOG_NOT_FOUND.
 
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
         """
-        with catch_failure("catalog.delete", name=sha_or_name) as caught:
-            item = resolve_deletable_catalog_item(sha_or_name, self.paths)
+        with catch_failure("catalog.delete", item_type=item_type.value, name=sha_or_name) as caught:
+            item = resolve_deletable_catalog_item(item_type, sha_or_name, self.paths)
             if confirm is not None and not confirm(item):
                 return CatalogDeleteResult(cancelled=True)
             delete_catalog_item(sha_or_name, item, self.paths)

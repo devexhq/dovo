@@ -385,11 +385,20 @@ def create_catalog_item(
         return record
 
 
-def resolve_deletable_catalog_item(sha_or_name: str, paths: WorkspacePaths) -> CatalogRecord:
-    """Re-sync every tier and return the REPO-tier record a delete of sha_or_name would remove.
+def _not_found(item_type: CatalogItemType, sha_or_name: str) -> CatalogError:
+    """Return the CATALOG_NOT_FOUND error naming item_type, e.g. "Catalog step 'demo' not found."."""
+    return CatalogError(ErrorCode.CATALOG_NOT_FOUND, f"Catalog {item_type.value} '{sha_or_name}' not found.")
+
+
+def resolve_deletable_catalog_item(
+    item_type: CatalogItemType, sha_or_name: str, paths: WorkspacePaths
+) -> CatalogRecord:
+    """Re-sync every tier and return the REPO-tier record of item_type a delete of sha_or_name would remove.
+
+    Only records of item_type are matched, so a name or sha of the other type resolves like an unknown name.
 
     Raises:
-        CatalogError: CATALOG_NOT_FOUND when nothing matches sha_or_name,
+        CatalogError: CATALOG_NOT_FOUND when no record of item_type matches sha_or_name,
             CATALOG_TIER_DELETE_FORBIDDEN if the resolved match is not indexed at the REPO tier,
             CATALOG_PROTECTED if attempting to delete a template in the protected 'dovo/' namespace,
             CATALOG_WRITE_FAILED if an index cannot be written while re-syncing.
@@ -399,9 +408,9 @@ def resolve_deletable_catalog_item(sha_or_name: str, paths: WorkspacePaths) -> C
         raise CatalogError(ErrorCode.CATALOG_PROTECTED, f"Cannot delete bundled catalog template '{sha_or_name}'.")
 
     scan_and_index_catalog(paths)
-    matches = find_catalog_record_matches(sha_or_name, None, paths)
+    matches = find_catalog_record_matches(sha_or_name, item_type, paths)
     if not matches:
-        raise CatalogError(ErrorCode.CATALOG_NOT_FOUND, f"Catalog blueprint '{sha_or_name}' not found.")
+        raise _not_found(item_type, sha_or_name)
 
     item = matches[0]
     if item.tier != CatalogTier.REPO:
@@ -426,7 +435,7 @@ def delete_catalog_item(sha_or_name: str, item: CatalogRecord, paths: WorkspaceP
     file_path = paths.catalog_dir / item.path
     with WorkspaceLock(paths.lock_file):
         if not file_path.exists():
-            raise CatalogError(ErrorCode.CATALOG_NOT_FOUND, f"Catalog blueprint '{sha_or_name}' not found.")
+            raise _not_found(item.item_type, sha_or_name)
         try:
             delete_file(file_path)
         except OSError as exc:
