@@ -1,8 +1,8 @@
 version: 1
 name: save-session
 id: save-session
-description: Push a finished session's records, logs, step outputs and worktree .agentic/ directory to the session-data repository.
-summary: Archive one session under sessions/<session_id>/ in devexhq/dovo-session-data
+description: Push a finished session's records, logs, step outputs and worktree .agentic/ directory to the session-data repository, and record the session against its pull request in ledger.md.
+summary: Archive one session under sessions/<session_id>/ in devexhq/dovo-session-data and link it to its PR in ledger.md
 use_worktree: false
 
 inputs:
@@ -11,6 +11,11 @@ inputs:
     description: ID of the session to save (as shown by `dovo session list`)
     required: true
     aliases: ["-s", "--session"]
+  pr:
+    type: string
+    description: Number of the devexhq/dovo pull request the session produced or worked on
+    required: true
+    aliases: ["-p", "--pr"]
 
 steps:
   - id: save
@@ -19,6 +24,8 @@ steps:
     script_path: scripts/sessions/save.sh
     env:
       SESSION_ID: ${{ inputs.session_id }}
+      SESSION_PR: ${{ inputs.pr }}
+      SESSION_PR_REPO: https://github.com/devexhq/dovo
       SESSION_DATA_REPO: https://github.com/devexhq/dovo-session-data.git
       SESSION_DATA_BRANCH: main
     timeout_seconds: 600
