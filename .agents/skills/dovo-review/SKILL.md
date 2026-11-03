@@ -17,7 +17,7 @@ Review a change set in `Dovo CLI`, in this order of importance:
 3. **Rules**: does the diff break any of the 18 rules in [AGENTS.md](../../../AGENTS.md).
 4. **Docs**: did the change update the docs it had to, and nothing else.
 
-Output goes to `.agentic/review.md`, which `/dovo-code review` consumes, paired with `.agentic/review.json` and `.agentic/verdict.txt`. A human reviews the PR after you; your job is to make that review short.
+Output goes to `.agentic/review.md`, which the fixer (the `ship` implement stage, or `/dovo-code feedback` on a pull request) consumes, paired with `.agentic/review.json` and `.agentic/verdict.txt`. A human reviews the PR after you; your job is to make that review short.
 
 ## Hard boundaries
 
@@ -71,7 +71,7 @@ Record every command and its one-line result for Review coverage. A finding the 
 
 ## 5. Check plan fidelity
 
-Skip this when `.agentic/plan.md` is absent, and say so. Otherwise read it now, with `.agentic/implementation-report.md` if it exists, and the issue it plans (`gh issue view <n> --json number,title,body`, `<n>` being `plan.json` `issue`), whose outcomes, decisions and binding values the plan cites rather than repeats: the issue and all of the plan's phases together are the contract, and the report's **Plan deviations** are the author's claims to verify, never evidence that the code is correct.
+Skip this when `.agentic/plan.md` is absent, and say so. Otherwise read it now, with `.agentic/implementation-report.md` if it exists, and the issue it plans (`gh issue view <n> --json number,title,body`, `<n>` being `issue.number` in `.agentic/ship/contract.json`, or the plan's `# Issue #<n>` header outside a `ship` run), whose outcomes, decisions and binding values the plan cites rather than repeats: the issue and all of the plan's phases together are the contract, and the report's **Plan deviations** are the author's claims to verify, never evidence that the code is correct.
 
 A plan decision is not evidence of correctness. When code that follows the plan is still wrong, keep the section 4 finding, cite the plan decision behind it, and set `action` to `replan` when fixing it means changing that decision. Contract coverage `met` says the code does what the plan says, not that what the plan says is right.
 
@@ -168,19 +168,19 @@ A Location is `path:line`, or `path:<start>-<end>` for a range of lines.
 
 Contract coverage reads "No contract: `.agentic/plan.md` absent" when there is no plan. Earlier rounds reads `none` in round 1.
 
-**Action** follows from the verdict and what is left. On `APPROVE` it is `none`, or `needs_human` when a Warning is left that only a person can settle. On `CHANGES REQUIRED` it is `fix` when every Blocking finding can be fixed inside the plan, `replan` when a Blocking finding needs a different design from the plan's, and `needs_human` when only a person can settle what is left. Only a person can settle a finding whose fix needs a decision the plan does not make, goes back on a decision the plan made, or needs evidence no agent here can obtain; name that decision in the one-sentence reason. A finding you send to a person in the report always sets `needs_human`, because the `feature-dev` blueprint stops fixing only on `needs_human` or `replan`.
+**Action** follows from the verdict and what is left. On `APPROVE` it is `none`, or `needs_human` when a Warning is left that only a person can settle. On `CHANGES REQUIRED` it is `fix` when every Blocking finding can be fixed inside the plan, `replan` when a Blocking finding needs a different design from the plan's, and `needs_human` when only a person can settle what is left. Only a person can settle a finding whose fix needs a decision the plan does not make, goes back on a decision the plan made, or needs evidence no agent here can obtain; name that decision in the one-sentence reason. A finding you send to a person in the report always sets `needs_human`, because the `ship` blueprint stops fixing only on `needs_human` or `replan`.
 
-`Rule` is an R-id, `conventions` for a `docs/agents/code-conventions.md` item, `architecture` for a `docs/agents/architecture/` entry, or `-` for a bug or plan finding with no rule behind it. An empty section keeps its heading with the line `none`. IDs are the tier letter plus a number from 1 within the tier, in row order, reassigned every round; `/dovo-code review --fix` consumes them.
+`Rule` is an R-id, `conventions` for a `docs/agents/code-conventions.md` item, `architecture` for a `docs/agents/architecture/` entry, or `-` for a bug or plan finding with no rule behind it. An empty section keeps its heading with the line `none`. IDs are the tier letter plus a number from 1 within the tier, in row order, reassigned every round; the fixer and `scripts/publish_review.py` consume them.
 
 Say `APPROVE` only with zero Blocking findings.
 
 With `--post` and a PR scope, run `uv run python scripts/publish_review.py --pr <n>`. It posts this round's findings as one pull request review, each finding inline on its line or line range of the diff, with its severity, a suggested fix and a prompt for an AI agent, or in the review body's outside-diff block, never replying on or resolving a review thread, reusing the review on the reviewed commit only when it is identical to this post, then posts or edits this PR's one dovo-review comment, which holds `review.md` without its finding sections, and refuses when the PR head is not the reviewed commit. Never `gh pr review --approve` or `--request-changes`. A blueprint's `post-review` step adds `--session <id>`, which stamps a `Dovo session:` header line naming the run whose state `pr-fix` restores. A post without `--session` rewrites the header without that line, so the next `pr-fix` run stops until a blueprint posts again.
 
-On `CHANGES REQUIRED`, hand off to `/dovo-code review`, then re-run this skill as round n+1. **Cap at 3 rounds**; at the cap, list the id of every unresolved finding, comma-separated on one line and never as a table, under a `### Residual` heading and in `review.json` under `residual`, for the human.
+On `CHANGES REQUIRED`, hand off to the fixer, then re-run this skill as round n+1. **Cap at 3 rounds**; at the cap, list the id of every unresolved finding, comma-separated on one line and never as a table, under a `### Residual` heading and in `review.json` under `residual`, for the human.
 
 ## 9. Emit the machine-readable verdict
 
-Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, and print `verdict`, `action`, `round`, `head` and `counts` as one minified JSON object on the last line of stdout. `.dovo/catalog/blueprints/feature-dev.yml` fixes until `review.json` lists no `BLOCKER` or `WARNING` finding, `scripts/publish_review.py` posts `review.json`'s findings to the pull request, and `/dovo-code review` reads the ids.
+Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, and print `verdict`, `action`, `round`, `head` and `counts` as one minified JSON object on the last line of stdout. The `ship` blueprint fixes until `review.json` lists no `BLOCKER` finding, `scripts/publish_review.py` posts `review.json`'s findings to the pull request, and the fixer reads the ids.
 
 ```json
 {

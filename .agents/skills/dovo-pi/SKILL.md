@@ -85,7 +85,7 @@ Write `.agentic/pi/<id>.json`, overwriting any earlier one:
 ```json
 {
   "session": "715fe088769e459dab6065f2eb7237fb",
-  "summary": { "blueprint": "issue-code-v2", "status": "failed", "wall_seconds": 4333.0, "resumes": 3, "total_cost_usd": 29.65 },
+  "summary": { "blueprint": "ship", "status": "failed", "wall_seconds": 4333.0, "resumes": 3, "total_cost_usd": 29.65 },
   "findings": [
     {
       "id": "F1",

@@ -1,6 +1,6 @@
 # Write an issue
 
-Turn a person's description of a change into a GitHub issue in the short format of [templates/issue.md](templates/issue.md). The issue records what the person decided; planning grounds it in the code later, so ground only enough to name dependencies and to catch work that has already shipped.
+Turn a person's description of a change into a GitHub issue in the short format of [issue.md](issue.md). The issue records what the person decided; planning grounds it in the code later, so ground only enough to name dependencies and to catch work that has already shipped.
 
 ## 1. Read the request
 
@@ -21,7 +21,7 @@ Record none of what the grounding finds in the code: paths, symbols, revision nu
 
 ## 3. Draft
 
-Write the title and body to the template, its sections in order. A bug, behaviour that is wrong today, uses [templates/bug.md](templates/bug.md): **What happens** and **Steps to reproduce** take the place of **Why**, and **Done when** names the regression test; everything else below holds.
+Write the title and body to the template, its sections in order. A bug, behaviour that is wrong today, uses [bug.md](bug.md): **What happens** and **Steps to reproduce** take the place of **Why**, and **Done when** names the regression test; everything else below holds.
 
 - **Why** in the person's terms.
 - One **Outcome** per observable behaviour, numbered from `O-1`, stated as a rule that holds wherever it applies. Where the grounding found many places it applies today, state what they share, with one or two as examples, and leave finding the rest to planning.
@@ -29,7 +29,7 @@ Write the title and body to the template, its sections in order. A bug, behaviou
 - **Binding values** only for literals the person chose.
 - **Done when** naming the outcomes by id, plus any check beyond them.
 
-No hard line wraps: each paragraph and list item is one line, and every issue reference is an explicit `[GH-<n>](https://github.com/devexhq/dovo/issues/<n>)` link. The same holds for every comment and pull request text that sdlc v2 posts, except a `Closes #<n>` line, which GitHub needs as written.
+No hard line wraps: each paragraph and list item is one line, and every issue reference is an explicit `[GH-<n>](https://github.com/devexhq/dovo/issues/<n>)` link. The same holds for every comment and pull request text that `ship` posts, except a `Closes #<n>` line, which GitHub needs as written.
 
 ## 4. Check
 

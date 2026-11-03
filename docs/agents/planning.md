@@ -1,15 +1,15 @@
 # Planning Before Implementation
 
-Read this **before writing any code** for a GitHub issue. The plan document (`.agentic/plan.md`) is the deliverable.
+Read this **before writing any code** for a GitHub issue. The plan document (`.agentic/ship/plan.md` in a `ship` run, written as `.agentic/plan.md` below) is the deliverable.
 While planning, remain **read-only**: do not edit `src/` or `tests/`, do not run tests or quality gates, and do not commit or push.
 
 A plan has two readers. The human approving it needs to see, at the top, what changes for existing users and what is still undecided. The agent implementing a phase needs the files and symbols that phase touches, the new public surface the issue does not already pin, and the tests that pin each requirement. Write for both, and repeat nothing the issue already says.
 
 ## How an issue reaches a plan
 
-An issue is written in the short format of [templates/issue.md](../../.dovo/catalog/prompts/sdlc/v2/templates/issue.md), or the bug format of [templates/bug.md](../../.dovo/catalog/prompts/sdlc/v2/templates/bug.md) (`/dovo-issue` drafts both). It records what a person decided: numbered outcomes (`O-n`) and decisions (`D-n`), with binding values for the literals a person chose. `dovo run issue-plan-v2 -i <n>` readies the issue, labels it `dovo:ready` and slices it into a plan a person approves, kept in the issue's work plan comment, the only comment the flow posts on the issue. `dovo run issue-code-v2 -i <n>` then builds the next slice: it phases the slice by this guide, codes it, reviews it and opens its pull request. A plan of one slice is phased in the `issue-plan-v2` run itself. Each slice of a multi-slice issue gets its own sub-issue when it starts, ready from the approved plan.
+An issue is written in the short format of [issue.md](../../.dovo/catalog/templates/issue/issue.md), or the bug format of [bug.md](../../.dovo/catalog/templates/issue/bug.md) (`/dovo-issue` drafts both). It records what a person decided: numbered outcomes (`O-n`) and decisions (`D-n`), with binding values for the literals a person chose. `dovo run ship -i <n> [--pull-request <n>]` (or `/ship <n>`) delivers it as one pull request: it captures the issue as the run's contract, assesses it against `main`, and routes to its plan stage when a design or interaction choice needs settling before coding. That stage plans the whole issue by this guide, without sub-issues or a routine approval pause, and asks a person only when a choice changes an accepted outcome or constraint. The run then implements the plan, validates it, reviews it and opens the pull request.
 
-`/dovo-plan` follows the same steps for work outside that flow.
+An issue that cannot fit one coherent pull request is not planned whole: the plan stage reports it as `split_needed` with the proposed boundary, and `/dovo-issue` splits it.
 
 ## Step 1: Extract the contract from the issue
 
@@ -23,7 +23,7 @@ gh issue view <number> --json number,title,body
 - The issue's observable contracts bind the plan: CLI behaviour and output, exit codes, persisted formats, entrypoint signatures, result models and the literal values tests assert. The issue names no internal shapes; the plan chooses them in Step 2. When grounding shows that an outcome or decision cannot hold as written, plan the better design: add an Open Question whose assumed answer is that design, cite the `path:line` that shows why, and name the departure under **What you're approving**. Never write a Trap that tells the implementer to work around the issue.
 - The issue's outcomes and decisions bind the plan as written. When following one literally would exclude behaviour of a foundation the change adopts (an `OSError` on Dovo's own state that `catch_failure` records, and the `diagnostics` entry that follows; see [architecture/exceptions.md](architecture/exceptions.md) and [architecture/diagnostics.md](architecture/diagnostics.md)), or would freeze wording nothing relies on, plan the better behaviour as a departure in the same way.
 - Absent an issue, quote the request in the opening paragraph and number the requirements you derive from it as outcomes (`O-1`, …) in a `## Requirements` list after `## What you're approving`.
-- Do not open or consult sibling or parent issues. An issue that needs more than one pull request is sliced by `issue-plan-v2`, never planned whole with `/dovo-plan`. Any other parent issue (one with sub-issues) is never planned itself; plan its sub-issues one at a time.
+- Do not open or consult sibling or parent issues. An issue that needs more than one pull request is split with `/dovo-issue`, never planned whole. A parent issue (one with sub-issues) is never planned itself; plan its sub-issues one at a time.
 - Plan zero backwards-compatibility shims, aliases, or dual code paths unless the issue explicitly demands them (R10).
 - If a detail is unspecified, choose the option matching the nearest existing pattern from Step 2, and add a numbered Open Question stating the assumed answer and the rejected alternative.
 
@@ -47,7 +47,7 @@ Group requirements into phases of one concern each (~400 changed lines or less, 
 - Replacing an internal is phased as add, switch callers, delete, with the deletion phase planned up front in `### Deletion ledger` (R10).
 - Order phases by dependency, lower layers first (R1). A fix to existing behaviour that the change depends on is its own phase, first.
 - A phase over budget states, under the Phases table, why it cannot be split.
-- `/dovo-code` lands every phase in one PR, so the phases together serve the issue's one responsibility. A plan whose phases mix kinds of change (a foundation and its adoption, or a behaviour change and a refactor) says so first under **What you're approving** and recommends splitting the issue with `/dovo-issue`.
+- The `ship` implement stage lands every phase in one PR, so the phases together serve the issue's one responsibility. A plan whose phases mix kinds of change (a foundation and its adoption, or a behaviour change and a refactor) says so first under **What you're approving** and recommends splitting the issue with `/dovo-issue`.
 - Resolve every check now: no plan line or ledger entry may be conditional on a `grep` the implementer runs later.
 
 ## Step 4: Write `.agentic/plan.md`
@@ -84,7 +84,7 @@ The issue's contract is not repeated here; read it on #<n>. This plan covers how
 
 <Or "None.">
 
-Write one fact per bullet. **Challenged**, **Turns on** and **Recommended** appear only on a question a challenge or a conflicting review finding raised, and are added when the findings are folded in (see `fold-findings` in `.dovo/catalog/blueprints/feature-dev.yml`). **Note** appears only when there is one.
+Write one fact per bullet. **Challenged**, **Turns on** and **Recommended** appear only on a question a conflicting review finding raised, and are added when the review's findings are folded into the plan. **Note** appears only when there is one.
 
 **Changes to existing behaviour:**
 
@@ -159,7 +159,7 @@ Not needed: <surfaces checked and left alone, e.g. migration, result model, conf
 ## Step 5: Save and hand off
 
 1. Verify all planned paths, imports, public surface and phases against R1–R18 in [AGENTS.md](../../AGENTS.md). Then split every outcome and decision into its separate obligations, each sentence a test could observe, and check that each obligation lands in a phase's Requirements cell and is cited by at least one test line.
-2. Write `.agentic/plan.md` (and `.agentic/evidence.md` when used) and its open questions to `.agentic/plan.json` (schema in the `dovo-plan` skill), deleting any stale `.agentic/review*`, `.agentic/plan-review*`, `.agentic/plan-challenge*` and `.agentic/plan-walkthrough*`.
+2. Write the plan document (and `.agentic/evidence.md` when used). In a `ship` run, an Open Question whose assumed answer changes an accepted outcome or constraint is also raised as a question in the stage's `.agentic/ship/stage.json`, so a person settles it before coding; every other Open Question stays assumed in the plan.
 3. Report the plan path, the Phases table, and every numbered Open Question.
 
 ## In the pull request
