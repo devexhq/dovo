@@ -42,6 +42,7 @@ OWNERS: Final[dict[str, frozenset[str]]] = {
     "CONFIG": frozenset({"core/config"}),
     "BOOTSTRAP": frozenset({"core/bootstrap"}),
     "PROJECT": frozenset({"core/project"}),
+    "ARTIFACT": frozenset({"core/artifacts"}),
     "SESSION": frozenset({"engine", "core/sessions"}),
     "BLUEPRINT": frozenset({"engine"}),
     "RUN": frozenset({"engine"}),

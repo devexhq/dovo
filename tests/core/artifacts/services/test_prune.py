@@ -7,8 +7,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from dovo.common.lock import LockTimeoutError
-from dovo.core.artifacts.models import ArtifactsPruneStatus, PrunedArtifact
+from dovo.core.artifacts.models import PrunedArtifact
 from dovo.core.artifacts.services.prune import prune_artifacts
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
@@ -45,25 +47,24 @@ def _create_row(
 class PruneArtifactsServiceTests:
     """Contract tests for prune_artifacts."""
 
-    def test_prune_artifacts_disabled_without_force_returns_disabled_status(
+    def test_prune_artifacts_disabled_without_force_returns_disabled_success(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
         result = prune_artifacts(tmp_path, artifacts_repository, remove_expired=False)
 
-        assert result.status == ArtifactsPruneStatus.DISABLED
-        assert result.items == []
+        assert (result.disabled, result.error_code, result.items) == (True, None, [])
 
-    def test_prune_artifacts_lock_timeout_returns_locked_status(
+    def test_prune_artifacts_lock_timeout_propagates(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
-        with patch(
-            "dovo.core.artifacts.services.prune.WorkspaceLock.__enter__",
-            side_effect=LockTimeoutError("locked by another process"),
+        with (
+            patch(
+                "dovo.core.artifacts.services.prune.WorkspaceLock.__enter__",
+                side_effect=LockTimeoutError("locked by another process"),
+            ),
+            pytest.raises(LockTimeoutError),
         ):
-            result = prune_artifacts(tmp_path, artifacts_repository, remove_expired=True)
-
-        assert result.status == ArtifactsPruneStatus.LOCKED
-        assert result.errors == ["Failed to acquire workspace lock: locked by another process"]
+            prune_artifacts(tmp_path, artifacts_repository, remove_expired=True)
 
     def test_prune_artifacts_deletes_expired_directory_and_db_row(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
@@ -75,7 +76,7 @@ class PruneArtifactsServiceTests:
 
         result = prune_artifacts(tmp_path, artifacts_repository, remove_expired=True)
 
-        assert result.status == ArtifactsPruneStatus.OK
+        assert (result.disabled, result.error_code) == (False, None)
         assert result.items == [PrunedArtifact(session_id="wf_abc123", name="dist-packages", revision=1, pruned=True)]
         assert not artifact_dir.exists()
         assert artifacts_repository.get("wf_abc123", "dist-packages") is None
@@ -91,7 +92,7 @@ class PruneArtifactsServiceTests:
 
         result = prune_artifacts(tmp_path, artifacts_repository, dry_run=True, remove_expired=True)
 
-        assert result.status == ArtifactsPruneStatus.OK
+        assert result.disabled is False
         assert result.items[0].pruned is True
         assert artifact_dir.exists()
         assert artifacts_repository.get("wf_abc123", "dist-packages") is not None

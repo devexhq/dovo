@@ -1,15 +1,13 @@
 """Session artifact publishing, listing, downloading, and pruning."""
 
 from dovo.core.artifacts.artifacts import Artifacts
+from dovo.core.artifacts.exceptions import ArtifactError
 from dovo.core.artifacts.models import (
     ArtifactDownloadResult,
-    ArtifactDownloadStatus,
     ArtifactManifest,
     ArtifactManifestFile,
     ArtifactsListResult,
-    ArtifactsListStatus,
     ArtifactsPruneResult,
-    ArtifactsPruneStatus,
     ArtifactUploadResult,
     ArtifactUploadStatus,
     PrunedArtifact,
@@ -17,15 +15,13 @@ from dovo.core.artifacts.models import (
 
 __all__ = [
     "ArtifactDownloadResult",
-    "ArtifactDownloadStatus",
+    "ArtifactError",
     "ArtifactManifest",
     "ArtifactManifestFile",
     "ArtifactUploadResult",
     "ArtifactUploadStatus",
     "Artifacts",
     "ArtifactsListResult",
-    "ArtifactsListStatus",
     "ArtifactsPruneResult",
-    "ArtifactsPruneStatus",
     "PrunedArtifact",
 ]

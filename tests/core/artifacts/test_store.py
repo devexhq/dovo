@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.artifacts import Artifacts
-from dovo.core.artifacts.models import ArtifactDownloadStatus, ArtifactProvenance
+from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
@@ -63,7 +64,7 @@ class ArtifactStoreTests:
 
         result = ArtifactStore(artifacts, "wf_1").download(name="plan", dest=dest, session_id=override)
 
-        assert result.status == ArtifactDownloadStatus.OK
+        assert result.ok
         assert (dest / "PLAN.md").read_text(encoding="utf-8") == expected
 
     def test_download_from_session_without_artifact_returns_not_found_for_that_session(
@@ -73,8 +74,7 @@ class ArtifactStoreTests:
 
         result = store.download(name="plan", dest=tmp_path / "out", session_id="wf_other")
 
-        assert result.status == ArtifactDownloadStatus.NOT_FOUND
-        assert result.session_id == "wf_other"
+        assert (result.error_code, result.session_id) == (ErrorCode.ARTIFACT_NOT_FOUND, "wf_other")
 
     def test_resolve_references_sees_only_the_store_session(
         self, tmp_path: Path, artifacts_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository

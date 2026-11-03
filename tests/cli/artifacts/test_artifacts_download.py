@@ -84,7 +84,6 @@ class ArtifactsDownloadCliIntegrationTests:
         assert json.loads(result.stdout) == {
             "event_type": "ArtifactDownloadResult",
             "payload": {
-                "status": "ok",
                 "session_id": "wf_one",
                 "name": "dist-packages",
                 "dest": str(dest),
@@ -93,6 +92,44 @@ class ArtifactsDownloadCliIntegrationTests:
                 "errors": [],
                 "warnings": [],
                 "error_code": None,
+                "remediations": [],
+                "diagnostics": [],
+            },
+        }
+
+    def test_artifacts_download_cli_format_json_not_found_emits_error_code(
+        self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path
+    ) -> None:
+        dest = tmp_path / "out"
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "-p",
+                str(cli_workspace),
+                "artifacts",
+                "download",
+                "wf_one",
+                "missing",
+                "--dest",
+                str(dest),
+                "--format",
+                "json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert json.loads(result.stdout) == {
+            "event_type": "ArtifactDownloadResult",
+            "payload": {
+                "session_id": "wf_one",
+                "name": "missing",
+                "dest": "",
+                "revision": 0,
+                "file_count": 0,
+                "errors": ["Artifact 'missing' not found for session 'wf_one'"],
+                "warnings": [],
+                "error_code": "ARTIFACT_NOT_FOUND",
                 "remediations": [],
                 "diagnostics": [],
             },

@@ -6,10 +6,13 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.core.artifacts.models import ArtifactsPruneResult, ArtifactsPruneStatus
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.core.artifacts.models import ArtifactsPruneResult
+from tests.harness.lock import raise_lock_timeout
 from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
 
@@ -55,9 +58,7 @@ class ArtifactsPruneCliIntegrationTests:
 
         assert result.exit_code == 0
         prune_results = [item for item in dispatch_spy if isinstance(item, ArtifactsPruneResult)]
-        assert prune_results == [
-            ArtifactsPruneResult(status=ArtifactsPruneStatus.OK, dry_run=False, force=False, items=[])
-        ]
+        assert prune_results == [ArtifactsPruneResult(dry_run=False, force=False, items=[])]
 
     def test_artifacts_prune_cli_force_flag_bypasses_disabled_config(
         self, cli_runner: CliRunner, cli_workspace: Path
@@ -80,3 +81,47 @@ class ArtifactsPruneCliIntegrationTests:
 
         assert result.exit_code == 0
         assert initialized_workspace_db(cli_workspace).artifacts.get("wf_one", "dist-packages") is not None
+
+    def test_artifacts_prune_cli_disabled_prints_notice_and_exits_zero(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        _write_prune_config(cli_workspace, remove_expired_artifacts=False)
+        _seed_expired_artifact(cli_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "artifacts", "prune"])
+
+        assert result.exit_code == 0
+        assert "Artifact pruning is disabled; pass --force to override." in result.stdout
+        assert initialized_workspace_db(cli_workspace).artifacts.get("wf_one", "dist-packages") is not None
+
+    def test_artifacts_prune_cli_format_json_emits_disabled_without_status(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        _write_prune_config(cli_workspace, remove_expired_artifacts=False)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "artifacts", "prune", "--format", "json"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {
+            "event_type": "ArtifactsPruneResult",
+            "payload": {
+                "disabled": True,
+                "dry_run": False,
+                "force": False,
+                "items": [],
+                "pruned_count": 0,
+                "failed_count": 0,
+                "diagnostics": [],
+            },
+        }
+
+    def test_artifacts_prune_cli_lock_timeout_propagates(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_prune_config(cli_workspace, remove_expired_artifacts=True)
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "artifacts", "prune"])
+
+        assert result.exit_code == 1
+        assert isinstance(result.exception, LockTimeoutError)

@@ -41,10 +41,9 @@ class ArtifactsListFormatter(ComponentFormatter[ArtifactsListResult, ArtifactsLi
         return ArtifactsListView(artifacts=[_to_row(record) for record in data.artifacts])
 
     def to_json_serializable(self, data: ArtifactsListResult) -> dict[str, JsonValue]:
-        """Emit status plus every artifact row as its ArtifactRowView wire payload."""
+        """Emit every artifact row as its ArtifactRowView wire payload, plus the result's errors, warnings, remediations and diagnostics."""
         view = self.transform(data)
         return {
-            "status": data.status.value,
             "artifacts": [row.model_dump(mode="json") for row in view.artifacts],
             "errors": list(data.errors),
             "warnings": list(data.warnings),

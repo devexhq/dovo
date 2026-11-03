@@ -7,7 +7,7 @@ from rich.text import Text
 
 from dovo.cli.ui.formatters.artifacts.artifacts_views import ArtifactsPruneView
 from dovo.cli.ui.formatters.base import ComponentFormatter
-from dovo.core.artifacts.models import ArtifactsPruneResult, ArtifactsPruneStatus, PrunedArtifact
+from dovo.core.artifacts.models import ArtifactsPruneResult, PrunedArtifact
 
 
 def _render_item(item: PrunedArtifact) -> Text:
@@ -23,7 +23,7 @@ class ArtifactsPruneFormatter(ComponentFormatter[ArtifactsPruneResult, Artifacts
     def transform(self, data: ArtifactsPruneResult) -> ArtifactsPruneView:
         """Derive the presentation-ready view from ArtifactsPruneResult, including pruned/failed counts."""
         return ArtifactsPruneView(
-            status=data.status,
+            disabled=data.disabled,
             dry_run=data.dry_run,
             force=data.force,
             items=list(data.items),
@@ -35,7 +35,7 @@ class ArtifactsPruneFormatter(ComponentFormatter[ArtifactsPruneResult, Artifacts
     def to_rich(self, data: ArtifactsPruneResult) -> RenderableType:
         """Render prune action lines, disabled state, or empty state."""
         view = self.transform(data)
-        if view.status == ArtifactsPruneStatus.DISABLED:
+        if view.disabled:
             return Text("Artifact pruning is disabled; pass --force to override.")
         if not view.items:
             return Text("No expired artifacts found.")
