@@ -43,7 +43,7 @@ from dovo.core.agents.responses import (
     unfixable_response,
 )
 from dovo.core.agents.save_rejected_patch import save_rejected_patch
-from dovo.core.git import validate_patch_text
+from dovo.core.git import GitError, GitRunner, validate_patch_text
 
 CliMutationRunStatus = Literal["finished", "timeout", "error"]
 
@@ -267,9 +267,10 @@ class CliDirectMutationAdapter(BaseAgentProvider):
             watch.stop()
             return provider_error_response(duration_seconds=watch.elapsed_seconds, detail=preflight_error)
 
+        git = GitRunner()
         try:
-            baseline = resolve_pre_agent_baseline(request.worktree_path)
-        except AgentError as exc:
+            baseline = resolve_pre_agent_baseline(request.worktree_path, git=git)
+        except GitError as exc:
             watch.stop()
             return provider_error_response(
                 duration_seconds=watch.elapsed_seconds, detail=f"Failed to resolve worktree baseline: {exc}"
@@ -298,7 +299,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
             )
         )
         watch.stop()
-        response = self._respond_to_outcome(request, outcome, baseline, watch.elapsed_seconds)
+        response = self._respond_to_outcome(request, outcome, baseline, watch.elapsed_seconds, git=git)
 
         return response.model_copy(update={"env_withheld": withheld})
 
@@ -318,6 +319,8 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         outcome: CliMutationOutcome,
         baseline: str,
         duration_seconds: float,
+        *,
+        git: GitRunner,
     ) -> AgentResponse:
         """Classify a finished runner outcome into the timeout, provider-error, unfixable, blocked, no-op, or proposal response; denials block only when the worktree diff is empty."""
         if outcome.status == "timeout":
@@ -338,8 +341,8 @@ class CliDirectMutationAdapter(BaseAgentProvider):
             )
 
         try:
-            diff, _ = capture_diff_since(request.worktree_path, baseline)
-        except AgentError as exc:
+            diff, _ = capture_diff_since(request.worktree_path, baseline, git=git)
+        except GitError as exc:
             return provider_error_response(
                 duration_seconds=duration_seconds,
                 detail=f"Failed to capture worktree diff: {exc}",
@@ -347,7 +350,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 mutation_baseline_ref=baseline,
             )
 
-        unfixable = self._unfixable_outcome(request, diff, outcome, baseline, duration_seconds)
+        unfixable = self._unfixable_outcome(request, diff, outcome, baseline, duration_seconds, git=git)
         if unfixable is not None:
             return unfixable
 
@@ -368,7 +371,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         with catch_failure("agents.invoke", path=str(request.worktree_path)) as caught:
             validate_request_patch(request, diff)
         if caught.failure is not None:
-            return self._reject_gated_edit(request, caught.failure, outcome, baseline, duration_seconds)
+            return self._reject_gated_edit(request, caught.failure, outcome, baseline, duration_seconds, git=git)
 
         return AgentResponse(
             status=AgentResponseStatus.PROPOSED_PATCH,
@@ -385,9 +388,11 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         outcome: CliMutationOutcome,
         baseline: str,
         duration_seconds: float,
+        *,
+        git: GitRunner,
     ) -> AgentResponse:
         """Save the rejected edit, then discard it and return PROVIDER_ERROR carrying the validation failure's message, its record in diagnostics, the saved path, and any discard failure; a failed save leaves the worktree untouched."""
-        saved, notes, discard_detail = _save_and_discard(request, baseline)
+        saved, notes, discard_detail = _save_and_discard(request, baseline, git=git)
         response = provider_error_response(
             duration_seconds=duration_seconds,
             detail=discard_detail,
@@ -410,6 +415,8 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         outcome: CliMutationOutcome,
         baseline: str,
         duration_seconds: float,
+        *,
+        git: GitRunner,
     ) -> AgentResponse | None:
         """Return None without a non-blank unfixable report, PROVIDER_ERROR when it cannot be read, else UNFIXABLE after saving and discarding any edit in diff."""
         reason, read_error = _read_unfixable_reason(request.agent_scratch_path)
@@ -432,7 +439,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 mutation_baseline_ref=baseline,
             )
 
-        saved, notes, discard_detail = _save_and_discard(request, baseline)
+        saved, notes, discard_detail = _save_and_discard(request, baseline, git=git)
 
         response = unfixable_response(
             reason=reason,
@@ -462,14 +469,14 @@ def _progress_mapper_for(spec: ProviderSpec | None) -> ProgressMapper | None:
     return None if spec is None else spec.progress_mapper
 
 
-def _save_rejected_edit(request: AgentRequest, baseline: str) -> tuple[Path | None, str | None]:
+def _save_rejected_edit(request: AgentRequest, baseline: str, *, git: GitRunner) -> tuple[Path | None, str | None]:
     """Return ``(saved path or None, failure reason or None)``; a missing destination is a failure."""
     if request.rejected_patch_destination is None:
         return None, "no session storage directory is available"
 
     try:
-        return save_rejected_patch(request.worktree_path, baseline, request.rejected_patch_destination), None
-    except AgentError as exc:
+        return save_rejected_patch(request.worktree_path, baseline, request.rejected_patch_destination, git=git), None
+    except (AgentError, GitError) as exc:
         return None, str(exc)
 
 
@@ -517,19 +524,21 @@ def _read_report_prefix(path: Path) -> str | None:
         return report.read(UNFIXABLE_REASON_MAX_CHARS)
 
 
-def _save_and_discard(request: AgentRequest, baseline: str) -> tuple[Path | None, list[str], str | None]:
+def _save_and_discard(
+    request: AgentRequest, baseline: str, *, git: GitRunner
+) -> tuple[Path | None, list[str], str | None]:
     """Save the edit since baseline, then discard it; return ``(saved path or None, notes, discard failure detail or None)``.
 
     A failed save leaves the worktree untouched and returns only the could-not-save note.
     """
-    saved, reason = _save_rejected_edit(request, baseline)
+    saved, reason = _save_rejected_edit(request, baseline, git=git)
     if reason is not None:
         return None, [f"Could not save the rejected edit ({reason}); the worktree was left unchanged."], None
 
     discard_detail: str | None = None
     try:
-        discard_since(request.worktree_path, baseline)
-    except AgentError as exc:
+        discard_since(request.worktree_path, baseline, git=git)
+    except GitError as exc:
         discard_detail = f"Failed to discard rejected worktree edit: {exc}"
 
     if saved is None:

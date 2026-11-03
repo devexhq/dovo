@@ -31,7 +31,7 @@ from dovo.core.agents import (
     AgentResponse,
     BaseAgentProvider,
 )
-from dovo.core.git import GitProcessOutput, GitRunner
+from dovo.core.git import GitBytesOutput, GitProcessOutput, GitRunner
 
 
 class _ClaudeSubprocess:
@@ -279,6 +279,27 @@ class FakeGitRunner(GitRunner):
         env: Mapping[str, str] | None = None,
     ) -> GitProcessOutput:
         """Record args, then raise or return the response of the first key that prefixes args, else run real git."""
+        response = self._respond(args)
+        if response is not None:
+            return response
+        return super().exec(args, path, input_text=input_text, env=env)
+
+    def exec_bytes(
+        self,
+        args: Sequence[str],
+        path: Path,
+        *,
+        input_bytes: bytes | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> GitBytesOutput:
+        """Record args, then raise or return, UTF-8 encoded, the response of the first key that prefixes args, else run real git."""
+        response = self._respond(args)
+        if response is not None:
+            return GitBytesOutput(response.returncode, response.stdout.encode(), response.stderr.encode())
+        return super().exec_bytes(args, path, input_bytes=input_bytes, env=env)
+
+    def _respond(self, args: Sequence[str]) -> GitProcessOutput | None:
+        """Record args, then raise or return the response of the first key that prefixes them, or None when none does."""
         called = tuple(args)
         self.calls.append(called)
         for key, response in self.responses.items():
@@ -286,7 +307,7 @@ class FakeGitRunner(GitRunner):
                 if isinstance(response, Exception):
                     raise response
                 return response
-        return super().exec(args, path, input_text=input_text, env=env)
+        return None
 
 
 def use_fake_git(monkeypatch: pytest.MonkeyPatch, fake: FakeGitRunner) -> None:

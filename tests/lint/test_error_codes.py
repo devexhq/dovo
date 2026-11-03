@@ -1,5 +1,5 @@
 """Invariant: every ErrorCode member is named <PREFIX>_<NOUN>_<STATE>, is referenced in src/dovo, and is raised only by
-the packages its prefix names or the packages listed as sharing it.
+the packages its prefix names.
 
 Scope: the name check reads the real `ErrorCode` enum. The reference check collects every `ErrorCode.<NAME>` attribute
 in src/dovo outside `common/error_codes.py`. The raising check reads every call in src/dovo to a failure constructor
@@ -13,9 +13,6 @@ pass-through of a wrapped failure), a code built from a string, a code that is n
 `error_code=` value (`error_code=ErrorCode.X if errors else None`), a code raised through a callee named otherwise,
 an `ErrorCode` imported under an alias (`from dovo.common.error_codes import ErrorCode as EC`), whether a `_FAILED`
 name uses the verb's base form (`WORKTREE_CREATION_FAILED` would pass the name check).
-
-`SHARED` may hold only the entries in `SHARED_ALLOWED`, the two on main, which #1244 removes; the table check reports
-any other.
 """
 
 from __future__ import annotations
@@ -48,16 +45,6 @@ OWNERS: Final[dict[str, frozenset[str]]] = {
     "SESSION": frozenset({"engine", "core/sessions"}),
     "BLUEPRINT": frozenset({"engine"}),
     "INTERACTION": frozenset({"engine"}),
-}
-
-SHARED: Final[dict[str, frozenset[str]]] = {
-    "GIT_FAILED": frozenset({"core/agents", "core/worktree"}),
-    "GIT_TIMEOUT": frozenset({"core/agents"}),
-}
-
-SHARED_ALLOWED: Final[dict[str, frozenset[str]]] = {
-    "GIT_FAILED": frozenset({"core/agents", "core/worktree"}),
-    "GIT_TIMEOUT": frozenset({"core/agents"}),
 }
 
 STATES: Final[tuple[str, ...]] = (
@@ -99,7 +86,7 @@ def wrap(worktree_id):
         raise WorktreeError(exc.error_code, f"Git failed for worktree '{worktree_id}': {exc}") from exc.__cause__
 """
 
-_SHARED_RAISE_FIXTURE: Final[str] = """
+_GIT_RAISE_FIXTURE: Final[str] = """
 def check(completed):
     if completed.returncode:
         raise AgentError(ErrorCode.GIT_FAILED, "git reset failed")
@@ -168,9 +155,8 @@ def _raised_codes(modules: dict[str, str]) -> Iterator[tuple[str, int, str]]:
 
 
 def _may_raise(package: str, name: str) -> bool:
-    """Return whether package owns the prefix of name or is listed as sharing name."""
-    prefix = name.split("_", 1)[0]
-    return package in OWNERS.get(prefix, frozenset()) or package in SHARED.get(name, frozenset())
+    """Return whether package owns the prefix of name."""
+    return package in OWNERS.get(name.split("_", 1)[0], frozenset())
 
 
 def _raise_violations(modules: dict[str, str]) -> list[str]:
@@ -183,16 +169,6 @@ def _raise_violations(modules: dict[str, str]) -> list[str]:
             owners = ", ".join(sorted(OWNERS.get(prefix, frozenset()))) or "no package"
             violations.append(f"{rel_path}:{line}: {package} raises {name}, whose prefix {prefix} belongs to {owners}")
     return sorted(violations)
-
-
-def _new_shared_entries(shared: dict[str, frozenset[str]]) -> list[str]:
-    """Return '<NAME>: <package>' for each (name, package) pair in shared that SHARED_ALLOWED does not hold."""
-    return [
-        f"{name}: {package}"
-        for name, packages in shared.items()
-        for package in sorted(packages)
-        if package not in SHARED_ALLOWED.get(name, frozenset())
-    ]
 
 
 def _referenced(modules: dict[str, str]) -> set[str]:
@@ -257,7 +233,7 @@ class ErrorCodeReferenceTests:
 
 class ErrorCodeRaiserTests:
     def test_src_raises_each_literal_code_from_a_package_its_prefix_names(self) -> None:
-        """Report no literal ErrorCode passed to a call from a package that neither owns its prefix nor shares it."""
+        """Report no literal ErrorCode passed to a call from a package that does not own its prefix."""
         violations = _raise_violations(_src_modules())
 
         assert violations == [], (
@@ -276,16 +252,23 @@ class ErrorCodeRaiserTests:
                 id="foreign",
             ),
             pytest.param("src/dovo/core/worktree/services/patch.py", _PASS_THROUGH_FIXTURE, [], id="pass-through"),
-            pytest.param("src/dovo/core/agents/mutation_git.py", _SHARED_RAISE_FIXTURE, [], id="shared"),
+            pytest.param(
+                "src/dovo/core/agents/mutation_git.py",
+                _GIT_RAISE_FIXTURE,
+                [
+                    "src/dovo/core/agents/mutation_git.py:4: core/agents raises GIT_FAILED, whose prefix GIT belongs to core/git"
+                ],
+                id="git-outside-core-git",
+            ),
             pytest.param(
                 "src/dovo/core/catalog/catalog.py",
-                _SHARED_RAISE_FIXTURE,
+                _GIT_RAISE_FIXTURE,
                 [
                     "src/dovo/core/catalog/catalog.py:4: core/catalog raises GIT_FAILED, whose prefix GIT belongs to core/git",
                     "src/dovo/core/catalog/catalog.py:5: core/catalog raises AGENT_SCRATCH_UNAVAILABLE, whose prefix "
                     "AGENT belongs to core/agents",
                 ],
-                id="unlisted-sharer",
+                id="foreign-git-and-agent",
             ),
             pytest.param("src/dovo/cli/ui/formatters/labels.py", _LOOKUP_FIXTURE, [], id="lookup-not-raise"),
         ],
@@ -301,44 +284,3 @@ class ErrorCodeTableTests:
         prefixes = {member.name.split("_", 1)[0] for member in ErrorCode}
 
         assert sorted(set(OWNERS) - prefixes) == [], f"delete the OWNERS entry with no member. See {ENTRY}"
-
-    def test_every_shared_entry_is_a_member_its_sharers_raise(self) -> None:
-        """Report no SHARED code that is not a member, and no listed sharer that never raises it as a literal."""
-        raised = {(package_of(rel_path), name) for rel_path, _, name in _raised_codes(_src_modules())}
-
-        dead = [
-            f"{name}: {package}"
-            for name, packages in SHARED.items()
-            for package in sorted(packages)
-            if name not in ErrorCode.__members__ or (package, name) not in raised
-        ]
-
-        assert dead == [], f"delete the SHARED entry no package raises. See {ENTRY}"
-
-    def test_shared_lists_no_entry_beyond_the_two_on_main(self) -> None:
-        """Report no SHARED entry that SHARED_ALLOWED does not hold."""
-        assert _new_shared_entries(SHARED) == [], (
-            f"raise a code under the package's own prefix instead of sharing another package's code. See {ENTRY}"
-        )
-
-    @pytest.mark.parametrize(
-        ("shared", "expected"),
-        [
-            pytest.param(
-                {**SHARED_ALLOWED, "PATCH_APPLY_FAILED": frozenset({"core/agents"})},
-                ["PATCH_APPLY_FAILED: core/agents"],
-                id="new-code",
-            ),
-            pytest.param(
-                {**SHARED_ALLOWED, "GIT_FAILED": frozenset({"core/agents", "core/catalog", "core/worktree"})},
-                ["GIT_FAILED: core/catalog"],
-                id="new-sharer",
-            ),
-            pytest.param(SHARED_ALLOWED, [], id="on-main"),
-        ],
-    )
-    def test_rule_flags_shared_entries_beyond_the_two_on_main(
-        self, shared: dict[str, frozenset[str]], expected: list[str]
-    ) -> None:
-        """Return expected from _new_shared_entries for shared."""
-        assert _new_shared_entries(shared) == expected

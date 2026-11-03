@@ -1,12 +1,13 @@
 """Low-level Git execution and unified-diff validation package."""
 
 from .exceptions import GitError, MalformedDiffHeader, git_command_error
-from .models import GitProcessOutput, GitWorktreeEntry, WorkTreeDiff
+from .models import GitBytesOutput, GitProcessOutput, GitWorktreeEntry, WorkTreeDiff
 from .patch import GitDiffParser, validate_patch_text
-from .runner import GitRunner, parse_worktree_porcelain
+from .runner import GitRunner, extract_conflicts, parse_worktree_porcelain
 from .tree_diff import diff_work_tree
 
 __all__ = [
+    "GitBytesOutput",
     "GitDiffParser",
     "GitError",
     "GitProcessOutput",
@@ -15,6 +16,7 @@ __all__ = [
     "MalformedDiffHeader",
     "WorkTreeDiff",
     "diff_work_tree",
+    "extract_conflicts",
     "git_command_error",
     "parse_worktree_porcelain",
     "validate_patch_text",
