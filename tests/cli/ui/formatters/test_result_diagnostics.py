@@ -38,12 +38,9 @@ from dovo.core.config import (
 from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
 from dovo.core.sessions import (
     DiffResult,
-    DiffStatus,
     HistoryListResult,
     HistoryShowResult,
-    HistoryShowStatus,
     LogsShowResult,
-    LogsShowStatus,
 )
 from dovo.core.status import (
     CatalogStatusInfo,
@@ -129,10 +126,14 @@ SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
         existed=False,
         diagnostics=[RECORD],
     ),
-    DiffResult: lambda: DiffResult(status=DiffStatus.SESSION_NOT_FOUND, diagnostics=[RECORD]),
+    DiffResult: lambda: DiffResult(error_code="SESSION_NOT_FOUND", errors=["No sessions found."], diagnostics=[RECORD]),
     HistoryListResult: lambda: HistoryListResult(diagnostics=[RECORD]),
-    HistoryShowResult: lambda: HistoryShowResult(status=HistoryShowStatus.NOT_FOUND, diagnostics=[RECORD]),
-    LogsShowResult: lambda: LogsShowResult(status=LogsShowStatus.SESSION_NOT_FOUND, diagnostics=[RECORD]),
+    HistoryShowResult: lambda: HistoryShowResult(
+        error_code="SESSION_NOT_FOUND", errors=["No sessions found."], diagnostics=[RECORD]
+    ),
+    LogsShowResult: lambda: LogsShowResult(
+        error_code="SESSION_NOT_FOUND", errors=["No sessions found."], diagnostics=[RECORD]
+    ),
     WorkspaceInitResult: lambda: WorkspaceInitResult(
         error_code="INTERNAL_ERROR", errors=["boom"], diagnostics=[RECORD]
     ),

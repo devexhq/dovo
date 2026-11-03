@@ -9,17 +9,15 @@ from pathlib import Path
 import pytest
 from sqlmodel import select
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.sessions import (
-    DiffStatus,
-    HistoryListStatus,
+    DiffResult,
     HistoryShowResult,
-    HistoryShowStatus,
     LogsShowResult,
-    LogsShowStatus,
     LogStreamFilter,
     Reconciliation,
     Session,
@@ -31,6 +29,16 @@ from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.lock import time_out_first_lock
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_paths
+
+_NO_SESSIONS_REMEDIATION = Remediation(
+    message="Run 'dovo run <blueprint>' to create a session", command="dovo run <blueprint>"
+)
+_SESSION_LIST_REMEDIATION = Remediation(
+    message="Run 'dovo session list' to view past sessions", command="dovo session list"
+)
+_SESSION_IDS_REMEDIATION = Remediation(
+    message="Run 'dovo session list' to list valid session IDs", command="dovo session list"
+)
 
 
 def _write_patch(paths: WorkspacePaths, session_id: str, diff_text: str) -> Path:
@@ -61,6 +69,18 @@ def _write_session_log(session_log_dir: Path, step_ids: list[str]) -> list[Sessi
     (session_log_dir / "session.log").write_text("".join(e.model_dump_json() + "\n" for e in events), encoding="utf-8")
     lines = (session_log_dir / "session.log").read_text(encoding="utf-8").splitlines()
     return [SessionLogEvent.model_validate_json(line) for line in lines]
+
+
+def _deny_reads(monkeypatch: pytest.MonkeyPatch, suffix: str) -> None:
+    """Make every Path.read_text of a file with suffix raise PermissionError("denied"), leaving other reads alone."""
+    original = Path.read_text
+
+    def _read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.suffix == suffix:
+            raise PermissionError("denied")
+        return original(self, *args, **kwargs)  # ty: ignore[invalid-argument-type]  # pass-through of the real call
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
 
 
 def _as_expected_record(record: SessionRecord) -> SessionRecord:
@@ -100,21 +120,37 @@ def _seed_run(db: SessionsRepository, session_id: str, started_at: str) -> Sessi
 
 
 class SessionDiffTests:
-    def test_diff_with_run_record_and_patch_returns_ok_with_exact_path_and_text(self, isolated_workspace: Path) -> None:
+    def test_diff_with_run_record_and_patch_returns_success_with_exact_path_and_text(
+        self, isolated_workspace: Path
+    ) -> None:
         paths = initialized_workspace_paths(isolated_workspace)
         session = Session(paths, "session-626")
-        session.db.create(
-            session_id="session-626", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
-        )
+        _create(session.db, "session-626")
         patch_text = "diff --git a/file.txt b/file.txt\n-old\n+new\n"
         _write_patch(paths, "session-626", patch_text)
 
         result = session.diff()
 
-        assert result.status == DiffStatus.OK
-        assert result.session_id == "session-626"
-        assert result.diff_text == patch_text
-        assert result.artifact_path == paths.session_dir("session-626") / "diff.patch"
+        assert result == DiffResult(
+            session_id="session-626",
+            artifact_path=paths.session_dir("session-626") / "diff.patch",
+            diff_text=patch_text,
+        )
+        assert result.ok is True
+
+    @pytest.mark.parametrize("patch_text", [pytest.param("", id="empty"), pytest.param("  \n\n", id="whitespace")])
+    def test_diff_with_blank_patch_is_a_success_with_empty_text(
+        self, isolated_workspace: Path, patch_text: str
+    ) -> None:
+        paths = initialized_workspace_paths(isolated_workspace)
+        session = Session(paths, "session-blank")
+        _create(session.db, "session-blank")
+        patch_path = _write_patch(paths, "session-blank", patch_text)
+
+        result = session.diff()
+
+        assert result == DiffResult(session_id="session-blank", artifact_path=patch_path, diff_text="")
+        assert result.ok is True
 
     def test_diff_with_session_directory_but_no_run_record_returns_session_not_found(
         self, isolated_workspace: Path
@@ -124,12 +160,49 @@ class SessionDiffTests:
 
         result = Session(paths, "orphan").diff()
 
-        assert result.status == DiffStatus.SESSION_NOT_FOUND
-        assert result.errors == ["Session 'orphan' not found."]
-        assert result.remediations == [
-            Remediation(message="Run 'dovo session list' to list valid session IDs", command="dovo session list")
-        ]
-        assert result.artifact_path is None
+        assert result == DiffResult(
+            session_id="orphan",
+            error_code=ErrorCode.SESSION_NOT_FOUND,
+            errors=["Session 'orphan' not found."],
+            remediations=[_SESSION_IDS_REMEDIATION],
+        )
+
+    def test_diff_without_artifact_returns_diff_not_found_naming_the_artifact_path(
+        self, isolated_workspace: Path
+    ) -> None:
+        paths = initialized_workspace_paths(isolated_workspace)
+        session = Session(paths, "session-no-diff")
+        _create(session.db, "session-no-diff")
+        patch_path = paths.session_dir("session-no-diff") / "diff.patch"
+
+        result = session.diff()
+
+        assert result == DiffResult(
+            session_id="session-no-diff",
+            error_code=ErrorCode.SESSION_DIFF_NOT_FOUND,
+            errors=["Session 'session-no-diff' has no diff artifact."],
+            remediations=[Remediation(message=f"Verify the session generated a diff artifact at '{patch_path}'")],
+        )
+
+    def test_diff_with_unreadable_artifact_returns_diff_unreadable_and_records_the_os_error(
+        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        paths = initialized_workspace_paths(isolated_workspace)
+        session = Session(paths, "session-locked")
+        _create(session.db, "session-locked")
+        patch_path = _write_patch(paths, "session-locked", "diff --git a/f.txt b/f.txt\n")
+        _deny_reads(monkeypatch, ".patch")
+
+        result = session.diff()
+
+        assert result == DiffResult(
+            session_id="session-locked",
+            error_code=ErrorCode.SESSION_DIFF_UNREADABLE,
+            errors=[f"Failed to read diff artifact at '{patch_path}': denied"],
+            remediations=[Remediation(message="Check file permissions and that the artifact is readable")],
+            diagnostics=[diagnostic_record(frozen_diagnostic_clock)],
+        )
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "sessions.diff"
 
 
 class SessionCollectionLatestDiffTests:
@@ -143,7 +216,7 @@ class SessionCollectionLatestDiffTests:
 
         result = sessions.latest_diff()
 
-        assert result.status == DiffStatus.OK
+        assert result.error_code is None
         assert result.session_id == "later-run"
 
     def test_latest_diff_with_equal_started_at_selects_greatest_id(self, isolated_workspace: Path) -> None:
@@ -166,12 +239,11 @@ class SessionCollectionLatestDiffTests:
     ) -> None:
         result = SessionCollection(initialized_workspace_paths(isolated_workspace)).latest_diff()
 
-        assert result.status == DiffStatus.SESSION_NOT_FOUND
-        assert result.session_id is None
-        assert result.errors == ["No sessions found."]
-        assert result.remediations == [
-            Remediation(message="Run 'dovo run <blueprint>' to create a session", command="dovo run <blueprint>")
-        ]
+        assert result == DiffResult(
+            error_code=ErrorCode.SESSION_NOT_FOUND,
+            errors=["No sessions found."],
+            remediations=[_NO_SESSIONS_REMEDIATION],
+        )
 
 
 class SessionCollectionLatestTests:
@@ -185,45 +257,57 @@ class SessionCollectionLatestTests:
         details = sessions.latest_details()
         logs = sessions.latest_logs()
 
-        assert details.status == HistoryShowStatus.OK
+        assert details.error_code is None
         assert details.session_id == "later-run"
-        assert logs.status == LogsShowStatus.OK
+        assert logs.error_code is None
         assert logs.session_id == "later-run"
 
     @pytest.mark.parametrize(
-        ("resolve", "expected_status"),
+        "resolve",
         [
-            pytest.param(lambda sessions: sessions.latest_details(), HistoryShowStatus.NOT_FOUND, id="details"),
-            pytest.param(lambda sessions: sessions.latest_logs(), LogsShowStatus.SESSION_NOT_FOUND, id="logs"),
+            pytest.param(lambda sessions: sessions.latest_details(), id="details"),
+            pytest.param(lambda sessions: sessions.latest_logs(), id="logs"),
         ],
     )
     def test_latest_methods_without_sessions_return_not_found_with_create_session_fix(
         self,
         isolated_workspace: Path,
         resolve: Callable[[SessionCollection], HistoryShowResult | LogsShowResult],
-        expected_status: HistoryShowStatus | LogsShowStatus,
     ) -> None:
         result = resolve(SessionCollection(initialized_workspace_paths(isolated_workspace)))
 
-        assert result.status == expected_status
+        assert result.error_code == ErrorCode.SESSION_NOT_FOUND
         assert result.session_id is None
         assert result.errors == ["No sessions found."]
-        assert result.remediations == [
-            Remediation(message="Run 'dovo run <blueprint>' to create a session", command="dovo run <blueprint>")
-        ]
+        assert result.remediations == [_NO_SESSIONS_REMEDIATION]
 
 
 class SessionLogsTests:
     def test_logs_returns_session_not_found_when_no_run_record_exists(self, isolated_workspace: Path) -> None:
         result = Session(initialized_workspace_paths(isolated_workspace), "ghost").logs()
 
-        assert (result.status, result.session_id, result.events, result.lines) == (
-            LogsShowStatus.SESSION_NOT_FOUND,
-            "ghost",
-            [],
-            [],
+        assert result == LogsShowResult(
+            session_id="ghost",
+            error_code=ErrorCode.SESSION_NOT_FOUND,
+            errors=["Session 'ghost' not found."],
+            remediations=[_SESSION_LIST_REMEDIATION],
         )
         assert result.ok is False
+
+    def test_logs_returns_session_not_found_when_the_log_directory_was_never_created(
+        self, isolated_workspace: Path
+    ) -> None:
+        session = Session(initialized_workspace_paths(isolated_workspace), "no-logs")
+        _create(session.db, "no-logs")
+
+        result = session.logs()
+
+        assert result == LogsShowResult(
+            session_id="no-logs",
+            error_code=ErrorCode.SESSION_NOT_FOUND,
+            errors=["No logs found for session 'no-logs'."],
+            remediations=[_SESSION_LIST_REMEDIATION],
+        )
 
     def test_logs_default_returns_parsed_run_log_events_in_written_order(self, isolated_workspace: Path) -> None:
         session = Session(initialized_workspace_paths(isolated_workspace), "sess")
@@ -232,9 +316,7 @@ class SessionLogsTests:
 
         result = session.logs()
 
-        assert result.status == LogsShowStatus.OK
-        assert result.events == written
-        assert result.lines == []
+        assert result == LogsShowResult(session_id="sess", events=written)
 
     def test_logs_skips_unparseable_trailing_run_log_line(self, isolated_workspace: Path) -> None:
         session = Session(initialized_workspace_paths(isolated_workspace), "sess")
@@ -245,17 +327,36 @@ class SessionLogsTests:
 
         result = session.logs()
 
-        assert result.status == LogsShowStatus.OK
+        assert result.error_code is None
         assert result.events == written
 
-    def test_logs_unknown_step_returns_step_not_found_with_available_steps(self, isolated_workspace: Path) -> None:
+    @pytest.mark.parametrize(
+        ("captured", "expected_message"),
+        [
+            pytest.param(
+                ["01_build_attempt_1.stdout.log", "02_lint_attempt_1.stdout.log"],
+                "Step 'missing' not found in session 'sess'. Available steps: build, lint.",
+                id="captured-steps",
+            ),
+            pytest.param([], "Step 'missing' not found in session 'sess'. Available steps: none.", id="no-captures"),
+        ],
+    )
+    def test_logs_unknown_step_returns_step_not_found_with_available_steps(
+        self, isolated_workspace: Path, captured: list[str], expected_message: str
+    ) -> None:
         session = Session(initialized_workspace_paths(isolated_workspace), "sess")
         session_log_dir = _seed_session(session, isolated_workspace)
-        (session_log_dir / "01_build_attempt_1.stdout.log").write_text("out\n", encoding="utf-8")
+        for name in captured:
+            (session_log_dir / name).write_text("out\n", encoding="utf-8")
 
         result = session.logs(step="missing")
 
-        assert (result.status, result.available_steps) == (LogsShowStatus.STEP_NOT_FOUND, ["build"])
+        assert result == LogsShowResult(
+            session_id="sess",
+            error_code=ErrorCode.SESSION_STEP_NOT_FOUND,
+            errors=[expected_message],
+            available_steps=[name.split("_")[1] for name in captured],
+        )
 
     def test_logs_unknown_attempt_returns_attempt_not_found_with_available_attempts(
         self, isolated_workspace: Path
@@ -263,10 +364,16 @@ class SessionLogsTests:
         session = Session(initialized_workspace_paths(isolated_workspace), "sess")
         session_log_dir = _seed_session(session, isolated_workspace)
         (session_log_dir / "01_build_attempt_1.stdout.log").write_text("out\n", encoding="utf-8")
+        (session_log_dir / "01_build_attempt_3.stdout.log").write_text("out\n", encoding="utf-8")
 
         result = session.logs(step="build", attempt=2)
 
-        assert (result.status, result.available_attempts) == (LogsShowStatus.ATTEMPT_NOT_FOUND, [1])
+        assert result == LogsShowResult(
+            session_id="sess",
+            error_code=ErrorCode.SESSION_ATTEMPT_NOT_FOUND,
+            errors=["Attempt 2 not found for step 'build' in session 'sess'. Available attempts: 1, 3."],
+            available_attempts=[1, 3],
+        )
 
     def test_logs_step_tail_returns_only_last_n_lines(self, isolated_workspace: Path) -> None:
         session = Session(initialized_workspace_paths(isolated_workspace), "sess")
@@ -293,42 +400,58 @@ class SessionLogsTests:
 
         result = session.logs(step="build", stream=LogStreamFilter.STDOUT)
 
-        assert (result.status, result.lines) == (LogsShowStatus.OK, ["ok", "�"])
+        assert (result.error_code, result.lines) == (None, ["ok", "�"])
 
-    @pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file permissions")
-    def test_logs_unreadable_step_log_returns_error_result(self, isolated_workspace: Path) -> None:
+    @pytest.mark.parametrize(
+        ("step", "seed_name"),
+        [
+            pytest.param("build", "01_build_attempt_1.stdout.log", id="step-capture"),
+            pytest.param(None, "session.log", id="session-log"),
+        ],
+    )
+    def test_logs_unreadable_log_file_returns_logs_unreadable_and_records_the_os_error(
+        self,
+        isolated_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+        step: str | None,
+        seed_name: str,
+    ) -> None:
         session = Session(initialized_workspace_paths(isolated_workspace), "sess")
         session_log_dir = _seed_session(session, isolated_workspace)
-        capture = session_log_dir / "01_build_attempt_1.stdout.log"
-        capture.write_text("out\n", encoding="utf-8")
-        capture.chmod(0)
+        (session_log_dir / seed_name).write_text("out\n", encoding="utf-8")
+        _deny_reads(monkeypatch, ".log")
 
-        result = session.logs(step="build")
+        result = session.logs(step=step)
 
-        assert result.ok is False
-        assert len(result.errors) == 1
-        assert "Permission denied" in result.errors[0]
+        assert result == LogsShowResult(
+            session_id="sess",
+            error_code=ErrorCode.SESSION_LOGS_UNREADABLE,
+            errors=[f"Failed reading session logs in '{session_log_dir}': denied"],
+            diagnostics=[diagnostic_record(frozen_diagnostic_clock)],
+        )
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "sessions.logs"
 
 
 class SessionCollectionListTests:
     """Integration tests for SessionCollection.list querying and reconciliation."""
 
-    def test_empty_database_returns_ok_status_with_empty_runs(self, isolated_workspace: Path) -> None:
+    def test_empty_database_returns_success_with_empty_runs(self, isolated_workspace: Path) -> None:
         sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
 
         result = sessions.list()
 
-        assert result.status == HistoryListStatus.OK
+        assert result.error_code is None
         assert result.sessions == []
 
-    def test_unfiltered_list_returns_runs_ordered_with_ok_status(self, isolated_workspace: Path) -> None:
+    def test_unfiltered_list_returns_runs_ordered_newest_first(self, isolated_workspace: Path) -> None:
         sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
         session_first = _create(sessions.db, "session-001")
         session_second = _create(sessions.db, "session-002", SessionStatus.FAILED)
 
         result = sessions.list()
 
-        assert result.status == HistoryListStatus.OK
+        assert result.error_code is None
         assert result.sessions == [_as_expected_record(session_second), _as_expected_record(session_first)]
 
     def test_limit_parameter_restricts_number_of_returned_runs(self, isolated_workspace: Path) -> None:
@@ -339,7 +462,7 @@ class SessionCollectionListTests:
 
         result = sessions.list(limit=1)
 
-        assert result.status == HistoryListStatus.OK
+        assert result.error_code is None
         assert result.sessions == [_as_expected_record(session_third)]
 
     @pytest.mark.parametrize(
@@ -368,7 +491,7 @@ class SessionCollectionListTests:
 
         result = sessions.list(status=status_arg)
 
-        assert result.status == HistoryListStatus.OK
+        assert result.error_code is None
         assert result.sessions == [_as_expected_record(lookup[expected_session_id])]
 
     def test_unknown_status_filter_fallback_passes_raw_string_to_query(self, isolated_workspace: Path) -> None:
@@ -377,7 +500,7 @@ class SessionCollectionListTests:
 
         result = sessions.list(status="nonexistent_status_value")
 
-        assert result.status == HistoryListStatus.OK
+        assert result.error_code is None
         assert result.sessions == []
 
     def test_stale_run_reconciliation_warning_is_captured_in_result(
@@ -392,25 +515,45 @@ class SessionCollectionListTests:
 
         result = sessions.list()
 
-        assert result.status == HistoryListStatus.OK
+        assert result.error_code is None
         assert result.sessions == []
         assert result.warnings == ["Session was terminated abnormally"]
 
     def test_list_copies_reconciliation_record(
         self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """With SessionsRepository.list raising only under the reconcile lock, return OK sessions, no warning for it and diagnostics [the sessions.reconcile record]."""
+        """With SessionsRepository.list raising only under the reconcile lock, return the sessions, no warning for it and diagnostics [the sessions.reconcile record]."""
         sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
         session_first = _create(sessions.db, "session-001")
         fail_reconciliation_list(monkeypatch)
 
         result = sessions.list()
 
-        assert result.status == HistoryListStatus.OK
+        assert result.error_code is None
         assert result.sessions == [_as_expected_record(session_first)]
         assert result.warnings == []
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         assert read_single_event(frozen_diagnostic_clock)["operation"] == "sessions.reconcile"
+
+    def test_list_reports_an_unexpected_query_failure_as_internal_error(
+        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """With SessionsRepository.list raising RuntimeError("boom") after reconciliation, return INTERNAL_ERROR and its record."""
+        sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
+
+        def _boom(*_args: object, **_kwargs: object) -> list[SessionRecord]:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(SessionsRepository, "list", _boom)
+        monkeypatch.setattr("dovo.core.sessions.sessions.reconcile_stale_sessions", lambda *a, **k: Reconciliation())
+
+        result = sessions.list()
+
+        assert result.error_code == ErrorCode.INTERNAL_ERROR
+        assert result.errors == ["Unexpected error during sessions.list: boom"]
+        assert result.sessions == []
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "sessions.list"
 
     def test_list_propagates_reconciliation_lock_timeout(
         self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
@@ -435,17 +578,14 @@ class SessionDetailsTests:
         known = sessions.get("known").details()
         unknown = sessions.get("ghost").details()
 
-        assert (known.status, known.session_id, known.session) == (
-            HistoryShowStatus.OK,
-            "known",
-            _as_expected_record(seeded),
+        assert known == HistoryShowResult(session_id="known", session=_as_expected_record(seeded))
+        assert unknown == HistoryShowResult(
+            session_id="ghost",
+            error_code=ErrorCode.SESSION_NOT_FOUND,
+            errors=["Session 'ghost' not found."],
+            remediations=[_SESSION_LIST_REMEDIATION],
         )
-        assert (unknown.status, unknown.session_id, unknown.session, unknown.ok) == (
-            HistoryShowStatus.NOT_FOUND,
-            "ghost",
-            None,
-            False,
-        )
+        assert (known.ok, unknown.ok) == (True, False)
 
 
 class SessionDetailsWorktreeOutcomeTests:
@@ -522,18 +662,25 @@ class SessionDetailsIncludeLogsTests:
 
         assert (result.log_files, result.log_snippet) == ([], [])
 
-    @pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file permissions")
-    def test_details_include_logs_unreadable_run_log_returns_error_result(self, isolated_workspace: Path) -> None:
+    def test_details_include_logs_unreadable_run_log_returns_logs_unreadable_with_the_record_and_its_diagnostic(
+        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
         session = Session(initialized_workspace_paths(isolated_workspace), "sess")
         session_log_dir = self._seed_logged_session(session, isolated_workspace)
-        (session_log_dir / "session.log").chmod(0)
+        seeded = session.db.get("sess")
+        _deny_reads(monkeypatch, ".log")
 
         result = session.details(include_logs=True)
 
-        assert result.ok is False
-        assert (result.log_files, result.log_snippet) == ([], [])
-        assert len(result.errors) == 1
-        assert "Permission denied" in result.errors[0]
+        assert seeded is not None
+        assert result == HistoryShowResult(
+            session_id="sess",
+            session=_as_expected_record(seeded),
+            error_code=ErrorCode.SESSION_LOGS_UNREADABLE,
+            errors=[f"Failed reading session logs in '{session_log_dir}': denied"],
+            diagnostics=[diagnostic_record(frozen_diagnostic_clock)],
+        )
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "sessions.details"
 
 
 class SessionHistoryRedactionTests:
@@ -601,7 +748,7 @@ class SessionHistoryRedactionTests:
 
         result = session.logs(step="build")
 
-        assert result.status == LogsShowStatus.OK
+        assert result.error_code is None
         assert result.lines == ["[REDACTED:SVC_TOKEN]"]
 
     def test_already_masked_log_line_is_returned_unchanged(
@@ -629,8 +776,8 @@ def _logs_of_missing_row(workspace: Path) -> LogsShowResult:
 
 def _logs_of_missing_log_dir(workspace: Path) -> LogsShowResult:
     """Return logs() for a session record whose log directory was never created."""
-    session = Session(initialized_workspace_paths(workspace), "no-logs")
-    _create(session.db, "no-logs")
+    session = Session(initialized_workspace_paths(workspace), "ghost")
+    _create(session.db, "ghost")
     return session.logs()
 
 
@@ -638,23 +785,22 @@ class SessionNotFoundRemediationTests:
     """Domain tests pinning the session-list remediation on not-found session results."""
 
     @pytest.mark.parametrize(
-        ("call", "expected_status"),
+        ("call", "expected_message"),
         [
-            pytest.param(_details_of_missing_row, HistoryShowStatus.NOT_FOUND, id="details-missing-row"),
-            pytest.param(_logs_of_missing_row, LogsShowStatus.SESSION_NOT_FOUND, id="logs-missing-row"),
-            pytest.param(_logs_of_missing_log_dir, LogsShowStatus.SESSION_NOT_FOUND, id="logs-missing-dir"),
+            pytest.param(_details_of_missing_row, "Session 'ghost' not found.", id="details-missing-row"),
+            pytest.param(_logs_of_missing_row, "Session 'ghost' not found.", id="logs-missing-row"),
+            pytest.param(_logs_of_missing_log_dir, "No logs found for session 'ghost'.", id="logs-missing-dir"),
         ],
     )
     def test_not_found_results_carry_session_list_remediation(
         self,
         isolated_workspace: Path,
         call: Callable[[Path], HistoryShowResult | LogsShowResult],
-        expected_status: HistoryShowStatus | LogsShowStatus,
+        expected_message: str,
     ) -> None:
-        """Return the not-found status with remediations == [Remediation(message="Run 'dovo session list' to view past sessions", command="dovo session list")]."""
+        """Return SESSION_NOT_FOUND with expected_message and remediations == [Remediation(message="Run 'dovo session list' to view past sessions", command="dovo session list")]."""
         result = call(isolated_workspace)
 
-        assert result.status == expected_status
-        assert result.remediations == [
-            Remediation(message="Run 'dovo session list' to view past sessions", command="dovo session list")
-        ]
+        assert result.error_code == ErrorCode.SESSION_NOT_FOUND
+        assert result.errors == [expected_message]
+        assert result.remediations == [_SESSION_LIST_REMEDIATION]

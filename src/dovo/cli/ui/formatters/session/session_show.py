@@ -17,31 +17,25 @@ from dovo.cli.ui.formatters.session.common import (
     build_steps_table,
 )
 from dovo.cli.ui.formatters.session.session_views import SessionShowView
-from dovo.common.models import Remediation
+from dovo.common.error_codes import ErrorCode
 from dovo.common.utils import display_path
-from dovo.core.sessions import HistoryShowResult, HistoryShowStatus
+from dovo.core.sessions import HistoryShowResult
 
 
-def _render_show_not_found(session_id: str | None, remediations: list[Remediation]) -> Panel:
-    """Render error panel when requested session record is not found."""
-    default = f"Session '{session_id}' not found." if session_id else "No sessions found."
-    return build_error_panel("Session Not Found", default=default, remediations=remediations)
-
-
-def _render_show_error(errors: list[str], remediations: list[Remediation]) -> Panel:
-    """Render error panel when session show encounters errors."""
-    return build_error_panel("Session Show Failed", errors=errors, remediations=remediations)
+def _panel_title(view: SessionShowView) -> str:
+    """Return the error panel title for the view's error_code."""
+    if view.error_code == ErrorCode.SESSION_NOT_FOUND:
+        return "Session Not Found"
+    if view.error_code == ErrorCode.SESSION_LOGS_UNREADABLE:
+        return "Read Failure"
+    return "Session Show Failed"
 
 
 def _render_show_error_panel(view: SessionShowView) -> Panel | None:
-    """Check and render error panels for session show operation."""
-    if view.status == HistoryShowStatus.NOT_FOUND or (view.session is None and not view.errors):
-        return _render_show_not_found(view.session_id, view.remediations)
-
-    if view.errors:
-        return _render_show_error(view.errors, view.remediations)
-
-    return None
+    """Render the error panel for a failed view, titled by its error_code, or None when the view succeeded."""
+    if view.error_code is None:
+        return None
+    return build_error_panel(_panel_title(view), view.errors, remediations=view.remediations)
 
 
 def _render_show_body(view: SessionShowView) -> RenderableType:
@@ -111,7 +105,6 @@ class SessionShowFormatter(ComponentFormatter[HistoryShowResult, SessionShowView
         """
         session_summary = build_session_summary(data.session) if data.session is not None else None
         return SessionShowView(
-            status=data.status,
             session_id=data.session_id,
             session=session_summary,
             log_files=list(data.log_files),
@@ -122,6 +115,7 @@ class SessionShowFormatter(ComponentFormatter[HistoryShowResult, SessionShowView
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.remediations),
+            error_code=data.error_code,
             diagnostics=list(data.diagnostics),
         )
 

@@ -14,23 +14,12 @@ from dovo.common.models import BaseResult
 from dovo.core.db import SessionRecord
 
 
-class DiffStatus(StrEnum):
-    """Classified outcomes for retrieving session diff."""
-
-    OK = "ok"
-    EMPTY_DIFF = "empty_diff"
-    SESSION_NOT_FOUND = "session_not_found"
-    DIFF_NOT_FOUND = "diff_not_found"
-    READ_FAILURE = "read_failure"
-
-
 class DiffResult(BaseResult):
     """Structured result of diff collection before rendering.
 
     ``full``, ``max_lines`` and ``latest`` are transient presentation flags set by the CLI, not domain facts.
     """
 
-    status: DiffStatus
     session_id: str | None = None
     artifact_path: Path | None = None
     diff_text: str = ""
@@ -40,8 +29,8 @@ class DiffResult(BaseResult):
 
     @property
     def ok(self) -> bool:
-        """True when diff retrieved successfully or clean empty diff."""
-        return self.status in (DiffStatus.OK, DiffStatus.EMPTY_DIFF) and not self.errors
+        """True exactly when error_code is None."""
+        return self.error_code is None
 
 
 class SessionLogEventType(StrEnum):
@@ -94,15 +83,6 @@ class SessionLogEvent(BaseModel):
         return self.model_dump(exclude={"ts", "event", "conditions"}, exclude_none=True)
 
 
-class LogsShowStatus(StrEnum):
-    """Classified outcome for showing persisted session logs."""
-
-    OK = "ok"
-    SESSION_NOT_FOUND = "session_not_found"
-    STEP_NOT_FOUND = "step_not_found"
-    ATTEMPT_NOT_FOUND = "attempt_not_found"
-
-
 class LogStreamFilter(StrEnum):
     """Which output stream(s) `dovo logs --stream` selects."""
 
@@ -114,7 +94,6 @@ class LogStreamFilter(StrEnum):
 class LogsShowResult(BaseResult):
     """Structured result for `dovo logs` before rendering."""
 
-    status: LogsShowStatus
     session_id: str | None = None
     lines: list[str] = Field(default_factory=list)
     events: list[SessionLogEvent] = Field(default_factory=list)
@@ -123,33 +102,19 @@ class LogsShowResult(BaseResult):
 
     @property
     def ok(self) -> bool:
-        """True when log content is available to render."""
-        return self.status == LogsShowStatus.OK and not self.errors
-
-
-class HistoryListStatus(StrEnum):
-    """Classified outcome for listing execution history."""
-
-    OK = "ok"
+        """True exactly when error_code is None."""
+        return self.error_code is None
 
 
 class HistoryListResult(BaseResult):
     """Structured result for session list before rendering."""
 
-    status: HistoryListStatus = HistoryListStatus.OK
     sessions: list[SessionRecord] = Field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        """True when listing can proceed (including empty tables)."""
-        return self.status == HistoryListStatus.OK and not self.errors
-
-
-class HistoryShowStatus(StrEnum):
-    """Classified outcome for showing history session detail."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
+        """True exactly when error_code is None."""
+        return self.error_code is None
 
 
 class StepRunSummary(BaseModel):
@@ -181,7 +146,6 @@ class StepRunSummary(BaseModel):
 class HistoryShowResult(BaseResult):
     """Structured result for session show before rendering."""
 
-    status: HistoryShowStatus
     session_id: str | None = None
     session: SessionRecord | None = None
     log_files: list[str] = Field(default_factory=list)
@@ -192,8 +156,8 @@ class HistoryShowResult(BaseResult):
 
     @property
     def ok(self) -> bool:
-        """True when a session record is available to render."""
-        return self.status == HistoryShowStatus.OK and self.session is not None and not self.errors
+        """True exactly when error_code is None."""
+        return self.error_code is None
 
 
 @dataclass(frozen=True, slots=True)

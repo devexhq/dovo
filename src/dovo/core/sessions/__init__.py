@@ -1,14 +1,11 @@
 """Session domain: Session and SessionCollection entrypoints, result models, and stale-run reconciliation."""
 
+from dovo.core.sessions.exceptions import SessionError
 from dovo.core.sessions.models import (
     DiffResult,
-    DiffStatus,
     HistoryListResult,
-    HistoryListStatus,
     HistoryShowResult,
-    HistoryShowStatus,
     LogsShowResult,
-    LogsShowStatus,
     LogStreamFilter,
     Reconciliation,
     SessionLogEvent,
@@ -25,17 +22,14 @@ from dovo.core.sessions.sessions import Session, SessionCollection, history_reda
 __all__ = [
     "STALE_RUN_ERROR_MESSAGE",
     "DiffResult",
-    "DiffStatus",
     "HistoryListResult",
-    "HistoryListStatus",
     "HistoryShowResult",
-    "HistoryShowStatus",
     "LogStreamFilter",
     "LogsShowResult",
-    "LogsShowStatus",
     "Reconciliation",
     "Session",
     "SessionCollection",
+    "SessionError",
     "SessionLogEvent",
     "SessionLogEventType",
     "StepRunSummary",

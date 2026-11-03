@@ -9,6 +9,8 @@ from typing import NamedTuple
 from pydantic import ValidationError
 
 from dovo.common.constants import SESSION_LOG_FILENAME
+from dovo.common.error_codes import ErrorCode
+from dovo.core.sessions.exceptions import SessionError
 from dovo.core.sessions.models import LogStreamFilter, SessionLogEvent
 
 _STEP_LOG_NAME_RE = re.compile(
@@ -34,6 +36,13 @@ def _apply_tail[T](items: list[T], tail: int | None) -> list[T]:
     return items[max(len(items) - tail, 0) :]
 
 
+def _unreadable(session_log_dir: Path, error: OSError) -> SessionError:
+    """Return the SESSION_LOGS_UNREADABLE failure for a log file under session_log_dir that could not be read."""
+    return SessionError(
+        ErrorCode.SESSION_LOGS_UNREADABLE, f"Failed reading session logs in '{session_log_dir}': {error}"
+    )
+
+
 def _parse_step_log_file(path: Path) -> _StepLogFile | None:
     """Parse a capture filename into its identity, or None when it is not a step log."""
     match = _STEP_LOG_NAME_RE.match(path.name)
@@ -50,21 +59,39 @@ def _parse_step_log_file(path: Path) -> _StepLogFile | None:
 
 
 def list_session_log_files(session_log_dir: Path) -> list[Path]:
-    """Return sorted log file paths under session_log_dir, or an empty list if it doesn't exist."""
+    """Return sorted log file paths under session_log_dir, or an empty list if it doesn't exist.
+
+    Raises:
+        SessionError: SESSION_LOGS_UNREADABLE when the directory cannot be listed.
+    """
     if not session_log_dir.is_dir():
         return []
-    return sorted(p for p in session_log_dir.iterdir() if p.is_file())
+    try:
+        return sorted(p for p in session_log_dir.iterdir() if p.is_file())
+    except OSError as error:
+        # Chained: the logs directory is Dovo's own state, so catch_failure records it.
+        raise _unreadable(session_log_dir, error) from error
 
 
 def read_session_log_events(session_log_dir: Path, *, tail: int | None) -> list[SessionLogEvent]:
-    """Parse session.log's JSON lines into RunLogEvents, skipping any unparseable line, then apply tail."""
+    """Parse session.log's JSON lines into RunLogEvents, skipping any unparseable line, then apply tail.
+
+    Raises:
+        SessionError: SESSION_LOGS_UNREADABLE when session.log cannot be read.
+    """
     session_log = session_log_dir / SESSION_LOG_FILENAME
     if not session_log.is_file():
         return []
 
+    try:
+        # errors="replace": a write cut short mid-character (disk full, SIGKILL) must not make the file unreadable.
+        text = session_log.read_text(encoding="utf-8", errors="replace")
+    except OSError as error:
+        # Chained: the logs directory is Dovo's own state, so catch_failure records it.
+        raise _unreadable(session_log_dir, error) from error
+
     events: list[SessionLogEvent] = []
-    # errors="replace": a write cut short mid-character (disk full, SIGKILL) must not make the file unreadable.
-    for line in session_log.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in text.splitlines():
         try:
             events.append(SessionLogEvent.model_validate_json(line))
         except ValidationError:
@@ -86,6 +113,15 @@ def _select_attempt_files(step_files: list[_StepLogFile], attempt: int, stream: 
     return sorted(selected, key=lambda f: (f.iteration, streams.index(LogStreamFilter(f.stream))))
 
 
+def _read_capture_lines(session_log_dir: Path, selected: list[_StepLogFile]) -> list[str]:
+    """Return the lines of each selected capture file in order, replacing bytes that are not valid UTF-8."""
+    try:
+        return [line for f in selected for line in f.path.read_text(encoding="utf-8", errors="replace").splitlines()]
+    except OSError as error:
+        # Chained: the logs directory is Dovo's own state, so catch_failure records it.
+        raise _unreadable(session_log_dir, error) from error
+
+
 def read_step_logs(
     session_log_dir: Path,
     *,
@@ -94,7 +130,11 @@ def read_step_logs(
     stream: LogStreamFilter,
     tail: int | None,
 ) -> tuple[list[str], list[str], list[int]]:
-    """Select and read matching raw step log lines, or return available steps/attempts on a filter miss."""
+    """Select and read matching raw step log lines, or return available steps/attempts on a filter miss.
+
+    Raises:
+        SessionError: SESSION_LOGS_UNREADABLE when the directory or a capture file cannot be read.
+    """
     step_files = _list_step_log_files(session_log_dir)
     available_steps = list(dict.fromkeys(f.step_id for f in step_files))
     matching_step = [f for f in step_files if f.step_id == step]
@@ -104,5 +144,4 @@ def read_step_logs(
 
     selected_attempt = attempt if attempt is not None else available_attempts[-1]
     selected = _select_attempt_files(matching_step, selected_attempt, stream)
-    lines = [line for f in selected for line in f.path.read_text(encoding="utf-8", errors="replace").splitlines()]
-    return _apply_tail(lines, tail), available_steps, available_attempts
+    return _apply_tail(_read_capture_lines(session_log_dir, selected), tail), available_steps, available_attempts

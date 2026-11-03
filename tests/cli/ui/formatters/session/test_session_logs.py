@@ -8,7 +8,9 @@ import pytest
 
 from dovo.cli.ui.formatters.session.session_logs import SessionLogsFormatter
 from dovo.cli.ui.formatters.session.session_views import SessionLogsView
-from dovo.core.sessions import LogsShowResult, LogsShowStatus, SessionLogEvent, SessionLogEventType
+from dovo.common.error_codes import ErrorCode
+from dovo.common.models import Remediation
+from dovo.core.sessions import LogsShowResult, SessionLogEvent, SessionLogEventType
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -19,43 +21,121 @@ from tests.harness.formatter import (
 _STEP_EVENT = SessionLogEvent(
     ts="2026-09-26T10:00:00+00:00", event=SessionLogEventType.STEP_START, step_index=1, step_id="build", attempt=1
 )
+_SESSION_LIST_FIX = Remediation(message="Run 'dovo session list' to view past sessions", command="dovo session list")
+_CREATE_SESSION_FIX = Remediation(
+    message="Run 'dovo run <blueprint>' to create a session", command="dovo run <blueprint>"
+)
 
 EVENTS_MODE = FormatterCase(
-    data=LogsShowResult(status=LogsShowStatus.OK, session_id="sess-1", events=[_STEP_EVENT]),
-    view=SessionLogsView(status=LogsShowStatus.OK, session_id="sess-1", events=[_STEP_EVENT]),
+    data=LogsShowResult(session_id="sess-1", events=[_STEP_EVENT]),
+    view=SessionLogsView(session_id="sess-1", events=[_STEP_EVENT]),
     render_expectations=["2026-09-26T10:00:00+00:00", "step_start", "build"],
 )
 
 LINES_MODE = FormatterCase(
-    data=LogsShowResult(status=LogsShowStatus.OK, session_id="sess-1", lines=["pytest tests/", "3 passed"]),
-    view=SessionLogsView(status=LogsShowStatus.OK, session_id="sess-1", lines=["pytest tests/", "3 passed"]),
+    data=LogsShowResult(session_id="sess-1", lines=["pytest tests/", "3 passed"]),
+    view=SessionLogsView(session_id="sess-1", lines=["pytest tests/", "3 passed"]),
     render_expectations=["pytest tests/", "3 passed"],
 )
 
+NO_SESSIONS = FormatterCase(
+    data=LogsShowResult(
+        error_code=ErrorCode.SESSION_NOT_FOUND, errors=["No sessions found."], remediations=[_CREATE_SESSION_FIX]
+    ),
+    view=SessionLogsView(
+        error_code=ErrorCode.SESSION_NOT_FOUND, errors=["No sessions found."], remediations=[_CREATE_SESSION_FIX]
+    ),
+    render_expectations=["Session Not Found", "No sessions found.", "- Run 'dovo run <blueprint>' to create a session"],
+)
+
 SESSION_NOT_FOUND = FormatterCase(
-    data=LogsShowResult(status=LogsShowStatus.SESSION_NOT_FOUND, session_id="ghost"),
-    view=SessionLogsView(status=LogsShowStatus.SESSION_NOT_FOUND, session_id="ghost"),
-    render_expectations=["ghost"],
+    data=LogsShowResult(
+        session_id="ghost",
+        error_code=ErrorCode.SESSION_NOT_FOUND,
+        errors=["No logs found for session 'ghost'."],
+        remediations=[_SESSION_LIST_FIX],
+    ),
+    view=SessionLogsView(
+        session_id="ghost",
+        error_code=ErrorCode.SESSION_NOT_FOUND,
+        errors=["No logs found for session 'ghost'."],
+        remediations=[_SESSION_LIST_FIX],
+    ),
+    render_expectations=[
+        "Logs Not Found",
+        "No logs found for session 'ghost'.",
+        "- Run 'dovo session list' to view past sessions",
+    ],
 )
 
 STEP_NOT_FOUND = FormatterCase(
-    data=LogsShowResult(status=LogsShowStatus.STEP_NOT_FOUND, session_id="sess-1", available_steps=["build", "lint"]),
-    view=SessionLogsView(status=LogsShowStatus.STEP_NOT_FOUND, session_id="sess-1", available_steps=["build", "lint"]),
-    render_expectations=["build", "lint"],
+    data=LogsShowResult(
+        session_id="sess-1",
+        error_code=ErrorCode.SESSION_STEP_NOT_FOUND,
+        errors=["Step 'test' not found in session 'sess-1'. Available steps: build, lint."],
+        available_steps=["build", "lint"],
+    ),
+    view=SessionLogsView(
+        session_id="sess-1",
+        error_code=ErrorCode.SESSION_STEP_NOT_FOUND,
+        errors=["Step 'test' not found in session 'sess-1'. Available steps: build, lint."],
+        available_steps=["build", "lint"],
+    ),
+    render_expectations=["Step Not Found", "Step 'test' not found in session 'sess-1'. Available steps: build, lint."],
 )
 
 ATTEMPT_NOT_FOUND = FormatterCase(
-    data=LogsShowResult(status=LogsShowStatus.ATTEMPT_NOT_FOUND, session_id="sess-1", available_attempts=[1, 2]),
-    view=SessionLogsView(status=LogsShowStatus.ATTEMPT_NOT_FOUND, session_id="sess-1", available_attempts=[1, 2]),
-    render_expectations=["1, 2"],
+    data=LogsShowResult(
+        session_id="sess-1",
+        error_code=ErrorCode.SESSION_ATTEMPT_NOT_FOUND,
+        errors=["Attempt 3 not found for step 'build' in session 'sess-1'. Available attempts: 1, 2."],
+        available_attempts=[1, 2],
+    ),
+    view=SessionLogsView(
+        session_id="sess-1",
+        error_code=ErrorCode.SESSION_ATTEMPT_NOT_FOUND,
+        errors=["Attempt 3 not found for step 'build' in session 'sess-1'. Available attempts: 1, 2."],
+        available_attempts=[1, 2],
+    ),
+    render_expectations=[
+        "Attempt Not Found",
+        "Attempt 3 not found for step 'build' in session 'sess-1'. Available attempts: 1, 2.",
+    ],
+)
+
+LOGS_UNREADABLE = FormatterCase(
+    data=LogsShowResult(
+        session_id="sess-1",
+        error_code=ErrorCode.SESSION_LOGS_UNREADABLE,
+        errors=["Failed reading session logs in '/logs/sess-1': denied"],
+    ),
+    view=SessionLogsView(
+        session_id="sess-1",
+        error_code=ErrorCode.SESSION_LOGS_UNREADABLE,
+        errors=["Failed reading session logs in '/logs/sess-1': denied"],
+    ),
+    render_expectations=["Read Failure", "Failed reading session logs in '/logs/sess-1': denied"],
+)
+
+INTERNAL_ERROR = FormatterCase(
+    data=LogsShowResult(
+        session_id="sess-1", error_code=ErrorCode.INTERNAL_ERROR, errors=["Unexpected error during sessions.logs: boom"]
+    ),
+    view=SessionLogsView(
+        session_id="sess-1", error_code=ErrorCode.INTERNAL_ERROR, errors=["Unexpected error during sessions.logs: boom"]
+    ),
+    render_expectations=["Logs Show Failed", "Unexpected error during sessions.logs: boom"],
 )
 
 LOGS_SHOW_CASES = [
     pytest.param(EVENTS_MODE, id="events_mode"),
     pytest.param(LINES_MODE, id="lines_mode"),
+    pytest.param(NO_SESSIONS, id="no_sessions"),
     pytest.param(SESSION_NOT_FOUND, id="session_not_found"),
     pytest.param(STEP_NOT_FOUND, id="step_not_found"),
     pytest.param(ATTEMPT_NOT_FOUND, id="attempt_not_found"),
+    pytest.param(LOGS_UNREADABLE, id="logs_unreadable"),
+    pytest.param(INTERNAL_ERROR, id="internal_error"),
 ]
 
 _EMPTY_ENVELOPE: dict[str, Any] = {
@@ -66,6 +146,7 @@ _EMPTY_ENVELOPE: dict[str, Any] = {
     "errors": [],
     "warnings": [],
     "remediations": [],
+    "error_code": None,
     "diagnostics": [],
 }
 
@@ -74,7 +155,6 @@ LOGS_SHOW_PAYLOAD_CASES = [
         EVENTS_MODE,
         {
             **_EMPTY_ENVELOPE,
-            "status": "ok",
             "session_id": "sess-1",
             "events": [
                 {
@@ -105,13 +185,32 @@ LOGS_SHOW_PAYLOAD_CASES = [
     ),
     pytest.param(
         LINES_MODE,
-        {**_EMPTY_ENVELOPE, "status": "ok", "session_id": "sess-1", "lines": ["pytest tests/", "3 passed"]},
+        {**_EMPTY_ENVELOPE, "session_id": "sess-1", "lines": ["pytest tests/", "3 passed"]},
         id="lines_mode",
     ),
     pytest.param(
         SESSION_NOT_FOUND,
-        {**_EMPTY_ENVELOPE, "status": "session_not_found", "session_id": "ghost"},
+        {
+            **_EMPTY_ENVELOPE,
+            "session_id": "ghost",
+            "error_code": "SESSION_NOT_FOUND",
+            "errors": ["No logs found for session 'ghost'."],
+            "remediations": [
+                {"message": "Run 'dovo session list' to view past sessions", "command": "dovo session list"}
+            ],
+        },
         id="session_not_found",
+    ),
+    pytest.param(
+        STEP_NOT_FOUND,
+        {
+            **_EMPTY_ENVELOPE,
+            "session_id": "sess-1",
+            "error_code": "SESSION_STEP_NOT_FOUND",
+            "errors": ["Step 'test' not found in session 'sess-1'. Available steps: build, lint."],
+            "available_steps": ["build", "lint"],
+        },
+        id="step_not_found",
     ),
 ]
 
@@ -148,7 +247,7 @@ class SessionLogsFormatterProgressTests:
             kind="edit",
             target="a.txt",
         )
-        result = LogsShowResult(status=LogsShowStatus.OK, session_id="sess-1", events=[event])
+        result = LogsShowResult(session_id="sess-1", events=[event])
 
         assert_rich_render_shows_every_view_value(
             SessionLogsFormatter, result, ["agent_progress", "kind=edit target=a.txt"]

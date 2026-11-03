@@ -29,7 +29,9 @@ dovo session resume [session_id] [OPTIONS]
 
 When `session_id` is omitted, `show`, `logs` and `diff` act on the project's latest session: the greatest `started_at`, ties broken by the greatest session id, whatever its status. In terminal format, `show` and `logs` then start with `Session: <session_id> (latest)`, and `diff` uses that text as its header instead of the artifact path. The line is not printed with `--patch` or `--format json`; the resolved id is already in the JSON payload. With an explicit `session_id` the line is never printed.
 
-If the project has no sessions, these commands print a **Session Not Found** panel (`Run 'dovo run <blueprint>' to create a session`) and exit `1`. An explicit `session_id` that does not exist exits `1` with the not-found panel for that command.
+If the project has no sessions, these commands print a **Session Not Found** panel (`No sessions found.`, with the fix `Run 'dovo run <blueprint>' to create a session`) and exit `1`. An explicit `session_id` that does not exist exits `1` with `Session '<session_id>' not found.` in the not-found panel for that command.
+
+With `--format json`, every failure of `list`, `show`, `logs` and `diff` carries a non-null `error_code` and its message in `errors`, with the same remediations the terminal panel shows; a success has `error_code` `null` and an empty `errors` list. Both not-found cases above report `error_code` `SESSION_NOT_FOUND`. The payloads carry no other classification of the outcome, so a script branches on `error_code` alone.
 
 `resume` keeps its own rule: with no `session_id` it resumes the latest paused session.
 
@@ -83,7 +85,7 @@ When a session has no recorded execution state, the command prints `No step data
 
 | Flag | Description |
 | --- | --- |
-| `--logs` | Also list the session's log files and the last 10 `session.log` events. See [`dovo session logs`](#dovo-session-logs) for full log output. The command exits `1` if the session's logs cannot be read. |
+| `--logs` | Also list the session's log files and the last 10 `session.log` events. See [`dovo session logs`](#dovo-session-logs) for full log output. If the session's logs cannot be read, the command prints a **Read Failure** panel (`Failed reading session logs in '<dir>': <detail>`), reports `error_code` `SESSION_LOGS_UNREADABLE` with `--format json`, records a [diagnostic log](doctor.md#diagnostic-logs) entry, and exits `1`. |
 | `--format [terminal\|json]` | Presentation format (`terminal` or `json`). |
 
 ## `dovo session logs`
@@ -130,10 +132,11 @@ For a loop sub-step, `--step` matches the captures of every loop iteration: the 
 
 `dovo session logs` exits `1` when:
 
-- no session record or log directory exists for the session (`No logs found for session '<session_id>'`),
-- `--step` names a step with no captured logs (the available step IDs are listed),
-- `--attempt` names an attempt that was not captured (the available attempts are listed),
-- a log file cannot be read, for example because of its permissions.
+- no session record exists for the session: a **Logs Not Found** panel with `Session '<session_id>' not found.` and `error_code` `SESSION_NOT_FOUND`,
+- the session has no log directory: a **Logs Not Found** panel with `No logs found for session '<session_id>'.` and `error_code` `SESSION_NOT_FOUND`,
+- `--step` names a step with no captured logs: a **Step Not Found** panel with `Step '<step>' not found in session '<session_id>'. Available steps: <ids, or none>.` and `error_code` `SESSION_STEP_NOT_FOUND`; with `--format json`, `available_steps` lists the captured step IDs,
+- `--attempt` names an attempt that was not captured: an **Attempt Not Found** panel with `Attempt <n> not found for step '<step>' in session '<session_id>'. Available attempts: <numbers>.` and `error_code` `SESSION_ATTEMPT_NOT_FOUND`; with `--format json`, `available_attempts` lists the captured attempts,
+- a log file cannot be read, for example because of its permissions: a **Read Failure** panel with `Failed reading session logs in '<dir>': <detail>` and `error_code` `SESSION_LOGS_UNREADABLE`, and a [diagnostic log](doctor.md#diagnostic-logs) entry is recorded.
 
 A truncated final `session.log` line, for example after the process was killed mid-write, is skipped rather than reported as an error. Bytes that are not valid UTF-8 are shown as `�`.
 
@@ -162,10 +165,11 @@ Shows the syntax-highlighted diff recorded for a session.
    - A session exists only when its session record exists; a session directory without a session record is not found.
    - When `session_id` is supplied: resolves that session's `diff.patch`.
    - When `session_id` is omitted: selects the latest session as described in [Latest session default](#latest-session-default).
-   - If no session record matches: displays a **Session Not Found** error panel and exits with code `1`.
+   - If no session record matches: displays a **Session Not Found** error panel (`error_code` `SESSION_NOT_FOUND`) and exits with code `1`.
 2. **Artifact Loading**:
-   - If `diff.patch` is missing: displays a **Diff Not Found** error panel and exits with code `1`.
-   - If `diff.patch` is empty (0 bytes or whitespace-only): prints `No changes recorded for session <session_id>.` and exits with code `0`.
+   - If `diff.patch` is missing: displays a **Diff Not Found** error panel with `Session '<session_id>' has no diff artifact.` (`error_code` `SESSION_DIFF_NOT_FOUND`) and exits with code `1`.
+   - If `diff.patch` cannot be read: displays a **Read Failure** error panel with `Failed to read diff artifact at '<path>': <detail>` (`error_code` `SESSION_DIFF_UNREADABLE`), records a [diagnostic log](doctor.md#diagnostic-logs) entry, and exits with code `1`.
+   - If `diff.patch` is empty (0 bytes or whitespace-only): the diff is a success like any other. The command prints `No changes recorded for session <session_id>.` and exits with code `0`; with `--format json`, `error_code` is `null`, `diff_text` is empty and `total_lines` is `0`.
 3. **Rendering & Truncation**:
    - Interactive formatted output renders a header with the session ID and artifact path (or `(latest)` when the id was omitted), followed by syntax-highlighted diff text.
    - In an interactive terminal (TTY), if formatted diff output exceeds 500 lines (and `--full` is not provided), output is truncated at line 500 followed by a dim notice banner with hints to view the complete diff, page with `less -R`, print the plain patch with `--patch`, or open the artifact.
@@ -175,7 +179,7 @@ Shows the syntax-highlighted diff recorded for a session.
 4. **Secret masking**: `diff.patch` is written with secret values replaced by `[REDACTED:<NAME>]` or `[REDACTED]`, so a masked line will not reproduce the original value when applied with `git apply` or `patch`. Names listed under `environment.sensitive_variables` in `.dovo/config.json` are masked at write time; a diff written before a name was listed is not re-masked.
 5. **Exit Codes**:
    - `0`: Diff successfully displayed, or empty diff.
-   - `1`: Session not found, diff artifact not found, or read failure.
+   - `1`: Session not found (`SESSION_NOT_FOUND`), diff artifact not found (`SESSION_DIFF_NOT_FOUND`), or read failure (`SESSION_DIFF_UNREADABLE`).
    - `2`: `--patch` combined with `--format json`, or any other invalid option.
 
 ## `dovo session resume`

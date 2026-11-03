@@ -6,19 +6,18 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from dovo.common.diagnostic_log import error_diagnostics
+from dovo.common.error_codes import ErrorCode
+from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.common.redact import SecretRedactor
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
+from dovo.core.sessions.exceptions import SessionError, SessionStepLogsAvailable
 from dovo.core.sessions.models import (
     DiffResult,
-    DiffStatus,
     HistoryListResult,
-    HistoryListStatus,
     HistoryShowResult,
-    HistoryShowStatus,
     LogsShowResult,
-    LogsShowStatus,
     LogStreamFilter,
     SessionLogEvent,
 )
@@ -31,6 +30,9 @@ _NO_SESSIONS_REMEDIATION = Remediation(
 )
 _SESSION_LIST_REMEDIATION = Remediation(
     message="Run 'dovo session list' to view past sessions", command="dovo session list"
+)
+_SESSION_IDS_REMEDIATION = Remediation(
+    message="Run 'dovo session list' to list valid session IDs", command="dovo session list"
 )
 
 
@@ -66,6 +68,58 @@ def _mask_record(row: SessionRecord, redactor: SecretRedactor) -> SessionRecord:
     return SessionRecord.model_validate({**row.model_dump(), "error_message": redactor.redact_text(row.error_message)})
 
 
+def _masked_records(
+    db: SessionsRepository, redactor: SecretRedactor, *, limit: int | None, status: str | None
+) -> list[SessionRecord]:
+    """Return the newest records first, filtered by lifecycle status when given, with error messages masked."""
+    status_filter: SessionStatus | str | None = None
+    if status is not None:
+        try:
+            status_filter = SessionStatus(status.lower())
+        except ValueError:
+            status_filter = status
+
+    return [_mask_record(row, redactor) for row in db.list(limit=limit, status=status_filter)]
+
+
+def _require_record(db: SessionsRepository, session_id: str, remediation: Remediation) -> SessionRecord:
+    """Return the session record for session_id.
+
+    Raises:
+        SessionError: SESSION_NOT_FOUND with "Session '<id>' not found." and remediation.
+    """
+    row = db.get(session_id)
+    if row is None:
+        raise SessionError(ErrorCode.SESSION_NOT_FOUND, f"Session '{session_id}' not found.", [remediation])
+    return row
+
+
+def _require_latest(db: SessionsRepository) -> SessionRecord:
+    """Return the record of the session with the greatest started_at (ties: greatest session id).
+
+    Raises:
+        SessionError: SESSION_NOT_FOUND with "No sessions found." when the project has no sessions.
+    """
+    record = db.get_latest()
+    if record is None:
+        raise SessionError(ErrorCode.SESSION_NOT_FOUND, "No sessions found.", [_NO_SESSIONS_REMEDIATION])
+    return record
+
+
+def _require_log_dir(paths: WorkspacePaths, session_id: str) -> Path:
+    """Return the session's log directory.
+
+    Raises:
+        SessionError: SESSION_NOT_FOUND with "No logs found for session '<id>'." when the directory does not exist.
+    """
+    session_log_dir = paths.logs_dir / session_id
+    if not session_log_dir.is_dir():
+        raise SessionError(
+            ErrorCode.SESSION_NOT_FOUND, f"No logs found for session '{session_id}'.", [_SESSION_LIST_REMEDIATION]
+        )
+    return session_log_dir
+
+
 class Session:
     """One session addressed by id: its diff artifact, logs, and run details."""
 
@@ -88,20 +142,13 @@ class Session:
         return self._session_id
 
     def diff(self) -> DiffResult:
-        """Return the session's persisted diff, or SESSION_NOT_FOUND when it has no session record."""
-        if self.db.get(self.session_id) is None:
-            return DiffResult(
-                status=DiffStatus.SESSION_NOT_FOUND,
-                session_id=self.session_id,
-                errors=[f"Session '{self.session_id}' not found."],
-                remediations=[
-                    Remediation(
-                        message="Run 'dovo session list' to list valid session IDs", command="dovo session list"
-                    )
-                ],
-            )
-
-        return read_session_diff(self.paths, self.session_id)
+        """Return the session's persisted diff, empty when it recorded no changes; report a failure by its error_code."""
+        with catch_failure("sessions.diff", session_id=self.session_id) as caught:
+            _require_record(self.db, self.session_id, _SESSION_IDS_REMEDIATION)
+            artifact_path, diff_text = read_session_diff(self.paths, self.session_id)
+        if caught.failure is not None:
+            return DiffResult(session_id=self.session_id, **caught.failure.result_fields())
+        return DiffResult(session_id=self.session_id, artifact_path=artifact_path, diff_text=diff_text)
 
     def logs(
         self,
@@ -111,76 +158,37 @@ class Session:
         stream: LogStreamFilter = LogStreamFilter.BOTH,
         tail: int | None = None,
     ) -> LogsShowResult:
-        """Look up the session's persisted logs and return the filtered events/lines or a not-found status.
+        """Return the session's parsed session.log events, or one step's capture lines; report a failure by its error_code.
 
-        Without ``step``, returns parsed session.log events; ``attempt`` and ``stream`` are ignored
-        because session.log records carry neither concept. An unreadable log file is reported in ``errors``.
+        Without ``step``, ``attempt`` and ``stream`` are ignored because session.log records carry neither concept.
+        A step or attempt that was not captured fails with the captured step ids or attempts on the result.
         """
-        if self.db.get(self.session_id) is None:
+        with catch_failure("sessions.logs", session_id=self.session_id) as caught:
+            _require_record(self.db, self.session_id, _SESSION_LIST_REMEDIATION)
+            session_log_dir = _require_log_dir(self.paths, self.session_id)
+            events, lines = self._read_logs(session_log_dir, step=step, attempt=attempt, stream=stream, tail=tail)
+        if caught.failure is not None:
+            captured = caught.failure.data
+            available = captured if isinstance(captured, SessionStepLogsAvailable) else SessionStepLogsAvailable()
             return LogsShowResult(
-                status=LogsShowStatus.SESSION_NOT_FOUND,
                 session_id=self.session_id,
-                remediations=[_SESSION_LIST_REMEDIATION],
+                available_steps=list(available.steps),
+                available_attempts=list(available.attempts),
+                **caught.failure.result_fields(),
             )
-
-        session_log_dir = self.paths.logs_dir / self.session_id
-        if not session_log_dir.is_dir():
-            return LogsShowResult(
-                status=LogsShowStatus.SESSION_NOT_FOUND,
-                session_id=self.session_id,
-                remediations=[_SESSION_LIST_REMEDIATION],
-            )
-
-        if step is None:
-            try:
-                events = read_session_log_events(session_log_dir, tail=tail)
-            except OSError as exc:
-                return LogsShowResult(
-                    status=LogsShowStatus.OK,
-                    session_id=self.session_id,
-                    errors=[f"Failed reading session logs in '{session_log_dir}': {exc}"],
-                )
-            return LogsShowResult(status=LogsShowStatus.OK, session_id=self.session_id, events=events)
-
-        return self._read_step_logs(session_log_dir, step=step, attempt=attempt, stream=stream, tail=tail)
+        return LogsShowResult(session_id=self.session_id, lines=lines, events=events)
 
     def details(self, *, include_logs: bool = False) -> HistoryShowResult:
-        """Look up the session's session record, plus log file paths and a session.log tail when requested."""
-        row = self.db.get(self.session_id)
-        if row is None:
-            return HistoryShowResult(
-                status=HistoryShowStatus.NOT_FOUND,
-                session_id=self.session_id,
-                remediations=[_SESSION_LIST_REMEDIATION],
-            )
-
-        row = _mask_record(row, history_redactor(self.paths, self.sensitive_variables))
-        worktree_kept, worktree_path = _worktree_outcome(row, self.paths)
-        if not include_logs:
-            return HistoryShowResult(
-                status=HistoryShowStatus.OK,
-                session_id=self.session_id,
-                session=row,
-                worktree_kept=worktree_kept,
-                worktree_path=worktree_path,
-            )
-
-        session_log_dir = self.paths.logs_dir / self.session_id
-        try:
-            log_files = [str(p) for p in list_session_log_files(session_log_dir)]
-            log_snippet = [_render_run_log_line(e) for e in read_session_log_events(session_log_dir, tail=10)]
-        except OSError as exc:
-            return HistoryShowResult(
-                status=HistoryShowStatus.OK,
-                session_id=self.session_id,
-                session=row,
-                errors=[f"Failed reading session logs in '{session_log_dir}': {exc}"],
-                worktree_kept=worktree_kept,
-                worktree_path=worktree_path,
-            )
-
+        """Return the session's record, plus log file paths and a session.log tail when requested; report a failure by its error_code."""
+        row: SessionRecord | None = None
+        with catch_failure("sessions.details", session_id=self.session_id) as caught:
+            row = _require_record(self.db, self.session_id, _SESSION_LIST_REMEDIATION)
+            row = _mask_record(row, history_redactor(self.paths, self.sensitive_variables))
+            worktree_kept, worktree_path = _worktree_outcome(row, self.paths)
+            log_files, log_snippet = self._read_log_summary() if include_logs else ([], [])
+        if caught.failure is not None:
+            return HistoryShowResult(session_id=self.session_id, session=row, **caught.failure.result_fields())
         return HistoryShowResult(
-            status=HistoryShowStatus.OK,
             session_id=self.session_id,
             session=row,
             log_files=log_files,
@@ -189,7 +197,24 @@ class Session:
             worktree_path=worktree_path,
         )
 
-    def _read_step_logs(
+    def _read_logs(
+        self,
+        session_log_dir: Path,
+        *,
+        step: str | None,
+        attempt: int | None,
+        stream: LogStreamFilter,
+        tail: int | None,
+    ) -> tuple[list[SessionLogEvent], list[str]]:
+        """Return (events, []) from session.log when step is None, else ([], masked capture lines) of that step."""
+        if step is None:
+            return read_session_log_events(session_log_dir, tail=tail), []
+
+        lines = self._read_step_lines(session_log_dir, step=step, attempt=attempt, stream=stream, tail=tail)
+        redactor = history_redactor(self.paths, self.sensitive_variables)
+        return [], [redactor.redact_text(line) for line in lines]
+
+    def _read_step_lines(
         self,
         session_log_dir: Path,
         *,
@@ -197,34 +222,38 @@ class Session:
         attempt: int | None,
         stream: LogStreamFilter,
         tail: int | None,
-    ) -> LogsShowResult:
-        """Read one step's capture lines, or classify an unreadable file, unknown step, or unknown attempt."""
-        try:
-            lines, available_steps, available_attempts = read_step_logs(
-                session_log_dir, step=step, attempt=attempt, stream=stream, tail=tail
-            )
-        except OSError as exc:
-            return LogsShowResult(
-                status=LogsShowStatus.OK,
-                session_id=self.session_id,
-                errors=[f"Failed reading session logs in '{session_log_dir}': {exc}"],
-            )
+    ) -> list[str]:
+        """Return the raw capture lines of one step's attempt (the latest when attempt is None) for the selected stream(s).
 
+        Raises:
+            SessionError: SESSION_STEP_NOT_FOUND when no capture names step, with the captured step ids as data, or
+                SESSION_ATTEMPT_NOT_FOUND when attempt was not captured for step, with the captured attempts as data.
+        """
+        lines, available_steps, available_attempts = read_step_logs(
+            session_log_dir, step=step, attempt=attempt, stream=stream, tail=tail
+        )
         if step not in available_steps:
-            return LogsShowResult(
-                status=LogsShowStatus.STEP_NOT_FOUND, session_id=self.session_id, available_steps=available_steps
+            raise SessionError(
+                ErrorCode.SESSION_STEP_NOT_FOUND,
+                f"Step '{step}' not found in session '{self.session_id}'. "
+                f"Available steps: {', '.join(available_steps) or 'none'}.",
+                data=SessionStepLogsAvailable(steps=tuple(available_steps)),
             )
         if attempt is not None and attempt not in available_attempts:
-            return LogsShowResult(
-                status=LogsShowStatus.ATTEMPT_NOT_FOUND,
-                session_id=self.session_id,
-                available_attempts=available_attempts,
+            raise SessionError(
+                ErrorCode.SESSION_ATTEMPT_NOT_FOUND,
+                f"Attempt {attempt} not found for step '{step}' in session '{self.session_id}'. "
+                f"Available attempts: {', '.join(str(a) for a in available_attempts)}.",
+                data=SessionStepLogsAvailable(attempts=tuple(available_attempts)),
             )
+        return lines
 
-        redactor = history_redactor(self.paths, self.sensitive_variables)
-        return LogsShowResult(
-            status=LogsShowStatus.OK, session_id=self.session_id, lines=[redactor.redact_text(line) for line in lines]
-        )
+    def _read_log_summary(self) -> tuple[list[str], list[str]]:
+        """Return the session's log file paths and its last ten session.log events rendered as text lines."""
+        session_log_dir = self.paths.logs_dir / self.session_id
+        log_files = [str(p) for p in list_session_log_files(session_log_dir)]
+        log_snippet = [_render_run_log_line(e) for e in read_session_log_events(session_log_dir, tail=10)]
+        return log_files, log_snippet
 
 
 class SessionCollection:
@@ -242,43 +271,28 @@ class SessionCollection:
         return Session(self.paths, session_id, db=self.db, sensitive_variables=self.sensitive_variables)
 
     def list(self, *, limit: int | None = 20, status: str | None = None) -> HistoryListResult:
-        """Reconcile stale sessions, then list this project's session records, newest first.
+        """Reconcile stale sessions, then list this project's session records, newest first; report a failure by its error_code.
 
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
         """
-        warnings: list[str] = []
         reconciliation = reconcile_stale_sessions(self.db, path=self.paths.root_dir)
-        if reconciliation.warning:
-            warnings.append(reconciliation.warning)
-
-        status_filter: SessionStatus | str | None = None
-        if status is not None:
-            try:
-                status_filter = SessionStatus(status.lower())
-            except ValueError:
-                status_filter = status
-
+        warnings = [reconciliation.warning] if reconciliation.warning else []
+        diagnostics = error_diagnostics(reconciliation.diagnostic)
         redactor = history_redactor(self.paths, self.sensitive_variables)
-        sessions = [_mask_record(row, redactor) for row in self.db.list(limit=limit, status=status_filter)]
-        return HistoryListResult(
-            status=HistoryListStatus.OK,
-            sessions=sessions,
-            warnings=warnings,
-            diagnostics=error_diagnostics(reconciliation.diagnostic),
-        )
+        with catch_failure("sessions.list", path=str(self.paths.root_dir)) as caught:
+            sessions = _masked_records(self.db, redactor, limit=limit, status=status)
+        if caught.failure is not None:
+            return HistoryListResult(warnings=warnings, **caught.failure.result_fields(prior_diagnostics=diagnostics))
+        return HistoryListResult(sessions=sessions, warnings=warnings, diagnostics=diagnostics)
 
     def latest_details(self, *, include_logs: bool = False) -> HistoryShowResult:
-        """Return the latest session's details, or NOT_FOUND when the project has no sessions."""
-        record = self.db.get_latest()
-        if record is None:
-            return HistoryShowResult(
-                status=HistoryShowStatus.NOT_FOUND,
-                errors=["No sessions found."],
-                remediations=[_NO_SESSIONS_REMEDIATION],
-            )
-
-        return self.get(record.session_id).details(include_logs=include_logs)
+        """Return the latest session's details; report a failure by its error_code."""
+        with catch_failure("sessions.latest_details", path=str(self.paths.root_dir)) as caught:
+            latest = self._latest()
+        if caught.failure is not None:
+            return HistoryShowResult(**caught.failure.result_fields())
+        return latest.details(include_logs=include_logs)
 
     def latest_logs(
         self,
@@ -288,25 +302,25 @@ class SessionCollection:
         stream: LogStreamFilter = LogStreamFilter.BOTH,
         tail: int | None = None,
     ) -> LogsShowResult:
-        """Return the latest session's logs, or SESSION_NOT_FOUND when the project has no sessions."""
-        record = self.db.get_latest()
-        if record is None:
-            return LogsShowResult(
-                status=LogsShowStatus.SESSION_NOT_FOUND,
-                errors=["No sessions found."],
-                remediations=[_NO_SESSIONS_REMEDIATION],
-            )
-
-        return self.get(record.session_id).logs(step=step, attempt=attempt, stream=stream, tail=tail)
+        """Return the latest session's logs; report a failure by its error_code."""
+        with catch_failure("sessions.latest_logs", path=str(self.paths.root_dir)) as caught:
+            latest = self._latest()
+        if caught.failure is not None:
+            return LogsShowResult(**caught.failure.result_fields())
+        return latest.logs(step=step, attempt=attempt, stream=stream, tail=tail)
 
     def latest_diff(self) -> DiffResult:
-        """Return the diff of the session with the greatest started_at (ties: greatest session id), or SESSION_NOT_FOUND."""
-        record = self.db.get_latest()
-        if record is None:
-            return DiffResult(
-                status=DiffStatus.SESSION_NOT_FOUND,
-                errors=["No sessions found."],
-                remediations=[_NO_SESSIONS_REMEDIATION],
-            )
+        """Return the latest session's diff; report a failure by its error_code."""
+        with catch_failure("sessions.latest_diff", path=str(self.paths.root_dir)) as caught:
+            latest = self._latest()
+        if caught.failure is not None:
+            return DiffResult(**caught.failure.result_fields())
+        return latest.diff()
 
-        return read_session_diff(self.paths, record.session_id)
+    def _latest(self) -> Session:
+        """Return the handle of the session with the greatest started_at (ties: greatest session id).
+
+        Raises:
+            SessionError: SESSION_NOT_FOUND when the project has no sessions.
+        """
+        return self.get(_require_latest(self.db).session_id)
