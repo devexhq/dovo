@@ -14,7 +14,8 @@ comment's findings line links; every comment and review summary by someone
 else touched since the dovo-review comment's last update; and every failed
 check on the head commit. Items for dovo findings, the review's body findings
 and the viewer's finding threads, carry `finding`: the id, severity and rule
-of the finding marker on their last line.
+of the finding marker on their last line. Everything but whether a review
+thread is resolved is read through GitHub's REST API.
 """
 
 from __future__ import annotations
@@ -31,17 +32,16 @@ from pathlib import Path
 from typing import NamedTuple
 
 from publish_review import (
-    REVIEWS_QUERY,
     SESSION_LABEL,
-    THREADS_QUERY,
     find_own_comment,
     list_comments,
-    list_pr_nodes,
+    list_reviews,
     parse_finding_marker,
     pr_repository,
     run,
     thread_comments,
 )
+from review_threads import list_threads
 
 AGENTIC_DIR = Path(".agentic")
 FEEDBACK_JSON = AGENTIC_DIR / "feedback.json"
@@ -50,11 +50,16 @@ PR_BRANCH = AGENTIC_DIR / "pr-branch"
 PR_URL = AGENTIC_DIR / "pr-url"
 TOOLS_DIR = AGENTIC_DIR / "tools"
 # reply_threads.py and the modules it imports, run by pr-fix after the head is checked out.
-TOOL_SCRIPTS = ("reply_threads.py", "pr_feedback.py", "publish_review.py")
+TOOL_SCRIPTS = ("reply_threads.py", "pr_feedback.py", "publish_review.py", "review_threads.py")
 RESTORED_ARTIFACTS = ("plan", "plan-questions", "review", "implementation-report")
 SUMMARY_CHARS = 200
 NO_AUTHOR_LABELS = {"review_finding": "dovo-review", "check": "ci"}
 FAILED_CONCLUSIONS = ("failure", "cancelled", "timed_out")
+# The REST pull request, in the shape pr_problem reads: an open one's state is OPEN.
+PR_FIELDS = (
+    "{number, state: (.state | ascii_upcase), headRefName: .head.ref, headRefOid: .head.sha, url: .html_url, "
+    "isCrossRepository: (.head.repo.full_name != .base.repo.full_name)}"
+)
 FINDINGS_LINK = re.compile(r"^\*\*Findings:\*\* .* · \[review\]\((?P<url>[^)\s]+)\)$")
 BACKTICKED = re.compile(r"`([^`]+)`")
 LINE_RANGE = re.compile(r"^(?P<path>.+):(?:\d+-)?(?P<end>\d+)$")
@@ -214,11 +219,10 @@ def block_location(block: str) -> tuple[str | None, int | None]:
 
 
 def _author_login(author: object) -> str:
-    """Return the GraphQL author's login, with `[bot]` added for a Bot, or `ghost` when GitHub returns none."""
+    """Return the author's REST login, which ends in `[bot]` for a bot, or `ghost` when GitHub returns none."""
     if not isinstance(author, dict) or not author.get("login"):
         return "ghost"
-    login = str(author["login"])
-    return f"{login}[bot]" if author.get("__typename") == "Bot" else login
+    return str(author["login"])
 
 
 def thread_finding(comments: list[dict[str, object]], viewer: str) -> dict[str, object] | None:
@@ -311,19 +315,20 @@ def _issue_comment_entry(comment: dict[str, object]) -> _Entry:
 
 
 def _review_entry(review: dict[str, object]) -> _Entry | None:
-    """Return a REVIEWS_QUERY node normalised, touched at the later of submission and last edit; None when pending."""
+    """Return a list_reviews node normalised, created and touched at its submission; None when pending.
+
+    GitHub's REST API gives a review no edit time, so an edit after submission does not touch it.
+    """
     submitted = review.get("submittedAt")
     if not submitted:
         return None
     created = datetime.fromisoformat(str(submitted))
-    edited = review.get("lastEditedAt")
-    touched = max(created, datetime.fromisoformat(str(edited))) if edited else created
     return _Entry(
         author=_author_login(review.get("author")),
         url=review.get("url"),
         body=str(review.get("body") or ""),
         created=created,
-        touched=touched,
+        touched=created,
     )
 
 
@@ -338,10 +343,10 @@ def comment_items(
     """Return one `comment` item per comment and review by someone else touched after since, ids C1, C2, ...
 
     Each issue comment and submitted review not by viewer, touched after since and non-empty once markup is
-    removed, is listed in creation order. comments are list_comments entries (REST: `user`, `url`, `body`, `created_at`, `updated_at`); reviews are
-    REVIEWS_QUERY nodes (GraphQL: `author`, `url`, `body`, `submittedAt`, `lastEditedAt`). A comment is created at
-    `created_at` and touched at `updated_at`; a review is created at `submittedAt` and touched at the later of
-    `submittedAt` and `lastEditedAt`. since is the dovo-review comment's `updated_at`.
+    removed, is listed in creation order. comments are list_comments entries (`user`, `url`, `body`, `created_at`,
+    `updated_at`); reviews are list_reviews nodes (`author`, `url`, `body`, `submittedAt`). A comment is created at
+    `created_at` and touched at `updated_at`; a review is created and touched at `submittedAt`. since is the
+    dovo-review comment's `updated_at`.
     """
     cutoff = datetime.fromisoformat(since)
     entries = [_issue_comment_entry(comment) for comment in comments] + [
@@ -435,9 +440,8 @@ def open_pull_request(pr: int) -> dict[str, object]:
         PrFeedbackError: With error 2 when the pull request does not exist or is not open, or
             when its head is in another repository.
     """
-    fields = "number,state,headRefName,headRefOid,url,isCrossRepository"
     try:
-        view = json.loads(run("gh", "pr", "view", str(pr), "--json", fields))
+        view = json.loads(run("gh", "api", f"repos/{{owner}}/{{repo}}/pulls/{pr}", "--jq", PR_FIELDS))
     except subprocess.CalledProcessError as error:
         raise PrFeedbackError(f"pull request #{pr} is not open") from error
     problem = pr_problem(view, pr)
@@ -504,12 +508,12 @@ def collect(pr: int) -> str:
     download_artifacts(session)
     copy_tools()
     check_out_head(number, str(view["headRefName"]), head, url)
-    reviews = list_pr_nodes(host, repository, number, REVIEWS_QUERY, "reviews")
+    reviews = list_reviews(host, repository, number, viewer)
     # The findings line links the review this comment's findings were posted in; `**Findings:** none` links none.
     link = linked_review(str(own.get("body") or ""))
     dovo_review = None if link is None else next((node for node in reviews if node.get("url") == link), None)
     items = (
-        thread_items(list_pr_nodes(host, repository, number, THREADS_QUERY, "reviewThreads"), viewer)
+        thread_items(list_threads(host, repository, number), viewer)
         + finding_items(dovo_review)
         + comment_items(comments, reviews, viewer, str(own["updated_at"]))
         + check_items(list_checks(host, repository, head))

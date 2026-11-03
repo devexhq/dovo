@@ -40,17 +40,16 @@ from typing import NamedTuple
 from pr_feedback import AGENTIC_DIR, BACKTICKED, FEEDBACK_JSON, PR_URL
 from publish_review import (
     MAX_COMMENT_CHARS,
-    REPLY_MUTATION,
-    RESOLVE_MUTATION,
     PublishReviewError,
     already_replied,
     find_own_comment,
     list_comments,
     pr_repository,
     run,
-    thread_graphql,
+    thread_comments,
     write_comment,
 )
+from review_threads import list_threads, reply_on_thread, resolve_thread
 
 TRIAGE_JSON = AGENTIC_DIR / "triage.json"
 TRIAGE_MD = AGENTIC_DIR / "triage.md"
@@ -71,16 +70,6 @@ OUTCOME_LINES = {
     "dismissed": "Not changed: {note}",
     "deferred": "Deferred: {note}",
 }
-REPLIES_QUERY = """
-query($thread: ID!) {
-  node(id: $thread) {
-    ... on PullRequestReviewThread {
-      isResolved
-      comments(last: 100) { nodes { author { login } body } }
-    }
-  }
-}
-"""
 
 
 class ReplyThreadsError(RuntimeError):
@@ -95,7 +84,7 @@ class Outcome(NamedTuple):
 
 
 class ThreadReply(NamedTuple):
-    """One triaged review thread to reply on: its feedback id, thread node id, first comment URL, outcome and note."""
+    """One triaged review thread to reply on: its feedback id, thread id (its first comment's REST id), first comment URL, outcome and note."""
 
     item_id: str
     thread: str
@@ -485,30 +474,54 @@ def read_inputs() -> Inputs:
     return Inputs(url, int(str(feedback.get("pr"))), replies, findings)
 
 
-def post_reply(host: str, viewer: str, reply: ThreadReply, commit: str) -> tuple[bool, bool]:
-    """Reply on reply.thread unless already_replied, then resolve it when its outcome is in RESOLVED_OUTCOMES and it is unresolved; return (replied, resolved).
+class _Pull(NamedTuple):
+    """The pull request a reply step posts on: its host, `owner/repo`, number and the viewer's login."""
+
+    host: str
+    repository: str
+    number: int
+    viewer: str
+
+
+def post_reply(pull: _Pull, reply: ThreadReply, thread: dict[str, object] | None, commit: str) -> tuple[bool, bool]:
+    """Reply on thread unless already_replied, then resolve it when its outcome is in RESOLVED_OUTCOMES and it is unresolved; return (replied, resolved).
+
+    thread is reply.thread's list_threads node, read before any reply of this step was posted.
 
     Raises:
-        ReplyThreadsError: When a gh call fails, with reply.url and gh's stderr.
+        ReplyThreadsError: When the thread is gone or a gh call fails, with reply.url and gh's stderr.
     """
+    if thread is None:
+        raise ReplyThreadsError(f"cannot update review thread {reply.url}: it is no longer on the pull request")
     try:
-        state = json.loads(thread_graphql(host, REPLIES_QUERY, reply.thread, jq=".data.node"))
         body = reply_body(Outcome(reply.outcome, reply.note), commit)
-        replied = not already_replied(state["comments"]["nodes"], viewer, body)
+        replied = not already_replied(thread_comments(thread), pull.viewer, body)
         if replied:
-            thread_graphql(
-                host,
-                REPLY_MUTATION,
-                reply.thread,
-                f"body={body}",
-                jq=".data.addPullRequestReviewThreadReply.comment.url",
-            )
-        resolved = reply.outcome in RESOLVED_OUTCOMES and not state["isResolved"]
+            reply_on_thread(pull.host, pull.repository, pull.number, reply.thread, body)
+        resolved = reply.outcome in RESOLVED_OUTCOMES and not thread.get("isResolved")
         if resolved:
-            thread_graphql(host, RESOLVE_MUTATION, reply.thread, jq=".data.resolveReviewThread.thread.isResolved")
+            resolve_thread(pull.host, pull.repository, pull.number, reply.thread)
     except subprocess.CalledProcessError as error:
         stderr = str(error.stderr or "")
         raise ReplyThreadsError(f"cannot update review thread {reply.url}: {stderr.strip()}") from error
+    except LookupError as error:
+        raise ReplyThreadsError(f"cannot update review thread {reply.url}: {error}") from error
+    return replied, resolved
+
+
+def post_replies(pull: _Pull, replies: list[ThreadReply], commit: str) -> tuple[int, int]:
+    """Post each of replies with post_reply, in order, on threads listed once before the first; return how many were replied on and resolved.
+
+    With no reply, nothing is listed.
+    """
+    if not replies:
+        return 0, 0
+    threads = {str(thread["id"]): thread for thread in list_threads(pull.host, pull.repository, pull.number)}
+    replied = resolved = 0
+    for reply in replies:
+        did_reply, did_resolve = post_reply(pull, reply, threads.get(reply.thread), commit)
+        replied += did_reply
+        resolved += did_resolve
     return replied, resolved
 
 
@@ -566,10 +579,7 @@ def reply_all() -> str:
         if inputs.findings:
             comments = list_comments(host, repository, inputs.number)
             comment = _checked_comment(inputs, comments, viewer, commit)
-        for reply in inputs.replies:
-            did_reply, did_resolve = post_reply(host, viewer, reply, commit)
-            replied += did_reply
-            resolved += did_resolve
+        replied, resolved = post_replies(_Pull(host, repository, inputs.number, viewer), inputs.replies, commit)
         if comment is not None:
             body, posted = comment
             commented = int(post_comment(host, repository, inputs.number, inputs.url, body, posted=posted))

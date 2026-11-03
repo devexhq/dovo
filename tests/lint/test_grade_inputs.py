@@ -33,6 +33,7 @@ def _load_script(name: str, module_name: str) -> ModuleType:
 
 
 PUBLISH = _load_script("publish_review", "publish_review")
+THREADS = _load_script("review_threads", "review_threads")
 FEEDBACK = _load_script("pr_feedback", "pr_feedback")
 INPUTS = _load_script("grade_inputs", "grade_inputs_under_test")
 
