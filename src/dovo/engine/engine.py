@@ -80,7 +80,7 @@ class Engine:
         config = self._build_start_config(req, resolved.values, effective_worktree, manifest)
         start_failure = self._start_run(blueprint, sid, config, manifest, engine_warnings, engine_diagnostics)
         if start_failure is not None:
-            return self._failed_outcome(sid, [start_failure], engine_warnings, diagnostics=engine_diagnostics)
+            return start_failure
 
         outcome = drive_run(
             self.paths,
@@ -157,21 +157,24 @@ class Engine:
         manifest: DefinitionsManifest,
         warnings: list[str],
         diagnostics: list[DiagnosticRecord],
-    ) -> str | None:
-        """Insert the RUNNING row and its initial execution state under the workspace lock; return a failure message or None, adding each recorded failure to diagnostics."""
+    ) -> RunOutcome | None:
+        """Insert the RUNNING row and its initial execution state under the workspace lock; return the FAILED outcome or None, adding each recorded failure to diagnostics."""
         with WorkspaceLock(self.paths.lock_file):
             try:
                 self._insert_running(blueprint, session_id, config)
             except Exception as exc:
                 diagnostics.extend(_record_persist_failure(exc, session_id))
-                return f"Failed to record run start in database: {exc}"
+                message = f"Failed to record run start in database: {exc}"
+                return self._failed_outcome(
+                    session_id, [message], warnings, diagnostics=diagnostics, error_code=ErrorCode.INTERNAL_ERROR
+                )
 
             try:
                 SessionStateStore(self.db, self.paths, session_id).initialize(blueprint, manifest, warnings)
             except EngineError as error:
-                message = error.message
+                error_code, message = error.error_code, error.message
             except Exception as exc:
-                message = f"Failed to initialize run state: {exc}"
+                error_code, message = ErrorCode.INTERNAL_ERROR, f"Failed to initialize run state: {exc}"
                 diagnostics.extend(_record_persist_failure(exc, session_id))
             else:
                 return None
@@ -180,7 +183,7 @@ class Engine:
                 self.db.update_status(session_id, SessionStatus.FAILED, error_message=message)
             except Exception as exc:
                 diagnostics.extend(_record_persist_failure(exc, session_id))
-            return message
+            return self._failed_outcome(session_id, [message], warnings, diagnostics=diagnostics, error_code=error_code)
 
     def _failed_outcome(
         self,
@@ -189,11 +192,13 @@ class Engine:
         warnings: list[str],
         *,
         diagnostics: Sequence[DiagnosticRecord] = (),
+        error_code: str | None = None,
     ) -> RunOutcome:
-        """Build the FAILED RunOutcome for a run that could not start, carrying any recorded diagnostics."""
+        """Build the FAILED RunOutcome for a run that could not start, carrying its failure's code and any recorded diagnostics."""
         return RunOutcome(
             status=SessionStatus.FAILED,
             errors=errors,
+            error_code=error_code,
             warnings=warnings,
             diagnostics=list(diagnostics),
             worktree_path=self.path,

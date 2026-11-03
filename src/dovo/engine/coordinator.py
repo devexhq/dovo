@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.lock import WorkspaceLock
 from dovo.common.models import FailurePolicy
 from dovo.common.process import process_registry
@@ -83,6 +84,7 @@ _RERUN_WARNING = (
     "check for side effects its interrupted attempt already made."
 )
 _CEILING_GRANT_COUNT = 3
+_CANCELLED_MESSAGE = "Execution cancelled by user."
 
 
 class NodeTransitionKind(StrEnum):
@@ -123,11 +125,18 @@ class RunCoordinator:
         self._agent = agent
         self._paused_prompt_id: str | None = None
         self._errors: list[str] = []
+        self._error_code: str | None = None
         self._warnings: list[str] = []
         self._diagnostics: list[DiagnosticRecord] = []
         self._loaded: _LoadedRun | None = None
         self._load_ok: bool | None = None
         self._in_flight: ExecutionPlanNode | None = None
+
+    def _fail(self, error_code: str, message: str) -> None:
+        """Append message to the run's errors and make error_code the run's code unless an earlier failure set one."""
+        self._errors.append(message)
+        if self._error_code is None:
+            self._error_code = error_code
 
     @property
     def _run(self) -> _LoadedRun:
@@ -252,7 +261,7 @@ class RunCoordinator:
         if resolution.result is not None:
             return self._settle_attempt(leaf, invocation.step, resolution.result)
         if resolution.request is None:
-            self._errors.append(f"Ask step '{leaf.id}' resolved neither a request nor a result.")
+            self._fail(ErrorCode.INTERNAL_ERROR, f"Ask step '{leaf.id}' resolved neither a request nor a result.")
             return NodeTransitionKind.FAILED
         return self._ask_pending(leaf, resolution.request, invocation)
 
@@ -262,11 +271,15 @@ class RunCoordinator:
         request: InteractionRequest,
         invocation: StepInvocation,
     ) -> NodeTransitionKind:
-        """Persist the pending ask, read an answer, and apply it or pause the run at the prompt."""
+        """Persist the pending ask, read an answer, and apply it or pause the run at the prompt; an interrupt pauses it as cancelled."""
         if not self._persist_pending_ask(leaf, request):
             return NodeTransitionKind.FAILED
 
-        answer = self._read_answer(request)
+        try:
+            answer = self._read_answer(request)
+        except KeyboardInterrupt:
+            self._fail(ErrorCode.RUN_CANCELLED, _CANCELLED_MESSAGE)
+            return self._pause_at_prompt(leaf)
         if answer is None:
             return self._pause_at_prompt(leaf)
         return self._apply_answer(leaf, request, answer, invocation)
@@ -278,15 +291,12 @@ class RunCoordinator:
         return self._commit(f"before asking step '{leaf.id}'", SessionStatus.PAUSED)
 
     def _read_answer(self, request: InteractionRequest) -> InteractionAnswer | None:
-        """Ask the interaction prompter; None for no prompter, an unanswered or invalid answer, or KeyboardInterrupt."""
+        """Ask the interaction prompter; None for no prompter or an unanswered or invalid answer, and KeyboardInterrupt propagates."""
         prompter = self._context.interaction_prompter
         if prompter is None:
             return None
 
-        try:
-            answer = prompter.ask(request)
-        except KeyboardInterrupt:
-            return None
+        answer = prompter.ask(request)
         if answer is None:
             return None
 
@@ -464,7 +474,7 @@ class RunCoordinator:
 
     def _fail_invalid_pending_ask(self, leaf: ExecutionLeafNode) -> NodeTransitionKind:
         """Fail the leaf with "Pending ask for '<id>' is invalid." and commit."""
-        self._errors.append(f"Pending ask for '{leaf.id}' is invalid.")
+        self._fail(ErrorCode.SESSION_STATE_CORRUPT, f"Pending ask for '{leaf.id}' is invalid.")
         leaf.pending_ask = None
         leaf.state = NodeState.FAILED
         self._commit(f"after invalid pending ask for step '{leaf.id}'")
@@ -494,21 +504,22 @@ class RunCoordinator:
                 if isinstance(block, ExecutionIfNode) and any(leaf is self._in_flight for leaf in block.steps):
                     block.state = NodeState.CANCELLED
             self._commit("while cancelling the run")
-        self._errors = ["Execution cancelled by user."]
+        self._errors = [_CANCELLED_MESSAGE]
+        self._error_code = ErrorCode.RUN_CANCELLED
         return self._outcome(SessionStatus.CANCELLED)
 
     def _start(self) -> bool:
-        """Load state, session row, and snapshot definitions and resolve the run settings; append the failure to _errors and return False when unavailable."""
+        """Load state, session row, and snapshot definitions and resolve the run settings; record the failure and return False when unavailable."""
         session_id = self._context.session_id
         try:
             state = self._state_store.load(self._warnings)
         except EngineError as error:
-            self._errors.append(error.message)
+            self._fail(error.error_code, error.message)
             return False
 
         row = self._state_store.sessions.get(session_id)
         if row is None:
-            self._errors.append(f"Session '{session_id}' not found.")
+            self._fail(ErrorCode.SESSION_NOT_FOUND, f"Session '{session_id}' not found.")
             return False
 
         try:
@@ -516,12 +527,13 @@ class RunCoordinator:
         except EngineError as error:
             if error.error_code not in SNAPSHOT_FAILURE_CODES:
                 raise
-            self._errors.append(error.message)
+            self._fail(error.error_code, error.message)
             return False
 
         structure_errors = validate_block_structure(state, blueprint)
         if structure_errors:
-            self._errors.append(f"Execution state for session '{session_id}' is corrupt: {structure_errors[0]}")
+            message = f"Execution state for session '{session_id}' is corrupt: {structure_errors[0]}"
+            self._fail(ErrorCode.SESSION_STATE_CORRUPT, message)
             return False
 
         settings = RunSettings(
@@ -578,7 +590,8 @@ class RunCoordinator:
         if isinstance(node, ExecutionIfNode) and isinstance(definition, IfStepBlock):
             return self._advance_if(node, definition, position)
 
-        self._errors.append(f"Step '{node.id}' has no matching definition in the run snapshot.")
+        message = f"Step '{node.id}' has no matching definition in the run snapshot."
+        self._fail(ErrorCode.SESSION_SNAPSHOT_INVALID, message)
         return NodeTransitionKind.FAILED
 
     def _guard_skip(self, expressions: list[str], loop: ExecutionLoopNode | None) -> StepSkip | None:
@@ -753,9 +766,11 @@ class RunCoordinator:
         failed: bool,
         diagnostic: str | None,
     ) -> NodeTransitionKind:
-        """Set the loop terminal, record diagnostic as error or warning, emit done, and commit."""
-        if diagnostic is not None:
-            (self._errors if failed else self._warnings).append(diagnostic)
+        """Set the loop terminal, record diagnostic as the run's loop-limit failure or as a warning, emit done, and commit."""
+        if diagnostic is not None and failed:
+            self._fail(ErrorCode.RUN_LOOP_LIMIT_EXCEEDED, diagnostic)
+        elif diagnostic is not None:
+            self._warnings.append(diagnostic)
         if failed and iteration.state not in TERMINAL_NODE_STATES:
             iteration.state = NodeState.FAILED
 
@@ -788,7 +803,7 @@ class RunCoordinator:
                 grant_count=_CEILING_GRANT_COUNT,
             )
         except KeyboardInterrupt:
-            self._errors.append(diagnostic)
+            self._fail(ErrorCode.RUN_CANCELLED, diagnostic)
             boundary = f"after loop '{loop.id}' ceiling prompt interrupted"
             paused = self._commit(boundary, SessionStatus.PAUSED, diagnostic)
             return NodeTransitionKind.PAUSED if paused else NodeTransitionKind.FAILED
@@ -833,7 +848,7 @@ class RunCoordinator:
         """Apply the terminal failure policy to node.attempts[-1].result: continue, abort, or prompt with a persisted PAUSED state."""
         result = node.attempts[-1].result if node.attempts else None
         if result is None:
-            self._errors.append(f"Paused step '{node.id}' has no recorded attempt result.")
+            self._fail(ErrorCode.SESSION_STATE_CORRUPT, f"Paused step '{node.id}' has no recorded attempt result.")
             return NodeTransitionKind.FAILED
 
         policy = effective_terminal_policy(step_def.on_failure)
@@ -857,7 +872,7 @@ class RunCoordinator:
         try:
             decision, warning = prompt_failure_decision(self._prompter, step_def, result, no_tty=self._context.no_tty)
         except KeyboardInterrupt:
-            self._errors.append(failed_step_message(result))
+            self._fail(ErrorCode.RUN_CANCELLED, failed_step_message(result))
             return NodeTransitionKind.PAUSED
 
         if warning is not None:
@@ -904,7 +919,7 @@ class RunCoordinator:
         run_status: SessionStatus | None,
     ) -> NodeTransitionKind:
         """Persist the leaf as FAILED and record the step failure as the run error."""
-        self._errors.append(failed_step_message(result))
+        self._fail(ErrorCode.RUN_STEP_FAILED, failed_step_message(result))
         self._finish_leaf(node, NodeState.FAILED, None, f"after step '{node.id}' failed", run_status)
         return NodeTransitionKind.FAILED
 
@@ -928,7 +943,7 @@ class RunCoordinator:
         run_status: SessionStatus | None = None,
         error_message: str | None = None,
     ) -> bool:
-        """Save the in-memory state at revision + 1 under the workspace lock; append a boundary-naming error and return False on failure."""
+        """Save the in-memory state at revision + 1 under the workspace lock; record a boundary-naming failure with the store's code and return False on failure."""
         worktree = self._context.worktree
         with WorkspaceLock(self._context.paths.lock_file):
             try:
@@ -942,14 +957,14 @@ class RunCoordinator:
                     ),
                 )
             except EngineError as error:
-                self._errors.append(f"Failed to persist run state {boundary}: {error.message}")
+                self._fail(error.error_code, f"Failed to persist run state {boundary}: {error.message}")
                 return False
 
         self._run.state = saved
         return True
 
     def _outcome(self, status: SessionStatus) -> RunOutcome:
-        """Build the RunOutcome for status from the flattened state, accumulated errors, warnings, recorded diagnostics, and worktree identity."""
+        """Build the RunOutcome for status from the flattened state, accumulated errors and their code, warnings, recorded diagnostics, and worktree identity."""
         worktree = self._context.worktree
         return RunOutcome(
             status=status,
@@ -961,4 +976,5 @@ class RunCoordinator:
             session_id=self._context.session_id,
             worktree_id=worktree.session_id if worktree is not None else None,
             paused_prompt_id=self._paused_prompt_id if status is SessionStatus.PAUSED else None,
+            error_code=self._error_code,
         )

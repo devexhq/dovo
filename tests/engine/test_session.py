@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
@@ -170,7 +171,7 @@ class DriveRunWorktreeTests:
 
         outcome = _drive(engine_paths, sessions_repo, "no-git", observer=observer)
 
-        assert outcome.status == SessionStatus.FAILED
+        assert (outcome.status, outcome.error_code) == (SessionStatus.FAILED, ErrorCode.GIT_FAILED)
         assert outcome.errors[0].startswith("Git worktree creation failed:")
         assert not (engine_workspace / "a.ran").exists()
         assert [call for call in observer.calls if str(call[0]).startswith("run_")] == [("run_completed", outcome)]
@@ -197,7 +198,7 @@ class DriveRunStorageBridgeTests:
 
         outcome = _drive(git_paths, git_runs, "bridge-collision")
 
-        assert outcome.status == SessionStatus.FAILED
+        assert (outcome.status, outcome.error_code) == (SessionStatus.FAILED, ErrorCode.SESSION_WORKTREE_LINK_FAILED)
         assert outcome.errors == [
             f"Worktree storage bridge failed: Worktree storage bridge path '{bridge_path}' is not a symlink."
         ]
@@ -327,7 +328,7 @@ class DriveRunMissingRowTests:
         outcome = _drive(engine_paths, sessions_repo, "missing", observer=observer)
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == ["Session 'missing' not found."]
+        assert (outcome.error_code, outcome.errors) == (ErrorCode.SESSION_NOT_FOUND, ["Session 'missing' not found."])
         assert outcome.worktree_path == engine_paths.root_dir
         assert observer.calls == []
 
@@ -428,6 +429,7 @@ class DriveRunCleanupTests:
         assert outcome.status == expected_status
         assert outcome.worktree_kept is expected_kept
         assert outcome.errors == (["Patch merge conflict in worktree apply"] if auto_apply else [])
+        assert outcome.error_code == (ErrorCode.WORKTREE_APPLY_CONFLICT if auto_apply else None)
 
     def test_cleanup_failure_after_step_failure_still_reports_failed(
         self,
@@ -739,7 +741,7 @@ class DriveRunObserverContractTests:
 
         outcome = _drive(engine_paths, sessions_repo, "seq-nosnap", observer=observer)
 
-        assert outcome.status == SessionStatus.FAILED
+        assert (outcome.status, outcome.error_code) == (SessionStatus.FAILED, ErrorCode.SESSION_SNAPSHOT_MISSING)
         assert [call for call in observer.calls if str(call[0]).startswith("run_")] == [("run_completed", outcome)]
 
     def test_raising_run_level_observer_leaves_outcome_unchanged(
@@ -1009,7 +1011,7 @@ class DriveRunAgentSettingsTests:
 
         outcome = _drive(engine_paths, sessions_repo, "bad-config", observer=observer)
 
-        assert outcome.status == SessionStatus.FAILED
+        assert (outcome.status, outcome.error_code) == (SessionStatus.FAILED, ErrorCode.CONFIG_JSON_INVALID)
         assert "Malformed config.json at" in outcome.errors[0]
         assert outcome.step_results == []
         assert [call[0] for call in observer.calls] == ["run_completed"]

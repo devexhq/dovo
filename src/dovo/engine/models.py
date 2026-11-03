@@ -188,7 +188,7 @@ class InteractionPrompter(Protocol):
     """Injectable entrypoint that collects a human answer for an `ask` step."""
 
     def ask(self, request: InteractionRequest) -> InteractionAnswer | None:
-        """Return the answer, or None when unanswered, interrupted or non-interactive."""
+        """Return the answer, or None when unanswered or non-interactive; a user interrupt raises KeyboardInterrupt."""
         ...
 
 
@@ -361,6 +361,7 @@ class RunOutcome(BaseModel):
     session_id: str | None = None
     worktree_id: str | None = None
     paused_prompt_id: str | None = None
+    error_code: str | None = None  # the code of errors[0]; None exactly when the run neither failed nor was cancelled
 
     @property
     def ok(self) -> bool:

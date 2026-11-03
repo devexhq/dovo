@@ -221,13 +221,12 @@ def worktree_paths(worktree_root: Path) -> WorkspacePaths:
 
 
 class WorktreeSetup(NamedTuple):
-    """A Workspace over worktree_root and the (target_dir, manager, session, error) its setup() returned."""
+    """A Workspace over worktree_root and the (target_dir, manager, session) its setup() returned."""
 
     workspace: Workspace
     target_dir: Path
     manager: Worktree | None
     session: WorktreeSession | None
-    error: str | None
 
 
 type WorktreeSetupFactory = Callable[..., WorktreeSetup]

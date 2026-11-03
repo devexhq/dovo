@@ -100,6 +100,7 @@ class BlueprintRunServiceExecuteTests:
                 session_id=session_id,
                 errors=["step 'a' failed"],
                 warnings=["cleanup skipped"],
+                error_code=ErrorCode.RUN_STEP_FAILED,
             )
         )
 
@@ -115,7 +116,7 @@ class BlueprintRunServiceExecuteTests:
         ).execute()
 
         assert not result.ok
-        assert result.errors == ["step 'a' failed"]
+        assert (result.error_code, result.errors) == (ErrorCode.RUN_STEP_FAILED, ["step 'a' failed"])
         assert result.warnings == ["cleanup skipped"]
 
     def test_execute_unknown_blueprint_returns_failed_result_without_run_record(

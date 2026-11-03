@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from dovo.common.clock import Clock
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.process import process_registry
 from dovo.common.session_id import SessionIdFactory
@@ -16,6 +19,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.core.worktree import Worktree, WorktreeSession
 from dovo.engine.coordinator import RunCoordinator
+from dovo.engine.exceptions import EngineError
 from dovo.engine.executors.session_log import append_session_log_event
 from dovo.engine.models import (
     AgentSettingsResolution,
@@ -54,12 +58,18 @@ def drive_run(
         return RunOutcome(
             status=SessionStatus.FAILED,
             errors=[f"Session '{session_id}' not found."],
+            error_code=ErrorCode.SESSION_NOT_FOUND,
             worktree_path=paths.root_dir,
         )
 
     resolution = _resolve_agent_settings(paths, row.agent, env_overrides)
     if resolution.settings is None:
-        outcome = RunOutcome(status=SessionStatus.FAILED, errors=list(resolution.errors), worktree_path=paths.root_dir)
+        outcome = RunOutcome(
+            status=SessionStatus.FAILED,
+            errors=list(resolution.errors),
+            error_code=resolution.error_code,
+            worktree_path=paths.root_dir,
+        )
         safe_notify(observer, "on_run_completed", outcome)
         return outcome
 
@@ -92,7 +102,9 @@ def _resolve_agent_settings(
     """
     result = Config(paths).load()
     if not result.ok or result.config is None:
-        return AgentSettingsResolution(errors=list(result.errors) or ["Failed to resolve agent settings."])
+        return AgentSettingsResolution(
+            error_code=result.error_code, errors=list(result.errors) or ["Failed to resolve agent settings."]
+        )
 
     provider = override or result.config.default_agent
     agent = agent_settings(result.config, provider)
@@ -147,6 +159,21 @@ def _workspace_context(
         git=git,
         clock=clock,
         new_id=new_id,
+    )
+
+
+def _setup_failed(
+    error: EngineError, warnings: list[str], diagnostics: list[DiagnosticRecord], worktree_path: Path
+) -> RunOutcome:
+    """Build the FAILED outcome for a run whose workspace could not be set up, carrying the error's code and message."""
+    return RunOutcome(
+        status=SessionStatus.FAILED,
+        errors=[error.message],
+        error_code=error.error_code,
+        warnings=warnings,
+        diagnostics=diagnostics,
+        worktree_kept=False,
+        worktree_path=worktree_path,
     )
 
 
@@ -205,27 +232,15 @@ class SessionRunner:
         workspace = Workspace(_workspace_context(row, paths, observer, sensitive_variables, git, clock, new_id))
         setup_warnings: list[str] = []
         setup_diagnostics: list[DiagnosticRecord] = []
-        target_dir, manager, worktree, setup_error = workspace.setup(setup_warnings, setup_diagnostics)
-        if setup_error is not None:
-            return RunOutcome(
-                status=SessionStatus.FAILED,
-                errors=[setup_error],
-                warnings=setup_warnings,
-                diagnostics=setup_diagnostics,
-                worktree_kept=False,
-                worktree_path=target_dir,
-            )
+        try:
+            target_dir, manager, worktree = workspace.setup(setup_warnings, setup_diagnostics)
+        except EngineError as error:
+            return _setup_failed(error, setup_warnings, setup_diagnostics, workspace.context.cwd.resolve())
 
-        link_error = workspace.link_session_dir(manager, worktree, setup_warnings, setup_diagnostics)
-        if link_error is not None:
-            return RunOutcome(
-                status=SessionStatus.FAILED,
-                errors=[link_error],
-                warnings=setup_warnings,
-                diagnostics=setup_diagnostics,
-                worktree_kept=False,
-                worktree_path=paths.root_dir,
-            )
+        try:
+            workspace.link_session_dir(manager, worktree, setup_warnings, setup_diagnostics)
+        except EngineError as error:
+            return _setup_failed(error, setup_warnings, setup_diagnostics, paths.root_dir)
 
         session_tmp_dir = workspace.prepare_session_tmp_dir(setup_warnings)
         session_log_dir = workspace.prepare_session_log_dir(setup_warnings)
@@ -301,7 +316,7 @@ class SessionRunner:
         )
 
     def _apply_worktree_changes(self, outcome: RunOutcome) -> RunOutcome:
-        """Auto-apply worktree changes on a completed run, copying the apply's warnings, errors and records, marking the run FAILED when apply fails, and recording whether it failed."""
+        """Auto-apply worktree changes on a completed run, copying the apply's warnings, errors, code and records, marking the run FAILED when apply fails, and recording whether it failed."""
         if outcome.status != SessionStatus.COMPLETED:
             return outcome
 
@@ -316,6 +331,7 @@ class SessionRunner:
         }
         if not result.ok:
             update["errors"] = [*outcome.errors, *result.errors]
+            update["error_code"] = result.error_code
             update["status"] = SessionStatus.FAILED
         return outcome.model_copy(update=update)
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import shlex
 import shutil
 from collections.abc import Callable
@@ -12,6 +13,7 @@ from typing import NoReturn
 import pytest
 
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
@@ -29,6 +31,7 @@ from dovo.core.worktree import (
 )
 from dovo.core.worktree.models import WorktreeCreateResult
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
+from dovo.engine.exceptions import EngineError
 from dovo.engine.executors.models import ExecutionIdentity
 from dovo.engine.models import RunSettings
 from dovo.engine.workspace import Workspace
@@ -68,7 +71,7 @@ class WorkspaceSetupTests:
     def test_creation_failure_adds_create_diagnostics(
         self, worktree_root: Path, worktree_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """Return the 'Git worktree creation failed: …' error and add the WorktreeCreateResult's diagnostics to the diagnostics list when Worktree.create returns a failed result carrying one record."""
+        """Raise the 'Git worktree creation failed: …' EngineError with the create result's code and add the WorktreeCreateResult's diagnostics to the diagnostics list when Worktree.create returns a failed result carrying one record."""
         record = _record(tmp_path)
         failed = WorktreeCreateResult(
             error_code="INTERNAL_ERROR", errors=["Unexpected error during worktree.create: boom"], diagnostics=[record]
@@ -77,10 +80,13 @@ class WorkspaceSetupTests:
         warnings: list[str] = []
         diagnostics: list[DiagnosticRecord] = []
 
-        _, manager, session, error = Workspace(_settings(worktree_root, worktree_paths)).setup(warnings, diagnostics)
+        with pytest.raises(EngineError) as raised:
+            Workspace(_settings(worktree_root, worktree_paths)).setup(warnings, diagnostics)
 
-        assert (manager, session) == (None, None)
-        assert error == "Git worktree creation failed: Unexpected error during worktree.create: boom"
+        assert (raised.value.error_code, raised.value.message) == (
+            ErrorCode.INTERNAL_ERROR,
+            "Git worktree creation failed: Unexpected error during worktree.create: boom",
+        )
         assert warnings == []
         assert diagnostics == [record]
 
@@ -100,9 +106,8 @@ class WorkspaceSetupTests:
         warnings: list[str] = []
         diagnostics: list[DiagnosticRecord] = []
 
-        _, manager, session, error = Workspace(_settings(worktree_root, worktree_paths)).setup(warnings, diagnostics)
+        _, manager, session = Workspace(_settings(worktree_root, worktree_paths)).setup(warnings, diagnostics)
 
-        assert error is None
         assert manager is not None
         assert session is not None
         assert warnings == ["Failed to persist worktree metadata to the local database: boom"]
@@ -127,9 +132,9 @@ class WorkspaceSetupTests:
             new_id=fixed_new_id,
         )
 
-        target_dir, manager, session, error = Workspace(context).setup([], [])
+        target_dir, manager, session = Workspace(context).setup([], [])
 
-        assert (target_dir, manager, session, error) == (tmp_path.resolve(), None, None, None)
+        assert (target_dir, manager, session) == (tmp_path.resolve(), None, None)
         assert observer.calls == [("worktree_ready", tmp_path.resolve(), False)]
 
     def test_use_worktree_creates_worktree_and_notifies_active(self, worktree_setup: WorktreeSetupFactory) -> None:
@@ -137,7 +142,6 @@ class WorkspaceSetupTests:
 
         setup = worktree_setup(observer=observer)
 
-        assert setup.error is None
         assert setup.manager is not None
         assert setup.session is not None
         assert setup.target_dir == setup.session.worktree_path
@@ -150,7 +154,6 @@ class WorkspaceSetupTests:
         """Return session "dovo_0000abcd" created at "2026-01-02T03:04:05+00:00" for RunSettings(clock=fixed_clock, new_id=fixed_new_id) with no session_id."""
         setup = worktree_setup()
 
-        assert setup.error is None
         assert setup.session is not None
         assert setup.session.session_id == "dovo_0000abcd"
         assert setup.session.created_at == "2026-01-02T03:04:05+00:00"
@@ -165,7 +168,6 @@ class WorkspaceSetupTests:
         )
 
         session = setup.session
-        assert setup.error is None
         assert session is not None
         assert session.session_id == "blueprint_367e1e88"
         assert session.worktree_path == paths.worktree_dir("blueprint_367e1e88").resolve()
@@ -185,22 +187,20 @@ class WorkspaceSetupTests:
             ),
         ],
     )
-    def test_worktree_creation_failure_returns_error_message(
+    def test_worktree_creation_failure_raises_error_message(
         self,
-        worktree_setup: WorktreeSetupFactory,
         worktree_root: Path,
+        worktree_paths: WorkspacePaths,
         monkeypatch: pytest.MonkeyPatch,
         create: Callable[..., WorktreeCreateResult],
         expected_error: str,
     ) -> None:
         monkeypatch.setattr(Worktree, "create", create)
 
-        setup = worktree_setup()
+        with pytest.raises(EngineError) as raised:
+            Workspace(_settings(worktree_root, worktree_paths)).setup([], [])
 
-        assert setup.target_dir == worktree_root.resolve()
-        assert setup.manager is None
-        assert setup.session is None
-        assert setup.error == expected_error
+        assert (raised.value.error_code, raised.value.message) == (ErrorCode.GIT_FAILED, expected_error)
 
     def test_capacity_failure_message_includes_fix_line(self, tmp_path: Path) -> None:
         workspace_root = (
@@ -228,9 +228,9 @@ class WorkspaceSetupTests:
                 new_id=fixed_new_id,
             )
         )
-        assert first.setup([], [])[3] is None
+        assert first.setup([], [])[2] is not None
 
-        _, manager, session, error = Workspace(
+        second = Workspace(
             RunSettings(
                 cwd=workspace_root,
                 use_worktree=True,
@@ -240,15 +240,17 @@ class WorkspaceSetupTests:
                 clock=fixed_clock,
                 new_id=fixed_new_id,
             )
-        ).setup([], [])
+        )
 
-        assert manager is None
-        assert session is None
-        assert error == (
+        with pytest.raises(EngineError) as raised:
+            second.setup([], [])
+
+        assert (raised.value.error_code, raised.value.message) == (
+            ErrorCode.WORKTREE_CAPACITY_EXCEEDED,
             "Git worktree creation failed: Maximum active worktrees reached (1/1).\n"
             "Fix:\n"
             "- Remove a kept worktree with 'dovo worktree delete <worktree-id>' (see 'dovo worktree list')\n"
-            "- Raise 'worktree.max_active_worktrees' in '.dovo/config.json'"
+            "- Raise 'worktree.max_active_worktrees' in '.dovo/config.json'",
         )
 
 
@@ -264,7 +266,6 @@ class WorkspaceRetainedWorktreeTests:
         setup = worktree_setup(worktree_id=retained_id)
 
         session = setup.session
-        assert setup.error is None
         assert setup.manager is not None
         assert setup.target_dir == paths.worktree_dir(retained_id)
         assert session is not None
@@ -280,9 +281,8 @@ class WorkspaceRetainedWorktreeTests:
             pytest.param("no-record", "Git worktree record is missing: orphan", id="no-record"),
         ],
     )
-    def test_retained_worktree_missing_returns_setup_error(
+    def test_retained_worktree_missing_raises_setup_error(
         self,
-        worktree_setup: WorktreeSetupFactory,
         worktree_root: Path,
         worktree_paths: WorkspacePaths,
         fault: str,
@@ -291,13 +291,15 @@ class WorkspaceRetainedWorktreeTests:
         worktree_id = "orphan"
         if fault == "no-record":
             worktree_paths.worktree_dir(worktree_id).mkdir(parents=True)
+        settings = dataclasses.replace(_settings(worktree_root, worktree_paths), worktree_id=worktree_id)
 
-        setup = worktree_setup(worktree_id=worktree_id)
+        with pytest.raises(EngineError) as raised:
+            Workspace(settings).setup([], [])
 
-        assert setup.target_dir == worktree_root.resolve()
-        assert setup.manager is None
-        assert setup.session is None
-        assert setup.error == expected_error.format(path=worktree_paths.worktree_dir(worktree_id))
+        assert (raised.value.error_code, raised.value.message) == (
+            ErrorCode.SESSION_WORKTREE_MISSING,
+            expected_error.format(path=worktree_paths.worktree_dir(worktree_id)),
+        )
 
 
 class WorkspaceCleanupTests:
@@ -324,7 +326,7 @@ class WorkspaceCleanupTests:
         self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
         """Append "Failed to remove worktree '<path>': Unexpected error during worktree.cleanup: worktree removal failed" with no hint, add the worktree.cleanup record to diagnostics, and return False, when the removal raises RuntimeError."""
-        workspace, target_dir, manager, session, _ = worktree_setup()
+        workspace, target_dir, manager, session = worktree_setup()
         assert session is not None
 
         def _raise(self: WorktreeLifecycle, *args: object, **kwargs: object) -> NoReturn:
@@ -349,7 +351,7 @@ class WorkspaceCleanupTests:
         self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
         """Append "Failed to remove worktree '<path>': <lock timeout>", add nothing to diagnostics, and write no record, when Worktree.cleanup raises LockTimeoutError."""
-        workspace, target_dir, manager, session, _ = worktree_setup()
+        workspace, target_dir, manager, session = worktree_setup()
         assert session is not None
 
         def _raise(self: Worktree, *args: object, **kwargs: object) -> NoReturn:
@@ -370,7 +372,7 @@ class WorkspaceCleanupTests:
         self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Append "Failed to remove worktree '<path>': <warning>" once for each of two warnings when Worktree.cleanup returns a WorktreeCleanupResult carrying two warnings."""
-        workspace, target_dir, manager, session, _ = worktree_setup()
+        workspace, target_dir, manager, session = worktree_setup()
         assert session is not None
         removal = WorktreeCleanupResult(worktree_id=session.session_id, warnings=["partial failure", "second"])
         monkeypatch.setattr(Worktree, "cleanup", lambda self, *args, **kwargs: removal)
@@ -388,7 +390,7 @@ class WorkspaceCleanupTests:
         self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         """Append "Failed to remove worktree '<path>': <warning>" with no 'Details logged:' text and add the cleanup result's record to diagnostics."""
-        workspace, target_dir, manager, session, _ = worktree_setup()
+        workspace, target_dir, manager, session = worktree_setup()
         assert session is not None
         record = _record(tmp_path)
         removal = WorktreeCleanupResult(
@@ -405,7 +407,7 @@ class WorkspaceCleanupTests:
 
     def test_kept_cleanup_notifies_worktree_id_and_branch(self, worktree_setup: WorktreeSetupFactory) -> None:
         observer = RecordingRunObserver()
-        workspace, target_dir, manager, session, _ = worktree_setup(session_id="kept-run", observer=observer)
+        workspace, target_dir, manager, session = worktree_setup(session_id="kept-run", observer=observer)
         assert session is not None
 
         kept = workspace.cleanup(manager, session, target_dir, SessionStatus.FAILED, [], [])
@@ -426,10 +428,10 @@ class WorkspaceCleanupTests:
     def test_cleanup_of_linked_worktree_preserves_session_contents(
         self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths
     ) -> None:
-        workspace, target_dir, manager, session, _ = worktree_setup(session_id="cleanup-link")
+        workspace, target_dir, manager, session = worktree_setup(session_id="cleanup-link")
         assert session is not None
         setup_warnings: list[str] = []
-        assert workspace.link_session_dir(manager, session, setup_warnings, []) is None
+        workspace.link_session_dir(manager, session, setup_warnings, [])
         sentinel_path = worktree_paths.session_dir("cleanup-link") / "sentinel.txt"
         sentinel_path.write_text("preserve me", encoding="utf-8")
         warnings: list[str] = []
@@ -444,7 +446,7 @@ class WorkspaceCleanupTests:
     def test_cleanup_unlink_failure_appends_warning_and_still_removes_worktree(
         self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        workspace, target_dir, manager, session, _ = worktree_setup(session_id="cleanup-busy")
+        workspace, target_dir, manager, session = worktree_setup(session_id="cleanup-busy")
         assert session is not None
         message = f"Failed to unlink worktree storage bridge at '{target_dir / '.dovo' / 'run'}': busy"
         monkeypatch.setattr("dovo.engine.workspace.remove_storage_bridge", lambda worktree_path: message)
@@ -468,12 +470,11 @@ class WorkspaceLinkSessionDirTests:
         self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths
     ) -> None:
         paths = worktree_paths
-        workspace, target_dir, manager, session, _ = worktree_setup(session_id="link-1")
+        workspace, target_dir, manager, session = worktree_setup(session_id="link-1")
         warnings: list[str] = []
 
-        error = workspace.link_session_dir(manager, session, warnings, [])
+        workspace.link_session_dir(manager, session, warnings, [])
 
-        assert error is None
         assert warnings == []
         assert (target_dir / ".dovo" / "run").resolve() == paths.session_dir("link-1").resolve()
         assert paths.session_dir("link-1").is_dir()
@@ -483,15 +484,14 @@ class WorkspaceLinkSessionDirTests:
     ) -> None:
         (worktree_root / ".dovo" / "run").symlink_to(tmp_path / "missing-session")
         _commit_source_path(worktree_root, ".dovo/run", "Add stale storage bridge")
-        workspace, target_dir, manager, session, _ = worktree_setup(session_id="link-stale")
+        workspace, target_dir, manager, session = worktree_setup(session_id="link-stale")
 
-        error = workspace.link_session_dir(manager, session, [], [])
+        workspace.link_session_dir(manager, session, [], [])
 
-        assert error is None
         assert (target_dir / ".dovo" / "run").is_symlink()
         assert (target_dir / ".dovo" / "run").resolve() == worktree_paths.session_dir("link-stale").resolve()
 
-    def test_link_with_committed_directory_returns_not_a_symlink_error_and_preserves_content(
+    def test_link_with_committed_directory_raises_not_a_symlink_error_and_preserves_content(
         self, worktree_setup: WorktreeSetupFactory, worktree_root: Path, worktree_paths: WorkspacePaths
     ) -> None:
         paths = worktree_paths
@@ -503,14 +503,16 @@ class WorkspaceLinkSessionDirTests:
         session_file.parent.mkdir(parents=True)
         session_file.write_text("preserve me too", encoding="utf-8")
         observer = RecordingRunObserver()
-        workspace, target_dir, manager, session, _ = worktree_setup(session_id="link-collision", observer=observer)
+        workspace, target_dir, manager, session = worktree_setup(session_id="link-collision", observer=observer)
 
-        error = workspace.link_session_dir(manager, session, [], [])
+        with pytest.raises(EngineError) as raised:
+            workspace.link_session_dir(manager, session, [], [])
 
         record = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id).get("link-collision")
-        assert error == (
+        assert (raised.value.error_code, raised.value.message) == (
+            ErrorCode.SESSION_WORKTREE_LINK_FAILED,
             f"Worktree storage bridge failed: Worktree storage bridge path '{target_dir / '.dovo' / 'run'}' "
-            "is not a symlink."
+            "is not a symlink.",
         )
         assert not target_dir.exists()
         assert [call[:3] for call in observer.calls] == [
@@ -523,7 +525,7 @@ class WorkspaceLinkSessionDirTests:
         assert source_sentinel.read_text(encoding="utf-8") == "do not delete"
         assert session_file.read_text(encoding="utf-8") == "preserve me too"
 
-    def test_link_symlink_failure_returns_prefixed_error_and_discards_worktree(
+    def test_link_symlink_failure_raises_prefixed_error_and_discards_worktree(
         self,
         worktree_setup: WorktreeSetupFactory,
         worktree_root: Path,
@@ -531,18 +533,21 @@ class WorkspaceLinkSessionDirTests:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         paths = worktree_paths
-        workspace, target_dir, manager, session, _ = worktree_setup(session_id="link-fail")
+        workspace, target_dir, manager, session = worktree_setup(session_id="link-fail")
 
         def _symlink_fails(self: Path, target: Path, target_is_directory: bool = False) -> None:
             raise OSError("storage device I/O failure")
 
         monkeypatch.setattr(Path, "symlink_to", _symlink_fails)
 
-        error = workspace.link_session_dir(manager, session, [], [])
+        with pytest.raises(EngineError) as raised:
+            workspace.link_session_dir(manager, session, [], [])
 
         record = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id).get("link-fail")
-        assert error is not None
-        assert error.startswith("Worktree storage bridge failed: Unable to create worktree storage bridge at '")
+        assert raised.value.error_code == ErrorCode.SESSION_WORKTREE_LINK_FAILED
+        assert raised.value.message.startswith(
+            "Worktree storage bridge failed: Unable to create worktree storage bridge at '"
+        )
         assert not target_dir.exists()
         assert "dovo/link-fail" not in GitRunner().list_branches(worktree_root)
         assert record is not None
@@ -551,8 +556,8 @@ class WorkspaceLinkSessionDirTests:
     def test_link_failure_reports_discard_warnings_and_records(
         self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """Return "Worktree storage bridge failed: …", append "Failed to remove worktree '<path>': <warning>" to warnings and add the cleanup result's record to diagnostics when the bridge fails and Worktree.cleanup returns one warning and record."""
-        workspace, _, manager, session, _ = worktree_setup(session_id="link-discard")
+        """Raise "Worktree storage bridge failed: …", append "Failed to remove worktree '<path>': <warning>" to warnings and add the cleanup result's record to diagnostics when the bridge fails and Worktree.cleanup returns one warning and record."""
+        workspace, _, manager, session = worktree_setup(session_id="link-discard")
         assert session is not None
         record = _record(tmp_path)
         removal = WorktreeCleanupResult(worktree_id="link-discard", warnings=["discard failed"], diagnostics=[record])
@@ -565,10 +570,10 @@ class WorkspaceLinkSessionDirTests:
         warnings: list[str] = []
         diagnostics: list[DiagnosticRecord] = []
 
-        error = workspace.link_session_dir(manager, session, warnings, diagnostics)
+        with pytest.raises(EngineError) as raised:
+            workspace.link_session_dir(manager, session, warnings, diagnostics)
 
-        assert error is not None
-        assert error.startswith("Worktree storage bridge failed: ")
+        assert raised.value.message.startswith("Worktree storage bridge failed: ")
         assert warnings == [f"Failed to remove worktree '{session.worktree_path}': discard failed"]
         assert diagnostics == [record]
 
@@ -580,7 +585,7 @@ class WorkspaceLinkSessionDirTests:
             pytest.param("no-session-id", id="no-session-id"),
         ],
     )
-    def test_link_without_fresh_run_worktree_returns_none_and_creates_no_link(
+    def test_link_without_fresh_run_worktree_creates_no_link(
         self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths, scenario: str
     ) -> None:
         paths = worktree_paths
@@ -598,12 +603,11 @@ class WorkspaceLinkSessionDirTests:
             setup = worktree_setup(session_id="link-skip", worktree_id=created.session.session_id)
         else:
             setup = worktree_setup(session_id=None)
-        workspace, target_dir, manager, session, _ = setup
+        workspace, target_dir, manager, session = setup
         warnings: list[str] = []
 
-        error = workspace.link_session_dir(manager, session, warnings, [])
+        workspace.link_session_dir(manager, session, warnings, [])
 
-        assert error is None
         assert warnings == []
         assert not (target_dir / ".dovo" / "run").is_symlink()
         assert not (target_dir / ".dovo" / "run").exists()
@@ -628,7 +632,7 @@ class WorkspaceHandleAutoApplyTests:
         self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Return the result Worktree.apply returns, unchanged."""
-        workspace, _, manager, session, _ = worktree_setup(auto_apply=True)
+        workspace, _, manager, session = worktree_setup(auto_apply=True)
         assert session is not None
         applied = WorktreeApplyResult(worktree_id=session.session_id, warnings=["hunk note"])
         monkeypatch.setattr(Worktree, "apply", lambda self, *args, **kwargs: applied)
@@ -671,7 +675,7 @@ class WorkspaceCaptureAndPersistDiffTests:
         value_visible: bool,
     ) -> None:
         monkeypatch.setenv("DB_PIN", "1234")
-        workspace, _, _, session, _ = worktree_setup(session_id="sess-1", sensitive_variables=names)
+        workspace, _, _, session = worktree_setup(session_id="sess-1", sensitive_variables=names)
         assert session is not None
         (session.worktree_path / "new_file.txt").write_text("pin=1234\n", encoding="utf-8")
 
@@ -685,7 +689,7 @@ class WorkspaceCaptureAndPersistDiffTests:
         self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("SVC_TOKEN", "s3cr3t-value")
-        workspace, _, _, session, _ = worktree_setup(session_id="sess-1")
+        workspace, _, _, session = worktree_setup(session_id="sess-1")
         assert session is not None
         (session.worktree_path / "new_file.txt").write_text("token=s3cr3t-value\n", encoding="utf-8")
         warnings: list[str] = []
@@ -700,7 +704,7 @@ class WorkspaceCaptureAndPersistDiffTests:
     def test_capture_leaves_worktree_index_and_status_unchanged(
         self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths
     ) -> None:
-        workspace, _, _, session, _ = worktree_setup(session_id="sess-1")
+        workspace, _, _, session = worktree_setup(session_id="sess-1")
         assert session is not None
         (session.worktree_path / "new.txt").write_text("untracked\n", encoding="utf-8")
         before = snapshot_index(session.worktree_path)
@@ -718,7 +722,7 @@ class WorkspaceCaptureAndPersistDiffTests:
         self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
         """Append the persist failure alone and add its engine.workspace record to diagnostics when writing diff.patch raises."""
-        workspace, _, _, session, _ = worktree_setup(session_id="sess-1")
+        workspace, _, _, session = worktree_setup(session_id="sess-1")
         assert session is not None
 
         def _disk_full(*args: object, **kwargs: object) -> None:
@@ -740,7 +744,7 @@ class WorkspaceCaptureAndPersistDiffTests:
         self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
         """Append an unhinted warning, write no diff.patch and leave <DOVO_HOME>/logs absent for an unknown base commit."""
-        workspace, _, _, session, _ = worktree_setup(session_id="sess-1")
+        workspace, _, _, session = worktree_setup(session_id="sess-1")
         assert session is not None
         unknown_base = session.model_copy(update={"base_commit": "0" * 40})
         warnings: list[str] = []
@@ -780,7 +784,7 @@ class WorkspaceFinalizeCleanupTests:
         expected_kept: bool,
     ) -> None:
         observer = RecordingRunObserver()
-        workspace, target_dir, manager, session, _ = worktree_setup(keep=keep, discard=discard, observer=observer)
+        workspace, target_dir, manager, session = worktree_setup(keep=keep, discard=discard, observer=observer)
         assert session is not None
 
         kept = workspace.finalize_cleanup(
@@ -802,7 +806,7 @@ class WorkspaceFinalizeCleanupTests:
         self, worktree_setup: WorktreeSetupFactory, status: SessionStatus, apply_failed: bool
     ) -> None:
         observer = RecordingRunObserver()
-        workspace, target_dir, manager, session, _ = worktree_setup(discard=True, observer=observer)
+        workspace, target_dir, manager, session = worktree_setup(discard=True, observer=observer)
         assert session is not None
 
         kept = workspace.finalize_cleanup(

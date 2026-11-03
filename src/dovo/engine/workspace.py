@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
+from dovo.common.error_codes import ErrorCode
 from dovo.common.formatters import format_remediations
 from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
@@ -25,6 +26,7 @@ from dovo.core.worktree import (
     WorktreeCreateResult,
     WorktreeSession,
 )
+from dovo.engine.exceptions import EngineError
 from dovo.engine.models import RunSettings
 from dovo.engine.notify import safe_notify
 from dovo.engine.storage_bridge import create_storage_bridge, remove_storage_bridge
@@ -62,18 +64,22 @@ class Workspace:
     def _setup_retained_worktree(
         self,
         worktree_id: str,
-    ) -> tuple[Path, Worktree | None, WorktreeSession | None, str | None]:
-        """Rebuild the retained worktree session from paths.worktree_dir(worktree_id) and its worktrees row, or return a setup error."""
+    ) -> tuple[Path, Worktree, WorktreeSession]:
+        """Rebuild the retained worktree session from paths.worktree_dir(worktree_id) and its worktrees row.
+
+        Raises:
+            EngineError: With SESSION_WORKTREE_MISSING when the worktree directory or its row is missing.
+        """
         path = self.context.paths.worktree_dir(worktree_id)
         if not path.exists():
-            return self.context.cwd.resolve(), None, None, f"Git worktree is missing: {path}"
+            raise EngineError(ErrorCode.SESSION_WORKTREE_MISSING, f"Git worktree is missing: {path}")
 
         worktrees = WorktreesRepository(
             db_path=self.context.paths.database_file, project_id=self.context.paths.project_id
         )
         record = worktrees.get(worktree_id)
         if record is None:
-            return self.context.cwd.resolve(), None, None, f"Git worktree record is missing: {worktree_id}"
+            raise EngineError(ErrorCode.SESSION_WORKTREE_MISSING, f"Git worktree record is missing: {worktree_id}")
 
         session = WorktreeSession(
             session_id=worktree_id,
@@ -87,21 +93,23 @@ class Workspace:
             self.context.paths, git=self.context.git, clock=self.context.clock, new_id=self.context.new_id, db=worktrees
         )
         safe_notify(self.context.observer, "on_worktree_ready", path, active=True)
-        return path, manager, session, None
+        return path, manager, session
 
     def setup(
         self, warnings: list[str], diagnostics: list[DiagnosticRecord]
-    ) -> tuple[Path, Worktree | None, WorktreeSession | None, str | None]:
+    ) -> tuple[Path, Worktree | None, WorktreeSession | None]:
         """Create an optional worktree and return the execution directory, adding create's warnings and records to the lists.
 
         Returns:
-            Tuple of (target_dir, manager, session, error_message).
-            ``error_message`` is set when worktree setup fails.
+            Tuple of (target_dir, manager, session); manager and session are None when the run uses no worktree.
+
+        Raises:
+            EngineError: With the failure's own code when the worktree cannot be set up.
         """
         if not self.context.use_worktree:
             target_dir = self.context.cwd.resolve()
             safe_notify(self.context.observer, "on_worktree_ready", target_dir, active=False)
-            return target_dir, None, None, None
+            return target_dir, None, None
 
         if self.context.worktree_id is not None:
             return self._setup_retained_worktree(self.context.worktree_id)
@@ -115,14 +123,16 @@ class Workspace:
         )
         create_result = manager.create(session_id=self.context.session_id)
         diagnostics.extend(create_result.diagnostics)
-        if not create_result.ok or create_result.session is None:
-            return self.context.cwd.resolve(), None, None, _creation_failure_message(create_result)
+        if create_result.error_code is not None:
+            raise EngineError(ErrorCode(create_result.error_code), _creation_failure_message(create_result))
+        session = create_result.session
+        if session is None:
+            raise RuntimeError("Worktree creation succeeded without a worktree session.")
         warnings.extend(create_result.warnings)
 
-        session = create_result.session
         target_dir = session.worktree_path
         safe_notify(self.context.observer, "on_worktree_ready", target_dir, active=True)
-        return target_dir, manager, session, None
+        return target_dir, manager, session
 
     def link_session_dir(
         self,
@@ -130,24 +140,27 @@ class Workspace:
         session: WorktreeSession | None,
         warnings: list[str],
         diagnostics: list[DiagnosticRecord],
-    ) -> str | None:
-        """Link a freshly created run worktree to its session directory; on failure discard the worktree and return the prefixed error.
+    ) -> None:
+        """Link a freshly created run worktree to its session directory; on failure discard the worktree and raise.
 
         A retained worktree (context.worktree_id set) is never linked.
+
+        Raises:
+            EngineError: With SESSION_WORKTREE_LINK_FAILED when the storage bridge cannot be created.
         """
         if manager is None or session is None or self.context.worktree_id is not None:
-            return None
+            return
         if self.context.session_id is None:
-            return None
+            return
 
         link_error = create_storage_bridge(self.context.paths, self.context.session_id, session.worktree_path, warnings)
         if link_error is None:
-            return None
+            return
 
         # The discard's warnings and records are reported alongside the bridge error, which stays the returned cause.
         warnings.extend(self._discard_worktree(manager, session, diagnostics))
         safe_notify(self.context.observer, "on_worktree_cleanup", kept=False, path=session.worktree_path)
-        return f"Worktree storage bridge failed: {link_error}"
+        raise EngineError(ErrorCode.SESSION_WORKTREE_LINK_FAILED, f"Worktree storage bridge failed: {link_error}")
 
     def _retains(self, status: SessionStatus) -> bool:
         """Return True when the worktree outlives the run: --discard removes, --keep keeps, otherwise only FAILED keeps."""
