@@ -40,6 +40,7 @@ Static AST and architectural boundary checks: layer direction, output routing, a
 ## Harness, Fixtures, and Parameterization
 
 - **Shared fixtures (`tests/conftest.py` & `tests/cli/conftest.py`):** `isolated_workspace(tmp_path)`, `git_repo(tmp_path)`, `cli_runner()` (`NO_COLOR=1`, `COLUMNS=160`), `cli_workspace`, `workspace_config`.
+- **Environment isolation (`tests/conftest.py`):** Every test starts with no inherited `DOVO_*` variable and `DOVO_HOME` at a per-test temp directory; set any variable a test needs with `monkeypatch`. Without `--basetemp`, a temp root inside a `.dovo` or git ancestor (a `dovo run` step's `TMPDIR`) is dropped for the system default, so the suite behaves the same in an agent step as in a plain shell.
 - **Builders & Doubles (`tests/harness/`):** Use fluent builders (`tests/harness/builders/`) and typed fakes (`tests/harness/fakes.py`).
 - **Determinism (R16):** Inject clocks and ID generators; use `wait_until` in `tests/harness/poll.py` only for OS process-group reaping.
 - **Permission failures:** Simulate a read-only directory or an unreadable file with `deny_entry_creation` or `deny_read` in `tests/harness/permissions.py`, never with `chmod`: root ignores permission bits, so a `chmod` test fails or must be skipped in containers that run as root.
