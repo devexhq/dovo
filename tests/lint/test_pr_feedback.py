@@ -32,6 +32,7 @@ def _load_script(name: str, module_name: str) -> ModuleType:
 
 
 PUBLISH = _load_script("publish_review", "publish_review")
+THREADS = _load_script("review_threads", "review_threads")
 FEEDBACK = _load_script("pr_feedback", "pr_feedback_under_test")
 
 
@@ -41,9 +42,9 @@ def _thread(
     resolved: bool = False,
     author: dict[str, object] | None = None,
     line: int | None = 9,
-    thread_id: str = "PRRT_1",
+    thread_id: str = "101",
 ) -> dict[str, object]:
-    """Return a GraphQL review thread node with thread_id whose first comment has body and author."""
+    """Return a list_threads node with thread_id whose first comment has body and author."""
     return {
         "id": thread_id,
         "isResolved": resolved,
@@ -58,7 +59,7 @@ def _dovo_thread(
 ) -> dict[str, object]:
     """Return a review thread node on src/a.py at line whose comments are (login, body) pairs, in order."""
     nodes = [
-        {"author": {"__typename": "User", "login": login}, "body": body, "url": f"https://x/{thread_id}/{index}"}
+        {"author": {"login": login}, "body": body, "url": f"https://x/{thread_id}/{index}"}
         for index, (login, body) in enumerate(comments)
     ]
     return {"id": thread_id, "isResolved": resolved, "path": "src/a.py", "line": line, "comments": {"nodes": nodes}}
@@ -108,13 +109,13 @@ def _dovo_review(
     login: str = "me",
     url: str = DOVO_REVIEW_URL,
 ) -> dict[str, object]:
-    """Return a REVIEWS_QUERY node by login on head, submitted at submitted, whose body is review_body of findings."""
+    """Return a list_reviews node by login on head, submitted at submitted, whose body is review_body of findings."""
     return {
-        "author": {"__typename": "User", "login": login},
+        "id": int(url.rsplit("-", 1)[1]),
+        "author": {"login": login},
         "body": PUBLISH.review_body(findings),
         "url": url,
         "submittedAt": submitted,
-        "lastEditedAt": None,
         "commit": {"oid": head},
         "comments": {"nodes": []},
     }
@@ -130,7 +131,7 @@ def _payload(
 
 
 def _posted(payload: dict[str, object], url: str, submitted: str) -> dict[str, object]:
-    """Return the viewer's REVIEWS_QUERY node for payload as posted at url and submitted."""
+    """Return the viewer's list_reviews node for payload as posted at url and submitted."""
     comments = payload["comments"]
     assert isinstance(comments, list)
     return {
@@ -188,17 +189,9 @@ def _comment(comment_id: int, user: str | None, body: str, created: str, updated
     }
 
 
-def _review(
-    body: str, author: dict[str, object] | None, submitted: str | None, edited: str | None = None
-) -> dict[str, object]:
-    """Return a REVIEWS_QUERY node with body, author and submission and last edit times."""
-    return {
-        "author": author,
-        "body": body,
-        "url": f"https://x/r/{body[:3]}",
-        "submittedAt": submitted,
-        "lastEditedAt": edited,
-    }
+def _review(body: str, author: dict[str, object] | None, submitted: str | None) -> dict[str, object]:
+    """Return a list_reviews node with body, author and submission time."""
+    return {"author": author, "body": body, "url": f"https://x/r/{body[:3]}", "submittedAt": submitted}
 
 
 def _comment_item(item_id: str, author: str, url: str, body: str, summary: str) -> dict[str, object]:
@@ -335,21 +328,21 @@ class PrFeedbackTests:
 
     def test_thread_items(self) -> None:
         threads = [
-            _thread("Fix one", author={"__typename": "Bot", "login": "coderabbitai"}),
-            _thread("Done already", resolved=True, author={"__typename": "User", "login": "alice"}),
+            _thread("Fix one", author={"login": "coderabbitai[bot]"}),
+            _thread("Done already", resolved=True, author={"login": "alice"}),
             _thread("Fix two", author=None, line=None),
-            _thread("Fix three", author={"__typename": "User", "login": "alice"}),
+            _thread("Fix three", author={"login": "alice"}),
             _dovo_thread(
-                "PRRT_9",
+                "109",
                 [
                     ("me", f"{PUBLISH.inline_body(B1)}\n"),
                     ("alice", "Quoted.\n<!-- dovo-finding id=X1 severity=NIT rule=- -->"),
                     ("me", "Another note.\n<!-- dovo-finding id=W2 severity=WARNING rule=R4 -->"),
                 ],
             ),
-            _dovo_thread("PRRT_8", [("bob", N1_BLOCK)]),
-            _dovo_thread("PRRT_7", [("me", f"{MARKER_FIRST}\nMarker first.")]),
-            _dovo_thread("PRRT_6", [("me", f"Plain note.\n{MARKER_FIRST}")]),
+            _dovo_thread("108", [("bob", N1_BLOCK)]),
+            _dovo_thread("107", [("me", f"{MARKER_FIRST}\nMarker first.")]),
+            _dovo_thread("106", [("me", f"Plain note.\n{MARKER_FIRST}")]),
         ]
 
         items = FEEDBACK.thread_items(threads, "me")
@@ -358,7 +351,7 @@ class PrFeedbackTests:
             {
                 "id": "T1",
                 "source": "review_thread",
-                "thread": "PRRT_1",
+                "thread": "101",
                 "author": "coderabbitai[bot]",
                 "url": "https://x/Fix",
                 "path": "scripts/publish_review.py",
@@ -370,7 +363,7 @@ class PrFeedbackTests:
             {
                 "id": "T2",
                 "source": "review_thread",
-                "thread": "PRRT_1",
+                "thread": "101",
                 "author": "ghost",
                 "url": "https://x/Fix",
                 "path": "scripts/publish_review.py",
@@ -382,7 +375,7 @@ class PrFeedbackTests:
             {
                 "id": "T3",
                 "source": "review_thread",
-                "thread": "PRRT_1",
+                "thread": "101",
                 "author": "alice",
                 "url": "https://x/Fix",
                 "path": "scripts/publish_review.py",
@@ -394,9 +387,9 @@ class PrFeedbackTests:
             {
                 "id": "T4",
                 "source": "review_thread",
-                "thread": "PRRT_9",
+                "thread": "109",
                 "author": "me",
-                "url": "https://x/PRRT_9/0",
+                "url": "https://x/109/0",
                 "path": "src/a.py",
                 "line": 3,
                 "summary": "B1 summary.",
@@ -406,9 +399,9 @@ class PrFeedbackTests:
             {
                 "id": "T5",
                 "source": "review_thread",
-                "thread": "PRRT_8",
+                "thread": "108",
                 "author": "bob",
-                "url": "https://x/PRRT_8/0",
+                "url": "https://x/108/0",
                 "path": "src/a.py",
                 "line": 3,
                 "summary": "Typo.",
@@ -418,9 +411,9 @@ class PrFeedbackTests:
             {
                 "id": "T6",
                 "source": "review_thread",
-                "thread": "PRRT_7",
+                "thread": "107",
                 "author": "me",
-                "url": "https://x/PRRT_7/0",
+                "url": "https://x/107/0",
                 "path": "src/a.py",
                 "line": 3,
                 "summary": "Marker first.",
@@ -430,9 +423,9 @@ class PrFeedbackTests:
             {
                 "id": "T7",
                 "source": "review_thread",
-                "thread": "PRRT_6",
+                "thread": "106",
                 "author": "me",
-                "url": "https://x/PRRT_6/0",
+                "url": "https://x/106/0",
                 "path": "src/a.py",
                 "line": 3,
                 "summary": "Plain note.",
@@ -516,7 +509,7 @@ class PrFeedbackTests:
         comments = payload["comments"]
         assert isinstance(comments, list)
         threads = [
-            _dovo_thread(f"PRRT_{index}", [("me", comment["body"])], line=comment["line"])
+            _dovo_thread(f"10{index}", [("me", comment["body"])], line=comment["line"])
             for index, comment in enumerate(comments)
         ]
 
@@ -542,28 +535,23 @@ class PrFeedbackTests:
             _comment(7, None, "Deleted user note", "2026-10-20T16:00:00Z", "2026-10-20T16:00:00Z"),
         ]
         reviews = [
-            _review(
-                "**Actionable** comments posted: 3", {"__typename": "User", "login": "carol"}, "2026-10-20T12:30:00Z"
-            ),
-            _review(
-                "Edited review", {"__typename": "User", "login": "dave"}, "2026-10-17T08:00:00Z", "2026-10-20T13:30:00Z"
-            ),
-            _review("Bot review", {"__typename": "Bot", "login": "copilot"}, "2026-10-20T17:00:00Z"),
-            _review("", {"__typename": "User", "login": "erin"}, "2026-10-20T18:00:00Z"),
-            _review("Pending review", {"__typename": "User", "login": "me"}, None),
+            _review("**Actionable** comments posted: 3", {"login": "carol"}, "2026-10-20T12:30:00Z"),
+            _review("Review submitted before the cut-off", {"login": "dave"}, "2026-10-17T08:00:00Z"),
+            _review("Bot review", {"login": "copilot[bot]"}, "2026-10-20T17:00:00Z"),
+            _review("", {"login": "erin"}, "2026-10-20T18:00:00Z"),
+            _review("Pending review", {"login": "me"}, None),
         ]
 
         items = FEEDBACK.comment_items(comments, reviews, "me", CUTOFF)
 
         assert items == [
-            _comment_item("C1", "dave", "https://x/r/Edi", "Edited review", "Edited review"),
-            _comment_item("C2", "alice", "https://x/c4", "Edited note", "Edited note"),
+            _comment_item("C1", "alice", "https://x/c4", "Edited note", "Edited note"),
             _comment_item(
-                "C3", "carol", "https://x/r/**A", "**Actionable** comments posted: 3", "Actionable comments posted: 3"
+                "C2", "carol", "https://x/r/**A", "**Actionable** comments posted: 3", "Actionable comments posted: 3"
             ),
-            _comment_item("C4", "coderabbitai[bot]", "https://x/c2", str(OTHER_COMMENT["body"]), "Walkthrough"),
-            _comment_item("C5", "ghost", "https://x/c7", "Deleted user note", "Deleted user note"),
-            _comment_item("C6", "copilot[bot]", "https://x/r/Bot", "Bot review", "Bot review"),
+            _comment_item("C3", "coderabbitai[bot]", "https://x/c2", str(OTHER_COMMENT["body"]), "Walkthrough"),
+            _comment_item("C4", "ghost", "https://x/c7", "Deleted user note", "Deleted user note"),
+            _comment_item("C5", "copilot[bot]", "https://x/r/Bot", "Bot review", "Bot review"),
         ]
 
     def test_check_items(self) -> None:
@@ -636,7 +624,7 @@ class PrFeedbackTests:
 
     def test_feedback_document(self) -> None:
         items = FEEDBACK.thread_items(
-            [_thread("Fix one", author={"__typename": "Bot", "login": "coderabbitai"})], "me"
+            [_thread("Fix one", author={"login": "coderabbitai[bot]"})], "me"
         ) + FEEDBACK.finding_items(_dovo_review(HEAD, [B1]))
 
         document = FEEDBACK.feedback_document(1121, HEAD, SESSION, items)
@@ -649,7 +637,7 @@ class PrFeedbackTests:
                 {
                     "id": "T1",
                     "source": "review_thread",
-                    "thread": "PRRT_1",
+                    "thread": "101",
                     "author": "coderabbitai[bot]",
                     "url": "https://x/Fix",
                     "path": "scripts/publish_review.py",
@@ -679,7 +667,7 @@ class PrFeedbackTests:
         "pr_view",
         [
             pytest.param(
-                subprocess.CalledProcessError(1, ["gh", "pr", "view"], stderr="no pull requests"), id="nonexistent"
+                subprocess.CalledProcessError(1, ["gh", "api"], stderr="HTTP 404: Not Found"), id="nonexistent"
             ),
             pytest.param(
                 json.dumps(
@@ -699,7 +687,7 @@ class PrFeedbackTests:
         self, pr_view: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         def fake_run(*args: str) -> str:
-            assert args[:3] == ("gh", "pr", "view"), f"ran {args}"
+            assert args[:4] == ("gh", "api", "repos/{owner}/{repo}/pulls/7", "--jq"), f"ran {args}"
             if isinstance(pr_view, BaseException):
                 raise pr_view
             return str(pr_view)
@@ -720,6 +708,7 @@ class PrFeedbackTests:
         fake_run = _fake_run(ran, failing_artifact="review")
         monkeypatch.setattr(FEEDBACK, "run", fake_run)
         monkeypatch.setattr(PUBLISH, "run", fake_run)
+        monkeypatch.setattr(THREADS, "run", fake_run)
 
         assert FEEDBACK.main() == 1
         assert capsys.readouterr().err == f"pr_feedback.py: {FEEDBACK.artifact_problem(SESSION, 'review')}\n"
@@ -736,6 +725,7 @@ class PrFeedbackTests:
         fake_run = _fake_run(ran, reviews=(later, _dovo_review(HEAD, [B1])))
         monkeypatch.setattr(FEEDBACK, "run", fake_run)
         monkeypatch.setattr(PUBLISH, "run", fake_run)
+        monkeypatch.setattr(THREADS, "run", fake_run)
         agentic = tmp_path / ".agentic"
         agentic.mkdir()
         (agentic / "triage.json").write_text('{"T1": {"action": "dismiss"}}\n', encoding="utf-8")
@@ -754,12 +744,12 @@ class PrFeedbackTests:
             "C1 [comment, coderabbitai[bot]] Walkthrough",
             "K1 [check, ci] Tests: failure",
         ]
-        assert document["items"][0]["thread"] == "PRRT_1"
+        assert document["items"][0]["thread"] == "101"
         assert (agentic / "pr-branch").read_text(encoding="utf-8") == "alice/fix\n"
         assert (agentic / "pr-url").read_text(encoding="utf-8") == f"{PR_URL}\n"
         assert ("git", "switch", "-q", "--detach", HEAD) in ran
         assert not (agentic / "review.json").exists()
-        for name in ("reply_threads.py", "pr_feedback.py", "publish_review.py"):
+        for name in ("reply_threads.py", "pr_feedback.py", "publish_review.py", "review_threads.py"):
             assert (agentic / "tools" / name).read_bytes() == (REPO_ROOT / "scripts" / name).read_bytes()
 
     def test_main_lists_no_findings_when_comment_has_none(
@@ -774,6 +764,7 @@ class PrFeedbackTests:
         )
         monkeypatch.setattr(FEEDBACK, "run", fake_run)
         monkeypatch.setattr(PUBLISH, "run", fake_run)
+        monkeypatch.setattr(THREADS, "run", fake_run)
 
         assert FEEDBACK.main() == 0
 
@@ -795,6 +786,7 @@ class PrFeedbackTests:
         fake_run = _fake_run([], reviews=reviews, own_comment=comment)
         monkeypatch.setattr(FEEDBACK, "run", fake_run)
         monkeypatch.setattr(PUBLISH, "run", fake_run)
+        monkeypatch.setattr(THREADS, "run", fake_run)
 
         assert PUBLISH.matching_review([posted_first], "me", later) is None
         assert FEEDBACK.main() == 0
@@ -815,6 +807,7 @@ class PrFeedbackTests:
         fake_run = _fake_run([], reviews=reviews, pr_head=pushed)
         monkeypatch.setattr(FEEDBACK, "run", fake_run)
         monkeypatch.setattr(PUBLISH, "run", fake_run)
+        monkeypatch.setattr(THREADS, "run", fake_run)
 
         assert FEEDBACK.main() == 0
 
@@ -831,6 +824,7 @@ class PrFeedbackTests:
         fake_run = _fake_run([], failing_checks=True)
         monkeypatch.setattr(FEEDBACK, "run", fake_run)
         monkeypatch.setattr(PUBLISH, "run", fake_run)
+        monkeypatch.setattr(THREADS, "run", fake_run)
 
         assert FEEDBACK.main() == 1
         assert capsys.readouterr().err == (
@@ -853,14 +847,16 @@ def _fake_run(
     """Return a `run` double answering the gh, dovo and git calls of one restore of PR #7, recording each in ran.
 
     The pull request's comments are own_comment, the viewer's dovo-review comment, then OTHER_COMMENT. The
-    pull request's head is pr_head. Downloading failing_artifact raises CalledProcessError. The GraphQL
-    call answers one thread for `reviewThreads` and the reviews nodes for `reviews`; the check-runs call on
+    pull request's head is pr_head. Downloading failing_artifact raises CalledProcessError. The review comment
+    listing answers one unresolved thread by alice, the reviews listing the reviews nodes and each review's
+    comments its own; the check-runs call on
     pr_head answers a failed `Tests` and a passed `Prek` run, or raises CalledProcessError when failing_checks is set.
     """
 
     def fake_run(*args: str) -> str:
         ran.append(args)
-        if args[:3] == ("gh", "pr", "view"):
+        if args[:3] == ("gh", "api", "repos/{owner}/{repo}/pulls/7"):
+            assert args[-1] == FEEDBACK.PR_FIELDS, f"ran {args}"
             view = {"number": 7, "state": "OPEN", "headRefName": "alice/fix", "headRefOid": pr_head}
             return json.dumps({**view, "url": PR_URL, "isCrossRepository": False})
         if args[:5] == ("uv", "run", "dovo", "artifacts", "download"):
@@ -880,17 +876,49 @@ def _gh_api(
     pr_head: str,
     failing_checks: bool,
 ) -> str:
-    """Answer a `gh api` call of one restore of PR #7: the viewer, its comments, GraphQL nodes or check runs."""
+    """Answer a `gh api` call of one restore of PR #7: the viewer, its comments, threads, reviews or check runs."""
     if args[-3:] == ("user", "--jq", ".login"):
         return "me"
     if "repos/o/r/issues/7/comments" in args:
         return "\n".join(json.dumps(comment) for comment in comments)
     if args[2] == "graphql":
-        if args[-1] == ".data.repository.pullRequest.reviews.nodes[]":
-            return "\n".join(json.dumps(review) for review in reviews)
-        return json.dumps(_thread("Fix one", author={"__typename": "User", "login": "alice"}))
+        return json.dumps({"id": "PRRT_101", "isResolved": False, "root": 101})
+    if "repos/o/r/pulls/7/comments" in args:
+        return json.dumps(THREAD_COMMENT)
+    answer = _review_listing(args, reviews)
+    if answer is not None:
+        return answer
     assert f"repos/o/r/commits/{pr_head}/check-runs" in args, f"ran {args}"
     return _checks(args, failing_checks)
+
+
+THREAD_COMMENT = {
+    "id": 101,
+    "in_reply_to_id": None,
+    "path": "scripts/publish_review.py",
+    "line": 9,
+    "original_line": 9,
+    "original_start_line": None,
+    "original_commit_id": HEAD,
+    "login": "alice",
+    "body": "Fix one",
+    "url": "https://x/Fix",
+}
+
+
+def _review_listing(args: tuple[str, ...], reviews: tuple[dict[str, object], ...]) -> str | None:
+    """Answer the REST reviews listing, without inline comments, or one review's inline comments; None for another call."""
+    answers = {"repos/o/r/pulls/7/reviews": "\n".join(json.dumps(_without_comments(node)) for node in reviews)}
+    for node in reviews:
+        answers[f"repos/o/r/pulls/7/reviews/{node['id']}/comments"] = "\n".join(
+            map(json.dumps, PUBLISH.thread_comments(node))
+        )
+    return next((answers[arg] for arg in args if arg in answers), None)
+
+
+def _without_comments(node: dict[str, object]) -> dict[str, object]:
+    """Return node without its `comments` key, as the REST reviews listing returns it."""
+    return {key: value for key, value in node.items() if key != "comments"}
 
 
 def _download(args: tuple[str, ...], failing_artifact: str | None) -> str:

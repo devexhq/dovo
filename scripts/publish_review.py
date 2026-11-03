@@ -80,54 +80,6 @@ OUTSIDE_DIFF_CAUTION = (
     "> [!CAUTION]\n> Some comments are outside the diff and can't be posted inline due to GitHub limitations."
 )
 LONG_REVIEW_ID = "9" * 20
-THREADS_QUERY = """
-query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      reviewThreads(first: 100, after: $endCursor) {
-        pageInfo { hasNextPage endCursor }
-        nodes {
-          id
-          isResolved
-          path
-          line
-          comments(first: 100) { nodes { author { __typename login } body url } }
-        }
-      }
-    }
-  }
-}
-"""
-REVIEWS_QUERY = """
-query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      reviews(first: 100, after: $endCursor) {
-        pageInfo { hasNextPage endCursor }
-        nodes {
-          author { __typename login }
-          body
-          url
-          submittedAt
-          lastEditedAt
-          commit { oid }
-          comments(first: 100) { nodes { body } }
-        }
-      }
-    }
-  }
-}
-"""
-REPLY_MUTATION = """
-mutation($thread: ID!, $body: String!) {
-  addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $thread, body: $body}) { comment { url } }
-}
-"""
-RESOLVE_MUTATION = """
-mutation($thread: ID!) {
-  resolveReviewThread(input: {threadId: $thread}) { thread { isResolved } }
-}
-"""
 
 
 class PublishReviewError(RuntimeError):
@@ -406,7 +358,7 @@ def trim_report(report: str, line: str) -> str:
 
 
 def thread_comments(thread: dict[str, object]) -> list[dict[str, object]]:
-    """Return a THREADS_QUERY or REVIEWS_QUERY node's comment nodes, in order."""
+    """Return a review thread's or review node's comment nodes, in order."""
     comments = thread.get("comments")
     nodes = comments.get("nodes") if isinstance(comments, dict) else None
     return [node for node in nodes if isinstance(node, dict)] if isinstance(nodes, list) else []
@@ -675,7 +627,7 @@ def list_comments(host: str, repository: str, number: int) -> list[dict[str, obj
 
 
 def _is_heading_review(review: dict[str, object], viewer: str, commit: str) -> bool:
-    """Return whether the REVIEWS_QUERY node is viewer's (`author.login`), submitted, on commit and headed REVIEW_HEADING."""
+    """Return whether the list_reviews node is viewer's (`author.login`), submitted, on commit and headed REVIEW_HEADING."""
     author = review.get("author")
     reviewed = review.get("commit")
     return (
@@ -687,7 +639,7 @@ def _is_heading_review(review: dict[str, object], viewer: str, commit: str) -> b
 
 
 def latest_review(reviews: list[dict[str, object]], viewer: str, commit: str) -> dict[str, object] | None:
-    """Return viewer's latest submitted REVIEWS_QUERY node, by submittedAt, on commit whose body's first line is REVIEW_HEADING, else None."""
+    """Return viewer's latest submitted list_reviews node, by submittedAt, on commit whose body's first line is REVIEW_HEADING, else None."""
     candidates = [review for review in reviews if _is_heading_review(review, viewer, commit)]
     if not candidates:
         return None
@@ -765,7 +717,7 @@ def create_review(host: str, repository: str, number: int, payload: dict[str, ob
 
 
 def list_reviews(host: str, repository: str, number: int, viewer: str) -> list[dict[str, object]]:
-    """Return the pull request's reviews as REVIEWS_QUERY-shaped nodes, read through the REST API.
+    """Return the pull request's reviews as review nodes, read through the REST API.
 
     Only viewer's reviews headed REVIEW_HEADING carry their inline comments, the only ones matching_review
     compares; every other node has none.
@@ -806,32 +758,8 @@ def review_comments(host: str, repository: str, number: int, review_id: int) -> 
     return [json.loads(line) for line in output.splitlines() if line.strip()]
 
 
-def list_pr_nodes(host: str, repository: str, number: int, query: str, connection: str) -> list[dict[str, object]]:
-    """Return every node of the pull request's GraphQL connection, one dict per node, through paginated query."""
-    owner, name = repository.split("/", 1)
-    output = run(
-        "gh",
-        "api",
-        "graphql",
-        "--hostname",
-        host,
-        "--paginate",
-        "-f",
-        f"query={query}",
-        "-f",
-        f"owner={owner}",
-        "-f",
-        f"name={name}",
-        "-F",
-        f"number={number}",
-        "--jq",
-        f".data.repository.pullRequest.{connection}.nodes[]",
-    )
-    return [json.loads(line) for line in output.splitlines() if line.strip()]
-
-
 def already_replied(comments: list[dict[str, object]], viewer: str, body: str) -> bool:
-    """Return whether a comment by viewer (GraphQL `author.login`) has body as its text, ignoring surrounding whitespace.
+    """Return whether a comment by viewer (`author.login`) has body as its text, ignoring surrounding whitespace.
 
     Matching the whole reply, not only its marker, keeps a reply with a changed outcome from being skipped.
     """
@@ -841,14 +769,6 @@ def already_replied(comments: list[dict[str, object]], viewer: str, body: str) -
         if login == viewer and str(comment.get("body") or "").strip() == body:
             return True
     return False
-
-
-def thread_graphql(host: str, query: str, thread: str, *fields: str, jq: str) -> str:
-    """Run `gh api graphql` on host with query, the thread variable and the extra `-f` fields, filtered by jq."""
-    extra = [arg for field in fields for arg in ("-f", field)]
-    return run(
-        "gh", "api", "graphql", "--hostname", host, "-f", f"query={query}", "-f", f"thread={thread}", *extra, "--jq", jq
-    )
 
 
 def _pr_endpoint(pr: str) -> tuple[list[str], str]:
@@ -866,7 +786,7 @@ def _pr_endpoint(pr: str) -> tuple[list[str], str]:
     return [f"repos/{{owner}}/{{repo}}/pulls?state=open&head={{owner}}:{head}"], ".[0] // empty"
 
 
-def _pull_request(pr: str) -> tuple[int, str, str]:
+def pull_request(pr: str) -> tuple[int, str, str]:
     """Return pr's number, head commit and URL, read through the REST API.
 
     Raises:
@@ -893,7 +813,7 @@ def prepare(pr: str, *, session: str | None) -> Posting:
         PublishReviewError: If the review is incomplete, inconsistent, stale or too long to post.
     """
     review, report = read_review()
-    number, pr_head, pr_url = _pull_request(pr)
+    number, pr_head, pr_url = pull_request(pr)
     host, repository = pr_repository(pr_url)
     # comment_body and the finding blocks index checked keys, so check the review before building either.
     _raise_on(publish_problem(review, "", pr_head) or report_problem(review, report))

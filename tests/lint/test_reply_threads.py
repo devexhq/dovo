@@ -34,6 +34,7 @@ def _load_script(name: str, module_name: str) -> ModuleType:
 
 
 PUBLISH = _load_script("publish_review", "publish_review")
+THREADS = _load_script("review_threads", "review_threads")
 FEEDBACK = _load_script("pr_feedback", "pr_feedback")
 REPLY = _load_script("reply_threads", "reply_threads_under_test")
 
@@ -63,10 +64,10 @@ def _item(item_id: str, source: str, thread: str | None, url: str, body: str) ->
 
 
 FEEDBACK_ITEMS: list[dict[str, object]] = [
-    _item("T1", "review_thread", "PRRT_1", "https://x/t1", "Hold the lock"),
-    _item("T2", "review_thread", "PRRT_2", "https://x/t2", "Rename it"),
-    _item("T3", "review_thread", "PRRT_3", "https://x/t3", "Split it"),
-    _item("T4", "review_thread", "PRRT_4", "https://x/t4", "Cache it"),
+    _item("T1", "review_thread", "101", "https://x/t1", "Hold the lock"),
+    _item("T2", "review_thread", "102", "https://x/t2", "Rename it"),
+    _item("T3", "review_thread", "103", "https://x/t3", "Split it"),
+    _item("T4", "review_thread", "104", "https://x/t4", "Cache it"),
     {
         **_item("R1", "review_finding", None, "https://x/review", PUBLISH.finding_block(W2)),
         "finding": {"id": "W2", "severity": "WARNING", "rule": "R17"},
@@ -89,10 +90,10 @@ OUTCOME_ITEMS: list[dict[str, object]] = [
     {"id": "C1", "outcome": "fixed", "note": "Refreshed it."},
 ]
 REPLIES = {
-    "PRRT_1": f"{MARKER}\nFixed in {COMMIT}: Holds the lock.",
-    "PRRT_2": f"{MARKER}\nNot changed: The name is the project's term.",
-    "PRRT_3": f"{MARKER}\nDeferred: #1300 splits it.",
-    "PRRT_4": f"{MARKER}\nDeferred: The cache needs a design.",
+    "101": f"{MARKER}\nFixed in {COMMIT}: Holds the lock.",
+    "102": f"{MARKER}\nNot changed: The name is the project's term.",
+    "103": f"{MARKER}\nDeferred: #1300 splits it.",
+    "104": f"{MARKER}\nDeferred: The cache needs a design.",
 }
 OUTCOME_COMMENT = (
     "<!-- dovo-pr-fix-outcomes -->\n"
@@ -124,9 +125,9 @@ def _outcome(item_id: str, outcome: str, note: str = "A note.") -> dict[str, obj
     return {"id": item_id, "outcome": outcome, "note": note}
 
 
-def _thread(*, resolved: bool = False, comments: list[dict[str, object]] | None = None) -> dict[str, object]:
-    """Return the REPLIES_QUERY `.data.node` answer for a thread."""
-    return {"isResolved": resolved, "comments": {"nodes": comments or [{"author": {"login": "bob"}, "body": "x"}]}}
+def _thread(*, resolved: bool = False, comments: list[tuple[str, str]] | None = None) -> dict[str, object]:
+    """Return a thread for _fake_run: whether it is resolved and its comments as (login, body), oldest first."""
+    return {"resolved": resolved, "comments": comments or [("bob", "x")]}
 
 
 def _write_agentic(
@@ -468,12 +469,12 @@ class ReplyThreadsTests:
             f"Replied on 4 review threads, resolved 2 and posted 1 outcome comment for {PR_URL}\n"
         )
         assert posted == [
-            ("reply", "PRRT_1", REPLIES["PRRT_1"]),
-            ("resolve", "PRRT_1"),
-            ("reply", "PRRT_2", REPLIES["PRRT_2"]),
-            ("resolve", "PRRT_2"),
-            ("reply", "PRRT_3", REPLIES["PRRT_3"]),
-            ("reply", "PRRT_4", REPLIES["PRRT_4"]),
+            ("reply", "101", REPLIES["101"]),
+            ("resolve", "101"),
+            ("reply", "102", REPLIES["102"]),
+            ("resolve", "102"),
+            ("reply", "103", REPLIES["103"]),
+            ("reply", "104", REPLIES["104"]),
             ("comment", OUTCOME_COMMENT),
         ]
 
@@ -500,9 +501,7 @@ class ReplyThreadsTests:
     ) -> None:
         posted: list[tuple[str, ...]] = []
         threads = {
-            thread: _thread(
-                resolved=thread in ("PRRT_1", "PRRT_2"), comments=[{"author": {"login": "me"}, "body": body}]
-            )
+            thread: _thread(resolved=thread in ("101", "102"), comments=[("bob", "x"), ("me", body)])
             for thread, body in REPLIES.items()
         }
         comments: list[dict[str, object]] = [REVIEW_COMMENT, {"id": 12, "user": "me", "body": earlier}]
@@ -651,10 +650,13 @@ class ReplyThreadsTests:
     @pytest.mark.parametrize(
         ("failing", "expected", "kept"),
         [
-            pytest.param(("reply", "PRRT_2"), "cannot update review thread https://x/t2: HTTP 502", 2, id="reply"),
-            pytest.param(("resolve", "PRRT_2"), "cannot update review thread https://x/t2: HTTP 502", 2, id="resolve"),
+            pytest.param(("reply", "102"), "cannot update review thread https://x/t2: HTTP 502", 2, id="reply"),
+            pytest.param(("resolve", "102"), "cannot update review thread https://x/t2: HTTP 502", 2, id="resolve"),
             pytest.param(
-                ("replies_query", "PRRT_2"), "cannot update review thread https://x/t2: HTTP 502", 2, id="replies_query"
+                ("missing", "102"),
+                "cannot update review thread https://x/t2: it is no longer on the pull request",
+                2,
+                id="missing-thread",
             ),
             pytest.param(("comment", ""), f"cannot post the outcome comment on {PR_URL}: HTTP 502", 6, id="comment"),
         ],
@@ -675,12 +677,12 @@ class ReplyThreadsTests:
 
         assert capsys.readouterr().err == f"reply_threads.py: {expected}\n"
         expected_posted = [
-            ("reply", "PRRT_1", REPLIES["PRRT_1"]),
-            ("resolve", "PRRT_1"),
-            ("reply", "PRRT_2", REPLIES["PRRT_2"]),
-            ("resolve", "PRRT_2"),
-            ("reply", "PRRT_3", REPLIES["PRRT_3"]),
-            ("reply", "PRRT_4", REPLIES["PRRT_4"]),
+            ("reply", "101", REPLIES["101"]),
+            ("resolve", "101"),
+            ("reply", "102", REPLIES["102"]),
+            ("resolve", "102"),
+            ("reply", "103", REPLIES["103"]),
+            ("reply", "104", REPLIES["104"]),
         ]
         assert posted[:kept] == expected_posted[:kept]
 
@@ -710,6 +712,7 @@ def _setup(
     monkeypatch.setattr(sys, "argv", ["reply_threads.py", *flags])
     monkeypatch.setattr(REPLY, "run", fake_run)
     monkeypatch.setattr(PUBLISH, "run", fake_run)
+    monkeypatch.setattr(THREADS, "run", fake_run)
 
 
 def _fake_run(
@@ -722,14 +725,16 @@ def _fake_run(
 ) -> Callable[..., str]:
     """Return a `run` double answering one reply step on PR #7, recording each command in ran.
 
-    `git rev-parse --short HEAD` answers COMMIT and the viewer lookup `me`. The comment listing answers
-    comments, or REVIEW_COMMENT alone. The replies query answers the thread's node from threads, or an
-    unresolved thread with someone else's comment. Each reply mutation is recorded in posted as
-    ("reply", thread, body), each resolve as ("resolve", thread) and each comment written as ("comment", body),
-    read from its `body=@<file>` field. failing names a (call, thread) pair, call being `reply`, `resolve`,
-    `replies_query` or `comment` (with thread ""), that raises CalledProcessError.
+    `git rev-parse --short HEAD` answers COMMIT and the viewer lookup `me`. The issue comment listing answers
+    comments, or REVIEW_COMMENT alone. The review comment listing and the GraphQL thread states answer threads
+    (a _thread per thread id), or an unresolved thread with someone else's comment for each of 101-104. Each REST
+    reply is recorded in posted as ("reply", thread, body), each resolve as ("resolve", thread) and each comment
+    written as ("comment", body), read from its `body=@<file>` field. failing names a (call, thread) pair, call
+    being `reply`, `resolve` or `comment` (with thread ""), that raises CalledProcessError, or (`missing`, thread)
+    to leave that thread out of the listings.
     """
     listed = [REVIEW_COMMENT] if comments is None else comments
+    known = _listed_threads(threads, failing)
 
     def fake_run(*args: str) -> str:
         ran.append(args)
@@ -738,11 +743,47 @@ def _fake_run(
             return COMMIT
         if args[-3:] == ("user", "--jq", ".login"):
             return "me"
-        if args[2] != "graphql":
-            return _rest_call(args, listed, posted, failing)
-        return _graphql_answer(args, threads or {}, posted, failing)
+        if args[2] == "graphql":
+            return _graphql_answer(args, known, posted, failing)
+        if "repos/o/r/pulls/7/comments" in args:
+            return _review_comments(known)
+        return _rest_call(args, listed, posted, failing)
 
     return fake_run
+
+
+def _listed_threads(
+    threads: dict[str, dict[str, object]] | None, failing: tuple[str, str] | None
+) -> dict[str, dict[str, object]]:
+    """Return threads, or an unresolved _thread for each of 101-104, without the thread a (`missing`, thread) failing names."""
+    known = threads or {thread: _thread() for thread in REPLIES}
+    missing = failing[1] if failing is not None and failing[0] == "missing" else None
+    return {thread: state for thread, state in known.items() if thread != missing}
+
+
+def _review_comments(threads: dict[str, dict[str, object]]) -> str:
+    """Answer the REST review comment listing for threads: each thread's first comment has its id, the rest reply to it."""
+    rows: list[dict[str, object]] = []
+    for thread, state in threads.items():
+        comments = state["comments"]
+        assert isinstance(comments, list)
+        for index, (login, body) in enumerate(comments):
+            root = index == 0
+            rows.append(
+                {
+                    "id": int(thread) if root else int(thread) * 100 + index,
+                    "in_reply_to_id": None if root else int(thread),
+                    "path": "src/a.py",
+                    "line": 3,
+                    "original_line": 3,
+                    "original_start_line": None,
+                    "original_commit_id": "c" * 40,
+                    "login": login,
+                    "body": body,
+                    "url": f"https://x/{thread}/{index}",
+                }
+            )
+    return "\n".join(json.dumps(row) for row in rows)
 
 
 def _graphql_answer(
@@ -751,14 +792,20 @@ def _graphql_answer(
     posted: list[tuple[str, ...]],
     failing: tuple[str, str] | None,
 ) -> str:
-    """Answer the replies query from threads, or record a reply or resolve in posted, failing it when failing names it."""
-    call, thread, fields = _graphql_call(args)
-    if failing == (call, thread):
+    """Answer the thread states from threads, or record a resolve in posted, failing it when failing names it."""
+    assert args[:4] == ("gh", "api", "graphql", "--hostname"), f"ran {args}"
+    if f"query={THREADS.STATES_QUERY}" in args:
+        states = [
+            {"id": f"PRRT_{thread}", "isResolved": state["resolved"], "root": int(thread)}
+            for thread, state in threads.items()
+        ]
+        return "\n".join(json.dumps(node) for node in states)
+    assert f"query={THREADS.RESOLVE_MUTATION}" in args, f"ran {args}"
+    thread = next(arg for arg in args if arg.startswith("thread=")).removeprefix("thread=PRRT_")
+    if failing == ("resolve", thread):
         raise subprocess.CalledProcessError(1, list(args), stderr="HTTP 502\n")
-    if call == "replies_query":
-        return json.dumps(threads.get(thread, _thread()))
-    posted.append((call, thread, *fields))
-    return ""
+    posted.append(("resolve", thread))
+    return "true"
 
 
 def _rest_call(
@@ -767,27 +814,21 @@ def _rest_call(
     posted: list[tuple[str, ...]],
     failing: tuple[str, str] | None,
 ) -> str:
-    """Answer the comment listing with listed, or record a comment write in posted, failing it when failing names it."""
+    """Answer the issue comment listing with listed, or record a reply or comment write in posted, failing it when failing names it."""
     assert args[:4] == ("gh", "api", "--hostname", "github.com"), f"ran {args}"
     if "--paginate" in args:
         assert "repos/o/r/issues/7/comments" in args, f"ran {args}"
         return "\n".join(json.dumps(comment) for comment in listed)
-    assert args[4] == "repos/o/r/issues/7/comments", f"ran {args}"
+    body = Path(args[args.index("-F") + 1].removeprefix("body=@")).read_text(encoding="utf-8")
+    endpoint = args[6] if args[4] == "-X" else args[4]
+    if endpoint.endswith("/replies"):
+        thread = endpoint.removeprefix("repos/o/r/pulls/7/comments/").removesuffix("/replies")
+        if failing == ("reply", thread):
+            raise subprocess.CalledProcessError(1, list(args), stderr="HTTP 502\n")
+        posted.append(("reply", thread, body))
+        return f"https://x/{thread}/reply"
+    assert endpoint == "repos/o/r/issues/7/comments", f"ran {args}"
     if failing == ("comment", ""):
         raise subprocess.CalledProcessError(1, list(args), stderr="HTTP 502\n")
-    body_file = Path(args[args.index("-F") + 1].removeprefix("body=@"))
-    posted.append(("comment", body_file.read_text(encoding="utf-8")))
+    posted.append(("comment", body))
     return "https://github.com/o/r/pull/7#issuecomment-1"
-
-
-def _graphql_call(args: tuple[str, ...]) -> tuple[str, str, list[str]]:
-    """Return which GraphQL call args runs, its thread id and the bodies of any further `-f` fields."""
-    assert args[:5] == ("gh", "api", "graphql", "--hostname", "github.com"), f"ran {args}"
-    calls = {
-        f"query={REPLY.REPLIES_QUERY}": "replies_query",
-        f"query={PUBLISH.REPLY_MUTATION}": "reply",
-        f"query={PUBLISH.RESOLVE_MUTATION}": "resolve",
-    }
-    fields = [args[index + 1] for index, arg in enumerate(args) if arg == "-f"]
-    thread = fields[1].removeprefix("thread=")
-    return calls[fields[0]], thread, [field.removeprefix("body=") for field in fields[2:]]
