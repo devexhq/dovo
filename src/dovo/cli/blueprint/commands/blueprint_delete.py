@@ -10,7 +10,7 @@ from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.common.models import OutputFormatOptions
 from dovo.core.catalog import Catalog
-from dovo.core.catalog.models import CatalogDeleteResult, CatalogRecord
+from dovo.core.catalog.models import CatalogDeleteResult, CatalogItemType, CatalogRecord
 
 
 def _confirm_delete(sha_or_name: str) -> Callable[[CatalogRecord], bool]:
@@ -45,6 +45,8 @@ def blueprint_delete_command(
     Returns:
         CatalogDeleteResult: the deleted item, a declined confirmation, or the failure.
     """
-    result = Catalog(context.paths).delete(sha_or_name, confirm=None if force else _confirm_delete(sha_or_name))
+    result = Catalog(context.paths).delete(
+        CatalogItemType.BLUEPRINT, sha_or_name, confirm=None if force else _confirm_delete(sha_or_name)
+    )
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

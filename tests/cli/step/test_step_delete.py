@@ -30,7 +30,7 @@ _CANCELLED_PAYLOAD = {
     "cancelled": True,
 }
 _NOT_FOUND_PAYLOAD = {
-    "errors": ["Catalog blueprint 'ghost' not found."],
+    "errors": ["Catalog step 'ghost' not found."],
     "warnings": [],
     "remediations": [],
     "diagnostics": [],
@@ -242,3 +242,81 @@ class StepDeleteCliTests:
         assert payload["deleted"] is False
         assert payload["cancelled"] is False
         assert (user_steps / "user-step.yml").is_file()
+
+
+class StepDeleteItemTypeScopeTests:
+    """Typer runner tests for dovo step delete resolving its name or sha among steps only."""
+
+    @pytest.mark.parametrize("by", [pytest.param("name", id="name"), pytest.param("sha", id="sha")])
+    def test_other_type_target_fails_as_not_found_json(
+        self, cli_runner: CliRunner, isolated_workspace: Path, by: str
+    ) -> None:
+        """Exit 1 with the CATALOG_NOT_FOUND JSON naming a step and no prompt for a blueprint's name or sha, and keep the blueprint."""
+        created = Catalog(initialized_workspace_paths(isolated_workspace)).create(
+            CatalogItemType.BLUEPRINT, "only-blueprint"
+        )
+        assert created.item is not None
+        target = created.item.sha if by == "sha" else "only-blueprint"
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "step", "delete", target, "--format", "json"], input="y\n"
+        )
+
+        assert result.exit_code == 1
+        assert _PROMPT.format(name=target) not in result.stdout
+        assert _payload(result.stdout) == {
+            **_NOT_FOUND_PAYLOAD,
+            "errors": [f"Catalog step '{target}' not found."],
+        }
+        assert (isolated_workspace / ".dovo" / "catalog" / "blueprints" / "only-blueprint.yml").is_file()
+
+    def test_other_type_name_fails_as_not_found_terminal(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        """Exit 1 printing "Catalog step 'only-blueprint' not found." for a blueprint's name with --force, and keep the blueprint."""
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "only-blueprint")
+
+        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "delete", "only-blueprint", "--force"])
+
+        assert result.exit_code == 1
+        assert "Catalog step 'only-blueprint' not found." in result.stdout
+        assert (isolated_workspace / ".dovo" / "catalog" / "blueprints" / "only-blueprint.yml").is_file()
+
+    def test_shared_name_deletes_only_own_type(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        """Exit 0 with item.item_type 'step' when a step and a blueprint share a name, removing the step and keeping the blueprint."""
+        catalog = Catalog(initialized_workspace_paths(isolated_workspace))
+        catalog.create(CatalogItemType.BLUEPRINT, "shared")
+        catalog.create(CatalogItemType.STEP, "shared")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "step", "delete", "shared", "--force", "--format", "json"]
+        )
+
+        assert result.exit_code == 0
+        item = _payload(result.stdout)["item"]
+        assert isinstance(item, dict)
+        assert item["item_type"] == "step"
+        catalog_dir = isolated_workspace / ".dovo" / "catalog"
+        assert not (catalog_dir / "steps" / "shared.yml").exists()
+        assert (catalog_dir / "blueprints" / "shared.yml").is_file()
+
+    def test_tier_refusal_judges_own_type_only(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        """Exit 1 with CATALOG_TIER_DELETE_FORBIDDEN for a user-tier step named foo beside a repo-tier blueprint foo, keeping both."""
+        user_dir = resolve_global_paths(None).user_catalog_dir / "steps"
+        user_dir.mkdir(parents=True, exist_ok=True)
+        (user_dir / "foo.yml").write_text(
+            "id: foo\nname: foo\ndescription: User tier step\nrun: echo hi\n", encoding="utf-8"
+        )
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "foo")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "step", "delete", "foo", "--format", "json"], input="y\n"
+        )
+
+        assert result.exit_code == 1
+        assert _PROMPT.format(name="foo") not in result.stdout
+        payload = _payload(result.stdout)
+        assert payload["error_code"] == "CATALOG_TIER_DELETE_FORBIDDEN"
+        assert payload["errors"] == [
+            "Catalog item 'foo' resolved from tier 'user'; only repo-tier items can be deleted."
+        ]
+        assert (user_dir / "foo.yml").is_file()
+        assert (isolated_workspace / ".dovo" / "catalog" / "blueprints" / "foo.yml").is_file()

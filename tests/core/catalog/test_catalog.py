@@ -87,7 +87,7 @@ class CatalogProtectionTests:
         self, workspace_paths: WorkspacePaths, template_name: str
     ) -> None:
         catalog = Catalog(workspace_paths)
-        result = catalog.delete(template_name)
+        result = catalog.delete(CatalogItemType.BLUEPRINT, template_name)
 
         assert result.item is None
         assert result.deleted is False
@@ -349,7 +349,7 @@ class CatalogDeleteTierGuardTests:
         )
 
         catalog = Catalog(workspace_paths)
-        result = catalog.delete("user-only")
+        result = catalog.delete(CatalogItemType.BLUEPRINT, "user-only")
 
         assert result.deleted is False
         assert result.errors == [
@@ -416,11 +416,11 @@ def _run_classified_case(
         )
         return catalog.create(CatalogItemType.BLUEPRINT, "demo")
     if case == "protected_delete":
-        return catalog.delete("dovo/fix-tests")
+        return catalog.delete(CatalogItemType.BLUEPRINT, "dovo/fix-tests")
     if case == "tier_delete":
         _write_user_blueprint("user-only")
-        return catalog.delete("user-only")
-    return catalog.delete("missing")
+        return catalog.delete(CatalogItemType.BLUEPRINT, "user-only")
+    return catalog.delete(CatalogItemType.BLUEPRINT, "missing")
 
 
 class CatalogMutationOutcomeTests:
@@ -457,7 +457,7 @@ class CatalogMutationOutcomeTests:
         catalog = Catalog(workspace_paths)
         catalog.create(CatalogItemType.BLUEPRINT, "demo")
 
-        result = catalog.delete("demo")
+        result = catalog.delete(CatalogItemType.BLUEPRINT, "demo")
 
         assert result.error_code is None
         assert result.errors == []
@@ -479,7 +479,7 @@ class CatalogMutationOutcomeTests:
 
         with pytest.raises(LockTimeoutError, match=r"^lock held$"):
             if operation == "delete":
-                catalog.delete("demo")
+                catalog.delete(CatalogItemType.BLUEPRINT, "demo")
             else:
                 catalog.create(CatalogItemType.BLUEPRINT, "demo")
 
@@ -505,7 +505,9 @@ class CatalogMutationOutcomeTests:
         blueprints_dir.chmod(0o555)
         try:
             result = (
-                catalog.delete("demo") if operation == "delete" else catalog.create(CatalogItemType.BLUEPRINT, "demo")
+                catalog.delete(CatalogItemType.BLUEPRINT, "demo")
+                if operation == "delete"
+                else catalog.create(CatalogItemType.BLUEPRINT, "demo")
             )
         finally:
             blueprints_dir.chmod(0o755)
@@ -549,7 +551,11 @@ class CatalogMutationOutcomeTests:
 
         monkeypatch.setattr(patched, _explode)
 
-        result = catalog.delete("demo") if operation == "delete" else catalog.create(CatalogItemType.BLUEPRINT, "demo")
+        result = (
+            catalog.delete(CatalogItemType.BLUEPRINT, "demo")
+            if operation == "delete"
+            else catalog.create(CatalogItemType.BLUEPRINT, "demo")
+        )
 
         assert result.error_code == ErrorCode.INTERNAL_ERROR
         assert result.errors == [f"Unexpected error during catalog.{operation}: bad"]
@@ -557,6 +563,36 @@ class CatalogMutationOutcomeTests:
         event = read_single_event(frozen_diagnostic_clock)
         assert event["operation"] == f"catalog.{operation}"
         assert event["exception_type"] == "TypeError"
+
+
+class CatalogDeleteItemTypeTests:
+    """Tests verifying Catalog.delete resolves sha_or_name among items of the requested type only."""
+
+    @pytest.mark.parametrize(
+        ("item_type", "other_type"),
+        [
+            pytest.param(CatalogItemType.BLUEPRINT, CatalogItemType.STEP, id="blueprint"),
+            pytest.param(CatalogItemType.STEP, CatalogItemType.BLUEPRINT, id="step"),
+        ],
+    )
+    @pytest.mark.parametrize("by", ["name", "sha"])
+    def test_other_type_match_is_not_found_and_never_confirms(
+        self, workspace_paths: WorkspacePaths, item_type: CatalogItemType, other_type: CatalogItemType, by: str
+    ) -> None:
+        """Return CATALOG_NOT_FOUND naming item_type, never call confirm, and keep the other type's file."""
+        catalog = Catalog(workspace_paths)
+        created = catalog.create(other_type, "other")
+        assert created.item is not None
+        target = created.item.sha if by == "sha" else "other"
+        asked: list[CatalogRecord] = []
+
+        result = catalog.delete(item_type, target, confirm=lambda item: asked.append(item) is None)
+
+        assert result.error_code == ErrorCode.CATALOG_NOT_FOUND
+        assert result.errors == [f"Catalog {item_type.value} '{target}' not found."]
+        assert asked == []
+        assert created.resolved_path is not None
+        assert created.resolved_path.is_file()
 
 
 class CatalogDeleteConfirmTests:
@@ -572,7 +608,7 @@ class CatalogDeleteConfirmTests:
             asked.append(item)
             return True
 
-        result = catalog.delete("demo", confirm=confirm)
+        result = catalog.delete(CatalogItemType.BLUEPRINT, "demo", confirm=confirm)
 
         assert [item.key for item in asked] == ["demo"]
         assert result.deleted is True
@@ -585,7 +621,7 @@ class CatalogDeleteConfirmTests:
         catalog = Catalog(workspace_paths)
         catalog.create(CatalogItemType.BLUEPRINT, "demo")
 
-        result = catalog.delete("demo", confirm=lambda item: False)
+        result = catalog.delete(CatalogItemType.BLUEPRINT, "demo", confirm=lambda item: False)
 
         assert result.model_dump(mode="json") == {
             "errors": [],
@@ -616,7 +652,9 @@ class CatalogDeleteConfirmTests:
         _write_user_blueprint("user-only")
         asked: list[CatalogRecord] = []
 
-        result = Catalog(workspace_paths).delete(names[case], confirm=lambda item: asked.append(item) is None)
+        result = Catalog(workspace_paths).delete(
+            CatalogItemType.BLUEPRINT, names[case], confirm=lambda item: asked.append(item) is None
+        )
 
         assert result.error_code == expected_code
         assert asked == []
@@ -631,7 +669,7 @@ class CatalogDeleteConfirmTests:
             demo_file.unlink()
             return True
 
-        result = catalog.delete("demo", confirm=confirm)
+        result = catalog.delete(CatalogItemType.BLUEPRINT, "demo", confirm=confirm)
 
         assert result.error_code == ErrorCode.CATALOG_NOT_FOUND
         assert result.errors == ["Catalog blueprint 'demo' not found."]
@@ -649,7 +687,7 @@ class CatalogDeleteConfirmTests:
             return True
 
         with pytest.raises(LockTimeoutError, match=r"^lock held$"):
-            catalog.delete("demo", confirm=confirm)
+            catalog.delete(CatalogItemType.BLUEPRINT, "demo", confirm=confirm)
 
         assert (workspace_paths.catalog_blueprints_dir / "demo.yml").is_file()
 
