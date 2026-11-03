@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.expressions import ABSENT, Path, parse_expression
-from dovo.core.inputs import UNDEFINED, NamespaceResolutionError
+from dovo.core.inputs import UNDEFINED
 from dovo.engine.executors.artifact_namespace import ArtifactNamespaceProvider
+from dovo.engine.executors.exceptions import EngineError
 from tests.conftest import PublishArtifact
 
 
@@ -90,9 +92,10 @@ class ArtifactNamespaceProviderTests:
     ) -> None:
         publish_artifact("plan", {"a.md": "a", "b.md": "b"})
 
-        with pytest.raises(NamespaceResolutionError) as raised:
+        with pytest.raises(EngineError) as raised:
             ArtifactNamespaceProvider(artifact_store).resolve(_path("artifacts.plan.content"))
 
-        assert str(raised.value) == (
-            "Artifact 'plan' cannot be inlined: artifact has 2 files, content needs exactly one"
+        assert (raised.value.error_code, raised.value.message) == (
+            ErrorCode.ARTIFACT_CONTENT_UNAVAILABLE,
+            "Artifact 'plan' cannot be inlined: artifact has 2 files, content needs exactly one",
         )

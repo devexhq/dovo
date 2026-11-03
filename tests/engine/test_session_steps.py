@@ -11,7 +11,7 @@ from dovo.common.redact import SecretRedactor
 from dovo.common.timing import TimeSpan
 from dovo.core.db import SessionRecord, SessionsRepository
 from dovo.core.sessions import StepRunSummary
-from dovo.engine.exceptions import EngineError
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.executors.models import StepResult
 from dovo.engine.models import DefinitionRef, DefinitionsManifest, IfBranch, SkipCause
 from dovo.engine.session_steps import NO_STEP_DATA_WARNING, summarize_session_steps

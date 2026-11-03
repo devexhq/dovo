@@ -31,7 +31,7 @@ from dovo.core.worktree import (
 )
 from dovo.core.worktree.models import WorktreeCreateResult
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
-from dovo.engine.exceptions import EngineError
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.executors.models import ExecutionIdentity
 from dovo.engine.models import RunSettings
 from dovo.engine.workspace import Workspace

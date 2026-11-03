@@ -19,7 +19,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.core.worktree import Worktree, WorktreeSession
 from dovo.engine.coordinator import RunCoordinator
-from dovo.engine.exceptions import EngineError
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.executors.session_log import append_session_log_event
 from dovo.engine.models import (
     AgentSettingsResolution,

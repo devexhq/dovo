@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.artifacts.models import ArtifactProvenance, ArtifactReferencesStatus
+from dovo.common.error_codes import ErrorCode
+from dovo.core.artifacts.exceptions import ArtifactError
+from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.core.artifacts.services.references import resolve_artifact_references
 from dovo.core.artifacts.services.upload import publish_artifact
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
@@ -51,7 +53,7 @@ class ResolveArtifactReferencesTests:
             requested={"plan": {"revision", "digest", "dir", "content"}},
         )
 
-        assert result.status == ArtifactReferencesStatus.OK
+        assert result.ok
         assert result.references == {
             "plan": {"revision": "2", "digest": digest, "dir": str(revision_dir), "content": "second"}
         }
@@ -61,7 +63,7 @@ class ResolveArtifactReferencesTests:
             artifacts_repository, session_id=_SESSION_ID, requested={"ghost": {"digest"}}
         )
 
-        assert result.status == ArtifactReferencesStatus.OK
+        assert result.ok
         assert result.references == {}
 
     @pytest.mark.parametrize(
@@ -74,17 +76,19 @@ class ResolveArtifactReferencesTests:
             pytest.param({"big.txt": b"x" * 65537}, "file is 65537 bytes, limit is 65536", id="oversized"),
         ],
     )
-    def test_content_unavailable_returns_classified_error(
+    def test_content_unavailable_raises_content_unavailable(
         self, files: dict[str, bytes], reason: str, artifacts_repository: ArtifactsRepository, tmp_path: Path
     ) -> None:
         _publish_plan(tmp_path, artifacts_repository, files)
 
-        result = resolve_artifact_references(
-            artifacts_repository, session_id=_SESSION_ID, requested={"plan": {"content"}}
-        )
+        with pytest.raises(ArtifactError) as raised:
+            resolve_artifact_references(artifacts_repository, session_id=_SESSION_ID, requested={"plan": {"content"}})
 
-        assert result.status == ArtifactReferencesStatus.CONTENT_UNAVAILABLE
-        assert result.errors == [f"Artifact 'plan' cannot be inlined: {reason}"]
+        assert (raised.value.error_code, raised.value.message, raised.value.__cause__) == (
+            ErrorCode.ARTIFACT_CONTENT_UNAVAILABLE,
+            f"Artifact 'plan' cannot be inlined: {reason}",
+            None,
+        )
 
     def test_file_exactly_65536_bytes_is_inlined(
         self, artifacts_repository: ArtifactsRepository, tmp_path: Path
@@ -95,21 +99,34 @@ class ResolveArtifactReferencesTests:
             artifacts_repository, session_id=_SESSION_ID, requested={"plan": {"content"}}
         )
 
-        assert result.status == ArtifactReferencesStatus.OK
+        assert result.ok
         assert result.references == {"plan": {"content": "x" * 65536}}
 
-    def test_unreadable_manifest_returns_classified_error(
+    def test_unreadable_manifest_raises_content_unavailable_chained_to_the_os_error(
         self, artifacts_repository: ArtifactsRepository, tmp_path: Path
     ) -> None:
         revision_dir = _publish_plan(tmp_path, artifacts_repository, {"PLAN.md": b"text"})[0]
         (revision_dir / "manifest.json").unlink()
 
-        result = resolve_artifact_references(
-            artifacts_repository, session_id=_SESSION_ID, requested={"plan": {"content"}}
-        )
+        with pytest.raises(ArtifactError) as raised:
+            resolve_artifact_references(artifacts_repository, session_id=_SESSION_ID, requested={"plan": {"content"}})
 
-        assert result.status == ArtifactReferencesStatus.CONTENT_UNAVAILABLE
-        assert result.errors[0].startswith("Artifact 'plan' cannot be inlined: cannot read file:")
+        assert raised.value.error_code is ErrorCode.ARTIFACT_CONTENT_UNAVAILABLE
+        assert raised.value.message.startswith("Artifact 'plan' cannot be inlined: cannot read file:")
+        assert isinstance(raised.value.__cause__, FileNotFoundError)
+
+    def test_invalid_manifest_raises_content_unavailable_unchained(
+        self, artifacts_repository: ArtifactsRepository, tmp_path: Path
+    ) -> None:
+        revision_dir = _publish_plan(tmp_path, artifacts_repository, {"PLAN.md": b"text"})[0]
+        (revision_dir / "manifest.json").write_text("{}", encoding="utf-8")
+
+        with pytest.raises(ArtifactError) as raised:
+            resolve_artifact_references(artifacts_repository, session_id=_SESSION_ID, requested={"plan": {"content"}})
+
+        assert raised.value.error_code is ErrorCode.ARTIFACT_CONTENT_UNAVAILABLE
+        assert raised.value.message.startswith("Artifact 'plan' cannot be inlined: cannot read file:")
+        assert raised.value.__cause__ is None
 
     def test_legacy_row_without_digest_renders_empty_digest(self, artifacts_repository: ArtifactsRepository) -> None:
         artifacts_repository.create(
@@ -142,5 +159,5 @@ class ResolveArtifactReferencesTests:
             artifacts_repository, session_id=_SESSION_ID, requested={"plan": {"dir", "revision"}}
         )
 
-        assert result.status == ArtifactReferencesStatus.OK
+        assert result.ok
         assert result.references == {"plan": {"dir": str(revision_dir), "revision": "1"}}

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import IO
 
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
+from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import catch_failure
 from dovo.common.models import FailurePolicy
 from dovo.common.process import (
@@ -24,9 +25,10 @@ from dovo.common.redact import SecretRedactor
 from dovo.common.timing import Stopwatch
 from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.catalog.services.resolve_step import resolve_step_definition
-from dovo.core.inputs import NamespaceProvider, NamespaceResolutionError, build_providers, interpolate_step_fields
+from dovo.core.inputs import NamespaceProvider, build_providers, interpolate_step_fields
 from dovo.engine.executors.agent_progress import AgentProgressReporter
 from dovo.engine.executors.artifact_namespace import ArtifactNamespaceProvider
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.executors.internal_dispatch import INTERNAL_COMMAND_HANDLERS
 from dovo.engine.executors.metadata import (
     build_execution_metadata,
@@ -251,8 +253,10 @@ class StepExecution:
         )
         try:
             self.step = interpolate_step_fields(self._uninterpolated_step, self._namespace_providers(metadata))
-        except NamespaceResolutionError as error:
-            return _failed_dispatch(str(error)).model_copy(update={"attempts": attempt})
+        except EngineError as error:
+            if error.error_code is not ErrorCode.ARTIFACT_CONTENT_UNAVAILABLE:
+                raise
+            return _failed_dispatch(error.message).model_copy(update={"attempts": attempt})
 
         self._reset_step_output_file()
         outcome = self._dispatch_primitive(metadata).model_copy(update={"attempts": attempt})

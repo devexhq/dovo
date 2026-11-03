@@ -9,7 +9,6 @@ from dovo.core.artifacts.models import (
     ArtifactsListResult,
     ArtifactsPruneResult,
     ArtifactUploadResult,
-    ArtifactUploadStatus,
     PrunedArtifact,
 )
 
@@ -19,7 +18,6 @@ __all__ = [
     "ArtifactManifest",
     "ArtifactManifestFile",
     "ArtifactUploadResult",
-    "ArtifactUploadStatus",
     "Artifacts",
     "ArtifactsListResult",
     "ArtifactsPruneResult",

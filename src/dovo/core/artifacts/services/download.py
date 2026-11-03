@@ -9,6 +9,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.core.artifacts.exceptions import ArtifactError
 from dovo.core.artifacts.models import ArtifactDownloadResult, ArtifactManifest
 from dovo.core.artifacts.services.manifest import compute_file_checksum
+from dovo.core.artifacts.services.storage import stored_cause
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
 
@@ -35,14 +36,6 @@ def _extract_verified_files(artifact_dir: Path, manifest: ArtifactManifest, dest
         target = dest / entry.path
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(artifact_dir / entry.path, target)
-
-
-def _stored_cause(error: OSError, artifact_dir: Path) -> OSError | None:
-    """Return error when it hit a file under artifact_dir (Dovo's own storage), else None for a destination failure."""
-    filename = error.filename
-    if isinstance(filename, str | Path) and Path(filename).is_relative_to(artifact_dir):
-        return error
-    return None
 
 
 def _read_manifest(artifact_dir: Path) -> ArtifactManifest:
@@ -86,7 +79,7 @@ def download_artifact(
     try:
         _extract_verified_files(artifact_dir, manifest, dest)
     except OSError as error:
-        raise ArtifactError(ErrorCode.ARTIFACT_DOWNLOAD_FAILED, str(error)) from _stored_cause(error, artifact_dir)
+        raise ArtifactError(ErrorCode.ARTIFACT_DOWNLOAD_FAILED, str(error)) from stored_cause(error, artifact_dir)
 
     return ArtifactDownloadResult(
         session_id=session_id,

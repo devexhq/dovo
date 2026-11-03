@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.redact import SecretRedactor
-from dovo.core.inputs import NamespaceResolutionError, build_providers, interpolate_string
+from dovo.core.inputs import build_providers, interpolate_string
 from dovo.core.interaction import (
     Interaction,
     InteractionAnswer,
@@ -13,6 +14,7 @@ from dovo.core.interaction import (
     InteractionResolveStatus,
 )
 from dovo.engine.executors.artifact_namespace import ArtifactNamespaceProvider
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.executors.metadata import build_execution_metadata
 from dovo.engine.executors.models import AskResolution, StepExecutionContext, StepResult
 
@@ -42,8 +44,10 @@ def resolve_ask_request(context: StepExecutionContext) -> AskResolution:
     )
     try:
         message = interpolate_string(spec.message, providers)
-    except NamespaceResolutionError as error:
-        return _failed_resolution(step.id, str(error))
+    except EngineError as error:
+        if error.error_code is not ErrorCode.ARTIFACT_CONTENT_UNAVAILABLE:
+            raise
+        return _failed_resolution(step.id, error.message)
 
     resolved = Interaction(context.artifact_store, _redactor(context)).resolve(step.id, spec, message)
     if not resolved.ok or resolved.request is None:

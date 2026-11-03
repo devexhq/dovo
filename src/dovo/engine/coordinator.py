@@ -19,10 +19,10 @@ from dovo.core.catalog.definitions import BlueprintStep, IfStepBlock, LoopStepBl
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
-from dovo.engine.exceptions import EngineError
 from dovo.engine.executors import StepExecution
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.ask_step import complete_ask_step, resolve_ask_request
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.executors.models import (
     AskResolution,
     ExecutionIdentity,

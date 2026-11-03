@@ -20,7 +20,7 @@ from dovo.core.catalog.models import CatalogScan
 from dovo.core.db import SessionStatus
 from dovo.core.project.models import ProjectIdentity
 from dovo.core.project.services.identity import save_project_identity
-from dovo.engine.exceptions import EngineError
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.models import DefinitionRef, DefinitionsManifest
 from dovo.engine.state_models import SessionJsonPayload, SessionLifecycle
 from dovo.engine.writer import (

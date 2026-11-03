@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
-
 from pydantic import BaseModel, Field
 
 from dovo.common.models import BaseResult
@@ -49,18 +47,9 @@ class ArtifactManifest(BaseModel):
     files: list[ArtifactManifestFile] = Field(default_factory=list)
 
 
-class ArtifactUploadStatus(StrEnum):
-    """Classified outcome for publishing an artifact bundle."""
-
-    OK = "ok"
-    NO_MATCHING_FILES = "no_matching_files"
-    ERROR = "error"
-
-
 class ArtifactUploadResult(BaseResult):
     """Result of publishing an artifact bundle from a worktree into persistent storage."""
 
-    status: ArtifactUploadStatus
     name: str = ""
     session_id: str = ""
     revision: int = 0
@@ -71,8 +60,8 @@ class ArtifactUploadResult(BaseResult):
 
     @property
     def ok(self) -> bool:
-        """True when the artifact bundle was published."""
-        return self.status == ArtifactUploadStatus.OK
+        """True when error_code is None: the artifact bundle was published or the unchanged latest revision kept."""
+        return self.error_code is None
 
 
 class ArtifactDownloadResult(BaseResult):
@@ -90,23 +79,15 @@ class ArtifactDownloadResult(BaseResult):
         return self.error_code is None
 
 
-class ArtifactReferencesStatus(StrEnum):
-    """Classified outcome for resolving artifact placeholder values."""
-
-    OK = "ok"
-    CONTENT_UNAVAILABLE = "content_unavailable"
-
-
 class ArtifactReferencesResult(BaseResult):
     """Resolved {artifact name: {field: value}} values for the latest revision of each requested artifact."""
 
-    status: ArtifactReferencesStatus = ArtifactReferencesStatus.OK
     references: dict[str, dict[str, str]] = Field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
-        """True when every requested field was resolved (unknown artifacts are simply absent)."""
-        return self.status == ArtifactReferencesStatus.OK and not self.errors
+        """True when error_code is None: every requested field was resolved (unknown artifacts are simply absent)."""
+        return self.error_code is None
 
 
 class ArtifactsListResult(BaseResult):

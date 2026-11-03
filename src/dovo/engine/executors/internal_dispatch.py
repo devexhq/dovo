@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from dovo.core.artifacts.models import ArtifactProvenance, ArtifactUploadStatus
+from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.engine.executors.models import InternalCommandContext, StepDispatchOutcome
 
 
@@ -46,7 +46,7 @@ def handle_artifacts_upload(ctx: InternalCommandContext) -> StepDispatchOutcome:
         retention_days=retention_days,
         provenance=ArtifactProvenance(step_id=ctx.step_id, attempt=ctx.attempt, loop_iteration=ctx.loop_iteration),
     )
-    if result.status == ArtifactUploadStatus.OK:
+    if result.ok:
         return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
     return StepDispatchOutcome(
         status="failed",
@@ -54,6 +54,7 @@ def handle_artifacts_upload(ctx: InternalCommandContext) -> StepDispatchOutcome:
         stdout="",
         stderr="",
         error_message="; ".join(result.errors) or f"Publishing artifact '{name}' failed.",
+        diagnostics=list(result.diagnostics),
     )
 
 

@@ -21,7 +21,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.inputs import InputResolveResult, format_input_error_message
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.core.sessions import current_process_started_at
-from dovo.engine.exceptions import EngineError
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.loader import EngineLoader
 from dovo.engine.models import (
     DefinitionsManifest,

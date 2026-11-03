@@ -8,7 +8,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.redact import SecretRedactor
 from dovo.core.db import SessionRecord
 from dovo.core.sessions import StepRunSummary
-from dovo.engine.exceptions import EngineError
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.state_models import (
     ExecutionIfNode,
     ExecutionLeafNode,

@@ -12,7 +12,7 @@ from dovo.core.catalog.services.validate import check_catalog_item
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.interaction import HeadlessAnswerInput, Interaction, InteractionAnswer
 from dovo.core.sessions import STALE_RUN_ERROR_MESSAGE
-from dovo.engine.exceptions import EngineError
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.models import DefinitionsManifest, LifecycleUpdate
 from dovo.engine.projection import iter_leaves
 from dovo.engine.state_models import (

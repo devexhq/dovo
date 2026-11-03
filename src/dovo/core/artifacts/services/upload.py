@@ -6,15 +6,17 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
+from dovo.core.artifacts.exceptions import ArtifactError
 from dovo.core.artifacts.models import (
     ArtifactManifest,
     ArtifactManifestFile,
     ArtifactProvenance,
     ArtifactUploadResult,
-    ArtifactUploadStatus,
 )
 from dovo.core.artifacts.services.manifest import build_manifest, compute_file_checksum
+from dovo.core.artifacts.services.storage import stored_cause
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
 _MAX_REVISION_CLAIMS = 5
@@ -77,17 +79,20 @@ def _write_manifest_and_move(
     temp_dir: Path,
     name_dir: Path,
 ) -> ArtifactUploadResult:
-    """Write manifest.json and move the bundle into place; the claimed row is released on failure."""
+    """Write manifest.json and move the bundle into place; the claimed row is released on failure.
+
+    Raises:
+        ArtifactError: ARTIFACT_PUBLISH_FAILED when the manifest cannot be written or the bundle cannot be moved.
+    """
     try:
         Filesystem.atomic_write_json(temp_dir / "manifest.json", manifest.model_dump())
         _move_into_revision_directory(temp_dir, name_dir / str(manifest.revision))
     except OSError as exc:
         db.delete(manifest.session_id, manifest.name, manifest.revision)
         shutil.rmtree(temp_dir, ignore_errors=True)
-        return ArtifactUploadResult(status=ArtifactUploadStatus.ERROR, errors=[str(exc)])
+        raise ArtifactError(ErrorCode.ARTIFACT_PUBLISH_FAILED, str(exc)) from stored_cause(exc, name_dir.parent)
 
     return ArtifactUploadResult(
-        status=ArtifactUploadStatus.OK,
         name=manifest.name,
         session_id=manifest.session_id,
         revision=manifest.revision,
@@ -106,7 +111,6 @@ def _unchanged_latest(db: ArtifactsRepository, manifest: ArtifactManifest) -> Ar
     if latest.expires_at is not None and latest.expires_at <= manifest.created_at:
         return None
     return ArtifactUploadResult(
-        status=ArtifactUploadStatus.OK,
         name=latest.name,
         session_id=latest.session_id,
         revision=latest.revision,
@@ -131,6 +135,10 @@ def publish_artifact(
     """Stage matching files, claim the next revision, write manifest.json, and move the bundle into <name>/<revision>/.
 
     A bundle whose digest equals the latest unexpired revision's adds no revision: the result names that revision.
+
+    Raises:
+        ArtifactError: ARTIFACT_FILE_NOT_FOUND when no file matches path_glob, or ARTIFACT_PUBLISH_FAILED when no
+            revision can be claimed or an OSError occurs staging, writing or moving the bundle.
     """
     name_dir = artifacts_dir / session_id / name
     temp_dir = artifacts_dir / session_id / f".tmp-{name}-{uuid4().hex}"
@@ -140,9 +148,8 @@ def publish_artifact(
         files = _stage_bundle(worktree_path, path_glob, temp_dir)
         if not files:
             shutil.rmtree(temp_dir, ignore_errors=True)
-            return ArtifactUploadResult(
-                status=ArtifactUploadStatus.NO_MATCHING_FILES,
-                errors=[f"Artifact '{name}' matched no files at '{path_glob}'."],
+            raise ArtifactError(
+                ErrorCode.ARTIFACT_FILE_NOT_FOUND, f"Artifact '{name}' matched no files at '{path_glob}'."
             )
 
         manifest = build_manifest(
@@ -160,12 +167,13 @@ def publish_artifact(
         claimed = _claim_revision(db, manifest, name_dir)
         if claimed is None:
             shutil.rmtree(temp_dir, ignore_errors=True)
-            return ArtifactUploadResult(
-                status=ArtifactUploadStatus.ERROR,
-                errors=[f"Could not allocate a revision for artifact '{name}'."],
+            raise ArtifactError(
+                ErrorCode.ARTIFACT_PUBLISH_FAILED, f"Could not allocate a revision for artifact '{name}'."
             )
 
         return _write_manifest_and_move(db, claimed, temp_dir, name_dir)
     except OSError as exc:
         shutil.rmtree(temp_dir, ignore_errors=True)
-        return ArtifactUploadResult(status=ArtifactUploadStatus.ERROR, errors=[str(exc)])
+        raise ArtifactError(ErrorCode.ARTIFACT_PUBLISH_FAILED, str(exc)) from stored_cause(
+            exc, artifacts_dir / session_id
+        )

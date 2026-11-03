@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.executors.models import StepExecutionContext, StepResult
 from dovo.engine.executors.step_executor import StepExecution
 from tests.conftest import PublishArtifact
@@ -57,7 +61,7 @@ class StepExecutionArtifactsTests:
     ) -> None:
         result = _run(_command_step("true"), tmp_path / "wt", engine_paths, artifacts_repository)
 
-        assert (result.status, result.error_message) == ("failed", _NOT_PRODUCED)
+        assert (result.status, result.exit_code, result.error_message) == ("failed", 0, _NOT_PRODUCED)
         assert artifacts_repository.list() == []
 
     def test_optional_artifact_missing_completes_with_warning(
@@ -172,11 +176,35 @@ class StepExecutionArtifactReferencesTests:
 
         result = _run(step, worktree_path, engine_paths, artifacts_repository)
 
-        assert result.status == "failed"
-        assert result.error_message == (
-            "Artifact 'plan' cannot be inlined: artifact has 2 files, content needs exactly one"
+        assert (result.status, result.exit_code, result.error_message) == (
+            "failed",
+            1,
+            "Artifact 'plan' cannot be inlined: artifact has 2 files, content needs exactly one",
         )
         assert not (worktree_path / "ran.marker").exists()
+
+    def test_unexpected_reference_failure_propagates_instead_of_failing_the_step(
+        self,
+        tmp_path: Path,
+        engine_paths: WorkspacePaths,
+        artifacts_repository: ArtifactsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def _raising_resolve(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("dovo.core.artifacts.artifacts.resolve_artifact_references", _raising_resolve)
+        step = StepDefinition.model_validate(
+            {"id": "show", "type": "command", "command": "echo {{ artifacts.plan.content }}"}
+        )
+
+        with pytest.raises(EngineError) as raised:
+            _run(step, tmp_path / "wt", engine_paths, artifacts_repository)
+
+        assert (raised.value.error_code, raised.value.message) == (
+            ErrorCode.INTERNAL_ERROR,
+            "Unexpected error during artifacts.resolve_references: boom",
+        )
 
     def test_later_run_sees_revision_published_by_earlier_run(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository

@@ -28,9 +28,11 @@ class HandleArtifactsUploadTests:
 
         outcome = handle_artifacts_upload(ctx)
 
-        assert outcome.status == "failed"
-        assert outcome.error_message is not None
-        assert "dist/*.whl" in outcome.error_message
+        assert (outcome.status, outcome.exit_code, outcome.error_message) == (
+            "failed",
+            1,
+            "Artifact 'dist-packages' matched no files at 'dist/*.whl'.",
+        )
 
     def test_handle_artifacts_upload_records_context_provenance(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository, artifact_store: ArtifactStore
