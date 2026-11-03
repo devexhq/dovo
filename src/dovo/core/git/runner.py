@@ -176,7 +176,7 @@ def _merged_env(env: Mapping[str, str] | None) -> dict[str, str] | None:
 
 
 class GitRunner:
-    """Executes git commands. Built once per process by CliContext.build."""
+    """Executes git commands. Built once per process by CliContext.build, and once per agent invocation by the direct-mutation adapter."""
 
     def exec(
         self,
