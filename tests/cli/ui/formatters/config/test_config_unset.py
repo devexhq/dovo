@@ -9,7 +9,7 @@ import pytest
 
 from dovo.cli.ui.formatters.config.config_unset import ConfigUnsetFormatter
 from dovo.common.models import Remediation
-from dovo.core.config.mutate import ConfigUnsetResult, ConfigUnsetStatus
+from dovo.core.config.mutate import ConfigUnsetResult
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -20,7 +20,6 @@ _CONFIG_PATH = Path("/workspace/.dovo/config.json")
 
 OK_EXISTED = FormatterCase.identity(
     data=ConfigUnsetResult(
-        status=ConfigUnsetStatus.OK,
         config_path=_CONFIG_PATH,
         key="agents.copilot.model",
         existed=True,
@@ -31,7 +30,7 @@ OK_EXISTED = FormatterCase.identity(
 
 SCHEMA_INVALID = FormatterCase.identity(
     data=ConfigUnsetResult(
-        status=ConfigUnsetStatus.SCHEMA_INVALID,
+        error_code="CONFIG_SCHEMA_INVALID",
         config_path=_CONFIG_PATH,
         key="project",
         existed=True,
@@ -57,7 +56,6 @@ CONFIG_UNSET_PAYLOAD_CASES = [
     pytest.param(
         OK_EXISTED,
         {
-            "status": "ok",
             "config_path": "/workspace/.dovo/config.json",
             "key": "agents.copilot.model",
             "existed": True,
@@ -73,14 +71,13 @@ CONFIG_UNSET_PAYLOAD_CASES = [
     pytest.param(
         SCHEMA_INVALID,
         {
-            "status": "schema_invalid",
             "config_path": "/workspace/.dovo/config.json",
             "key": "project",
             "existed": True,
             "previous_value": {"name": "demo-workspace", "initialized_at": None},
             "warnings": [],
             "errors": ["Config schema validation failed:\n- (root): 'project' is a required property"],
-            "error_code": None,
+            "error_code": "CONFIG_SCHEMA_INVALID",
             "remediations": [
                 {"message": "Run 'dovo config validate' for details", "command": "dovo config validate"},
                 {

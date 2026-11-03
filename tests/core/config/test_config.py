@@ -358,6 +358,44 @@ class ConfigCacheTests:
         assert config.worktree.base_ref == "develop"
 
 
+class ConfigMutationLoadFailureTests:
+    @pytest.mark.parametrize(
+        "mutate",
+        [
+            pytest.param(lambda config: config.set("worktree.base_ref", "main"), id="set"),
+            pytest.param(lambda config: config.unset("worktree.base_ref"), id="unset"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "break_config",
+        [
+            pytest.param(lambda path: None, id="missing"),
+            pytest.param(lambda path: path.mkdir(), id="directory"),
+            pytest.param(lambda path: path.write_text("{not valid json", encoding="utf-8"), id="malformed"),
+            pytest.param(lambda path: path.write_text("[]", encoding="utf-8"), id="root_not_object"),
+        ],
+    )
+    def test_load_failure_reports_what_load_reports(
+        self,
+        workspace_paths: WorkspacePaths,
+        mutate: ConfigMutation,
+        break_config: Callable[[Path], object],
+    ) -> None:
+        """Report the error code, errors, remediations and diagnostics Config.load reports for the same file."""
+        break_config(workspace_paths.config_file)
+        loaded = Config(workspace_paths).load()
+
+        result = mutate(Config(workspace_paths))
+
+        assert loaded.error_code is not None
+        assert (result.error_code, result.errors, result.remediations, result.diagnostics) == (
+            loaded.error_code,
+            loaded.errors,
+            loaded.remediations,
+            loaded.diagnostics,
+        )
+
+
 class AgentSettingsMcpServersTests:
     def test_config_with_invalid_server_name_fails_validation(self) -> None:
         with pytest.raises(ValidationError, match="'a__b'"):

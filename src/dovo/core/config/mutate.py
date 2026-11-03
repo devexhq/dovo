@@ -1,76 +1,38 @@
-"""Dot-path mutation helpers for `.dovo/config.json`."""
+"""Dot-path mutation of `.dovo/config.json`: the set and unset results, and helpers that raise ConfigError."""
 
 from __future__ import annotations
 
 import copy
-import json
-from enum import StrEnum
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from pydantic import JsonValue
 
-from dovo.common.diagnostic_log import DiagnosticLevel, error_diagnostics, record_exception
 from dovo.common.error_codes import ErrorCode
-from dovo.common.exceptions import FailureFields
 from dovo.common.filesystem import Filesystem
 from dovo.common.models import BaseResult, Remediation
 from dovo.common.schema_validation import CONFIG_VALIDATOR
-from dovo.core.config.loader import (
-    _map_dovo_config,
-    clear_config_cache,
-)
-from dovo.core.config.parser import parse_config_value
-
-
-class ConfigSetStatus(StrEnum):
-    """Classified outcomes for setting a config value by dot-path."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    MALFORMED_JSON = "malformed_json"
-    ROOT_NOT_OBJECT = "root_not_object"
-    SCHEMA_INVALID = "schema_invalid"
-    PATH_IS_DIRECTORY = "path_is_directory"
-    UNREADABLE = "unreadable"
-    TYPE_COLLISION = "type_collision"
-    INVALID_PATH = "invalid_path"
-    WRITE_FAILED = "write_failed"
+from dovo.core.config.exceptions import ConfigError
+from dovo.core.config.loader import _map_dovo_config, _schema_error, clear_config_cache
 
 
 class ConfigSetResult(BaseResult):
-    """Non-raising result of a config dot-path set operation."""
+    """Result of `Config.set`: the key and its coerced value, or the failure's error code, errors and remediations."""
 
-    status: ConfigSetStatus
     config_path: Path
     key: str
     value: Any = None
 
     @property
     def ok(self) -> bool:
-        """Return True when the value was written successfully."""
-        return self.status == ConfigSetStatus.OK
-
-
-class ConfigUnsetStatus(StrEnum):
-    """Classified outcomes for removing a config value by dot-path."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    MALFORMED_JSON = "malformed_json"
-    ROOT_NOT_OBJECT = "root_not_object"
-    SCHEMA_INVALID = "schema_invalid"
-    PATH_IS_DIRECTORY = "path_is_directory"
-    UNREADABLE = "unreadable"
-    TYPE_COLLISION = "type_collision"
-    INVALID_PATH = "invalid_path"
-    WRITE_FAILED = "write_failed"
+        """Return True exactly when error_code is None."""
+        return self.error_code is None
 
 
 class ConfigUnsetResult(BaseResult):
-    """Non-raising result of a config dot-path unset operation."""
+    """Result of `Config.unset`: whether the key existed and its previous value, plus any failure."""
 
-    status: ConfigUnsetStatus
     config_path: Path
     key: str
     existed: bool
@@ -78,48 +40,67 @@ class ConfigUnsetResult(BaseResult):
 
     @property
     def ok(self) -> bool:
-        """Return True when the key was removed, or was already absent."""
-        return self.status == ConfigUnsetStatus.OK
+        """Return True exactly when error_code is None."""
+        return self.error_code is None
 
 
-def _key_path_error(verb: str, dot_path: str) -> str | None:
-    """Return the message for an empty ``dot_path`` or one with an empty segment, or ``None`` when it is well formed."""
-    if not dot_path or not dot_path.strip():
-        return f"Cannot {verb} '': config key path must be a non-empty dot path."
-    if any(key == "" for key in dot_path.split(".")):
-        return f"Cannot {verb} '{dot_path}': config key path contains an empty segment."
-    return None
+@dataclass(frozen=True, slots=True)
+class ConfigRemoval:
+    """An unset that found its key: the config object without it, and the value the key held."""
+
+    updated: dict[str, object]
+    previous_value: object
 
 
-def set_nested_value(config_dict: dict[str, Any], dot_path: str, value: object) -> None:
-    """Set ``value`` at ``dot_path`` inside ``config_dict`` (in place).
-
-    Intermediate missing segments are created as empty dicts. If an intermediate
-    segment exists and is not a dict, raise ``ValueError``.
+def _split_key_path(verb: str, dot_path: str) -> list[str]:
+    """Return the segments of dot_path.
 
     Raises:
-        ValueError: Empty/invalid path or scalar-vs-dict type collision.
+        ConfigError: CONFIG_KEY_PATH_INVALID for an empty dot_path or one with an empty segment.
     """
-    message = _key_path_error("set", dot_path)
-    if message is not None:
-        raise ValueError(message)
-
+    if not dot_path or not dot_path.strip():
+        raise ConfigError(
+            ErrorCode.CONFIG_KEY_PATH_INVALID, f"Cannot {verb} '': config key path must be a non-empty dot path."
+        )
     keys = dot_path.split(".")
+    if any(key == "" for key in keys):
+        raise ConfigError(
+            ErrorCode.CONFIG_KEY_PATH_INVALID,
+            f"Cannot {verb} '{dot_path}': config key path contains an empty segment.",
+        )
+    return keys
 
-    current: dict[str, Any] = config_dict
+
+def _type_conflict(verb: str, dot_path: str, keys: list[str], depth: int) -> ConfigError:
+    """Return the CONFIG_TYPE_CONFLICT error for dot_path crossing the scalar at keys[: depth + 1]."""
+    conflict_path = ".".join(keys[: depth + 1])
+    return ConfigError(
+        ErrorCode.CONFIG_TYPE_CONFLICT,
+        f"Cannot {verb} '{dot_path}'. '{conflict_path}' is already defined as a scalar value.",
+    )
+
+
+def set_nested_value(config_dict: dict[str, object], dot_path: str, value: object) -> None:
+    """Set ``value`` at ``dot_path`` inside ``config_dict`` (in place).
+
+    Intermediate missing segments are created as empty dicts.
+
+    Raises:
+        ConfigError: CONFIG_KEY_PATH_INVALID for a malformed path, CONFIG_TYPE_CONFLICT when a segment is a scalar.
+    """
+    keys = _split_key_path("set", dot_path)
+
+    current: dict[str, object] = config_dict
     for i, key in enumerate(keys[:-1]):
-        if key not in current:
-            current[key] = {}
-        node = current[key]
+        node = current.setdefault(key, {})
         if not isinstance(node, dict):
-            conflict_path = ".".join(keys[: i + 1])
-            raise ValueError(f"Cannot set '{dot_path}'. '{conflict_path}' is already defined as a scalar value.")
+            raise _type_conflict("set", dot_path, keys, i)
         current = node
 
     current[keys[-1]] = value
 
 
-def unset_nested_value(config_dict: dict[str, Any], dot_path: str) -> bool:
+def unset_nested_value(config_dict: dict[str, object], dot_path: str) -> bool:
     """Remove the value at ``dot_path`` inside ``config_dict`` (in place).
 
     Traverses the same way ``set_nested_value`` does. A missing intermediate segment,
@@ -131,22 +112,17 @@ def unset_nested_value(config_dict: dict[str, Any], dot_path: str) -> bool:
         True if the key existed and was removed, False if it was a no-op.
 
     Raises:
-        ValueError: Empty/invalid path or scalar-vs-dict type collision.
+        ConfigError: CONFIG_KEY_PATH_INVALID for a malformed path, CONFIG_TYPE_CONFLICT when a segment is a scalar.
     """
-    message = _key_path_error("unset", dot_path)
-    if message is not None:
-        raise ValueError(message)
+    keys = _split_key_path("unset", dot_path)
 
-    keys = dot_path.split(".")
-
-    current: dict[str, Any] = config_dict
+    current: dict[str, object] = config_dict
     for i, key in enumerate(keys[:-1]):
         if key not in current:
             return False
         node = current[key]
         if not isinstance(node, dict):
-            conflict_path = ".".join(keys[: i + 1])
-            raise ValueError(f"Cannot unset '{dot_path}'. '{conflict_path}' is already defined as a scalar value.")
+            raise _type_conflict("unset", dot_path, keys, i)
         current = node
 
     final_key = keys[-1]
@@ -157,321 +133,59 @@ def unset_nested_value(config_dict: dict[str, Any], dot_path: str) -> bool:
     return True
 
 
-def _peek_nested_value(config_dict: dict[str, Any], dot_path: str) -> JsonValue:
-    """Return the value at ``dot_path``, assuming the caller has already confirmed it exists."""
-    current: Any = config_dict
+def _peek_nested_value(config_dict: dict[str, object], dot_path: str) -> object:
+    """Return the value at ``dot_path``, which the caller has already confirmed exists."""
+    current: object = config_dict
     for key in dot_path.split("."):
+        if not isinstance(current, dict):
+            raise RuntimeError(f"'{dot_path}' does not name a value in the config object")
         current = current[key]
     return current
 
 
-def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResult:
-    """Load ``config.json`` as an object, or return a classified failure."""
-    if path.exists() and path.is_dir():
-        return ConfigSetResult(
-            status=ConfigSetStatus.PATH_IS_DIRECTORY,
-            error_code=ErrorCode.CONFIG_PATH_INVALID,
-            config_path=path,
-            key=key,
-            errors=[f"Config path is a directory, not a file: '{path}'."],
-            remediations=[Remediation(message="Remove the directory or point config_path at a file")],
-        )
+def with_value_set(loaded: dict[str, object], key: str, value: JsonValue) -> dict[str, object]:
+    """Return a copy of loaded with value set at the dot-path key.
 
-    if not path.exists():
-        return ConfigSetResult(
-            status=ConfigSetStatus.NOT_FOUND,
-            error_code=ErrorCode.CONFIG_NOT_FOUND,
-            config_path=path,
-            key=key,
-            errors=[f"Configuration file not found at '{path}'."],
-            remediations=[Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")],
-        )
-
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        record = record_exception(
-            exc, level=DiagnosticLevel.ERROR, operation="config.read", context={"path": str(path)}
-        )
-        return ConfigSetResult(
-            status=ConfigSetStatus.UNREADABLE,
-            error_code=ErrorCode.CONFIG_UNREADABLE,
-            config_path=path,
-            key=key,
-            errors=[f"Unable to read config.json at '{path}': {exc}."],
-            remediations=[Remediation(message="Check file permissions and that the path is readable")],
-            diagnostics=error_diagnostics(record),
-        )
-
-    try:
-        data: Any = json.loads(text)
-    except json.JSONDecodeError as exc:
-        detail = f"line {exc.lineno} column {exc.colno} (char {exc.pos})"
-        if exc.msg:
-            detail = f"{exc.msg} at {detail}"
-        return ConfigSetResult(
-            status=ConfigSetStatus.MALFORMED_JSON,
-            error_code=ErrorCode.CONFIG_JSON_INVALID,
-            config_path=path,
-            key=key,
-            errors=[f"Malformed config.json at '{path}': {detail}."],
-            remediations=[Remediation(message="Repair JSON syntax, or restore from backup")],
-        )
-
-    if not isinstance(data, dict):
-        return ConfigSetResult(
-            status=ConfigSetStatus.ROOT_NOT_OBJECT,
-            error_code=ErrorCode.CONFIG_ROOT_INVALID,
-            config_path=path,
-            key=key,
-            errors=[f"Malformed config.json at '{path}': root must be an object."],
-            remediations=[Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")],
-        )
-
-    return data
+    Raises:
+        ConfigError: CONFIG_KEY_PATH_INVALID or CONFIG_TYPE_CONFLICT, from ``set_nested_value``.
+    """
+    updated = copy.deepcopy(loaded)
+    set_nested_value(updated, key, value)
+    return updated
 
 
-def _validate_mutated_config(
-    updated: dict[str, Any],
-    path: Path,
-    key: str,
-    value: JsonValue = None,
-) -> ConfigSetResult | None:
-    """Return a schema-invalid result, or ``None`` when mapping succeeds."""
+def without_value(loaded: dict[str, object], key: str) -> ConfigRemoval | None:
+    """Return a copy of loaded without the dot-path key and the value it held, or None when the key is absent.
+
+    Raises:
+        ConfigError: CONFIG_KEY_PATH_INVALID or CONFIG_TYPE_CONFLICT, from ``unset_nested_value``.
+    """
+    updated = copy.deepcopy(loaded)
+    if not unset_nested_value(updated, key):
+        return None
+    return ConfigRemoval(updated=updated, previous_value=_peek_nested_value(loaded, key))
+
+
+def write_mutated_config(path: Path, updated: dict[str, object]) -> None:
+    """Validate updated against the schema and config model, then write it to path atomically.
+
+    Raises:
+        ConfigError: CONFIG_SCHEMA_INVALID when updated fails validation, CONFIG_WRITE_FAILED from the write's OSError.
+    """
     schema_errors = CONFIG_VALIDATOR.validate(updated)
     if schema_errors:
-        return ConfigSetResult(
-            status=ConfigSetStatus.SCHEMA_INVALID,
-            error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
-            config_path=path,
-            key=key,
-            value=value,
-            errors=[
-                "\n".join(
-                    [
-                        "Config schema validation failed:",
-                        *(f"- {msg}" for msg in schema_errors),
-                    ]
-                )
-            ],
-            remediations=[
-                Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
-                Remediation(
-                    message="Run 'dovo init --repair' to insert missing keys without overwriting values",
-                    command="dovo init --repair",
-                ),
-            ],
-        )
-
+        raise _schema_error(list(schema_errors), updated)
     try:
         _map_dovo_config(updated)
-    except Exception as exc:
-        return ConfigSetResult(
-            status=ConfigSetStatus.SCHEMA_INVALID,
-            error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
-            config_path=path,
-            key=key,
-            value=value,
-            errors=[
-                "\n".join(
-                    [
-                        "Config schema validation failed:",
-                        *(f"- {msg}" for msg in [str(exc)]),
-                    ]
-                )
-            ],
-            remediations=[
-                Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
-                Remediation(
-                    message="Run 'dovo init --repair' to insert missing keys without overwriting values",
-                    command="dovo init --repair",
-                ),
-            ],
-        )
+    except ValueError as exc:
+        raise _schema_error([str(exc)], updated) from exc
 
-    return None
-
-
-def _write_config(path: Path, payload: dict[str, JsonValue]) -> FailureFields | None:
-    """Write ``payload`` to ``path`` atomically, or record the ``OSError`` and return its failure fields."""
     try:
-        Filesystem.atomic_write_json(path, payload)
+        Filesystem.atomic_write_json(path, updated)
     except OSError as exc:
-        record = record_exception(
-            exc, level=DiagnosticLevel.ERROR, operation="config.write", context={"path": str(path)}
-        )
-        return FailureFields(
-            error_code=ErrorCode.CONFIG_WRITE_FAILED,
-            errors=[f"Unable to write config.json at '{path}': {exc}."],
-            remediations=[Remediation(message="Check file permissions and free disk space")],
-            diagnostics=error_diagnostics(record),
-        )
-    return None
-
-
-def set_config_value_result(
-    key: str,
-    raw_value: str,
-    *,
-    config_path: Path,
-) -> ConfigSetResult:
-    """Load config JSON, coerce ``raw_value`` once, set it at a dot-path, and persist on success.
-
-    Does not print or call ``sys.exit``. Enforces schema key allow-lists and V1 schema validation.
-
-    Args:
-        key: Dot-path key to set.
-        raw_value: Raw token from ``dovo config set``, coerced exactly once by ``parse_config_value``.
-        config_path: Resolved configuration file path.
-
-    Returns:
-        Classified ``ConfigSetResult`` with absolute ``config_path``.
-    """
-    loaded = _read_config_object(config_path, key)
-    if isinstance(loaded, ConfigSetResult):
-        return loaded
-
-    parsed_value = parse_config_value(raw_value)
-    path_error = _key_path_error("set", key)
-    if path_error is not None:
-        return ConfigSetResult(
-            status=ConfigSetStatus.INVALID_PATH,
-            error_code=ErrorCode.CONFIG_KEY_PATH_INVALID,
-            config_path=config_path,
-            key=key,
-            value=parsed_value,
-            errors=[path_error],
-        )
-
-    updated = copy.deepcopy(loaded)
-    try:
-        set_nested_value(updated, key, parsed_value)
-    except ValueError as exc:
-        return ConfigSetResult(
-            status=ConfigSetStatus.TYPE_COLLISION,
-            error_code=ErrorCode.CONFIG_TYPE_CONFLICT,
-            config_path=config_path,
-            key=key,
-            value=parsed_value,
-            errors=[str(exc)],
-        )
-
-    schema_error = _validate_mutated_config(updated, config_path, key, value=parsed_value)
-    if schema_error is not None:
-        return schema_error
-
-    write_failure = _write_config(config_path, updated)
-    if write_failure is not None:
-        return ConfigSetResult(
-            status=ConfigSetStatus.WRITE_FAILED, config_path=config_path, key=key, value=parsed_value, **write_failure
-        )
-
-    clear_config_cache(config_path)
-    return ConfigSetResult(
-        status=ConfigSetStatus.OK,
-        config_path=config_path,
-        key=key,
-        value=parsed_value,
-        errors=[],
-    )
-
-
-def unset_config_value_result(
-    key: str,
-    *,
-    config_path: Path,
-) -> ConfigUnsetResult:
-    """Load config JSON, remove a dot-path value, and persist on success.
-
-    Does not print or call ``sys.exit``. Reuses ``_read_config_object`` and
-    ``_validate_mutated_config`` (which return ``ConfigSetResult``-shaped failures)
-    and translates their classification into ``ConfigUnsetResult``.
-
-    Args:
-        key: Dot-path key to remove.
-        config_path: Resolved configuration file path.
-
-    Returns:
-        Classified ``ConfigUnsetResult`` with absolute ``config_path``.
-    """
-    loaded = _read_config_object(config_path, key)
-    if isinstance(loaded, ConfigSetResult):
-        return ConfigUnsetResult(
-            status=ConfigUnsetStatus(loaded.status.value),
-            error_code=loaded.error_code,
-            config_path=config_path,
-            key=key,
-            existed=False,
-            errors=loaded.errors,
-            remediations=list(loaded.remediations),
-            diagnostics=list(loaded.diagnostics),
-        )
-
-    path_error = _key_path_error("unset", key)
-    if path_error is not None:
-        return ConfigUnsetResult(
-            status=ConfigUnsetStatus.INVALID_PATH,
-            error_code=ErrorCode.CONFIG_KEY_PATH_INVALID,
-            config_path=config_path,
-            key=key,
-            existed=False,
-            errors=[path_error],
-        )
-
-    updated = copy.deepcopy(loaded)
-    try:
-        existed = unset_nested_value(updated, key)
-    except ValueError as exc:
-        return ConfigUnsetResult(
-            status=ConfigUnsetStatus.TYPE_COLLISION,
-            error_code=ErrorCode.CONFIG_TYPE_CONFLICT,
-            config_path=config_path,
-            key=key,
-            existed=False,
-            errors=[str(exc)],
-        )
-
-    if not existed:
-        return ConfigUnsetResult(
-            status=ConfigUnsetStatus.OK,
-            config_path=config_path,
-            key=key,
-            existed=False,
-        )
-
-    previous_value = _peek_nested_value(loaded, key)
-
-    schema_error = _validate_mutated_config(updated, config_path, key)
-    if schema_error is not None:
-        return ConfigUnsetResult(
-            status=ConfigUnsetStatus(schema_error.status.value),
-            error_code=schema_error.error_code,
-            config_path=config_path,
-            key=key,
-            existed=True,
-            previous_value=previous_value,
-            errors=schema_error.errors,
-            remediations=schema_error.remediations,
-            diagnostics=list(schema_error.diagnostics),
-        )
-
-    write_failure = _write_config(config_path, updated)
-    if write_failure is not None:
-        return ConfigUnsetResult(
-            status=ConfigUnsetStatus.WRITE_FAILED,
-            config_path=config_path,
-            key=key,
-            existed=True,
-            previous_value=previous_value,
-            **write_failure,
-        )
-
-    clear_config_cache(config_path)
-    return ConfigUnsetResult(
-        status=ConfigUnsetStatus.OK,
-        config_path=config_path,
-        key=key,
-        existed=True,
-        previous_value=previous_value,
-        errors=[],
-    )
+        raise ConfigError(
+            ErrorCode.CONFIG_WRITE_FAILED,
+            f"Unable to write config.json at '{path}': {exc}.",
+            [Remediation(message="Check file permissions and free disk space")],
+        ) from exc
+    clear_config_cache(path)

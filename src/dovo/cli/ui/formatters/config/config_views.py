@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.models import Remediation
 from dovo.core.config.models import DovoConfig
-from dovo.core.config.mutate import ConfigSetStatus
 
 
 class ConfigValidationView(BaseModel):
@@ -31,7 +30,6 @@ class ConfigSetView(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: ConfigSetStatus
     config_path: Path
     key: str
     value: Any

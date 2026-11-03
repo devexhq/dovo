@@ -9,7 +9,7 @@ from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.cli.ui.formatters.config.common import format_config_value
 from dovo.cli.ui.formatters.config.config_views import ConfigSetView
-from dovo.core.config.mutate import ConfigSetResult, ConfigSetStatus
+from dovo.core.config.mutate import ConfigSetResult
 
 
 class ConfigSetFormatter(ComponentFormatter[ConfigSetResult, ConfigSetView]):
@@ -25,7 +25,6 @@ class ConfigSetFormatter(ComponentFormatter[ConfigSetResult, ConfigSetView]):
             ConfigSetView with formatted value string and type name.
         """
         return ConfigSetView(
-            status=data.status,
             config_path=data.config_path,
             key=data.key,
             value=data.value,
@@ -41,7 +40,7 @@ class ConfigSetFormatter(ComponentFormatter[ConfigSetResult, ConfigSetView]):
     def to_rich(self, data: ConfigSetResult) -> RenderableType:
         """Render configuration update confirmation or error panel."""
         view = self.transform(data)
-        if view.status == ConfigSetStatus.OK:
+        if view.error_code is None:
             return Text.from_markup(
                 f"[bold green]✔  Config updated: {view.key} = {view.value_str} ({view.value_type})[/bold green]"
             )

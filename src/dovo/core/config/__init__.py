@@ -10,12 +10,7 @@ from dovo.core.config.models import (
     ConfigTierEntry,
     DovoConfig,
 )
-from dovo.core.config.mutate import (
-    ConfigSetResult,
-    ConfigSetStatus,
-    ConfigUnsetResult,
-    ConfigUnsetStatus,
-)
+from dovo.core.config.mutate import ConfigSetResult, ConfigUnsetResult
 from dovo.core.config.validate import ConfigValidationResult
 
 __all__ = [
@@ -25,11 +20,9 @@ __all__ = [
     "ConfigLoadDiagnostics",
     "ConfigLoadResult",
     "ConfigSetResult",
-    "ConfigSetStatus",
     "ConfigTier",
     "ConfigTierEntry",
     "ConfigUnsetResult",
-    "ConfigUnsetStatus",
     "ConfigValidationResult",
     "DovoConfig",
     "agent_settings",

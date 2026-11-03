@@ -65,7 +65,7 @@ class ConfigUnsetCliIntegrationTests:
     def test_config_unset_cli_missing_config_json_reports_config_not_found(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """Exit 1 with status not_found and error_code CONFIG_NOT_FOUND."""
+        """Exit 1 with error_code CONFIG_NOT_FOUND and no status key."""
         res = cli_runner.invoke(
             app,
             ["-p", str(isolated_workspace), "config", "unset", "agents.copilot.model", "--format", "json"],
@@ -73,7 +73,7 @@ class ConfigUnsetCliIntegrationTests:
 
         assert res.exit_code == 1
         payload = json.loads(res.stdout)["payload"]
-        assert payload["status"] == "not_found"
+        assert "status" not in payload
         assert payload["error_code"] == "CONFIG_NOT_FOUND"
 
     def test_config_unset_cli_format_json_emits_event(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
@@ -91,7 +91,6 @@ class ConfigUnsetCliIntegrationTests:
         assert json.loads(res.stdout) == {
             "event_type": "ConfigUnsetResult",
             "payload": {
-                "status": "ok",
                 "config_path": str(config_path),
                 "key": "agents.copilot.model",
                 "existed": True,

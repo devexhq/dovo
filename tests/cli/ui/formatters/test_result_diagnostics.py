@@ -29,9 +29,7 @@ from dovo.core.catalog import (
 from dovo.core.config import (
     ConfigLoadResult,
     ConfigSetResult,
-    ConfigSetStatus,
     ConfigUnsetResult,
-    ConfigUnsetStatus,
     ConfigValidationResult,
 )
 from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
@@ -116,10 +114,10 @@ SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
         error_code=ErrorCode.CONFIG_UNREADABLE, config_path=CONFIG_PATH, diagnostics=[RECORD]
     ),
     ConfigSetResult: lambda: ConfigSetResult(
-        status=ConfigSetStatus.NOT_FOUND, config_path=CONFIG_PATH, key="project.name", diagnostics=[RECORD]
+        error_code=ErrorCode.CONFIG_NOT_FOUND, config_path=CONFIG_PATH, key="project.name", diagnostics=[RECORD]
     ),
     ConfigUnsetResult: lambda: ConfigUnsetResult(
-        status=ConfigUnsetStatus.NOT_FOUND,
+        error_code=ErrorCode.CONFIG_NOT_FOUND,
         config_path=CONFIG_PATH,
         key="project.name",
         existed=False,

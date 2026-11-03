@@ -9,7 +9,7 @@ import pytest
 
 from dovo.cli.ui.formatters.config import ConfigSetFormatter, ConfigSetView
 from dovo.common.models import Remediation
-from dovo.core.config.mutate import ConfigSetResult, ConfigSetStatus
+from dovo.core.config.mutate import ConfigSetResult
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -21,7 +21,6 @@ CONFIG_PATH = Path("/workspace/.dovo/config.json")
 
 SUCCESS_STR_CASE = FormatterCase(
     data=ConfigSetResult(
-        status=ConfigSetStatus.OK,
         config_path=CONFIG_PATH,
         key="agents.copilot.model",
         value="qwen2.5-coder",
@@ -30,7 +29,6 @@ SUCCESS_STR_CASE = FormatterCase(
         remediations=[],
     ),
     view=ConfigSetView(
-        status=ConfigSetStatus.OK,
         config_path=CONFIG_PATH,
         key="agents.copilot.model",
         value="qwen2.5-coder",
@@ -45,7 +43,6 @@ SUCCESS_STR_CASE = FormatterCase(
 
 SUCCESS_BOOL_CASE = FormatterCase(
     data=ConfigSetResult(
-        status=ConfigSetStatus.OK,
         config_path=CONFIG_PATH,
         key="telemetry.enabled",
         value=True,
@@ -54,7 +51,6 @@ SUCCESS_BOOL_CASE = FormatterCase(
         remediations=[],
     ),
     view=ConfigSetView(
-        status=ConfigSetStatus.OK,
         config_path=CONFIG_PATH,
         key="telemetry.enabled",
         value=True,
@@ -69,7 +65,6 @@ SUCCESS_BOOL_CASE = FormatterCase(
 
 SUCCESS_INT_CASE = FormatterCase(
     data=ConfigSetResult(
-        status=ConfigSetStatus.OK,
         config_path=CONFIG_PATH,
         key="worktree.max_active_worktrees",
         value=5,
@@ -78,7 +73,6 @@ SUCCESS_INT_CASE = FormatterCase(
         remediations=[],
     ),
     view=ConfigSetView(
-        status=ConfigSetStatus.OK,
         config_path=CONFIG_PATH,
         key="worktree.max_active_worktrees",
         value=5,
@@ -93,7 +87,6 @@ SUCCESS_INT_CASE = FormatterCase(
 
 SUCCESS_DICT_CASE = FormatterCase(
     data=ConfigSetResult(
-        status=ConfigSetStatus.OK,
         config_path=CONFIG_PATH,
         key="project",
         value={"name": "my-app"},
@@ -102,7 +95,6 @@ SUCCESS_DICT_CASE = FormatterCase(
         remediations=[],
     ),
     view=ConfigSetView(
-        status=ConfigSetStatus.OK,
         config_path=CONFIG_PATH,
         key="project",
         value={"name": "my-app"},
@@ -117,7 +109,7 @@ SUCCESS_DICT_CASE = FormatterCase(
 
 ERROR_SCHEMA_INVALID_CASE = FormatterCase(
     data=ConfigSetResult(
-        status=ConfigSetStatus.SCHEMA_INVALID,
+        error_code="CONFIG_SCHEMA_INVALID",
         config_path=CONFIG_PATH,
         key="agent.invalid_key",
         value=None,
@@ -126,7 +118,7 @@ ERROR_SCHEMA_INVALID_CASE = FormatterCase(
         remediations=[Remediation(message="Run 'dovo config validate' for details", command="dovo config validate")],
     ),
     view=ConfigSetView(
-        status=ConfigSetStatus.SCHEMA_INVALID,
+        error_code="CONFIG_SCHEMA_INVALID",
         config_path=CONFIG_PATH,
         key="agent.invalid_key",
         value=None,
@@ -147,7 +139,6 @@ TYPE_COLLISION_ERROR = "Cannot set 'project.name.first'. 'project.name' is alrea
 
 ERROR_TYPE_COLLISION_CASE = FormatterCase(
     data=ConfigSetResult(
-        status=ConfigSetStatus.TYPE_COLLISION,
         config_path=CONFIG_PATH,
         key="project.name.first",
         value="demo",
@@ -155,7 +146,6 @@ ERROR_TYPE_COLLISION_CASE = FormatterCase(
         errors=[TYPE_COLLISION_ERROR],
     ),
     view=ConfigSetView(
-        status=ConfigSetStatus.TYPE_COLLISION,
         config_path=CONFIG_PATH,
         key="project.name.first",
         value="demo",
@@ -180,7 +170,6 @@ SET_PAYLOAD_CASES = [
     pytest.param(
         SUCCESS_STR_CASE,
         {
-            "status": "ok",
             "config_path": "/workspace/.dovo/config.json",
             "key": "agents.copilot.model",
             "value": "qwen2.5-coder",
@@ -197,13 +186,12 @@ SET_PAYLOAD_CASES = [
     pytest.param(
         ERROR_SCHEMA_INVALID_CASE,
         {
-            "status": "schema_invalid",
             "config_path": "/workspace/.dovo/config.json",
             "key": "agent.invalid_key",
             "value": None,
             "value_str": "None",
             "value_type": "NoneType",
-            "error_code": None,
+            "error_code": "CONFIG_SCHEMA_INVALID",
             "errors": ["Config schema validation failed: extra property not allowed"],
             "warnings": [],
             "remediations": [{"message": "Run 'dovo config validate' for details", "command": "dovo config validate"}],
@@ -214,7 +202,6 @@ SET_PAYLOAD_CASES = [
     pytest.param(
         ERROR_TYPE_COLLISION_CASE,
         {
-            "status": "type_collision",
             "config_path": "/workspace/.dovo/config.json",
             "key": "project.name.first",
             "value": "demo",

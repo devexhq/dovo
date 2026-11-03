@@ -29,7 +29,7 @@ from dovo.core.config import ConfigError, ConfigLoadDiagnostics
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.loader import ConfigLoadResult
 from dovo.core.config.models import DovoConfig
-from dovo.core.config.mutate import ConfigSetResult, ConfigSetStatus
+from dovo.core.config.mutate import ConfigSetResult
 from dovo.core.config.validate import ConfigValidationResult
 from dovo.core.diagnostics.models import DiagnosticsReport
 from dovo.core.git.runner import GitRunner
@@ -533,7 +533,7 @@ class ConfigTolerantCommandsPostInitTests:
 
         set_results = [item for item in dispatch_spy if isinstance(item, ConfigSetResult)]
         assert GUARD_MESSAGE_HEAD not in result.stdout
-        assert [item.status for item in set_results] == [ConfigSetStatus.NOT_FOUND]
+        assert [item.error_code for item in set_results] == [ErrorCode.CONFIG_NOT_FOUND]
 
     def test_strict_command_with_broken_config_still_fails_with_the_config_panel(
         self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[object]
