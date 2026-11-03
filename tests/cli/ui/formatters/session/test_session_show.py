@@ -11,8 +11,10 @@ from dovo.cli.ui.formatters.session.common import format_session_duration
 from dovo.cli.ui.formatters.session.session_show import SessionShowFormatter
 from dovo.cli.ui.formatters.session.session_views import SessionShowView
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
+from dovo.common.models import Remediation
 from dovo.core.db import SessionStatus
-from dovo.core.sessions import HistoryShowResult, HistoryShowStatus, StepRunSummary
+from dovo.core.sessions import HistoryShowResult, StepRunSummary
 from tests.harness.builders.sessions import session_record, session_summary_view
 from tests.harness.formatter import (
     FormatterCase,
@@ -24,7 +26,6 @@ from tests.harness.formatter import (
 
 def _make_session_show_view(**overrides: object) -> SessionShowView:
     defaults: dict[str, object] = {
-        "status": HistoryShowStatus.OK,
         "session_id": "sess-12345678",
         "session": session_summary_view(),
         "log_files": [],
@@ -33,20 +34,20 @@ def _make_session_show_view(**overrides: object) -> SessionShowView:
         "errors": [],
         "warnings": [],
         "remediations": [],
+        "error_code": None,
         "diagnostics": [],
     }
     return SessionShowView.model_validate({**defaults, **overrides})
 
 
 COMPLETED_RUN = FormatterCase(
-    data=HistoryShowResult(status=HistoryShowStatus.OK, session_id="sess-12345678", session=session_record()),
+    data=HistoryShowResult(session_id="sess-12345678", session=session_record()),
     view=_make_session_show_view(),
     render_expectations=["sess-12345678", "deploy-blueprint", "feature/test", format_session_duration(10.0)],
 )
 
 KEPT_WORKTREE_RUN = FormatterCase(
     data=HistoryShowResult(
-        status=HistoryShowStatus.OK,
         session_id="sess-12345678",
         session=session_record(status=SessionStatus.FAILED),
         worktree_kept=True,
@@ -62,7 +63,6 @@ KEPT_WORKTREE_RUN = FormatterCase(
 
 FAILED_RUN_WITH_ERROR = FormatterCase(
     data=HistoryShowResult(
-        status=HistoryShowStatus.OK,
         session_id="sess-12345678",
         session=session_record(status=SessionStatus.FAILED, error_message="Step 'checkout' failed with exit code 1."),
     ),
@@ -80,7 +80,6 @@ FAILED_RUN_WITH_ERROR = FormatterCase(
 
 PAUSED_RUN_WITH_ERROR = FormatterCase(
     data=HistoryShowResult(
-        status=HistoryShowStatus.OK,
         session_id="sess-12345678",
         session=session_record(
             status=SessionStatus.PAUSED,
@@ -108,7 +107,6 @@ _LOG_FILES = ["/logs/sess-12345678/01_build_attempt_1.stdout.log", "/logs/sess-1
 _LOG_SNIPPET = ["[2026-08-19T01:00:01+00:00] step_start step_id=build"]
 RUN_WITH_LOGS = FormatterCase(
     data=HistoryShowResult(
-        status=HistoryShowStatus.OK,
         session_id="sess-12345678",
         session=session_record(),
         log_files=_LOG_FILES,
@@ -145,9 +143,7 @@ _STEPS = [
     StepRunSummary(kind="step", step_id="review", state="pending", loop_id="build-loop", iteration=1),
 ]
 RUN_WITH_STEPS = FormatterCase(
-    data=HistoryShowResult(
-        status=HistoryShowStatus.OK, session_id="sess-12345678", session=session_record(), steps=_STEPS
-    ),
+    data=HistoryShowResult(session_id="sess-12345678", session=session_record(), steps=_STEPS),
     view=_make_session_show_view(steps=_STEPS),
     render_expectations=[
         "format",
@@ -174,9 +170,7 @@ _GUARDED_STEPS = [
     ),
 ]
 RUN_WITH_GUARDED_STEPS = FormatterCase(
-    data=HistoryShowResult(
-        status=HistoryShowStatus.OK, session_id="sess-12345678", session=session_record(), steps=_GUARDED_STEPS
-    ),
+    data=HistoryShowResult(session_id="sess-12345678", session=session_record(), steps=_GUARDED_STEPS),
     view=_make_session_show_view(steps=_GUARDED_STEPS),
     render_expectations=["fold", "skipped (when_false)", "route", "completed (else)", "ship"],
 )
@@ -184,7 +178,6 @@ RUN_WITH_GUARDED_STEPS = FormatterCase(
 _NO_STEP_DATA_WARNING = "No step data recorded for this session."
 RUN_WITHOUT_STEP_DATA = FormatterCase(
     data=HistoryShowResult(
-        status=HistoryShowStatus.OK,
         session_id="sess-12345678",
         session=session_record(),
         warnings=[_NO_STEP_DATA_WARNING],
@@ -201,7 +194,6 @@ _STEP_READ_RECORD = DiagnosticRecord(
 )
 RUN_WITH_STEP_READ_FAILURE = FormatterCase(
     data=HistoryShowResult(
-        status=HistoryShowStatus.OK,
         session_id="sess-12345678",
         session=session_record(),
         warnings=[_STEP_READ_WARNING],
@@ -215,16 +207,48 @@ RUN_WITH_STEP_READ_FAILURE = FormatterCase(
     ],
 )
 
+_SESSION_LIST_FIX = Remediation(message="Run 'dovo session list' to view past sessions", command="dovo session list")
 NOT_FOUND = FormatterCase(
-    data=HistoryShowResult(status=HistoryShowStatus.NOT_FOUND, session_id="nonexistent-sess"),
-    view=_make_session_show_view(status=HistoryShowStatus.NOT_FOUND, session_id="nonexistent-sess", session=None),
-    render_expectations=["nonexistent-sess"],
+    data=HistoryShowResult(
+        session_id="nonexistent-sess",
+        error_code=ErrorCode.SESSION_NOT_FOUND,
+        errors=["Session 'nonexistent-sess' not found."],
+        remediations=[_SESSION_LIST_FIX],
+    ),
+    view=_make_session_show_view(
+        session_id="nonexistent-sess",
+        session=None,
+        error_code=ErrorCode.SESSION_NOT_FOUND,
+        errors=["Session 'nonexistent-sess' not found."],
+        remediations=[_SESSION_LIST_FIX],
+    ),
+    render_expectations=[
+        "Session Not Found",
+        "Session 'nonexistent-sess' not found.",
+        "- Run 'dovo session list' to view past sessions",
+    ],
+)
+
+LOGS_UNREADABLE = FormatterCase(
+    data=HistoryShowResult(
+        session_id="sess-12345678",
+        session=session_record(),
+        error_code=ErrorCode.SESSION_LOGS_UNREADABLE,
+        errors=["Failed reading session logs in '/logs/sess-12345678': denied"],
+    ),
+    view=_make_session_show_view(
+        error_code=ErrorCode.SESSION_LOGS_UNREADABLE,
+        errors=["Failed reading session logs in '/logs/sess-12345678': denied"],
+    ),
+    render_expectations=["Read Failure", "Failed reading session logs in '/logs/sess-12345678': denied"],
 )
 
 SHOW_ERROR = FormatterCase(
-    data=HistoryShowResult(status=HistoryShowStatus.OK, session_id="sess-1", errors=["Database locked"]),
-    view=_make_session_show_view(session_id="sess-1", session=None, errors=["Database locked"]),
-    render_expectations=["Database locked"],
+    data=HistoryShowResult(session_id="sess-1", error_code=ErrorCode.INTERNAL_ERROR, errors=["Database locked"]),
+    view=_make_session_show_view(
+        session_id="sess-1", session=None, error_code=ErrorCode.INTERNAL_ERROR, errors=["Database locked"]
+    ),
+    render_expectations=["Session Show Failed", "Database locked"],
 )
 
 HISTORY_SHOW_CASES = [
@@ -238,6 +262,7 @@ HISTORY_SHOW_CASES = [
     pytest.param(RUN_WITHOUT_STEP_DATA, id="run_without_step_data"),
     pytest.param(RUN_WITH_STEP_READ_FAILURE, id="run_with_step_read_failure"),
     pytest.param(NOT_FOUND, id="not_found"),
+    pytest.param(LOGS_UNREADABLE, id="logs_unreadable"),
     pytest.param(SHOW_ERROR, id="show_error"),
 ]
 
@@ -245,7 +270,6 @@ HISTORY_SHOW_PAYLOAD_CASES = [
     pytest.param(
         RUN_WITH_STEPS,
         {
-            "status": "ok",
             "session_id": "sess-12345678",
             "session": {
                 "session_id": "sess-12345678",
@@ -351,6 +375,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "error_code": None,
             "diagnostics": [],
         },
         id="run_with_steps",
@@ -358,7 +383,6 @@ HISTORY_SHOW_PAYLOAD_CASES = [
     pytest.param(
         RUN_WITH_GUARDED_STEPS,
         {
-            "status": "ok",
             "session_id": "sess-12345678",
             "session": {
                 "session_id": "sess-12345678",
@@ -430,6 +454,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "error_code": None,
             "diagnostics": [],
         },
         id="run_with_guarded_steps",
@@ -437,7 +462,6 @@ HISTORY_SHOW_PAYLOAD_CASES = [
     pytest.param(
         RUN_WITH_STEP_READ_FAILURE,
         {
-            "status": "ok",
             "session_id": "sess-12345678",
             "session": {
                 "session_id": "sess-12345678",
@@ -457,6 +481,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "errors": [],
             "warnings": ["Unexpected error during engine.session_show: boom"],
             "remediations": [],
+            "error_code": None,
             "diagnostics": [
                 {
                     "event_id": "exc_3f9a1c07b2de",
@@ -469,7 +494,6 @@ HISTORY_SHOW_PAYLOAD_CASES = [
     pytest.param(
         NOT_FOUND,
         {
-            "status": "not_found",
             "session_id": "nonexistent-sess",
             "session": None,
             "log_files": [],
@@ -477,9 +501,12 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "steps": [],
             "worktree_kept": None,
             "worktree_path": None,
-            "errors": [],
+            "errors": ["Session 'nonexistent-sess' not found."],
             "warnings": [],
-            "remediations": [],
+            "remediations": [
+                {"message": "Run 'dovo session list' to view past sessions", "command": "dovo session list"}
+            ],
+            "error_code": "SESSION_NOT_FOUND",
             "diagnostics": [],
         },
         id="not_found",

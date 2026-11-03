@@ -21,7 +21,9 @@ from tests.lint.astlib import (
 CORE_ROOT: Final[Path] = SRC_ROOT / "core"
 CORE_TESTS_ROOT: Final[Path] = TESTS_ROOT / "core"
 SESSIONS_ROOT: Final[Path] = CORE_ROOT / "sessions"
-SESSIONS_ALLOWED_ENTRIES: Final[frozenset[str]] = frozenset({"__init__.py", "models.py", "sessions.py", "services"})
+SESSIONS_ALLOWED_ENTRIES: Final[frozenset[str]] = frozenset(
+    {"__init__.py", "exceptions.py", "models.py", "sessions.py", "services"}
+)
 SESSIONS_SERVICES_ALLOWED_ENTRIES: Final[frozenset[str]] = frozenset(
     {"__init__.py", "read_diff.py", "read_logs.py", "reconcile.py"}
 )

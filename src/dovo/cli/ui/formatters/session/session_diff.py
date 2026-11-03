@@ -15,39 +15,24 @@ from dovo.cli.ui.formatters.session.common import (
 )
 from dovo.cli.ui.formatters.session.session_views import SessionDiffView
 from dovo.common.constants import DEFAULT_MAX_DIFF_LINES
-from dovo.core.sessions import DiffResult, DiffStatus
+from dovo.common.error_codes import ErrorCode
+from dovo.core.sessions import DiffResult
 
 
-def _format_session_not_found_panel(data: DiffResult | SessionDiffView) -> Panel:
-    """Format error panel when session is missing."""
-    default = f"Session '{data.session_id}' not found." if data.session_id else "No sessions found."
-    return build_error_panel("Session Not Found", data.errors, default, remediations=data.remediations)
+def _panel_title(view: SessionDiffView) -> str:
+    """Return the error panel title for the view's error_code."""
+    if view.error_code == ErrorCode.SESSION_NOT_FOUND:
+        return "Session Not Found"
+    if view.error_code == ErrorCode.SESSION_DIFF_NOT_FOUND:
+        return "Diff Not Found"
+    if view.error_code == ErrorCode.SESSION_DIFF_UNREADABLE:
+        return "Read Failure"
+    return "Diff Failed"
 
 
-def _format_diff_not_found_panel(data: DiffResult | SessionDiffView) -> Panel:
-    """Format error panel when diff artifact is missing."""
-    session_label = data.session_id or "unknown"
-    default = f"Session '{session_label}' has no diff artifact."
-    return build_error_panel("Diff Not Found", data.errors, default, remediations=data.remediations)
-
-
-def _format_read_failure_panel(data: DiffResult | SessionDiffView) -> Panel:
-    """Format error panel when diff artifact cannot be read."""
-    return build_error_panel(
-        "Read Failure", data.errors, "Failed to read diff artifact.", remediations=data.remediations
-    )
-
-
-def _format_diff_error_panel(data: DiffResult | SessionDiffView) -> Panel:
-    """Format error panel for non-ok diff results."""
-    if data.status == DiffStatus.SESSION_NOT_FOUND:
-        return _format_session_not_found_panel(data)
-    if data.status == DiffStatus.DIFF_NOT_FOUND:
-        return _format_diff_not_found_panel(data)
-    if data.status == DiffStatus.READ_FAILURE:
-        return _format_read_failure_panel(data)
-
-    return build_error_panel("Diff Failed", data.errors, "Diff operation failed.", remediations=data.remediations)
+def _format_diff_error_panel(view: SessionDiffView) -> Panel:
+    """Format the error panel for a failed diff view, titled by its error_code."""
+    return build_error_panel(_panel_title(view), view.errors, remediations=view.remediations)
 
 
 class SessionDiffFormatter(ComponentFormatter[DiffResult, SessionDiffView]):
@@ -98,7 +83,6 @@ class SessionDiffFormatter(ComponentFormatter[DiffResult, SessionDiffView]):
         should_truncate = is_terminal and not effective_full and total_lines > limit
 
         return SessionDiffView(
-            status=data.status,
             session_id=data.session_id,
             artifact_path=data.artifact_path,
             relative_path=relative_path,
@@ -112,19 +96,20 @@ class SessionDiffFormatter(ComponentFormatter[DiffResult, SessionDiffView]):
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.remediations),
+            error_code=data.error_code,
             diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: DiffResult) -> RenderableType:
-        """Render syntax-highlighted unified diff, empty message, or error panel."""
+        """Render the error panel, the no-changes message for an empty diff, or the syntax-highlighted unified diff."""
         view = self.transform(data)
 
-        if view.status == DiffStatus.EMPTY_DIFF:
+        if view.error_code is not None:
+            return _format_diff_error_panel(view)
+
+        if not view.diff_text:
             session_label = view.session_id or "unknown"
             return Text(f"No changes recorded for session {session_label}.")
-
-        if view.status not in (DiffStatus.OK, DiffStatus.EMPTY_DIFF) or view.errors:
-            return _format_diff_error_panel(view)
 
         header_suffix = "latest" if view.latest else view.relative_path
         header = Text(f"Session: {view.session_id} ({header_suffix})\n")

@@ -6,10 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.redact import SecretRedactor
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
-from dovo.core.sessions import HistoryShowStatus, StepRunSummary
+from dovo.core.sessions import StepRunSummary
 from dovo.engine.services import SessionShowService
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.sessions import SEEDED_FAILURE, seed_failed_session
@@ -31,7 +32,7 @@ class SessionShowServiceTests:
             paths=engine_paths, sessions_db=sessions_repo, session_id="session-failed"
         ).execute()
 
-        assert result.status is HistoryShowStatus.OK
+        assert result.error_code is None
         assert result.session is not None
         assert result.session.session_id == "session-failed"
         assert [(step.step_id, step.state, step.error_message) for step in result.steps] == [
@@ -56,7 +57,7 @@ class SessionShowServiceTests:
     ) -> None:
         result = SessionShowService(paths=engine_paths, sessions_db=sessions_repo, session_id="ghost").execute()
 
-        assert result.status is HistoryShowStatus.NOT_FOUND
+        assert result.error_code == ErrorCode.SESSION_NOT_FOUND
         assert result.session is None
         assert result.steps == []
 
@@ -74,14 +75,14 @@ class SessionShowServiceTests:
     def test_execute_step_failure_adds_message_to_warnings(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, fault: str, warning: str
     ) -> None:
-        """Return status OK, steps == [] and warnings == [the summarize message], with diagnostics == []."""
+        """Return error_code None, steps == [] and warnings == [the summarize message], with diagnostics == []."""
         sessions_repo.create("session-x", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED)
         if fault == "corrupt":
             sessions_repo.save_execution_state("session-x", "{not json", expected_revision=0, next_revision=0)
 
         result = SessionShowService(paths=engine_paths, sessions_db=sessions_repo, session_id="session-x").execute()
 
-        assert result.status is HistoryShowStatus.OK
+        assert result.error_code is None
         assert result.steps == []
         assert result.warnings == [warning]
         assert result.diagnostics == []
@@ -105,7 +106,7 @@ class SessionShowServiceTests:
             paths=engine_paths, sessions_db=sessions_repo, session_id="session-failed"
         ).execute()
 
-        assert result.status is HistoryShowStatus.OK
+        assert result.error_code is None
         assert result.steps == []
         assert result.warnings == ["Unexpected error during engine.session_show: boom"]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]

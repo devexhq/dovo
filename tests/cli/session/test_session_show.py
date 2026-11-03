@@ -67,7 +67,7 @@ class SessionShowCliIntegrationTests:
         assert result.exit_code == 0
         event = json.loads(result.stdout)
         assert event["event_type"] == "HistoryShowResult"
-        assert event["payload"]["status"] == "ok"
+        assert event["payload"]["error_code"] is None
         assert event["payload"]["session_id"] == "session-known"
 
     @pytest.mark.parametrize(

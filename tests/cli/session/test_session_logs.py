@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.core.db import DovoDb, SessionStatus
-from dovo.core.sessions import LogsShowResult, LogsShowStatus, SessionLogEvent, SessionLogEventType
+from dovo.core.sessions import LogsShowResult, SessionLogEvent, SessionLogEventType
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 _EVENTS = [
@@ -78,9 +78,7 @@ class SessionLogsCliIntegrationTests:
 
         assert result.exit_code == 0
         assert dispatch_spy == [
-            LogsShowResult(
-                status=LogsShowStatus.OK, session_id="sess-logs", lines=["err-3", "err-4", "err-5", "err-6", "err-7"]
-            )
+            LogsShowResult(session_id="sess-logs", lines=["err-3", "err-4", "err-5", "err-6", "err-7"])
         ]
 
     def test_logs_command_unknown_session_exits_1_with_not_found_message(
@@ -90,8 +88,74 @@ class SessionLogsCliIntegrationTests:
 
         assert result.exit_code == 1
         assert "Logs Not Found" in result.stdout
-        assert "No logs found for session 'ghost-session'" in result.stdout
+        assert "Session 'ghost-session' not found." in result.stdout
         assert "- Run 'dovo session list'" in result.stdout
+
+    def test_logs_command_session_without_log_directory_exits_1_with_no_logs_message(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        paths = initialized_workspace_paths(cli_workspace)
+        DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.create(
+            session_id="sess-bare", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
+        )
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "logs", "sess-bare"])
+
+        assert result.exit_code == 1
+        assert "Logs Not Found" in result.stdout
+        assert "No logs found for session 'sess-bare'." in result.stdout
+
+    @pytest.mark.parametrize(
+        ("options", "expected_code", "expected_error", "expected_available"),
+        [
+            pytest.param(
+                ["--step", "missing"],
+                "SESSION_STEP_NOT_FOUND",
+                "Step 'missing' not found in session 'sess-logs'. Available steps: build.",
+                {"available_steps": ["build"], "available_attempts": []},
+                id="step_not_found",
+            ),
+            pytest.param(
+                ["--step", "build", "--attempt", "9"],
+                "SESSION_ATTEMPT_NOT_FOUND",
+                "Attempt 9 not found for step 'build' in session 'sess-logs'. Available attempts: 1, 2.",
+                {"available_steps": [], "available_attempts": [1, 2]},
+                id="attempt_not_found",
+            ),
+        ],
+    )
+    def test_logs_command_json_reports_unknown_step_or_attempt_by_error_code(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        options: list[str],
+        expected_code: str,
+        expected_error: str,
+        expected_available: dict[str, list[object]],
+    ) -> None:
+        _seed_session(cli_workspace)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "session", "logs", "sess-logs", *options, "--format", "json"]
+        )
+
+        payload = json.loads(result.stdout)["payload"]
+        assert result.exit_code == 1
+        assert "status" not in payload
+        assert payload["error_code"] == expected_code
+        assert payload["errors"] == [expected_error]
+        assert {key: payload[key] for key in expected_available} == expected_available
+
+    def test_logs_command_unknown_step_prints_step_not_found_panel(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        _seed_session(cli_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "logs", "sess-logs", "--step", "nope"])
+
+        assert result.exit_code == 1
+        assert "Step Not Found" in result.stdout
+        assert "Available steps: build." in result.stdout
 
     def test_logs_command_format_json_matches_wire_schema(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         _seed_session(cli_workspace)
@@ -101,6 +165,8 @@ class SessionLogsCliIntegrationTests:
         assert result.exit_code == 0
         event = json.loads(result.stdout)
         assert event["event_type"] == "LogsShowResult"
+        assert "status" not in event["payload"]
+        assert (event["payload"]["error_code"], event["payload"]["errors"]) == (None, [])
         assert [row["event"] for row in event["payload"]["events"]] == ["session_started", "session_completed"]
 
     @pytest.mark.parametrize(

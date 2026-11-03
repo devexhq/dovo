@@ -71,7 +71,6 @@ class SessionDiffCliIntegrationTests:
         assert json.loads(result.stdout) == {
             "event_type": "DiffResult",
             "payload": {
-                "status": "ok",
                 "session_id": "sess-diff-1",
                 "artifact_path": str(patch_path),
                 "relative_path": str(patch_path),
@@ -84,6 +83,7 @@ class SessionDiffCliIntegrationTests:
                 "errors": [],
                 "warnings": [],
                 "remediations": [],
+                "error_code": None,
                 "diagnostics": [],
             },
         }
@@ -109,8 +109,73 @@ class SessionDiffCliIntegrationTests:
 
         payload = json.loads(result.stdout)["payload"]
         assert result.exit_code == 1
-        assert payload["status"] == "session_not_found"
+        assert payload["error_code"] == "SESSION_NOT_FOUND"
+        assert payload["errors"] == ["Session 'unknown' not found."]
         assert (payload["full"], payload["max_lines"]) == (False, None)
+
+    @pytest.mark.parametrize(
+        ("seed", "expected_code", "expected_error"),
+        [
+            pytest.param(
+                None,
+                "SESSION_DIFF_NOT_FOUND",
+                "Session 'sess-diff-1' has no diff artifact.",
+                id="diff_not_found",
+            ),
+            pytest.param("", None, None, id="empty_diff"),
+        ],
+    )
+    def test_diff_cli_json_reports_missing_artifact_and_empty_diff_by_error_code(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        seed: str | None,
+        expected_code: str | None,
+        expected_error: str | None,
+    ) -> None:
+        """Exit 1 with SESSION_DIFF_NOT_FOUND when diff.patch is missing; exit 0 with error_code null for an empty one."""
+        if seed is None:
+            paths = initialized_workspace_paths(cli_workspace)
+            DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.create(
+                session_id="sess-diff-1", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
+            )
+        else:
+            _write_session_diff(cli_workspace, "sess-diff-1", seed)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "session", "diff", "sess-diff-1", "--format", "json"]
+        )
+
+        payload = json.loads(result.stdout)["payload"]
+        assert result.exit_code == (0 if expected_code is None else 1)
+        assert "status" not in payload
+        assert payload["error_code"] == expected_code
+        assert payload["errors"] == ([] if expected_error is None else [expected_error])
+        assert payload["total_lines"] == 0
+
+    def test_diff_cli_empty_patch_prints_no_changes_and_exits_zero(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        _write_session_diff(cli_workspace, "sess-diff-1", "")
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff", "sess-diff-1"])
+
+        assert result.exit_code == 0
+        assert "No changes recorded for session sess-diff-1." in result.stdout
+
+    def test_diff_cli_missing_artifact_prints_diff_not_found_panel(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        paths = initialized_workspace_paths(cli_workspace)
+        DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.create(
+            session_id="sess-diff-1", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
+        )
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff", "sess-diff-1"])
+
+        assert result.exit_code == 1
+        assert "Diff Not Found" in result.stdout
+        assert "Session 'sess-diff-1' has no diff artifact." in result.stdout
 
 
 class SessionDiffLatestCliIntegrationTests:

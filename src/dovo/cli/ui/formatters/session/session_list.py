@@ -44,19 +44,19 @@ class SessionListFormatter(ComponentFormatter[HistoryListResult, SessionListView
         """
         sessions = [build_session_summary(session) for session in data.sessions]
         return SessionListView(
-            status=data.status,
             sessions=sessions,
             total_sessions=len(sessions),
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.remediations),
+            error_code=data.error_code,
             diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: HistoryListResult) -> RenderableType:
-        """Render execution history table, warnings, or empty state, followed by diagnostic_lines(view.diagnostics)."""
+        """Render the error panel, or the execution history table, warnings, or empty state, followed by diagnostic_lines(view.diagnostics)."""
         view = self.transform(data)
-        if view.errors:
+        if view.error_code is not None:
             panel = build_error_panel("Session List Failed", view.errors, remediations=view.remediations)
             return with_diagnostics(panel, view.diagnostics)
 

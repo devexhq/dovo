@@ -34,7 +34,7 @@ class SessionShowService:
                 self.paths, self.session_id, db=self.sessions_db, sensitive_variables=self.sensitive_variables
             ).details(include_logs=self.include_logs)
 
-        if result.session is None:
+        if not result.ok or result.session is None:
             return result
 
         redactor = history_redactor(self.paths, self.sensitive_variables)

@@ -8,14 +8,7 @@ from pydantic import BaseModel, Field
 
 from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.models import Remediation
-from dovo.core.sessions import (
-    DiffStatus,
-    HistoryListStatus,
-    HistoryShowStatus,
-    LogsShowStatus,
-    SessionLogEvent,
-    StepRunSummary,
-)
+from dovo.core.sessions import SessionLogEvent, StepRunSummary
 
 
 class SessionSummaryView(BaseModel):
@@ -38,12 +31,12 @@ class SessionListView(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: HistoryListStatus
     sessions: list[SessionSummaryView] = Field(default_factory=list)
     total_sessions: int = 0
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
+    error_code: str | None = None
     diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
@@ -52,7 +45,6 @@ class SessionShowView(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: HistoryShowStatus
     session_id: str | None = None
     session: SessionSummaryView | None = None
     log_files: list[str] = Field(default_factory=list)
@@ -63,6 +55,7 @@ class SessionShowView(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
+    error_code: str | None = None
     diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
@@ -71,7 +64,6 @@ class SessionLogsView(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: LogsShowStatus
     session_id: str | None = None
     lines: list[str] = Field(default_factory=list)
     events: list[SessionLogEvent] = Field(default_factory=list)
@@ -80,6 +72,7 @@ class SessionLogsView(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
+    error_code: str | None = None
     diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
@@ -88,7 +81,6 @@ class SessionDiffView(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: DiffStatus
     session_id: str | None = None
     artifact_path: Path | None = None
     relative_path: str = ""
@@ -103,4 +95,5 @@ class SessionDiffView(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
+    error_code: str | None = None
     diagnostics: list[DiagnosticRecord] = Field(default_factory=list)

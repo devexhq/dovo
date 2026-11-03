@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import Remediation
-from dovo.core.sessions import DiffStatus
+from dovo.core.sessions import SessionError
 from dovo.core.sessions.services.read_diff import read_session_diff
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
@@ -25,75 +26,59 @@ def _write_patch(paths: WorkspacePaths, session_id: str, diff_text: str) -> Path
 
 
 class ReadSessionDiffTests:
-    @pytest.mark.parametrize(
-        ("patch_text", "expected_status"),
-        [
-            pytest.param(None, DiffStatus.DIFF_NOT_FOUND, id="missing_patch"),
-            pytest.param("  \n\n", DiffStatus.EMPTY_DIFF, id="whitespace_only_patch"),
-        ],
-    )
-    def test_read_session_diff_with_absent_or_blank_patch_returns_classified_status(
-        self,
-        tmp_path: Path,
-        workspace_paths_factory: WorkspacePathsFactory,
-        patch_text: str | None,
-        expected_status: DiffStatus,
-    ) -> None:
-        paths = workspace_paths_factory(tmp_path, None)
-        if patch_text is None:
-            paths.session_dir("session-3").mkdir(parents=True)
-        else:
-            _write_patch(paths, "session-3", patch_text)
-
-        result = read_session_diff(paths, "session-3")
-
-        assert result.status == expected_status
-        assert result.session_id == "session-3"
-        assert result.artifact_path == paths.session_dir("session-3") / "diff.patch"
-        assert result.diff_text == ""
-        assert result.ok is (expected_status == DiffStatus.EMPTY_DIFF)
-
-    def test_read_session_diff_with_missing_patch_fix_names_actual_artifact_path(
-        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
-    ) -> None:
-        paths = workspace_paths_factory(tmp_path, None)
-        paths.session_dir("session-5").mkdir(parents=True)
-
-        result = read_session_diff(paths, "session-5")
-
-        assert result.remediations == [
-            Remediation(
-                message=f"Verify the session generated a diff artifact at '{paths.session_dir('session-5') / 'diff.patch'}'"
-            )
-        ]
-
-    def test_read_session_diff_with_written_patch_returns_ok_with_exact_text(
+    def test_read_session_diff_with_written_patch_returns_path_and_exact_text(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         paths = workspace_paths_factory(tmp_path, None)
         patch_text = "diff --git a/f.txt b/f.txt\n-old\n+new\n"
-        _write_patch(paths, "session-1", patch_text)
+        patch_path = _write_patch(paths, "session-1", patch_text)
 
-        result = read_session_diff(paths, "session-1")
+        assert read_session_diff(paths, "session-1") == (patch_path, patch_text)
 
-        assert result.status == DiffStatus.OK
-        assert result.diff_text == patch_text
-        assert (result.full, result.max_lines) == (False, None)
+    @pytest.mark.parametrize("patch_text", [pytest.param("", id="empty"), pytest.param("  \n\n", id="whitespace")])
+    def test_read_session_diff_with_blank_patch_returns_empty_text(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory, patch_text: str
+    ) -> None:
+        paths = workspace_paths_factory(tmp_path, None)
+        patch_path = _write_patch(paths, "session-3", patch_text)
 
-    def test_read_session_diff_with_unreadable_patch_returns_read_failure(
+        assert read_session_diff(paths, "session-3") == (patch_path, "")
+
+    def test_read_session_diff_with_missing_patch_raises_diff_not_found_naming_the_artifact_path(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        paths = workspace_paths_factory(tmp_path, None)
+        paths.session_dir("session-5").mkdir(parents=True)
+        patch_path = paths.session_dir("session-5") / "diff.patch"
+
+        with pytest.raises(SessionError) as raised:
+            read_session_diff(paths, "session-5")
+
+        assert raised.value.error_code is ErrorCode.SESSION_DIFF_NOT_FOUND
+        assert raised.value.message == "Session 'session-5' has no diff artifact."
+        assert raised.value.remediations == (
+            Remediation(message=f"Verify the session generated a diff artifact at '{patch_path}'"),
+        )
+        assert raised.value.__cause__ is None
+
+    def test_read_session_diff_with_unreadable_patch_raises_diff_unreadable_chained_to_the_os_error(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         paths = workspace_paths_factory(tmp_path, None)
         patch_path = _write_patch(paths, "session-4", "diff --git a/f.txt b/f.txt\n")
+        denied = PermissionError("denied")
 
         def _deny_read(self: Path, *args: object, **kwargs: object) -> str:
-            raise PermissionError("denied")
+            raise denied
 
         monkeypatch.setattr(Path, "read_text", _deny_read)
 
-        result = read_session_diff(paths, "session-4")
+        with pytest.raises(SessionError) as raised:
+            read_session_diff(paths, "session-4")
 
-        assert result.status == DiffStatus.READ_FAILURE
-        assert result.artifact_path == patch_path
-        assert result.errors == [f"Failed to read diff artifact at '{patch_path}': denied"]
-        assert result.ok is False
+        assert raised.value.error_code is ErrorCode.SESSION_DIFF_UNREADABLE
+        assert raised.value.message == f"Failed to read diff artifact at '{patch_path}': denied"
+        assert raised.value.remediations == (
+            Remediation(message="Check file permissions and that the artifact is readable"),
+        )
+        assert raised.value.__cause__ is denied

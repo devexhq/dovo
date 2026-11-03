@@ -9,7 +9,8 @@ import pytest
 from dovo.cli.ui.formatters.session.common import format_session_duration
 from dovo.cli.ui.formatters.session.session_list import SessionListFormatter
 from dovo.cli.ui.formatters.session.session_views import SessionListView
-from dovo.core.sessions import HistoryListResult, HistoryListStatus
+from dovo.common.error_codes import ErrorCode
+from dovo.core.sessions import HistoryListResult
 from tests.harness.builders.sessions import session_record, session_summary_view
 from tests.harness.formatter import (
     FormatterCase,
@@ -21,32 +22,31 @@ from tests.harness.formatter import (
 
 def _make_session_list_view(**overrides: object) -> SessionListView:
     defaults: dict[str, object] = {
-        "status": HistoryListStatus.OK,
         "sessions": [session_summary_view()],
         "total_sessions": 1,
         "errors": [],
         "warnings": [],
         "remediations": [],
+        "error_code": None,
         "diagnostics": [],
     }
     return SessionListView.model_validate({**defaults, **overrides})
 
 
 POPULATED_RUNS = FormatterCase(
-    data=HistoryListResult(status=HistoryListStatus.OK, sessions=[session_record()]),
+    data=HistoryListResult(sessions=[session_record()]),
     view=_make_session_list_view(),
     render_expectations=["sess-12345678", "deploy-blueprint", format_session_duration(10.0)],
 )
 
 EMPTY_RUNS = FormatterCase(
-    data=HistoryListResult(status=HistoryListStatus.OK, sessions=[]),
+    data=HistoryListResult(sessions=[]),
     view=_make_session_list_view(sessions=[], total_sessions=0),
     render_expectations=["No execution history found."],
 )
 
 WARNINGS_RUNS = FormatterCase(
     data=HistoryListResult(
-        status=HistoryListStatus.OK,
         sessions=[session_record()],
         warnings=["Marked 1 interrupted session failed (session_id: sess-stale)."],
     ),
@@ -60,9 +60,11 @@ WARNINGS_RUNS = FormatterCase(
 )
 
 ERRORS_RUNS = FormatterCase(
-    data=HistoryListResult(status=HistoryListStatus.OK, errors=["Database query failed."]),
-    view=_make_session_list_view(sessions=[], total_sessions=0, errors=["Database query failed."]),
-    render_expectations=["Database query failed."],
+    data=HistoryListResult(error_code=ErrorCode.INTERNAL_ERROR, errors=["Database query failed."]),
+    view=_make_session_list_view(
+        sessions=[], total_sessions=0, error_code=ErrorCode.INTERNAL_ERROR, errors=["Database query failed."]
+    ),
+    render_expectations=["Session List Failed", "Database query failed."],
 )
 
 HISTORY_LIST_CASES = [
@@ -76,20 +78,32 @@ HISTORY_LIST_PAYLOAD_CASES = [
     pytest.param(
         EMPTY_RUNS,
         {
-            "status": "ok",
             "sessions": [],
             "total_sessions": 0,
             "errors": [],
             "warnings": [],
             "remediations": [],
+            "error_code": None,
             "diagnostics": [],
         },
         id="empty_runs",
     ),
     pytest.param(
+        ERRORS_RUNS,
+        {
+            "sessions": [],
+            "total_sessions": 0,
+            "errors": ["Database query failed."],
+            "warnings": [],
+            "remediations": [],
+            "error_code": "INTERNAL_ERROR",
+            "diagnostics": [],
+        },
+        id="errors_runs",
+    ),
+    pytest.param(
         WARNINGS_RUNS,
         {
-            "status": "ok",
             "sessions": [
                 {
                     "session_id": "sess-12345678",
@@ -106,6 +120,7 @@ HISTORY_LIST_PAYLOAD_CASES = [
             "errors": [],
             "warnings": ["Marked 1 interrupted session failed (session_id: sess-stale)."],
             "remediations": [],
+            "error_code": None,
             "diagnostics": [],
         },
         id="warnings_runs",

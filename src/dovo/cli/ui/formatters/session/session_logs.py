@@ -10,7 +10,8 @@ from rich.text import Text
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel
 from dovo.cli.ui.formatters.session.session_views import SessionLogsView
-from dovo.core.sessions import LogsShowResult, LogsShowStatus, SessionLogEvent
+from dovo.common.error_codes import ErrorCode
+from dovo.core.sessions import LogsShowResult, SessionLogEvent
 
 
 def _event_details(event: SessionLogEvent) -> str:
@@ -18,35 +19,24 @@ def _event_details(event: SessionLogEvent) -> str:
     return " ".join(f"{name}={value}" for name, value in event.details().items())
 
 
+def _panel_title(view: SessionLogsView) -> str:
+    """Return the error panel title for the view's error_code; a missing session is 'Logs Not Found' once its id is known."""
+    if view.error_code == ErrorCode.SESSION_NOT_FOUND:
+        return "Session Not Found" if view.session_id is None else "Logs Not Found"
+    if view.error_code == ErrorCode.SESSION_STEP_NOT_FOUND:
+        return "Step Not Found"
+    if view.error_code == ErrorCode.SESSION_ATTEMPT_NOT_FOUND:
+        return "Attempt Not Found"
+    if view.error_code == ErrorCode.SESSION_LOGS_UNREADABLE:
+        return "Read Failure"
+    return "Logs Show Failed"
+
+
 def _render_error_panel(view: SessionLogsView) -> Panel | None:
-    """Render the not-found or error panel for a non-OK view, or None when content is renderable."""
-    if view.status == LogsShowStatus.SESSION_NOT_FOUND and view.session_id is None:
-        return build_error_panel(
-            "Session Not Found",
-            default="No sessions found.",
-            remediations=view.remediations,
-        )
-    if view.status == LogsShowStatus.SESSION_NOT_FOUND:
-        return build_error_panel(
-            "Logs Not Found",
-            default=f"No logs found for session '{view.session_id}'",
-            remediations=view.remediations,
-        )
-    if view.status == LogsShowStatus.STEP_NOT_FOUND:
-        return build_error_panel(
-            "Step Not Found",
-            default=f"Available steps: {', '.join(view.available_steps) or 'none'}",
-            remediations=view.remediations,
-        )
-    if view.status == LogsShowStatus.ATTEMPT_NOT_FOUND:
-        return build_error_panel(
-            "Attempt Not Found",
-            default=f"Available attempts: {', '.join(str(a) for a in view.available_attempts)}",
-            remediations=view.remediations,
-        )
-    if view.errors:
-        return build_error_panel("Logs Show Failed", errors=view.errors, remediations=view.remediations)
-    return None
+    """Render the error panel for a failed view, titled by its error_code, or None when content is renderable."""
+    if view.error_code is None:
+        return None
+    return build_error_panel(_panel_title(view), view.errors, remediations=view.remediations)
 
 
 def _build_events_table(events: list[SessionLogEvent]) -> Table:
@@ -66,7 +56,6 @@ class SessionLogsFormatter(ComponentFormatter[LogsShowResult, SessionLogsView]):
     def transform(self, data: LogsShowResult) -> SessionLogsView:
         """Derive the presentation-ready view from LogsShowResult."""
         return SessionLogsView(
-            status=data.status,
             session_id=data.session_id,
             lines=list(data.lines),
             events=list(data.events),
@@ -75,6 +64,7 @@ class SessionLogsFormatter(ComponentFormatter[LogsShowResult, SessionLogsView]):
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.remediations),
+            error_code=data.error_code,
             diagnostics=list(data.diagnostics),
         )
 

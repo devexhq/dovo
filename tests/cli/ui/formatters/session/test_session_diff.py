@@ -9,8 +9,9 @@ import pytest
 from rich.console import Console
 
 from dovo.cli.ui.formatters.session import SessionDiffFormatter, SessionDiffView
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
-from dovo.core.sessions import DiffResult, DiffStatus
+from dovo.core.sessions import DiffResult
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -30,7 +31,6 @@ _SAMPLE_DIFF = """diff --git a/src/main.py b/src/main.py
 def make_diff_view(**overrides: object) -> SessionDiffView:
     """Construct a SessionDiffView with healthy baseline defaults."""
     defaults: dict[str, object] = {
-        "status": DiffStatus.OK,
         "session_id": "dovo_fmt_1",
         "artifact_path": Path("/repo/.dovo/sessions/dovo_fmt_1/diff.patch"),
         "relative_path": "/repo/.dovo/sessions/dovo_fmt_1/diff.patch",
@@ -43,13 +43,13 @@ def make_diff_view(**overrides: object) -> SessionDiffView:
         "errors": [],
         "warnings": [],
         "remediations": [],
+        "error_code": None,
         "diagnostics": [],
     }
     return SessionDiffView.model_validate({**defaults, **overrides})
 
 
 OK_POPULATED_DATA = DiffResult(
-    status=DiffStatus.OK,
     session_id="dovo_fmt_1",
     artifact_path=Path("/repo/.dovo/sessions/dovo_fmt_1/diff.patch"),
     diff_text=_SAMPLE_DIFF,
@@ -58,7 +58,6 @@ OK_POPULATED_DATA = DiffResult(
 OK_POPULATED = FormatterCase(
     data=OK_POPULATED_DATA,
     view=make_diff_view(
-        status=DiffStatus.OK,
         session_id="dovo_fmt_1",
         artifact_path=Path("/repo/.dovo/sessions/dovo_fmt_1/diff.patch"),
         relative_path="/repo/.dovo/sessions/dovo_fmt_1/diff.patch",
@@ -74,7 +73,6 @@ OK_POPULATED = FormatterCase(
 )
 
 EMPTY_DIFF_DATA = DiffResult(
-    status=DiffStatus.EMPTY_DIFF,
     session_id="dovo_fmt_empty",
     artifact_path=Path("/repo/.dovo/sessions/dovo_fmt_empty/diff.patch"),
     diff_text="",
@@ -82,19 +80,18 @@ EMPTY_DIFF_DATA = DiffResult(
 EMPTY_DIFF = FormatterCase(
     data=EMPTY_DIFF_DATA,
     view=make_diff_view(
-        status=DiffStatus.EMPTY_DIFF,
         session_id="dovo_fmt_empty",
         artifact_path=Path("/repo/.dovo/sessions/dovo_fmt_empty/diff.patch"),
         relative_path="/repo/.dovo/sessions/dovo_fmt_empty/diff.patch",
         diff_text="",
         total_lines=0,
     ),
-    render_expectations=["dovo_fmt_empty", "No changes recorded"],
+    render_expectations=["No changes recorded for session dovo_fmt_empty."],
 )
 
 SESSION_NOT_FOUND_DATA = DiffResult(
-    status=DiffStatus.SESSION_NOT_FOUND,
     session_id="dovo_missing_99",
+    error_code=ErrorCode.SESSION_NOT_FOUND,
     errors=["Session 'dovo_missing_99' not found."],
     remediations=[
         Remediation(message="Run 'dovo session list' to list valid session IDs", command="dovo session list")
@@ -103,7 +100,6 @@ SESSION_NOT_FOUND_DATA = DiffResult(
 SESSION_NOT_FOUND = FormatterCase(
     data=SESSION_NOT_FOUND_DATA,
     view=make_diff_view(
-        status=DiffStatus.SESSION_NOT_FOUND,
         session_id="dovo_missing_99",
         artifact_path=None,
         relative_path="<sessions_dir>/dovo_missing_99/diff.patch",
@@ -113,17 +109,83 @@ SESSION_NOT_FOUND = FormatterCase(
         remediations=[
             Remediation(message="Run 'dovo session list' to list valid session IDs", command="dovo session list")
         ],
+        error_code=ErrorCode.SESSION_NOT_FOUND,
     ),
     render_expectations=[
-        "dovo_missing_99",
+        "Session Not Found",
         "Session 'dovo_missing_99' not found.",
         "Fix:",
         "- Run 'dovo session list' to list valid session IDs",
     ],
 )
 
+DIFF_NOT_FOUND = FormatterCase(
+    data=DiffResult(
+        session_id="dovo_no_diff",
+        error_code=ErrorCode.SESSION_DIFF_NOT_FOUND,
+        errors=["Session 'dovo_no_diff' has no diff artifact."],
+        remediations=[Remediation(message="Verify the session generated a diff artifact at '/repo/diff.patch'")],
+    ),
+    view=make_diff_view(
+        session_id="dovo_no_diff",
+        artifact_path=None,
+        relative_path="<sessions_dir>/dovo_no_diff/diff.patch",
+        diff_text="",
+        total_lines=0,
+        errors=["Session 'dovo_no_diff' has no diff artifact."],
+        remediations=[Remediation(message="Verify the session generated a diff artifact at '/repo/diff.patch'")],
+        error_code=ErrorCode.SESSION_DIFF_NOT_FOUND,
+    ),
+    render_expectations=[
+        "Diff Not Found",
+        "Session 'dovo_no_diff' has no diff artifact.",
+        "- Verify the session generated a diff artifact at '/repo/diff.patch'",
+    ],
+)
+
+DIFF_UNREADABLE = FormatterCase(
+    data=DiffResult(
+        session_id="dovo_locked",
+        error_code=ErrorCode.SESSION_DIFF_UNREADABLE,
+        errors=["Failed to read diff artifact at '/repo/diff.patch': denied"],
+        remediations=[Remediation(message="Check file permissions and that the artifact is readable")],
+    ),
+    view=make_diff_view(
+        session_id="dovo_locked",
+        artifact_path=None,
+        relative_path="<sessions_dir>/dovo_locked/diff.patch",
+        diff_text="",
+        total_lines=0,
+        errors=["Failed to read diff artifact at '/repo/diff.patch': denied"],
+        remediations=[Remediation(message="Check file permissions and that the artifact is readable")],
+        error_code=ErrorCode.SESSION_DIFF_UNREADABLE,
+    ),
+    render_expectations=[
+        "Read Failure",
+        "Failed to read diff artifact at '/repo/diff.patch': denied",
+        "- Check file permissions and that the artifact is readable",
+    ],
+)
+
+INTERNAL_ERROR = FormatterCase(
+    data=DiffResult(
+        session_id="dovo_boom",
+        error_code=ErrorCode.INTERNAL_ERROR,
+        errors=["Unexpected error during sessions.diff: boom"],
+    ),
+    view=make_diff_view(
+        session_id="dovo_boom",
+        artifact_path=None,
+        relative_path="<sessions_dir>/dovo_boom/diff.patch",
+        diff_text="",
+        total_lines=0,
+        errors=["Unexpected error during sessions.diff: boom"],
+        error_code=ErrorCode.INTERNAL_ERROR,
+    ),
+    render_expectations=["Diff Failed", "Unexpected error during sessions.diff: boom"],
+)
+
 DIFF_TRUNCATED_TRUE_DATA = DiffResult(
-    status=DiffStatus.OK,
     session_id="dovo_truncated_true",
     artifact_path=Path("/repo/.dovo/sessions/dovo_truncated_true/diff.patch"),
     diff_text=_SAMPLE_DIFF,
@@ -132,7 +194,6 @@ DIFF_TRUNCATED_TRUE_DATA = DiffResult(
 DIFF_WITH_TRUNCATED_TRUE = FormatterCase(
     data=DIFF_TRUNCATED_TRUE_DATA,
     view=make_diff_view(
-        status=DiffStatus.OK,
         session_id="dovo_truncated_true",
         artifact_path=Path("/repo/.dovo/sessions/dovo_truncated_true/diff.patch"),
         relative_path="/repo/.dovo/sessions/dovo_truncated_true/diff.patch",
@@ -155,6 +216,9 @@ DIFF_CASES = [
     pytest.param(OK_POPULATED, id="ok_populated_diff"),
     pytest.param(EMPTY_DIFF, id="empty_diff"),
     pytest.param(SESSION_NOT_FOUND, id="session_not_found"),
+    pytest.param(DIFF_NOT_FOUND, id="diff_not_found"),
+    pytest.param(DIFF_UNREADABLE, id="diff_unreadable"),
+    pytest.param(INTERNAL_ERROR, id="internal_error"),
     pytest.param(DIFF_WITH_TRUNCATED_TRUE, id="diff_with_truncated_true"),
 ]
 
@@ -162,7 +226,6 @@ DIFF_PAYLOAD_CASES = [
     pytest.param(
         OK_POPULATED,
         {
-            "status": "ok",
             "session_id": "dovo_fmt_1",
             "artifact_path": "/repo/.dovo/sessions/dovo_fmt_1/diff.patch",
             "relative_path": "/repo/.dovo/sessions/dovo_fmt_1/diff.patch",
@@ -175,14 +238,34 @@ DIFF_PAYLOAD_CASES = [
             "errors": [],
             "warnings": ["Non-critical warning"],
             "remediations": [],
+            "error_code": None,
             "diagnostics": [],
         },
         id="ok_populated_diff",
     ),
     pytest.param(
+        EMPTY_DIFF,
+        {
+            "session_id": "dovo_fmt_empty",
+            "artifact_path": "/repo/.dovo/sessions/dovo_fmt_empty/diff.patch",
+            "relative_path": "/repo/.dovo/sessions/dovo_fmt_empty/diff.patch",
+            "diff_text": "",
+            "full": False,
+            "max_lines": None,
+            "total_lines": 0,
+            "truncated": False,
+            "truncated_lines": 0,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "error_code": None,
+            "diagnostics": [],
+        },
+        id="empty_diff",
+    ),
+    pytest.param(
         SESSION_NOT_FOUND,
         {
-            "status": "session_not_found",
             "session_id": "dovo_missing_99",
             "artifact_path": None,
             "relative_path": "<sessions_dir>/dovo_missing_99/diff.patch",
@@ -197,6 +280,7 @@ DIFF_PAYLOAD_CASES = [
             "remediations": [
                 {"message": "Run 'dovo session list' to list valid session IDs", "command": "dovo session list"}
             ],
+            "error_code": "SESSION_NOT_FOUND",
             "diagnostics": [],
         },
         id="session_not_found",
