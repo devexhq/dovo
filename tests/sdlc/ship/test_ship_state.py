@@ -21,6 +21,8 @@ NEW_HEAD_SHA = "b" * 40
 PR_HEAD_SHA = "c" * 40
 ISSUE_BODY = "## Why\nGrounded ticket body.\n"
 ISSUE_BODY_SHA = hashlib.sha256(ISSUE_BODY.encode("utf-8")).hexdigest()
+GH_ISSUE_VIEW = ("gh", "api", "repos/{owner}/{repo}/issues/1367")
+GH_PR_LIST = ("gh", "api", "--paginate")
 
 
 def _load_ship_state() -> ModuleType:
@@ -79,22 +81,21 @@ def _mock_pr_continuation(
         f"worktree {other_wt}\nHEAD {wt_head}\nbranch refs/heads/dovo/dovo_old\n\n"
     )
     responses: dict[tuple[str, ...], str] = {
-        ("gh", "issue", "view"): json.dumps(
+        GH_ISSUE_VIEW: json.dumps(
             {
                 "number": 1367,
                 "title": "Deterministic ship state",
                 "body": ISSUE_BODY,
-                "url": "https://github.com/devexhq/dovo/issues/1367",
+                "html_url": "https://github.com/devexhq/dovo/issues/1367",
             }
         ),
-        ("gh", "pr", "view"): json.dumps(
+        ("gh", "api", "repos/{owner}/{repo}/pulls/42"): json.dumps(
             {
                 "number": 42,
-                "headRefName": "dovo/dovo_old",
-                "headRefOid": PR_HEAD_SHA,
-                "baseRefName": "main",
-                "url": "https://github.com/devexhq/dovo/pull/42",
-                "state": "OPEN",
+                "head": {"ref": "dovo/dovo_old", "sha": PR_HEAD_SHA},
+                "base": {"ref": "main"},
+                "html_url": "https://github.com/devexhq/dovo/pull/42",
+                "state": "open",
             }
         ),
         ("git", "worktree", "list"): porcelain,
@@ -126,7 +127,7 @@ def _mock_git_and_issue(
     head_sha: str = HEAD_SHA,
     issue_body: str = ISSUE_BODY,
 ) -> None:
-    """Patch subprocess.run at the boundary for git rev-parse HEAD and gh issue view."""
+    """Patch subprocess.run at the boundary for git rev-parse HEAD and the gh api issue lookup."""
 
     def fake_subprocess_run(
         args: Sequence[str],
@@ -140,7 +141,7 @@ def _mock_git_and_issue(
         cmd = tuple(args)
         if cmd[:3] == ("git", "rev-parse", "HEAD"):
             return _completed(cmd, stdout=f"{head_sha}\n")
-        if cmd[:3] == ("gh", "issue", "view"):
+        if cmd[:3] == GH_ISSUE_VIEW:
             return _completed(
                 cmd,
                 stdout=json.dumps(
@@ -148,7 +149,7 @@ def _mock_git_and_issue(
                         "number": 1367,
                         "title": "Deterministic ship state",
                         "body": issue_body,
-                        "url": "https://github.com/devexhq/dovo/issues/1367",
+                        "html_url": "https://github.com/devexhq/dovo/issues/1367",
                     }
                 ),
             )
@@ -244,7 +245,7 @@ class PrepareTests:
         ) -> subprocess.CompletedProcess[str]:
             del cwd, check, capture_output, text
             cmd = tuple(args)
-            if cmd[:3] == ("gh", "issue", "view"):
+            if cmd[:3] == GH_ISSUE_VIEW:
                 return _completed(
                     cmd,
                     stdout=json.dumps(
@@ -252,12 +253,12 @@ class PrepareTests:
                             "number": 1367,
                             "title": "Deterministic ship state",
                             "body": ISSUE_BODY,
-                            "url": "https://github.com/devexhq/dovo/issues/1367",
+                            "html_url": "https://github.com/devexhq/dovo/issues/1367",
                         }
                     ),
                 )
-            if cmd[:3] == ("gh", "pr", "list"):
-                return _completed(cmd, stdout="[]")
+            if cmd[:3] == GH_PR_LIST:
+                return _completed(cmd, stdout="")
             if cmd[:2] == ("git", "status"):
                 return _completed(cmd, stdout="")
             if cmd[:3] == ("git", "fetch", "-q"):
@@ -314,7 +315,7 @@ class PrepareTests:
         ) -> subprocess.CompletedProcess[str]:
             del cwd, check, capture_output, text
             cmd = tuple(args)
-            if cmd[:3] == ("gh", "issue", "view"):
+            if cmd[:3] == GH_ISSUE_VIEW:
                 return _completed(
                     cmd,
                     stdout=json.dumps(
@@ -322,12 +323,12 @@ class PrepareTests:
                             "number": 1367,
                             "title": "Deterministic ship state",
                             "body": ISSUE_BODY,
-                            "url": "https://github.com/devexhq/dovo/issues/1367",
+                            "html_url": "https://github.com/devexhq/dovo/issues/1367",
                         }
                     ),
                 )
-            if cmd[:3] == ("gh", "pr", "list"):
-                return _completed(cmd, stdout="[]")
+            if cmd[:3] == GH_PR_LIST:
+                return _completed(cmd, stdout="")
             if cmd[:3] == ("git", "rev-parse", "HEAD"):
                 return _completed(cmd, stdout=f"{NEW_HEAD_SHA}\n")
             raise AssertionError(f"Unexpected command: {cmd}")
@@ -767,18 +768,16 @@ def _publish_cmd_response(
         return _completed(
             cmd, stdout="Posted review comment: https://github.com/devexhq/dovo/pull/1372#issuecomment-99\n"
         )
-    if cmd[:3] in (("gh", "pr", "view"), ("gh", "pr", "list")):
+    if cmd[:3] in (("gh", "api", "repos/{owner}/{repo}/pulls/1372"), GH_PR_LIST):
         pr_payload = {
             "number": 1372,
-            "headRefName": "luckner/1367-ship",
-            "headRefOid": HEAD_SHA,
-            "baseRefName": "main",
-            "url": "https://github.com/devexhq/dovo/pull/1372",
-            "state": "OPEN",
+            "head": {"ref": "luckner/1367-ship", "sha": HEAD_SHA},
+            "base": {"ref": "main"},
+            "html_url": "https://github.com/devexhq/dovo/pull/1372",
+            "state": "open",
             "body": "Closes #1367",
         }
-        out = json.dumps([pr_payload] if cmd[2] == "list" else pr_payload)
-        return _completed(cmd, stdout=out)
+        return _completed(cmd, stdout=json.dumps(pr_payload) + "\n")
     return _completed(cmd)
 
 
@@ -939,13 +938,15 @@ class ValidateAndPublishTests:
         assert ("git", "push", "origin", "HEAD:refs/heads/luckner/1367-ship") in commands_run
         assert (
             "gh",
-            "pr",
-            "edit",
-            "1372",
-            "--title",
-            "feat: updated title",
-            "--body",
-            "Closes #1367",
+            "api",
+            "--method",
+            "PATCH",
+            "repos/{owner}/{repo}/pulls/1372",
+            "-f",
+            "title=feat: updated title",
+            "-f",
+            "body=Closes #1367",
+            "--silent",
         ) in commands_run
 
 

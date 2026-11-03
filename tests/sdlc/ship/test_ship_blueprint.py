@@ -86,7 +86,7 @@ def _completed(
 
 
 def _mock_git_and_gh(monkeypatch: pytest.MonkeyPatch, head_sha_ref: list[str]) -> None:
-    """Mock git rev-parse HEAD and gh issue view boundary calls."""
+    """Mock git rev-parse HEAD and gh api issue lookup boundary calls."""
 
     def fake_run(
         args: Sequence[str],
@@ -100,7 +100,7 @@ def _mock_git_and_gh(monkeypatch: pytest.MonkeyPatch, head_sha_ref: list[str]) -
         cmd = tuple(args)
         if cmd[:3] == ("git", "rev-parse", "HEAD"):
             return _completed(cmd, stdout=f"{head_sha_ref[0]}\n")
-        if cmd[:3] == ("gh", "issue", "view"):
+        if cmd[:3] == ("gh", "api", "repos/{owner}/{repo}/issues/1373"):
             return _completed(
                 cmd,
                 stdout=json.dumps(
@@ -108,7 +108,7 @@ def _mock_git_and_gh(monkeypatch: pytest.MonkeyPatch, head_sha_ref: list[str]) -
                         "number": 1373,
                         "title": "Wire the ship blueprint",
                         "body": ISSUE_BODY,
-                        "url": "https://github.com/devexhq/dovo/issues/1373",
+                        "html_url": "https://github.com/devexhq/dovo/issues/1373",
                     }
                 ),
             )

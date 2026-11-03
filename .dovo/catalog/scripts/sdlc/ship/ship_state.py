@@ -121,74 +121,88 @@ def _parse_issue_number(raw: str) -> int:
     return int(cleaned)
 
 
-def _fetch_issue(issue_number: int) -> dict[str, object]:
-    """Fetch live issue metadata from GitHub via gh."""
-    res = _run_cmd("gh", "issue", "view", str(issue_number), "--json", "number,title,body,url")
+def _gh_api_json(endpoint: str, *, check: bool = True) -> object | None:
+    """GET a GitHub REST endpoint via `gh api` and return its parsed JSON, or None on a failed unchecked call."""
+    res = _run_cmd("gh", "api", endpoint, check=check)
+    if res.returncode != 0 or not res.stdout.strip():
+        return None
     try:
-        data = json.loads(res.stdout)
+        return json.loads(res.stdout)
     except ValueError as exc:
-        raise ShipStateError(f"Invalid JSON from gh issue view #{issue_number}: {exc}") from exc
+        raise ShipStateError(f"Invalid JSON from gh api {endpoint}: {exc}") from exc
+
+
+def _fetch_issue(issue_number: int) -> dict[str, object]:
+    """Fetch live issue metadata from the GitHub REST API via gh api."""
+    data = _gh_api_json(f"repos/{{owner}}/{{repo}}/issues/{issue_number}")
     if not isinstance(data, dict):
         raise ShipStateError(f"Unexpected response for issue #{issue_number}.")
-    body = str(data.get("body", ""))
+    body = str(data.get("body") or "")
     return {
         "number": issue_number,
-        "title": str(data.get("title", "")),
+        "title": str(data.get("title") or ""),
         "body": body,
         "body_sha": _sha256_text(body),
-        "url": str(data.get("url", "")),
+        "url": str(data.get("html_url") or ""),
     }
 
 
+def _ref_field(data: dict[str, object], side: str, key: str) -> str:
+    """Return data[side][key] from a REST pull-request payload's head/base object, or an empty string."""
+    ref = data.get(side)
+    return str(ref.get(key) or "") if isinstance(ref, dict) else ""
+
+
 def _pr_dict(data: dict[str, object]) -> dict[str, object]:
-    """Normalize a gh pull-request JSON payload into contract.json's pull_request shape."""
+    """Normalize a REST pull-request payload into contract.json's pull_request shape."""
     number = data.get("number")
     if not isinstance(number, int):
         raise ShipStateError("Pull request payload is missing integer 'number'.")
     return {
         "pr_number": number,
-        "branch": str(data.get("headRefName", "")),
-        "head_sha": str(data.get("headRefOid", "")),
-        "base_branch": str(data.get("baseRefName", "main")),
-        "url": str(data.get("url", "")),
+        "branch": _ref_field(data, "head", "ref"),
+        "head_sha": _ref_field(data, "head", "sha"),
+        "base_branch": _ref_field(data, "base", "ref") or "main",
+        "url": str(data.get("html_url") or ""),
     }
 
 
 def _mentions_issue(entry: dict[str, object], issue_number: int) -> bool:
-    """Return whether a PR entry's body or branch names issue_number."""
-    body = str(entry.get("body", ""))
-    branch = str(entry.get("headRefName", ""))
+    """Return whether a REST pull-request entry's body or head branch names issue_number."""
+    body = str(entry.get("body") or "")
+    branch = _ref_field(entry, "head", "ref")
     tokens = (f"#{issue_number}", f"issues/{issue_number}", f"GH-{issue_number}")
     if any(token in body for token in tokens):
         return True
     return str(issue_number) in branch.split("-") or branch.startswith(f"{issue_number}-")
 
 
+def _list_open_pull_requests() -> list[dict[str, object]]:
+    """Return every open pull request in the repository via the paginated REST pulls endpoint."""
+    res = _run_cmd("gh", "api", "--paginate", "repos/{owner}/{repo}/pulls?state=open&per_page=100", "--jq", ".[]")
+    rows: list[dict[str, object]] = []
+    for line in res.stdout.splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError as exc:
+            raise ShipStateError(f"Invalid JSON from gh api pulls listing: {exc}") from exc
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
 def _resolve_pull_request(issue_number: int, pr_arg: str) -> dict[str, object] | None:
     """Resolve an explicit PR or discover an open PR referencing issue_number."""
     cleaned = pr_arg.strip().removeprefix("#")
     if cleaned:
-        res = _run_cmd("gh", "pr", "view", cleaned, "--json", "number,headRefName,headRefOid,baseRefName,url,state")
-        data = json.loads(res.stdout)
-        if not isinstance(data, dict) or str(data.get("state", "")).upper() != "OPEN":
+        data = _gh_api_json(f"repos/{{owner}}/{{repo}}/pulls/{_pr_number_from_ref(cleaned)}")
+        if not isinstance(data, dict) or str(data.get("state", "")).lower() != "open":
             raise ShipStateError(f"Pull request #{cleaned} is not open.")
         return _pr_dict(data)
-    res = _run_cmd(
-        "gh",
-        "pr",
-        "list",
-        "--state",
-        "open",
-        "--search",
-        str(issue_number),
-        "--json",
-        "number,headRefName,headRefOid,baseRefName,url,body",
-    )
-    rows = json.loads(res.stdout)
-    if not isinstance(rows, list):
-        return None
-    for row in rows:
-        if isinstance(row, dict) and _mentions_issue(row, issue_number):
+    for row in _list_open_pull_requests():
+        if _mentions_issue(row, issue_number):
             return _pr_dict(row)
     return None
 
@@ -813,29 +827,45 @@ def _verify_publication_permitted(publication: dict[str, object], head_sha: str)
     _ensure_current_worktree_clean()
 
 
+def _pr_number_from_ref(pr_ref: str) -> str:
+    """Return the pull-request number from a number, '#<n>' or pull-request URL reference."""
+    cleaned = pr_ref.strip().rstrip("/").removeprefix("#")
+    number = cleaned.rsplit("/pull/", 1)[-1] if "/pull/" in cleaned else cleaned
+    if not number.isascii() or not number.isdigit():
+        raise ShipStateError(f"Invalid pull request reference '{pr_ref}'.")
+    return number
+
+
 def _fetch_pr_metadata(pr_ref: str) -> dict[str, object] | None:
-    """Return normalized PR metadata via `gh pr view`, or None when lookup fails."""
-    res = _run_cmd(
-        "gh", "pr", "view", pr_ref, "--json", "number,headRefName,headRefOid,baseRefName,url,state", check=False
-    )
-    if res.returncode != 0 or not res.stdout.strip():
-        return None
+    """Return normalized PR metadata via the REST pulls endpoint, or None when lookup fails."""
     try:
-        parsed = json.loads(res.stdout)
-    except ValueError:
+        parsed = _gh_api_json(f"repos/{{owner}}/{{repo}}/pulls/{_pr_number_from_ref(pr_ref)}", check=False)
+    except ShipStateError:
         return None
     return _pr_dict(parsed) if isinstance(parsed, dict) else None
 
 
 def _sync_pr_metadata_if_present(pr_number: int) -> None:
-    """Update PR title and description via gh pr edit when .agentic/pr-title and .agentic/pr-description exist."""
+    """Update PR title and description via the REST pulls endpoint when .agentic/pr-title and pr-description exist."""
     if not PR_TITLE_FILE.is_file() or not PR_DESCRIPTION_FILE.is_file():
         return
     title = PR_TITLE_FILE.read_text(encoding="utf-8").strip()
     description = PR_DESCRIPTION_FILE.read_text(encoding="utf-8").strip()
     if not title or not description:
         return
-    edit = _run_cmd("gh", "pr", "edit", str(pr_number), "--title", title, "--body", description, check=False)
+    edit = _run_cmd(
+        "gh",
+        "api",
+        "--method",
+        "PATCH",
+        f"repos/{{owner}}/{{repo}}/pulls/{pr_number}",
+        "-f",
+        f"title={title}",
+        "-f",
+        f"body={description}",
+        "--silent",
+        check=False,
+    )
     if edit.returncode != 0 and _fetch_pr_metadata(str(pr_number)) is None:
         detail = (edit.stderr or edit.stdout).strip()
         raise ShipStateError(f"Failed to update PR #{pr_number}: {detail}")
