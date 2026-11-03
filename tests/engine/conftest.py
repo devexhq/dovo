@@ -20,7 +20,7 @@ from dovo.core.worktree import Worktree, WorktreeSession
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.models import AgentStepRunner, StepExecutionContext
 from dovo.engine.executors.step_executor import StepExecution
-from dovo.engine.models import FailurePrompter, InteractionPrompter, RunObserver, RunOutcome, RunSettings
+from dovo.engine.models import FailurePrompter, InteractionPrompter, RunFailure, RunObserver, RunOutcome, RunSettings
 from dovo.engine.state_models import ExecutionStateTree
 from dovo.engine.workspace import Workspace
 from tests.harness.builders import WorkspaceBuilder
@@ -227,7 +227,7 @@ class WorktreeSetup(NamedTuple):
     target_dir: Path
     manager: Worktree | None
     session: WorktreeSession | None
-    error: str | None
+    error: RunFailure | None
 
 
 type WorktreeSetupFactory = Callable[..., WorktreeSetup]

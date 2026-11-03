@@ -307,6 +307,33 @@ class RunCliIntegrationTests:
         assert record is not None
         assert record.status == SessionStatus.PAUSED
 
+    def test_run_cli_ask_keyboard_interrupt_pauses_and_exits_1(
+        self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        """Exit 1 and leave the session paused when the interactive terminal raises KeyboardInterrupt at an ask prompt."""
+        _force_interactive(monkeypatch)
+        monkeypatch.setattr("builtins.input", _raise_keyboard_interrupt)
+        interaction = {
+            "mode": "select",
+            "message": "Approve this plan?",
+            "options": [{"value": "approve", "label": "Approve"}, {"value": "deny", "label": "Deny"}],
+        }
+        write_runnable_blueprint(
+            cli_workspace, key="ask-task", steps=[{"id": "approve", "type": "ask", "interaction": interaction}]
+        )
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "run", "ask-task", "--no-worktree", "--session-id", "ask-session-1"]
+        )
+
+        assert result.exit_code == 1
+        run_paths = initialized_workspace_paths(cli_workspace)
+        record = DovoDb(database_file=run_paths.database_file, project_id=run_paths.project_id).sessions.get(
+            "ask-session-1"
+        )
+        assert record is not None
+        assert (record.status, record.error_message) == (SessionStatus.PAUSED, "Execution cancelled by user.")
+
     def test_run_cli_json_format_emits_run_success_event(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         write_runnable_blueprint(cli_workspace, key="json-task", steps=[{"id": "s1", "run": "true"}])
 

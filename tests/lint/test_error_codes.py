@@ -47,6 +47,7 @@ OWNERS: Final[dict[str, frozenset[str]]] = {
     "PROJECT": frozenset({"core/project"}),
     "SESSION": frozenset({"engine", "core/sessions"}),
     "BLUEPRINT": frozenset({"engine"}),
+    "RUN": frozenset({"engine"}),
     "INTERACTION": frozenset({"engine"}),
 }
 
@@ -84,6 +85,7 @@ STATES: Final[tuple[str, ...]] = (
     "UNSAFE",
     "UNWRITABLE",
     "UNSUPPORTED",
+    "CANCELLED",
 )
 
 _FOREIGN_RAISE_FIXTURE: Final[str] = """

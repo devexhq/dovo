@@ -82,6 +82,7 @@ def finalize(
 
     return BlueprintRunResult(
         session_record=record,
+        error_code=run_outcome.error_code,
         errors=list(run_outcome.errors),
         warnings=warnings,
         diagnostics=diagnostics,

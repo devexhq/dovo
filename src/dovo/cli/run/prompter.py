@@ -187,14 +187,14 @@ class DispatcherInteractionPrompter(InteractionPrompter):
         return not self._no_tty and self._dispatcher.is_interactive and self._dispatcher.is_terminal_format
 
     def ask(self, request: InteractionRequest) -> InteractionAnswer | None:
-        """Dispatch the prompt event, then return the answer, or None when non-interactive, interrupted or at EOF."""
+        """Dispatch the prompt event, then return the answer, or None when non-interactive or at EOF; KeyboardInterrupt propagates."""
         self._dispatcher.dispatch(self._event(request))
         if not self.is_interactive:
             return None
 
         try:
             return self._read_answer(request)
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             return None
 
     def _event(self, request: InteractionRequest) -> PromptEvent:

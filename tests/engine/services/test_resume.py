@@ -107,12 +107,31 @@ class BlueprintResumeServiceExecuteTests:
 
         result = _resume_service(engine_paths, sessions_repo, session_id).execute()
 
-        assert result.ok
+        assert (result.ok, result.error_code, result.errors) == (True, None, [])
         assert result.session_record is not None
         assert result.session_record.session_id == "crashed"
         assert result.session_record.status == SessionStatus.COMPLETED
         assert result.session_record.error_message is None
         assert result.warnings == [PAUSED_SENTENCE, RERUN_WARNING]
+
+    def test_execute_resumed_run_whose_step_aborts_carries_run_step_failed(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        """Return RUN_STEP_FAILED with the step's failure message when the rerun step fails and its on_failure aborts."""
+        seed_crashed_session(
+            engine_paths,
+            sessions_repo,
+            session_id="crashed",
+            steps=[{"id": "a", "type": "command", "command": "exit 1"}],
+            interrupted_step_id="a",
+        )
+
+        result = _resume_service(engine_paths, sessions_repo, "crashed").execute()
+
+        assert (result.ok, result.error_code) == (False, ErrorCode.RUN_STEP_FAILED)
+        assert result.errors[0].startswith("Step 'a' failed:")
+        assert result.session_record is not None
+        assert result.session_record.status == SessionStatus.FAILED
 
     def test_execute_crashed_run_with_a_failed_step_and_no_step_left_is_finalized(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository

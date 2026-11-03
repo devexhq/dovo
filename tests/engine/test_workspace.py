@@ -12,6 +12,7 @@ from typing import NoReturn
 import pytest
 
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
@@ -30,7 +31,7 @@ from dovo.core.worktree import (
 from dovo.core.worktree.models import WorktreeCreateResult
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.engine.executors.models import ExecutionIdentity
-from dovo.engine.models import RunSettings
+from dovo.engine.models import RunFailure, RunSettings
 from dovo.engine.workspace import Workspace
 from tests.engine.conftest import WorktreeSetupFactory
 from tests.harness.builders import WorkspaceBuilder
@@ -68,7 +69,7 @@ class WorkspaceSetupTests:
     def test_creation_failure_adds_create_diagnostics(
         self, worktree_root: Path, worktree_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """Return the 'Git worktree creation failed: …' error and add the WorktreeCreateResult's diagnostics to the diagnostics list when Worktree.create returns a failed result carrying one record."""
+        """Return the 'Git worktree creation failed: …' failure with the create result's code and add the WorktreeCreateResult's diagnostics to the diagnostics list when Worktree.create returns a failed result carrying one record."""
         record = _record(tmp_path)
         failed = WorktreeCreateResult(
             error_code="INTERNAL_ERROR", errors=["Unexpected error during worktree.create: boom"], diagnostics=[record]
@@ -80,7 +81,9 @@ class WorkspaceSetupTests:
         _, manager, session, error = Workspace(_settings(worktree_root, worktree_paths)).setup(warnings, diagnostics)
 
         assert (manager, session) == (None, None)
-        assert error == "Git worktree creation failed: Unexpected error during worktree.create: boom"
+        assert error == RunFailure(
+            ErrorCode.INTERNAL_ERROR, "Git worktree creation failed: Unexpected error during worktree.create: boom"
+        )
         assert warnings == []
         assert diagnostics == [record]
 
@@ -200,7 +203,7 @@ class WorkspaceSetupTests:
         assert setup.target_dir == worktree_root.resolve()
         assert setup.manager is None
         assert setup.session is None
-        assert setup.error == expected_error
+        assert setup.error == RunFailure(ErrorCode.GIT_FAILED, expected_error)
 
     def test_capacity_failure_message_includes_fix_line(self, tmp_path: Path) -> None:
         workspace_root = (
@@ -244,11 +247,12 @@ class WorkspaceSetupTests:
 
         assert manager is None
         assert session is None
-        assert error == (
+        assert error == RunFailure(
+            ErrorCode.WORKTREE_CAPACITY_EXCEEDED,
             "Git worktree creation failed: Maximum active worktrees reached (1/1).\n"
             "Fix:\n"
             "- Remove a kept worktree with 'dovo worktree delete <worktree-id>' (see 'dovo worktree list')\n"
-            "- Raise 'worktree.max_active_worktrees' in '.dovo/config.json'"
+            "- Raise 'worktree.max_active_worktrees' in '.dovo/config.json'",
         )
 
 
@@ -297,7 +301,9 @@ class WorkspaceRetainedWorktreeTests:
         assert setup.target_dir == worktree_root.resolve()
         assert setup.manager is None
         assert setup.session is None
-        assert setup.error == expected_error.format(path=worktree_paths.worktree_dir(worktree_id))
+        assert setup.error == RunFailure(
+            ErrorCode.SESSION_WORKTREE_MISSING, expected_error.format(path=worktree_paths.worktree_dir(worktree_id))
+        )
 
 
 class WorkspaceCleanupTests:
@@ -508,9 +514,10 @@ class WorkspaceLinkSessionDirTests:
         error = workspace.link_session_dir(manager, session, [], [])
 
         record = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id).get("link-collision")
-        assert error == (
+        assert error == RunFailure(
+            ErrorCode.SESSION_WORKTREE_LINK_FAILED,
             f"Worktree storage bridge failed: Worktree storage bridge path '{target_dir / '.dovo' / 'run'}' "
-            "is not a symlink."
+            "is not a symlink.",
         )
         assert not target_dir.exists()
         assert [call[:3] for call in observer.calls] == [
@@ -542,7 +549,8 @@ class WorkspaceLinkSessionDirTests:
 
         record = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id).get("link-fail")
         assert error is not None
-        assert error.startswith("Worktree storage bridge failed: Unable to create worktree storage bridge at '")
+        assert error.error_code == ErrorCode.SESSION_WORKTREE_LINK_FAILED
+        assert error.message.startswith("Worktree storage bridge failed: Unable to create worktree storage bridge at '")
         assert not target_dir.exists()
         assert "dovo/link-fail" not in GitRunner().list_branches(worktree_root)
         assert record is not None
@@ -568,7 +576,7 @@ class WorkspaceLinkSessionDirTests:
         error = workspace.link_session_dir(manager, session, warnings, diagnostics)
 
         assert error is not None
-        assert error.startswith("Worktree storage bridge failed: ")
+        assert error.message.startswith("Worktree storage bridge failed: ")
         assert warnings == [f"Failed to remove worktree '{session.worktree_path}': discard failed"]
         assert diagnostics == [record]
 

@@ -50,16 +50,29 @@ def _catalog_blueprint(paths: WorkspacePaths, key: str, steps: list[dict[str, ob
 
 class EngineRunStartFailureTests:
     @pytest.mark.parametrize(
-        ("fault", "expected_error", "recorded"),
+        ("fault", "expected_error", "error_code", "recorded"),
         [
             pytest.param(
                 "snapshot",
                 "Failed to snapshot run definitions: Catalog item 'uncataloged' not found.",
+                None,
                 False,
                 id="snapshot",
             ),
-            pytest.param("insert", "Failed to record run start in database: db down", True, id="row-insert"),
-            pytest.param("initialize", "Failed to initialize run state: boom", True, id="state-initialize"),
+            pytest.param(
+                "insert",
+                "Failed to record run start in database: db down",
+                ErrorCode.INTERNAL_ERROR,
+                True,
+                id="row-insert",
+            ),
+            pytest.param(
+                "initialize",
+                "Failed to initialize run state: boom",
+                ErrorCode.INTERNAL_ERROR,
+                True,
+                id="state-initialize",
+            ),
         ],
     )
     def test_run_start_failure_returns_failed_outcome_without_executing_steps(
@@ -70,9 +83,10 @@ class EngineRunStartFailureTests:
         frozen_diagnostic_clock: Path,
         fault: str,
         expected_error: str,
+        error_code: ErrorCode | None,
         recorded: bool,
     ) -> None:
-        """Fail before any step runs with the message alone; an unexpected start fault adds its engine.persist record to diagnostics."""
+        """Fail before any step runs with the message alone; an unexpected start fault carries INTERNAL_ERROR and adds its engine.persist record to diagnostics."""
         if fault == "snapshot":
             blueprint = Blueprint(
                 BlueprintBuilder("uncataloged")
@@ -95,8 +109,11 @@ class EngineRunStartFailureTests:
             blueprint, RunRequest(session_id="start-1", use_worktree=False)
         )
 
-        assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == [expected_error]
+        assert (outcome.status, outcome.error_code, outcome.errors) == (
+            SessionStatus.FAILED,
+            error_code,
+            [expected_error],
+        )
         assert not (engine_paths.root_dir / "marker").exists()
         row = sessions_repo.get("start-1")
         expected_row = (SessionStatus.FAILED, expected_error) if fault == "initialize" else None
@@ -133,7 +150,7 @@ class EngineRunStartFailureTests:
         )
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == ["state invalid"]
+        assert (outcome.error_code, outcome.errors) == (ErrorCode.SESSION_NOT_FOUND, ["state invalid"])
         assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"], event["exception_message"]) == (

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dovo.common.clock import Clock
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.process import process_registry
 from dovo.common.session_id import SessionIdFactory
@@ -54,12 +55,18 @@ def drive_run(
         return RunOutcome(
             status=SessionStatus.FAILED,
             errors=[f"Session '{session_id}' not found."],
+            error_code=ErrorCode.SESSION_NOT_FOUND,
             worktree_path=paths.root_dir,
         )
 
     resolution = _resolve_agent_settings(paths, row.agent, env_overrides)
     if resolution.settings is None:
-        outcome = RunOutcome(status=SessionStatus.FAILED, errors=list(resolution.errors), worktree_path=paths.root_dir)
+        outcome = RunOutcome(
+            status=SessionStatus.FAILED,
+            errors=list(resolution.errors),
+            error_code=resolution.error_code,
+            worktree_path=paths.root_dir,
+        )
         safe_notify(observer, "on_run_completed", outcome)
         return outcome
 
@@ -92,7 +99,9 @@ def _resolve_agent_settings(
     """
     result = Config(paths).load()
     if not result.ok or result.config is None:
-        return AgentSettingsResolution(errors=list(result.errors) or ["Failed to resolve agent settings."])
+        return AgentSettingsResolution(
+            error_code=result.error_code, errors=list(result.errors) or ["Failed to resolve agent settings."]
+        )
 
     provider = override or result.config.default_agent
     agent = agent_settings(result.config, provider)
@@ -205,22 +214,24 @@ class SessionRunner:
         workspace = Workspace(_workspace_context(row, paths, observer, sensitive_variables, git, clock, new_id))
         setup_warnings: list[str] = []
         setup_diagnostics: list[DiagnosticRecord] = []
-        target_dir, manager, worktree, setup_error = workspace.setup(setup_warnings, setup_diagnostics)
-        if setup_error is not None:
+        target_dir, manager, worktree, setup_failure = workspace.setup(setup_warnings, setup_diagnostics)
+        if setup_failure is not None:
             return RunOutcome(
                 status=SessionStatus.FAILED,
-                errors=[setup_error],
+                errors=[setup_failure.message],
+                error_code=setup_failure.error_code,
                 warnings=setup_warnings,
                 diagnostics=setup_diagnostics,
                 worktree_kept=False,
                 worktree_path=target_dir,
             )
 
-        link_error = workspace.link_session_dir(manager, worktree, setup_warnings, setup_diagnostics)
-        if link_error is not None:
+        link_failure = workspace.link_session_dir(manager, worktree, setup_warnings, setup_diagnostics)
+        if link_failure is not None:
             return RunOutcome(
                 status=SessionStatus.FAILED,
-                errors=[link_error],
+                errors=[link_failure.message],
+                error_code=link_failure.error_code,
                 warnings=setup_warnings,
                 diagnostics=setup_diagnostics,
                 worktree_kept=False,
@@ -301,7 +312,7 @@ class SessionRunner:
         )
 
     def _apply_worktree_changes(self, outcome: RunOutcome) -> RunOutcome:
-        """Auto-apply worktree changes on a completed run, copying the apply's warnings, errors and records, marking the run FAILED when apply fails, and recording whether it failed."""
+        """Auto-apply worktree changes on a completed run, copying the apply's warnings, errors, code and records, marking the run FAILED when apply fails, and recording whether it failed."""
         if outcome.status != SessionStatus.COMPLETED:
             return outcome
 
@@ -316,6 +327,7 @@ class SessionRunner:
         }
         if not result.ok:
             update["errors"] = [*outcome.errors, *result.errors]
+            update["error_code"] = result.error_code
             update["status"] = SessionStatus.FAILED
         return outcome.model_copy(update=update)
 

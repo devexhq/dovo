@@ -12,6 +12,7 @@ from typing import ClassVar
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.timing import TimeSpan
 from dovo.core.agents import AgentProgressKind, default_tool_policy
@@ -300,7 +301,7 @@ class CoordinatorExecuteTests:
     ) -> None:
         outcome = _run_new(engine_paths, sessions_repo, "two", [_step("a", "echo a"), _step("b", "echo b")])
 
-        assert outcome.status == SessionStatus.COMPLETED
+        assert (outcome.status, outcome.error_code, outcome.errors) == (SessionStatus.COMPLETED, None, [])
         assert [result.step_id for result in outcome.step_results] == ["a", "b"]
         state = _state(engine_paths, sessions_repo, "two")
         assert [node.state for node in state.nodes] == [NodeState.COMPLETED, NodeState.COMPLETED]
@@ -314,7 +315,7 @@ class CoordinatorExecuteTests:
         outcome = _run_new(engine_paths, sessions_repo, "abort", [_step("a", "exit 1"), _step("b", "touch b.ran")])
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == [f"Step 'a' failed: {_FAIL_DETAIL}"]
+        assert (outcome.error_code, outcome.errors) == (ErrorCode.RUN_STEP_FAILED, [f"Step 'a' failed: {_FAIL_DETAIL}"])
         state = _state(engine_paths, sessions_repo, "abort")
         assert [node.state for node in state.nodes] == [NodeState.FAILED, NodeState.PENDING]
         assert not (engine_workspace / "b.ran").exists()
@@ -342,7 +343,10 @@ class CoordinatorExecuteTests:
         outcome = _coordinator(engine_paths, sessions_repo, "bad").execute()
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == ["Execution state for session 'bad' is corrupt."]
+        assert (outcome.error_code, outcome.errors) == (
+            ErrorCode.SESSION_STATE_CORRUPT,
+            ["Execution state for session 'bad' is corrupt."],
+        )
         assert not (engine_workspace / "a.ran").exists()
 
     def test_persistence_failure_after_step_result_stops_dispatch_and_names_boundary(
@@ -360,6 +364,7 @@ class CoordinatorExecuteTests:
         outcome = _coordinator(engine_paths, sessions_repo, "persist").execute()
 
         assert outcome.status == SessionStatus.FAILED
+        assert outcome.error_code == ErrorCode.SESSION_STATE_REVISION_CONFLICT
         assert outcome.errors[0].startswith("Failed to persist run state after step 'a' finished:")
         assert not (engine_workspace / "b.ran").exists()
 
@@ -476,7 +481,7 @@ class CoordinatorExecuteTests:
         outcome = _run_new(engine_paths, sessions_repo, "ctrl-c", [_step("a", "echo a"), _step("b", "echo b")])
 
         assert outcome.status == SessionStatus.CANCELLED
-        assert outcome.errors == ["Execution cancelled by user."]
+        assert (outcome.error_code, outcome.errors) == (ErrorCode.RUN_CANCELLED, ["Execution cancelled by user."])
         state = _state(engine_paths, sessions_repo, "ctrl-c")
         assert [node.state for node in state.nodes] == [NodeState.CANCELLED, NodeState.PENDING]
 
@@ -1000,7 +1005,7 @@ class CoordinatorLeafTransitionTests:
         )
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == [f"Step 'a' failed: {_FAIL_DETAIL}"]
+        assert (outcome.error_code, outcome.errors) == (ErrorCode.RUN_STEP_FAILED, [f"Step 'a' failed: {_FAIL_DETAIL}"])
         assert _leaf(_state(engine_paths, sessions_repo, "adv-abort"), "a").state == NodeState.FAILED
 
     @pytest.mark.parametrize(
@@ -1076,7 +1081,7 @@ class CoordinatorLeafTransitionTests:
         assert outcome.status == SessionStatus.PAUSED
         row = sessions_repo.get("adv-paused-outcome")
         assert row is not None
-        assert outcome.errors[0] == f"Step 'a' failed: {_FAIL_DETAIL}"
+        assert (outcome.error_code, outcome.errors) == (ErrorCode.RUN_CANCELLED, [f"Step 'a' failed: {_FAIL_DETAIL}"])
         assert outcome.step_results == []
         assert row.status == SessionStatus.PAUSED
         assert _leaf(_state(engine_paths, sessions_repo, "adv-paused-outcome"), "a").state == NodeState.PAUSED
@@ -1628,7 +1633,7 @@ class CoordinatorLoopTerminalTests:
         )
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == [f"Step 's' failed: {_FAIL_DETAIL}"]
+        assert (outcome.error_code, outcome.errors) == (ErrorCode.RUN_STEP_FAILED, [f"Step 's' failed: {_FAIL_DETAIL}"])
         loop = _loop_node(_state(engine_paths, sessions_repo, "loop-abort"))
         assert (loop.iterations[0].state, loop.state) == (NodeState.FAILED, NodeState.FAILED)
 
@@ -1637,12 +1642,21 @@ class CoordinatorLoopCeilingTests:
     _CEILING = "Loop 'loop' reached max_iterations (2) without meeting 'until' conditions."
 
     @pytest.mark.parametrize(
-        ("policy", "status", "errors", "warnings", "loop_state"),
+        ("policy", "status", "error_code", "errors", "warnings", "loop_state"),
         [
-            pytest.param("abort", SessionStatus.FAILED, [_CEILING], [], NodeState.FAILED, id="abort"),
+            pytest.param(
+                "abort",
+                SessionStatus.FAILED,
+                ErrorCode.RUN_LOOP_LIMIT_EXCEEDED,
+                [_CEILING],
+                [],
+                NodeState.FAILED,
+                id="abort",
+            ),
             pytest.param(
                 "continue",
                 SessionStatus.COMPLETED,
+                None,
                 [],
                 [_CEILING.removesuffix(".") + "; continuing."],
                 NodeState.COMPLETED,
@@ -1656,6 +1670,7 @@ class CoordinatorLoopCeilingTests:
         sessions_repo: SessionsRepository,
         policy: str,
         status: SessionStatus,
+        error_code: ErrorCode | None,
         errors: list[str],
         warnings: list[str],
         loop_state: NodeState,
@@ -1667,18 +1682,24 @@ class CoordinatorLoopCeilingTests:
             [_loop("loop", [_step("s", "true")], until=["iteration.index >= 99"], on_max_iterations=policy)],
         )
 
-        assert (outcome.status, outcome.errors, outcome.warnings) == (status, errors, warnings)
+        assert (outcome.status, outcome.error_code, outcome.errors, outcome.warnings) == (
+            status,
+            error_code,
+            errors,
+            warnings,
+        )
         loop = _loop_node(_state(engine_paths, sessions_repo, "loop-ceiling"))
         assert loop.state == loop_state
         assert [it.until_passed for it in loop.iterations] == [False, False]
 
     @pytest.mark.parametrize(
-        ("answer", "no_tty", "status", "errors", "warnings"),
+        ("answer", "no_tty", "status", "error_code", "errors", "warnings"),
         [
             pytest.param(
                 LoopPromptDecision.CONTINUE,
                 False,
                 SessionStatus.COMPLETED,
+                None,
                 [],
                 [_CEILING.removesuffix(".") + "; continuing."],
                 id="continue",
@@ -1687,6 +1708,7 @@ class CoordinatorLoopCeilingTests:
                 LoopPromptDecision.ABORT,
                 False,
                 SessionStatus.FAILED,
+                ErrorCode.RUN_LOOP_LIMIT_EXCEEDED,
                 ["Loop 'loop' aborted by user after max_iterations."],
                 [],
                 id="abort",
@@ -1695,6 +1717,7 @@ class CoordinatorLoopCeilingTests:
                 None,
                 True,
                 SessionStatus.FAILED,
+                ErrorCode.RUN_LOOP_LIMIT_EXCEEDED,
                 ["Loop 'loop' reached max_iterations (2) and run is non-interactive."],
                 [],
                 id="no-tty",
@@ -1708,6 +1731,7 @@ class CoordinatorLoopCeilingTests:
         answer: LoopPromptDecision | None,
         no_tty: bool,
         status: SessionStatus,
+        error_code: ErrorCode | None,
         errors: list[str],
         warnings: list[str],
     ) -> None:
@@ -1722,7 +1746,12 @@ class CoordinatorLoopCeilingTests:
             no_tty=no_tty,
         )
 
-        assert (outcome.status, outcome.errors, outcome.warnings) == (status, errors, warnings)
+        assert (outcome.status, outcome.error_code, outcome.errors, outcome.warnings) == (
+            status,
+            error_code,
+            errors,
+            warnings,
+        )
         assert prompter.loop_prompts == ([] if no_tty else [(2, 3)])
 
     def test_prompt_user_ceiling_without_a_prompter_fails_as_non_interactive(
@@ -1763,7 +1792,7 @@ class CoordinatorLoopCeilingTests:
     def test_interrupted_ceiling_prompt_pauses_run_and_keeps_loop_open(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """A prompter whose prompt_loop_max_iterations raises KeyboardInterrupt yields PAUSED with the ceiling message in errors, the session row paused, and the loop node running with two completed iterations."""
+        """A prompter whose prompt_loop_max_iterations raises KeyboardInterrupt yields PAUSED with RUN_CANCELLED and the ceiling message in errors, the session row paused, and the loop node running with two completed iterations."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -1772,8 +1801,9 @@ class CoordinatorLoopCeilingTests:
             prompter=ScriptedFailurePrompter([KeyboardInterrupt()]),
         )
 
-        assert (outcome.status, outcome.errors) == (
+        assert (outcome.status, outcome.error_code, outcome.errors) == (
             SessionStatus.PAUSED,
+            ErrorCode.RUN_CANCELLED,
             ["Reached max_iterations (2) without meeting 'until' conditions."],
         )
         row = sessions_repo.get("loop-ceiling-interrupt")
@@ -1819,6 +1849,7 @@ class CoordinatorCorruptLoopStateTests:
         outcome = _coordinator(engine_paths, sessions_repo, "corrupt-loop").execute()
 
         assert outcome.status == SessionStatus.FAILED
+        assert outcome.error_code == ErrorCode.SESSION_STATE_CORRUPT
         assert outcome.errors == [
             "Execution state for session 'corrupt-loop' is corrupt: "
             "Loop 'fix' iteration 1 steps ['verify', 'edit'] do not match the loop body ['edit', 'verify']."
@@ -1897,9 +1928,26 @@ class CoordinatorInvalidStateTests:
         outcome = _coordinator(engine_paths, sessions_repo, "bad-snap").execute()
 
         assert outcome.status == SessionStatus.FAILED
+        assert outcome.error_code == ErrorCode.SESSION_SNAPSHOT_INVALID
         assert outcome.errors == [
             f"Failed to parse snapshot definition '{snapshot}': invalid or non-object YAML content."
         ]
+        assert not (engine_workspace / "a.ran").exists()
+
+    def test_missing_snapshot_file_fails_run_with_snapshot_missing(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
+    ) -> None:
+        seed_new_session(engine_paths, sessions_repo, session_id="gone-snap", steps=[_step("a", "touch a.ran")])
+        snapshot = snapshot_blueprint_path(engine_paths.session_dir("gone-snap"), "gone-snap")
+        snapshot.unlink()
+
+        outcome = _coordinator(engine_paths, sessions_repo, "gone-snap").execute()
+
+        assert (outcome.status, outcome.error_code, outcome.errors) == (
+            SessionStatus.FAILED,
+            ErrorCode.SESSION_SNAPSHOT_MISSING,
+            [f"Definition snapshot file missing: {snapshot}"],
+        )
         assert not (engine_workspace / "a.ran").exists()
 
     def test_step_missing_from_snapshot_definitions_fails_run_without_executing(
@@ -1914,6 +1962,7 @@ class CoordinatorInvalidStateTests:
         outcome = _coordinator(engine_paths, sessions_repo, "ghost-def").execute()
 
         assert outcome.status == SessionStatus.FAILED
+        assert outcome.error_code == ErrorCode.SESSION_SNAPSHOT_INVALID
         assert outcome.errors == ["Step 'ghost' has no matching definition in the run snapshot."]
         assert not (engine_workspace / "a.ran").exists()
 
@@ -1935,7 +1984,10 @@ class CoordinatorInvalidStateTests:
         outcome = _coordinator(engine_paths, sessions_repo, "no-result").execute()
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == ["Paused step 'b' has no recorded attempt result."]
+        assert (outcome.error_code, outcome.errors) == (
+            ErrorCode.SESSION_STATE_CORRUPT,
+            ["Paused step 'b' has no recorded attempt result."],
+        )
         assert not (engine_workspace / "b.ran").exists()
 
     def test_run_row_deleted_after_state_load_fails_run(
@@ -1954,7 +2006,7 @@ class CoordinatorInvalidStateTests:
         outcome = _coordinator(engine_paths, sessions_repo, "vanished").execute()
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == ["Session 'vanished' not found."]
+        assert (outcome.error_code, outcome.errors) == (ErrorCode.SESSION_NOT_FOUND, ["Session 'vanished' not found."])
 
 
 class CoordinatorWorktreeIdTests:
@@ -2212,7 +2264,6 @@ class CoordinatorAskTests:
         [
             pytest.param(None, id="no_prompter"),
             pytest.param([None], id="prompter_returns_none"),
-            pytest.param([KeyboardInterrupt()], id="keyboard_interrupt"),
             pytest.param([_answer("maybe")], id="invalid_answer"),
         ],
     )
@@ -2224,8 +2275,27 @@ class CoordinatorAskTests:
         outcome = ask_run.start([_approve_step()], prompter)
 
         leaf = ask_run.leaf("approve")
-        assert (outcome.status, outcome.paused_prompt_id, outcome.errors) == (SessionStatus.PAUSED, "approve", [])
+        assert (outcome.status, outcome.paused_prompt_id, outcome.errors, outcome.error_code) == (
+            SessionStatus.PAUSED,
+            "approve",
+            [],
+            None,
+        )
         assert (leaf.state, leaf.pending_ask is not None, leaf.attempts[-1].result) == (NodeState.PAUSED, True, None)
+
+    def test_interrupt_at_ask_prompt_pauses_run_with_run_cancelled(self, ask_run: AskRun) -> None:
+        """An interrupt raised by the interaction prompter keeps the session and leaf paused with the pending ask, and the outcome carries RUN_CANCELLED."""
+        outcome = ask_run.start([_approve_step()], _ScriptedPrompter([KeyboardInterrupt()]))
+
+        leaf = ask_run.leaf("approve")
+        assert (outcome.status, outcome.paused_prompt_id, outcome.error_code, outcome.errors) == (
+            SessionStatus.PAUSED,
+            "approve",
+            ErrorCode.RUN_CANCELLED,
+            ["Execution cancelled by user."],
+        )
+        assert (leaf.state, leaf.pending_ask is not None, leaf.attempts[-1].result) == (NodeState.PAUSED, True, None)
+        assert ask_run.row_status() == SessionStatus.PAUSED
 
     def test_interrupt_between_choice_and_comment_records_nothing(self, ask_run: AskRun) -> None:
         ask_run.start([_approve_step()], None)
@@ -2233,7 +2303,7 @@ class CoordinatorAskTests:
 
         outcome = ask_run.execute(_ScriptedPrompter([KeyboardInterrupt()]))
 
-        assert outcome.paused_prompt_id == "approve"
+        assert (outcome.paused_prompt_id, outcome.error_code) == ("approve", ErrorCode.RUN_CANCELLED)
         assert ask_run.leaf("approve") == pending
 
     def test_resume_asks_the_stored_request_without_rerunning_earlier_steps(self, ask_run: AskRun) -> None:
@@ -2282,7 +2352,10 @@ class CoordinatorAskTests:
         outcome = ask_run.execute(_ScriptedPrompter([]))
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == ["Pending ask for 'approve' is invalid."]
+        assert (outcome.error_code, outcome.errors) == (
+            ErrorCode.SESSION_STATE_CORRUPT,
+            ["Pending ask for 'approve' is invalid."],
+        )
         assert ask_run.leaf("approve").state == NodeState.FAILED
 
     def test_options_failure_fails_the_step_without_prompting(self, ask_run: AskRun) -> None:
@@ -2347,13 +2420,16 @@ class CoordinatorAskTests:
     def test_ask_resolving_neither_request_nor_result_fails_the_run(
         self, ask_run: AskRun, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Fail with ["Ask step 'approve' resolved neither a request nor a result."] when resolution is AskResolution()."""
+        """Fail with INTERNAL_ERROR and ["Ask step 'approve' resolved neither a request nor a result."] when resolution is AskResolution()."""
         monkeypatch.setattr("dovo.engine.coordinator.resolve_ask_request", lambda context: AskResolution())
 
         outcome = ask_run.start([_approve_step()], _ScriptedPrompter([]))
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == ["Ask step 'approve' resolved neither a request nor a result."]
+        assert (outcome.error_code, outcome.errors) == (
+            ErrorCode.INTERNAL_ERROR,
+            ["Ask step 'approve' resolved neither a request nor a result."],
+        )
 
     @pytest.mark.parametrize(
         ("steps", "scripted", "expected"),

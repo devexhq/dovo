@@ -333,13 +333,14 @@ class DispatcherInteractionPrompterTests:
 
         assert answer == InteractionAnswer(selected=["revise"], comment=expected)
 
-    @pytest.mark.parametrize("interrupt", [KeyboardInterrupt, EOFError])
-    def test_interrupt_between_choice_and_comment_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch, interrupt: type[BaseException]
-    ) -> None:
-        answer, _, _ = _ask(monkeypatch, _select_request(), ["2", interrupt()])
+    def test_eof_between_choice_and_comment_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        answer, _, _ = _ask(monkeypatch, _select_request(), ["2", EOFError()])
 
         assert answer is None
+
+    def test_keyboard_interrupt_propagates(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        with pytest.raises(KeyboardInterrupt):
+            _ask(monkeypatch, _select_request(), ["2", KeyboardInterrupt()])
 
     @pytest.mark.parametrize(
         ("no_tty", "force_terminal"),
