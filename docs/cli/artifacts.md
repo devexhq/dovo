@@ -54,14 +54,17 @@ Pruning deletes artifact revisions whose `expires_at` (set from a step's `retent
 
 ## Errors
 
-`dovo artifacts download` exits `1` when:
+`dovo artifacts download` exits `1` and reports its `error_code` when:
 
-- no artifact named `<name>` exists for `<session_id>` (`Artifact '<name>' not found for session '<session_id>'`),
-- `--revision <n>` names a revision that does not exist (`Artifact '<name>' revision <n> not found for session '<session_id>'`),
-- a stored file's live checksum no longer matches `manifest.json`,
-- the destination cannot be written to (for example, a permissions error).
+- no artifact named `<name>` exists for `<session_id>`: `ARTIFACT_NOT_FOUND`, `Artifact '<name>' not found for session '<session_id>'`,
+- `--revision <n>` names a revision that does not exist: `ARTIFACT_NOT_FOUND`, `Artifact '<name>' revision <n> not found for session '<session_id>'`,
+- a stored file's live checksum no longer matches `manifest.json`: `ARTIFACT_CHECKSUM_INVALID`, `Checksum mismatch for: <paths>`, and `--dest` is left untouched,
+- the stored `manifest.json` or a stored file cannot be read, or a file cannot be copied (for example, a permissions error on the destination): `ARTIFACT_DOWNLOAD_FAILED`, with the operating system's error text,
+- an unexpected error occurs: `INTERNAL_ERROR`.
 
-`dovo artifacts prune` exits `1` only when the advisory workspace lock cannot be acquired; a disabled prune pass (no `--force`) exits `0`.
+A failure to read Dovo's own artifact storage writes a [diagnostic log](doctor.md#diagnostic-logs) record, listed in `diagnostics` with `--format json`.
+
+`dovo artifacts prune` without `--force` while `prune.remove_expired_artifacts` is `false` prints `Artifact pruning is disabled; pass --force to override.` and exits `0`; with `--format json` it reports `disabled: true` and `items: []`. Every other pass reports `disabled: false`. A revision that cannot be deleted is listed with `pruned: false` and its `error`, and the command still exits `0`. When the workspace lock cannot be acquired in time, `dovo artifacts prune` prints the Workspace Lock Timeout panel and exits `1`, as every other command does.
 
 ## Examples
 

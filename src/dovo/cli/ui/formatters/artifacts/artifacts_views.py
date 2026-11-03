@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from dovo.common.diagnostic_log import DiagnosticRecord
-from dovo.core.artifacts.models import ArtifactsPruneStatus, PrunedArtifact
+from dovo.core.artifacts.models import PrunedArtifact
 
 
 class ArtifactRowView(BaseModel):
@@ -42,7 +42,7 @@ class ArtifactsPruneView(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: ArtifactsPruneStatus
+    disabled: bool
     dry_run: bool
     force: bool
     items: list[PrunedArtifact] = Field(default_factory=list)

@@ -8,7 +8,7 @@ import pytest
 
 from dovo.cli.ui.formatters.artifacts.artifacts_list import ArtifactsListFormatter
 from dovo.cli.ui.formatters.artifacts.artifacts_views import ArtifactRowView, ArtifactsListView
-from dovo.core.artifacts.models import ArtifactsListResult, ArtifactsListStatus
+from dovo.core.artifacts.models import ArtifactsListResult
 from dovo.core.db.models import ArtifactRecord
 from tests.harness.formatter import (
     FormatterCase,
@@ -47,7 +47,7 @@ _SECOND_RECORD = ArtifactRecord(
 )
 
 WITH_MULTIPLE_ARTIFACTS = FormatterCase(
-    data=ArtifactsListResult(status=ArtifactsListStatus.OK, artifacts=[_RECORD, _SECOND_RECORD]),
+    data=ArtifactsListResult(artifacts=[_RECORD, _SECOND_RECORD]),
     view=ArtifactsListView(
         artifacts=[
             ArtifactRowView(
@@ -87,17 +87,17 @@ WITH_MULTIPLE_ARTIFACTS = FormatterCase(
 )
 
 WITH_ARTIFACT = FormatterCase(
-    data=ArtifactsListResult(status=ArtifactsListStatus.OK, artifacts=[_RECORD]),
+    data=ArtifactsListResult(artifacts=[_RECORD]),
     view=ArtifactsListView(artifacts=[WITH_MULTIPLE_ARTIFACTS.view.artifacts[0]]),
 )
 
 WITH_LEGACY_ARTIFACT = FormatterCase(
-    data=ArtifactsListResult(status=ArtifactsListStatus.OK, artifacts=[_SECOND_RECORD]),
+    data=ArtifactsListResult(artifacts=[_SECOND_RECORD]),
     view=ArtifactsListView(artifacts=[WITH_MULTIPLE_ARTIFACTS.view.artifacts[1]]),
 )
 
 EMPTY = FormatterCase(
-    data=ArtifactsListResult(status=ArtifactsListStatus.OK, artifacts=[]),
+    data=ArtifactsListResult(artifacts=[]),
     view=ArtifactsListView(artifacts=[]),
 )
 
@@ -105,7 +105,6 @@ ARTIFACTS_LIST_PAYLOAD_CASES = [
     pytest.param(
         WITH_ARTIFACT,
         {
-            "status": "ok",
             "artifacts": [
                 {
                     "name": "dist-packages",
@@ -134,7 +133,6 @@ ARTIFACTS_LIST_PAYLOAD_CASES = [
     pytest.param(
         WITH_LEGACY_ARTIFACT,
         {
-            "status": "ok",
             "artifacts": [
                 {
                     "name": "test-reports",
@@ -162,7 +160,7 @@ ARTIFACTS_LIST_PAYLOAD_CASES = [
     ),
     pytest.param(
         EMPTY,
-        {"status": "ok", "artifacts": [], "errors": [], "warnings": [], "remediations": [], "diagnostics": []},
+        {"artifacts": [], "errors": [], "warnings": [], "remediations": [], "diagnostics": []},
         id="empty",
     ),
 ]

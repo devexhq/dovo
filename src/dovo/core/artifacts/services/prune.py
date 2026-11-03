@@ -8,8 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dovo.common.filesystem.models import RepositoryPaths
-from dovo.common.lock import LockTimeoutError, WorkspaceLock
-from dovo.core.artifacts.models import ArtifactManifest, ArtifactsPruneResult, ArtifactsPruneStatus, PrunedArtifact
+from dovo.common.lock import WorkspaceLock
+from dovo.core.artifacts.models import ArtifactManifest, ArtifactsPruneResult, PrunedArtifact
 from dovo.core.db.models import ArtifactRecord
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
@@ -55,24 +55,20 @@ def prune_artifacts(
     force: bool = False,
     remove_expired: bool,
 ) -> ArtifactsPruneResult:
-    """List expired artifacts via db.list_expired and delegate each to _prune_one_artifact, guarded by WorkspaceLock(workspace_root) unless dry_run."""
+    """List expired artifacts via db.list_expired and delegate each to _prune_one_artifact, guarded by WorkspaceLock(workspace_root) unless dry_run.
+
+    Raises:
+        LockTimeoutError: The workspace lock could not be acquired in time.
+    """
     if not remove_expired and not force:
-        return ArtifactsPruneResult(status=ArtifactsPruneStatus.DISABLED, dry_run=dry_run, force=force)
+        return ArtifactsPruneResult(disabled=True, dry_run=dry_run, force=force)
 
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
     if dry_run:
         items = [_prune_one_artifact(record, db, dry_run=True) for record in db.list_expired(now)]
-        return ArtifactsPruneResult(status=ArtifactsPruneStatus.OK, dry_run=dry_run, force=force, items=items)
+        return ArtifactsPruneResult(dry_run=dry_run, force=force, items=items)
 
-    try:
-        with WorkspaceLock(RepositoryPaths.from_root(workspace_root).lock_file):
-            items = [_prune_one_artifact(record, db, dry_run=False) for record in db.list_expired(now)]
-            return ArtifactsPruneResult(status=ArtifactsPruneStatus.OK, dry_run=dry_run, force=force, items=items)
-    except LockTimeoutError as exc:
-        return ArtifactsPruneResult(
-            status=ArtifactsPruneStatus.LOCKED,
-            dry_run=dry_run,
-            force=force,
-            errors=[f"Failed to acquire workspace lock: {exc}"],
-        )
+    with WorkspaceLock(RepositoryPaths.from_root(workspace_root).lock_file):
+        items = [_prune_one_artifact(record, db, dry_run=False) for record in db.list_expired(now)]
+    return ArtifactsPruneResult(dry_run=dry_run, force=force, items=items)

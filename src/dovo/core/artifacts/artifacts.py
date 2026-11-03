@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections.abc import Collection, Mapping
 from pathlib import Path
 
+from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.artifacts.models import (
     ArtifactDownloadResult,
     ArtifactProvenance,
     ArtifactReferencesResult,
     ArtifactsListResult,
-    ArtifactsListStatus,
     ArtifactsPruneResult,
     ArtifactUploadResult,
 )
@@ -61,7 +61,7 @@ class Artifacts:
 
     def list(self, session_id: str | None = None) -> ArtifactsListResult:
         """List artifacts for the current project, optionally filtered to one session."""
-        return ArtifactsListResult(status=ArtifactsListStatus.OK, artifacts=self.db.list(session_id=session_id))
+        return ArtifactsListResult(artifacts=self.db.list(session_id=session_id))
 
     def download(
         self,
@@ -72,9 +72,13 @@ class Artifacts:
         revision: int | None = None,
     ) -> ArtifactDownloadResult:
         """Download and checksum-verify a named artifact revision (latest by default) into dest."""
-        return download_artifact(
-            self.paths.artifacts_dir, self.db, session_id=session_id, name=name, dest=dest, revision=revision
-        )
+        with catch_failure("artifacts.download", session_id=session_id, name=name) as caught:
+            downloaded = download_artifact(
+                self.paths.artifacts_dir, self.db, session_id=session_id, name=name, dest=dest, revision=revision
+            )
+        if caught.failure is not None:
+            return ArtifactDownloadResult(session_id=session_id, name=name, **caught.failure.result_fields())
+        return downloaded
 
     def prune(
         self,
@@ -86,6 +90,9 @@ class Artifacts:
         """Delete expired artifact bundles from disk and the database, or preview under dry_run.
 
         remove_expired resolves from config.prune.remove_expired_artifacts, defaulting to False when config is None.
+
+        Raises:
+            LockTimeoutError: The workspace lock could not be acquired in time; the top-level handler reports it.
         """
         remove_expired = config.prune.remove_expired_artifacts if config is not None else False
         return prune_artifacts(self.path, self.db, dry_run=dry_run, force=force, remove_expired=remove_expired)

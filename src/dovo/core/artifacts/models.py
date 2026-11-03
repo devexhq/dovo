@@ -75,19 +75,9 @@ class ArtifactUploadResult(BaseResult):
         return self.status == ArtifactUploadStatus.OK
 
 
-class ArtifactDownloadStatus(StrEnum):
-    """Classified outcome for downloading an artifact bundle."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    CHECKSUM_MISMATCH = "checksum_mismatch"
-    ERROR = "error"
-
-
 class ArtifactDownloadResult(BaseResult):
     """Result of downloading and verifying an artifact bundle."""
 
-    status: ArtifactDownloadStatus
     session_id: str = ""
     name: str = ""
     dest: str = ""
@@ -96,8 +86,8 @@ class ArtifactDownloadResult(BaseResult):
 
     @property
     def ok(self) -> bool:
-        """True when the artifact bundle was extracted and checksum-verified."""
-        return self.status == ArtifactDownloadStatus.OK
+        """True when error_code is None: the artifact bundle was extracted and checksum-verified."""
+        return self.error_code is None
 
 
 class ArtifactReferencesStatus(StrEnum):
@@ -119,30 +109,15 @@ class ArtifactReferencesResult(BaseResult):
         return self.status == ArtifactReferencesStatus.OK and not self.errors
 
 
-class ArtifactsListStatus(StrEnum):
-    """Classified outcome for listing artifacts."""
-
-    OK = "ok"
-
-
 class ArtifactsListResult(BaseResult):
     """Result of listing artifacts for the current project."""
 
-    status: ArtifactsListStatus = ArtifactsListStatus.OK
     artifacts: list[ArtifactRecord] = Field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        """True when listing succeeded (including an empty result)."""
-        return self.status == ArtifactsListStatus.OK and not self.errors
-
-
-class ArtifactsPruneStatus(StrEnum):
-    """Classified outcome for pruning expired artifacts."""
-
-    OK = "ok"
-    DISABLED = "disabled"
-    LOCKED = "locked"
+        """True when error_code is None (including an empty listing)."""
+        return self.error_code is None
 
 
 class PrunedArtifact(BaseModel):
@@ -158,14 +133,14 @@ class PrunedArtifact(BaseModel):
 
 
 class ArtifactsPruneResult(BaseResult):
-    """Result of pruning expired artifacts."""
+    """Result of pruning expired artifacts; disabled is True when pruning was skipped because it is turned off."""
 
-    status: ArtifactsPruneStatus = ArtifactsPruneStatus.OK
+    disabled: bool = False
     dry_run: bool = False
     force: bool = False
     items: list[PrunedArtifact] = Field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        """True when prune completed (including a disabled no-op) without failures."""
-        return self.status != ArtifactsPruneStatus.LOCKED and not self.errors
+        """True when error_code is None, including a disabled no-op and items that failed to prune."""
+        return self.error_code is None

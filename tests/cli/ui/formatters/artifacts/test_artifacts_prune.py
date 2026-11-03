@@ -8,7 +8,7 @@ import pytest
 
 from dovo.cli.ui.formatters.artifacts.artifacts_prune import ArtifactsPruneFormatter
 from dovo.cli.ui.formatters.artifacts.artifacts_views import ArtifactsPruneView
-from dovo.core.artifacts.models import ArtifactsPruneResult, ArtifactsPruneStatus, PrunedArtifact
+from dovo.core.artifacts.models import ArtifactsPruneResult, PrunedArtifact
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -18,13 +18,12 @@ from tests.harness.formatter import (
 
 WITH_PRUNED_ITEM = FormatterCase(
     data=ArtifactsPruneResult(
-        status=ArtifactsPruneStatus.OK,
         dry_run=False,
         force=False,
         items=[PrunedArtifact(session_id="wf_abc123", name="dist-packages", revision=2, pruned=True)],
     ),
     view=ArtifactsPruneView(
-        status=ArtifactsPruneStatus.OK,
+        disabled=False,
         dry_run=False,
         force=False,
         items=[PrunedArtifact(session_id="wf_abc123", name="dist-packages", revision=2, pruned=True)],
@@ -35,18 +34,16 @@ WITH_PRUNED_ITEM = FormatterCase(
 )
 
 DISABLED = FormatterCase(
-    data=ArtifactsPruneResult(status=ArtifactsPruneStatus.DISABLED, dry_run=False, force=False, items=[]),
-    view=ArtifactsPruneView(
-        status=ArtifactsPruneStatus.DISABLED, dry_run=False, force=False, items=[], pruned_count=0, failed_count=0
-    ),
-    render_expectations=["disabled"],
+    data=ArtifactsPruneResult(disabled=True, dry_run=False, force=False, items=[]),
+    view=ArtifactsPruneView(disabled=True, dry_run=False, force=False, items=[], pruned_count=0, failed_count=0),
+    render_expectations=["Artifact pruning is disabled; pass --force to override."],
 )
 
 ARTIFACTS_PRUNE_PAYLOAD_CASES = [
     pytest.param(
         WITH_PRUNED_ITEM,
         {
-            "status": "ok",
+            "disabled": False,
             "dry_run": False,
             "force": False,
             "items": [
@@ -61,7 +58,7 @@ ARTIFACTS_PRUNE_PAYLOAD_CASES = [
     pytest.param(
         DISABLED,
         {
-            "status": "disabled",
+            "disabled": True,
             "dry_run": False,
             "force": False,
             "items": [],

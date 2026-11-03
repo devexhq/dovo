@@ -14,7 +14,6 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.models import BaseResult, Remediation
 from dovo.core.artifacts import (
     ArtifactDownloadResult,
-    ArtifactDownloadStatus,
     ArtifactsListResult,
     ArtifactsPruneResult,
 )
@@ -99,7 +98,7 @@ def _status_sample() -> DovoStatusResult:
 SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
     ArtifactsListResult: lambda: ArtifactsListResult(diagnostics=[RECORD]),
     ArtifactDownloadResult: lambda: ArtifactDownloadResult(
-        status=ArtifactDownloadStatus.NOT_FOUND, diagnostics=[RECORD]
+        error_code=ErrorCode.ARTIFACT_DOWNLOAD_FAILED, diagnostics=[RECORD]
     ),
     ArtifactsPruneResult: lambda: ArtifactsPruneResult(diagnostics=[RECORD]),
     CatalogListResult: lambda: CatalogListResult(diagnostics=[RECORD]),

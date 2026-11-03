@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.artifacts.models import ArtifactDownloadStatus, ArtifactProvenance
+from dovo.common.error_codes import ErrorCode
+from dovo.core.artifacts.exceptions import ArtifactError
+from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.core.artifacts.services.download import download_artifact
 from dovo.core.artifacts.services.upload import publish_artifact
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
@@ -42,49 +44,105 @@ def _publish(
 class DownloadServiceTests:
     """Contract tests for download_artifact."""
 
-    def test_download_artifact_missing_returns_not_found_status(
+    def test_download_artifact_missing_raises_not_found(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
         dest = tmp_path / "out"
 
-        result = download_artifact(
-            tmp_path / "artifacts", artifacts_repository, session_id="wf_abc123", name="missing", dest=dest
-        )
+        with pytest.raises(ArtifactError) as raised:
+            download_artifact(
+                tmp_path / "artifacts", artifacts_repository, session_id="wf_abc123", name="missing", dest=dest
+            )
 
-        assert result.status == ArtifactDownloadStatus.NOT_FOUND
+        assert (raised.value.error_code, raised.value.message) == (
+            ErrorCode.ARTIFACT_NOT_FOUND,
+            "Artifact 'missing' not found for session 'wf_abc123'",
+        )
         assert not dest.exists()
 
-    def test_download_artifact_checksum_mismatch_returns_before_any_copy(
+    def test_download_artifact_checksum_mismatch_raises_before_any_copy(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
         artifacts_dir = _publish(tmp_path, artifacts_repository, session_id="wf_abc123", name="dist-packages")
         (artifacts_dir / "wf_abc123" / "dist-packages" / "1" / "dist" / "pkg.whl").write_bytes(b"corrupted")
         dest = tmp_path / "out"
 
-        result = download_artifact(
-            artifacts_dir, artifacts_repository, session_id="wf_abc123", name="dist-packages", dest=dest
-        )
+        with pytest.raises(ArtifactError) as raised:
+            download_artifact(
+                artifacts_dir, artifacts_repository, session_id="wf_abc123", name="dist-packages", dest=dest
+            )
 
-        assert result.status == ArtifactDownloadStatus.CHECKSUM_MISMATCH
+        assert (raised.value.error_code, raised.value.message) == (
+            ErrorCode.ARTIFACT_CHECKSUM_INVALID,
+            "Checksum mismatch for: dist/pkg.whl",
+        )
         assert not dest.exists()
 
-    def test_download_artifact_dest_write_failure_returns_error_status(
+    def test_download_artifact_dest_write_failure_raises_download_failed_without_cause(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         artifacts_dir = _publish(tmp_path, artifacts_repository, session_id="wf_abc123", name="dist-packages")
-
-        def _broken_copy2(*_args: object, **_kwargs: object) -> None:
-            raise OSError("disk full")
-
-        monkeypatch.setattr("dovo.core.artifacts.services.download.shutil.copy2", _broken_copy2)
         dest = tmp_path / "out"
 
-        result = download_artifact(
-            artifacts_dir, artifacts_repository, session_id="wf_abc123", name="dist-packages", dest=dest
+        def _broken_copy2(*_args: object, **_kwargs: object) -> None:
+            raise OSError(28, "No space left on device", str(dest / "dist" / "pkg.whl"))
+
+        monkeypatch.setattr("dovo.core.artifacts.services.download.shutil.copy2", _broken_copy2)
+
+        with pytest.raises(ArtifactError) as raised:
+            download_artifact(
+                artifacts_dir, artifacts_repository, session_id="wf_abc123", name="dist-packages", dest=dest
+            )
+
+        assert (raised.value.error_code, raised.value.message, raised.value.__cause__) == (
+            ErrorCode.ARTIFACT_DOWNLOAD_FAILED,
+            f"[Errno 28] No space left on device: '{dest / 'dist' / 'pkg.whl'}'",
+            None,
         )
 
-        assert result.status == ArtifactDownloadStatus.ERROR
-        assert "disk full" in result.errors[0]
+    def test_download_artifact_stored_file_read_failure_chains_its_os_error(
+        self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        artifacts_dir = _publish(tmp_path, artifacts_repository, session_id="wf_abc123", name="dist-packages")
+        stored = artifacts_dir / "wf_abc123" / "dist-packages" / "1" / "dist" / "pkg.whl"
+        read_error = PermissionError(13, "Permission denied", str(stored))
+
+        def _broken_copy2(*_args: object, **_kwargs: object) -> None:
+            raise read_error
+
+        monkeypatch.setattr("dovo.core.artifacts.services.download.shutil.copy2", _broken_copy2)
+
+        with pytest.raises(ArtifactError) as raised:
+            download_artifact(
+                artifacts_dir, artifacts_repository, session_id="wf_abc123", name="dist-packages", dest=tmp_path / "out"
+            )
+
+        assert (raised.value.error_code, raised.value.__cause__) == (ErrorCode.ARTIFACT_DOWNLOAD_FAILED, read_error)
+
+    def test_download_artifact_stored_file_checksum_read_failure_raises_download_failed_before_any_copy(
+        self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        artifacts_dir = _publish(tmp_path, artifacts_repository, session_id="wf_abc123", name="dist-packages")
+        stored = artifacts_dir / "wf_abc123" / "dist-packages" / "1" / "dist" / "pkg.whl"
+        read_error = PermissionError(13, "Permission denied", str(stored))
+        dest = tmp_path / "out"
+
+        def _broken_checksum(_path: Path) -> str:
+            raise read_error
+
+        monkeypatch.setattr("dovo.core.artifacts.services.download.compute_file_checksum", _broken_checksum)
+
+        with pytest.raises(ArtifactError) as raised:
+            download_artifact(
+                artifacts_dir, artifacts_repository, session_id="wf_abc123", name="dist-packages", dest=dest
+            )
+
+        assert (raised.value.error_code, raised.value.message, raised.value.__cause__) == (
+            ErrorCode.ARTIFACT_DOWNLOAD_FAILED,
+            f"[Errno 13] Permission denied: '{stored}'",
+            read_error,
+        )
+        assert not dest.exists()
 
     def test_download_artifact_verified_copies_all_files(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
@@ -96,7 +154,7 @@ class DownloadServiceTests:
             artifacts_dir, artifacts_repository, session_id="wf_abc123", name="dist-packages", dest=dest
         )
 
-        assert result.status == ArtifactDownloadStatus.OK
+        assert result.ok
         assert result.file_count == 1
         assert result.revision == 1
         assert (dest / "dist" / "pkg.whl").read_bytes() == b"package-bytes"
@@ -126,16 +184,24 @@ class DownloadServiceTests:
         assert (first.revision, (first_dest / "dist" / "pkg.whl").read_bytes()) == (1, b"v1")
         assert (latest.revision, (latest_dest / "dist" / "pkg.whl").read_bytes()) == (2, b"v2")
 
-    def test_download_artifact_unknown_revision_returns_not_found_message(
+    def test_download_artifact_unknown_revision_raises_not_found_message(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
         artifacts_dir = _publish(tmp_path, artifacts_repository, session_id="wf_abc123", name="dist-packages")
         dest = tmp_path / "out"
 
-        result = download_artifact(
-            artifacts_dir, artifacts_repository, session_id="wf_abc123", name="dist-packages", dest=dest, revision=9
-        )
+        with pytest.raises(ArtifactError) as raised:
+            download_artifact(
+                artifacts_dir,
+                artifacts_repository,
+                session_id="wf_abc123",
+                name="dist-packages",
+                dest=dest,
+                revision=9,
+            )
 
-        assert result.status == ArtifactDownloadStatus.NOT_FOUND
-        assert result.errors == ["Artifact 'dist-packages' revision 9 not found for session 'wf_abc123'"]
+        assert (raised.value.error_code, raised.value.message) == (
+            ErrorCode.ARTIFACT_NOT_FOUND,
+            "Artifact 'dist-packages' revision 9 not found for session 'wf_abc123'",
+        )
         assert not dest.exists()

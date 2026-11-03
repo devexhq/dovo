@@ -7,7 +7,8 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.artifacts.artifacts_download import ArtifactDownloadFormatter
-from dovo.core.artifacts.models import ArtifactDownloadResult, ArtifactDownloadStatus
+from dovo.common.error_codes import ErrorCode
+from dovo.core.artifacts.models import ArtifactDownloadResult
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -16,7 +17,6 @@ from tests.harness.formatter import (
 
 OK = FormatterCase.identity(
     data=ArtifactDownloadResult(
-        status=ArtifactDownloadStatus.OK,
         session_id="wf_abc123",
         name="dist-packages",
         dest="/tmp/out",
@@ -28,9 +28,9 @@ OK = FormatterCase.identity(
 
 NOT_FOUND = FormatterCase.identity(
     data=ArtifactDownloadResult(
-        status=ArtifactDownloadStatus.NOT_FOUND,
         session_id="wf_abc123",
         name="missing",
+        error_code=ErrorCode.ARTIFACT_NOT_FOUND,
         errors=["Artifact 'missing' not found for session 'wf_abc123'"],
     ),
     render_expectations=["Artifact 'missing' not found for session 'wf_abc123'"],
@@ -45,7 +45,6 @@ ARTIFACT_DOWNLOAD_PAYLOAD_CASES = [
     pytest.param(
         OK,
         {
-            "status": "ok",
             "session_id": "wf_abc123",
             "name": "dist-packages",
             "dest": "/tmp/out",
@@ -62,7 +61,6 @@ ARTIFACT_DOWNLOAD_PAYLOAD_CASES = [
     pytest.param(
         NOT_FOUND,
         {
-            "status": "not_found",
             "session_id": "wf_abc123",
             "name": "missing",
             "dest": "",
@@ -70,7 +68,7 @@ ARTIFACT_DOWNLOAD_PAYLOAD_CASES = [
             "file_count": 0,
             "errors": ["Artifact 'missing' not found for session 'wf_abc123'"],
             "warnings": [],
-            "error_code": None,
+            "error_code": "ARTIFACT_NOT_FOUND",
             "remediations": [],
             "diagnostics": [],
         },

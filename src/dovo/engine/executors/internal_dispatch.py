@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from dovo.core.artifacts.models import ArtifactDownloadStatus, ArtifactProvenance, ArtifactUploadStatus
+from dovo.core.artifacts.models import ArtifactProvenance, ArtifactUploadStatus
 from dovo.engine.executors.models import InternalCommandContext, StepDispatchOutcome
 
 
@@ -100,7 +100,7 @@ def handle_artifacts_download(ctx: InternalCommandContext) -> StepDispatchOutcom
         revision=revision,
         session_id=ctx.env.get("ARTIFACT_SESSION_ID"),
     )
-    if result.status == ArtifactDownloadStatus.OK:
+    if result.ok:
         return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
     return StepDispatchOutcome(
         status="failed",
