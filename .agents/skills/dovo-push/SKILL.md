@@ -14,10 +14,10 @@ Get the current branch's work committed and represented by an open PR. Nothing e
 
 ## Hard boundaries
 
-- **Never run tests or tooling.** No `dovo run tests`, no `dovo run quality`, no `pytest`, no `ruff`, no `ty`, no `uv sync`. `/dovo-code` already gated the change; re-running here is not this skill's job. If you believe the gates were never run, say so and let the human decide rather than running them.
+- **Never run tests or tooling.** No `dovo run tests`, no `dovo run quality`, no `pytest`, no `ruff`, no `ty`, no `uv sync`. The `ship` validate stage already gated the change; re-running here is not this skill's job. If you believe the gates were never run, say so and let the human decide rather than running them.
 - **Never write code.** No fixes, no formatting, no "while I'm here" edits. If the diff looks wrong, report it and stop.
 - **Never commit to the default branch.** If `HEAD` is on it, update against origin, create a branch and continue.
-- **Never stage or delete `.agentic/`.** The plan and review are working artifacts, not deliverables. Later review rounds still need the plan, and only `/dovo-plan` clears the directory, at the start of the next cycle. Step 2 and Step 3 check that nothing under it reaches a commit, which is the second guarantee behind the `/.agentic/` ignore rule. Leave `.dovo/` and `scratch/` alone.
+- **Never stage or delete `.agentic/`.** The plan, review and `ship` state are working artifacts, not deliverables. Later review rounds still need them. Step 2 and Step 3 check that nothing under it reaches a commit, which is the second guarantee behind the `/.agentic/` ignore rule. Leave `.dovo/` and `scratch/` alone.
 - **Do not add reviewers** unless the user names them.
 
 ## Step 1: Read the state
@@ -35,13 +35,14 @@ Branch names follow `<username>/<short-description>`. If the current branch does
 
 ## Step 2: Check the agentic artifacts
 
-Capture the issue number for later use in the PR description. `/dovo-plan` writes `.agentic/plan.md` with a `# Issue #<n>: <title>` header (see `docs/agents/planning.md`):
+Capture the issue number for later use in the PR description. A `ship` run records it as `issue.number` in `.agentic/ship/contract.json`, and a plan in `.agentic/plan.md` carries it in its `# Issue #<n>: <title>` header (see `docs/agents/planning.md`):
 
 ```bash
+jq -r .issue.number .agentic/ship/contract.json 2>/dev/null
 head -1 .agentic/plan.md 2>/dev/null
 ```
 
-Leave every file under `.agentic/` in place: `/dovo-review` and `/dovo-code review` read the plan in later review rounds, and `/dovo-plan` clears the whole directory before it starts the next cycle. Before staging anything, confirm that git neither tracks nor stages any of it:
+Leave every file under `.agentic/` in place: `/dovo-review` and the fixer read the plan and the ship state in later review rounds. Before staging anything, confirm that git neither tracks nor stages any of it:
 
 ```bash
 git ls-files .agentic

@@ -12,28 +12,24 @@ they are not repeated here.
 ## How work flows
 
 1. **Write** the issue (`/dovo-issue`) in the short format of
-   `.dovo/catalog/prompts/sdlc/v2/templates/issue.md`, or the bug format of
-   `templates/bug.md` beside it: what a person decided, as numbered outcomes
-   and decisions, with nothing the code can tell.
-2. **Plan** it with `dovo run issue-plan-v2 -i <n>`. The run checks the issue
-   against main, labels it `dovo:ready` once a person approves, and slices it
-   into pull-request-sized slices that a person approves. The work plan, the
-   issue's only comment, tracks each slice; the plan itself stays in the run's
-   artifacts. A one-slice issue is also phased in this run. `feature-dev`
-   pauses on an issue without the `dovo:ready` label.
-3. **Build** it slice by slice with `dovo run issue-code-v2 -i <n>`, one run
-   per slice. Each slice of a multi-slice issue gets its own sub-issue when it
-   starts, ready from the approved plan. The run phases the slice, codes each
-   phase, reviews the result and opens the slice's PR; a human reviews and
-   merges it before the next slice starts.
-4. **Phase** every plan by [planning.md](docs/agents/planning.md): each phase
+   `.dovo/catalog/templates/issue/issue.md`, or the bug format of `bug.md`
+   beside it: what a person decided, as numbered outcomes and decisions, with
+   nothing the code can tell. One issue is one pull request; an issue that
+   needs more is split with `/dovo-issue` before it is delivered.
+2. **Ship** it with `dovo run ship -i <n> [--pull-request <n>]` (or `/ship
+   <n>`), one run per issue. The run captures the issue as its contract,
+   assesses it against main, investigates or plans only when a causal or
+   design question needs settling, implements it, validates it with the
+   quality gate, reviews it and opens its one PR, continuing an existing PR
+   when one is given. It asks a person only for a decision that changes an
+   accepted outcome or constraint. A human reviews and merges the PR.
+3. **Phase** every plan by [planning.md](docs/agents/planning.md): each phase
    is reviewable in one sitting (roughly 400 changed lines or less), passes
    the quality gate on its own and ships something. When a change replaces an
    internal, phase it as add, switch callers, delete, with the deletion phase
-   planned up front (see R10). Outside the slice flow, `/dovo-plan`,
-   `/dovo-plan-review`, `/dovo-plan-challenge`, `/dovo-plan-walkthrough`,
-   `/dovo-code` and `/dovo-review` plan, check, build and review a change by
-   the same rules.
+   planned up front (see R10). `/dovo-review` reviews a change by the same
+   rules, and `pr-fix` fixes a pull request's feedback with `/dovo-code
+   feedback`.
 
 ## Rules
 
@@ -202,7 +198,7 @@ Fix a failure in the code, never with a suppression or a lowered threshold.
 | [docs/agents/code-conventions.md](docs/agents/code-conventions.md) | Python style, model placement, `Any` and type-ignore rules |
 | [docs/agents/architecture/](docs/agents/architecture/README.md) | Settled decisions: exceptions, remediations, diagnostics and results |
 | [docs/agents/testing.md](docs/agents/testing.md) | Test tiers, harness helpers, naming, parameterization |
-| [docs/agents/planning.md](docs/agents/planning.md) | Planning and phasing an issue (`/dovo-plan`) |
+| [docs/agents/planning.md](docs/agents/planning.md) | Planning and phasing an issue (the `ship` plan stage) |
 | [docs/agents/documentation.md](docs/agents/documentation.md) | Which user-facing docs a change must update |
 | [docs/cli/](docs/cli/) | Per-command user reference |
 

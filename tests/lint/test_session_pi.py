@@ -646,12 +646,12 @@ class TestHistoryRow:
             _step("fix", loop_id="loop", iteration=2),
             _step("build", attempts=2),
         ]
-        results = [_outputs("next", slice="S7"), _outputs("start", issue="1289")]
+        results = [_outputs("prepare", issue="1289", body_sha="c0ffee")]
         payload, log_dir = _session_tree(
             tmp_path,
             steps,
             results,
-            blueprint_name="issue-code-v2",
+            blueprint_name="ship",
             started_at="2026-11-02 10:00:00",
             completed_at="2026-11-02 10:05:00",
         )
@@ -661,15 +661,14 @@ class TestHistoryRow:
         row = _history_row(payload, log_dir)
 
         assert row == {
-            "schema_version": 1,
+            "schema_version": 2,
             "session_id": SESSION,
-            "blueprint": "issue-code-v2",
+            "blueprint": "ship",
             "blueprint_sha": "cafe01",
             "status": "completed",
             "started_at": "2026-11-02 10:00:00",
             "completed_at": "2026-11-02 10:05:00",
             "issue": "1289",
-            "slice": "S7",
             "totals": {
                 "wall_seconds": 100.0,
                 "runs": 0,
@@ -725,38 +724,25 @@ class TestHistoryRow:
             },
         }
 
-    def test_issue_and_slice_are_null_when_session_json_has_no_results(self, tmp_path: Path) -> None:
-        payload, log_dir = _session_tree(tmp_path, [_step("plan")], None, blueprint_name="issue-code-v2")
+    def test_issue_is_null_when_session_json_has_no_results(self, tmp_path: Path) -> None:
+        payload, log_dir = _session_tree(tmp_path, [_step("plan")], None, blueprint_name="ship")
 
         row = _history_row(payload, log_dir)
 
-        assert (row["issue"], row["slice"], row["blueprint_sha"]) == (None, None, "cafe01")
+        assert (row["issue"], row["blueprint_sha"]) == (None, "cafe01")
 
     def test_row_survives_a_missing_session_json(self) -> None:
-        row = _history_row(_payload([_step("plan")], blueprint_name="issue-plan-v2"), None)
+        row = _history_row(_payload([_step("plan")], blueprint_name="ship"), None)
 
-        assert (row["issue"], row["slice"], row["blueprint_sha"]) == (None, None, None)
+        assert (row["issue"], row["blueprint_sha"]) == (None, None)
 
-    def test_plan_run_reads_its_slice_from_one_slice_and_its_issue_from_what_apply_printed(
-        self, tmp_path: Path
-    ) -> None:
-        results = [
-            _outputs("one-slice", slice="S1"),
-            _outputs("apply", stdout="https://github.com/devexhq/dovo/issues/1310\n"),
-        ]
-        payload, log_dir = _session_tree(tmp_path, [_step("plan")], results, blueprint_name="issue-plan-v2")
+    def test_issue_is_null_when_prepare_output_is_empty(self, tmp_path: Path) -> None:
+        results = [_outputs("prepare", issue="", body_sha="c0ffee")]
+        payload, log_dir = _session_tree(tmp_path, [_step("plan")], results, blueprint_name="ship")
 
         row = _history_row(payload, log_dir)
 
-        assert (row["issue"], row["slice"]) == ("1310", "S1")
-
-    def test_plan_run_without_a_slice_has_null_slice(self, tmp_path: Path) -> None:
-        results = [_outputs("rewrite-gate", stdout="Issue 1310 is in the short format.\n")]
-        payload, log_dir = _session_tree(tmp_path, [_step("plan")], results, blueprint_name="issue-plan-v2")
-
-        row = _history_row(payload, log_dir)
-
-        assert (row["issue"], row["slice"]) == ("1310", None)
+        assert row["issue"] is None
 
     def test_first_non_null_effort_of_a_step_is_kept(self) -> None:
         rows = [{"step_id": "plan", "effort": None}, {"step_id": "plan", "effort": "medium"}]
@@ -794,7 +780,7 @@ class TestHistoryMain:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         payload, _ = _session_tree(
-            tmp_path, [_step("build")], [_outputs("start", issue="9")], blueprint_name="issue-code-v2", started_at="t1"
+            tmp_path, [_step("build")], [_outputs("prepare", issue="9")], blueprint_name="ship", started_at="t1"
         )
         history = tmp_path / "out" / "history.jsonl"
 
@@ -809,20 +795,20 @@ class TestHistoryMain:
     def test_another_blueprint_is_refused_and_nothing_is_written(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        payload = _payload([_step("build")], blueprint_name="feature-dev")
+        payload = _payload([_step("build")], blueprint_name="pr-fix")
         history = tmp_path / "history.jsonl"
 
         assert self._run(monkeypatch, payload, history) == 1
 
         captured = capsys.readouterr()
-        assert "blueprint feature-dev is not one of issue-plan-v2, issue-code-v2" in captured.err
+        assert "blueprint pr-fix is not one of ship" in captured.err
         assert captured.out == ""
         assert not history.exists()
 
     def test_a_running_session_is_refused_and_nothing_is_written(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        payload = _payload([_step("build")], blueprint_name="issue-plan-v2", status="running")
+        payload = _payload([_step("build")], blueprint_name="ship", status="running")
         history = tmp_path / "history.jsonl"
 
         assert self._run(monkeypatch, payload, history) == 1

@@ -4,8 +4,7 @@
 Reads the pull request and its check runs on the head commit. When the
 authenticated `gh` user's dovo-review comment names a dovo session, downloads
 that session's plan, plan-questions, review and implementation-report artifacts
-into .agentic/grade-run/ and reads the session's step history and, for an
-issue-code-v2 session, its slice's phase count from the plan. Extracts the
+into .agentic/grade-run/ and reads the session's step history. Extracts the
 head commit's files into .agentic/grade-pr/ and its diff into
 .agentic/grade-pr.diff, so the grader reads the pull request without checking
 it out and nothing from it runs. Writes .agentic/grade-inputs.json.
@@ -64,11 +63,15 @@ def review_summary(review: dict[str, object] | None, pr_head: str) -> dict[str, 
     }
 
 
-def _loop_iterations(steps: list[dict[str, object]], loop_id: str) -> int | None:
-    """Return how many iterations the loop step loop_id ran, or None when the session has no such loop."""
-    loop = next((step for step in steps if step.get("kind") == "loop" and step.get("step_id") == loop_id), None)
-    iterations = loop.get("iterations") if loop is not None else None
-    return iterations if isinstance(iterations, int) else None
+def _loop_iterations(steps: list[dict[str, object]]) -> dict[str, int]:
+    """Return how many iterations each loop step of the session ran, by its step id."""
+    return {
+        str(step["step_id"]): step["iterations"]
+        for step in steps
+        if step.get("kind") == "loop"
+        and isinstance(step.get("iterations"), int)
+        and not isinstance(step["iterations"], bool)
+    }
 
 
 def _steps(payload: dict[str, object]) -> list[dict[str, object]]:
@@ -77,34 +80,20 @@ def _steps(payload: dict[str, object]) -> list[dict[str, object]]:
     return [step for step in raw_steps if isinstance(step, dict)] if isinstance(raw_steps, list) else []
 
 
-def _slice_phases(blueprint: object, plan: dict[str, object] | None) -> int | None:
-    """Return the phase count of an issue-code-v2 session's slice plan, or None for another blueprint or no plan.
-
-    An issue-code-v2 session runs one code-loop iteration per phase of its slice,
-    and its slice plan's top-level `phases` is that slice's phase count.
-    """
-    phases = plan.get("phases") if blueprint == "issue-code-v2" and plan is not None else None
-    return phases if isinstance(phases, int) and not isinstance(phases, bool) else None
-
-
-def process_summary(payload: dict[str, object], plan: dict[str, object] | None) -> dict[str, object]:
-    """Return a dovo session's blueprint, outcome, loop iterations, slice phases and retried or failed steps.
+def process_summary(payload: dict[str, object]) -> dict[str, object]:
+    """Return a dovo session's blueprint, outcome, loop iterations and retried or failed steps.
 
     Args:
         payload: The payload of `dovo session show <id> --format json`.
-        plan: The session's restored plan.json, or None when none was restored.
     """
     session = payload.get("session")
     session = session if isinstance(session, dict) else {}
     steps = _steps(payload)
     attempts = [step for step in steps if step.get("kind") == "step"]
-    blueprint = session.get("blueprint_name")
     return {
-        "blueprint": blueprint,
+        "blueprint": session.get("blueprint_name"),
         "status": session.get("status"),
-        "slice_phases": _slice_phases(blueprint, plan),
-        "code_loop_iterations": _loop_iterations(steps, "code-loop"),
-        "review_loop_iterations": _loop_iterations(steps, "review-loop"),
+        "loop_iterations": _loop_iterations(steps),
         "retried_steps": sorted({str(step["step_id"]) for step in attempts if (step.get("attempts") or 1) > 1}),
         "failed_steps": sorted({str(step["step_id"]) for step in attempts if step.get("state") == "failed"}),
     }
@@ -152,8 +141,7 @@ def restore_run(session: str) -> tuple[list[str], dict[str, object] | None]:
     except (subprocess.CalledProcessError, json.JSONDecodeError):
         return restored, None
     payload = shown.get("payload") if isinstance(shown, dict) else None
-    plan = _restored_json(restored, "plan-questions", "plan.json")
-    return restored, process_summary(payload, plan) if isinstance(payload, dict) else None
+    return restored, process_summary(payload) if isinstance(payload, dict) else None
 
 
 def extract_head(number: int, head: str) -> None:

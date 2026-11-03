@@ -12,11 +12,11 @@ responses and the flags that point at evidence; `--format markdown` renders the
 same facts as a report. It makes no judgement: every number comes from a log,
 and every flag names the file and line to read.
 
-`--history PATH` instead reduces a finished `issue-plan-v2` or `issue-code-v2`
-session to one flat JSON row (`schema_version` 1: identity, `totals`, and a
-`steps` dict keyed by step id with loop iterations summed) and upserts it by
-session id into PATH, a JSONL file kept sorted by `started_at`, so runs can be
-compared over time. It refuses any other blueprint and any running session.
+`--history PATH` instead reduces a finished `ship` session to one flat JSON row
+(`schema_version` 2: identity, the issue delivered, `totals`, and a `steps`
+dict keyed by step id with loop iterations summed) and upserts it by session id
+into PATH, a JSONL file kept sorted by `started_at`, so runs can be compared
+over time. It refuses any other blueprint and any running session.
 """
 
 from __future__ import annotations
@@ -42,8 +42,8 @@ MAX_UNBATCHED_RATIO = 1.1
 MIN_SERIAL_EDITS = 3
 MIN_READ_STEPS = 3
 MAX_EVIDENCE = 5
-HISTORY_BLUEPRINTS = ("issue-plan-v2", "issue-code-v2")
-HISTORY_SCHEMA_VERSION = 1
+HISTORY_BLUEPRINTS = ("ship",)
+HISTORY_SCHEMA_VERSION = 2
 HISTORY_TIME_KEYS = (
     "runs",
     "active_seconds",
@@ -64,12 +64,8 @@ HISTORY_TOKEN_KEYS = (
     "cache_read_input_tokens",
     "cache_creation_input_tokens",
 )
-# Where a blueprint's issue and slice show in the step results of its session.json: (step id, output key).
-HISTORY_SLICE_OUTPUT = {"issue-code-v2": ("next", "slice"), "issue-plan-v2": ("one-slice", "slice")}
-HISTORY_ISSUE_OUTPUT = {"issue-code-v2": ("start", "issue")}
-# issue-plan-v2 takes the issue as an input and no step outputs it, so read it from what its steps print.
-HISTORY_ISSUE_STDOUT = ("rewrite-gate", "apply")
-ISSUE_TEXT = re.compile(r"/issues/(\d+)|\b[Ii]ssue #?(\d+)\b")
+# Where a blueprint's issue shows in the step results of its session.json: (step id, output key).
+HISTORY_ISSUE_OUTPUT = {"ship": ("prepare", "issue")}
 EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 TARGET_KEYS = ("file_path", "command", "skill", "pattern", "url", "description")
 TARGET_WIDTH = 160
@@ -890,20 +886,9 @@ def _output(results: dict[str, dict[str, object]], where: tuple[str, str] | None
     return str(value) if value not in (None, "") else None
 
 
-def _issue_from_stdout(results: dict[str, dict[str, object]]) -> str | None:
-    """Return the issue number the HISTORY_ISSUE_STDOUT steps print, or None."""
-    for step in HISTORY_ISSUE_STDOUT:
-        match = ISSUE_TEXT.search(str(results.get(step, {}).get("stdout") or ""))
-        if match:
-            return match[1] or match[2]
-    return None
-
-
-def run_target(blueprint: str, document: dict[str, object]) -> tuple[str | None, str | None]:
-    """Return the (issue, slice) a run worked on from its session.json step results; None for either when absent."""
-    results = _results(document)
-    issue = _output(results, HISTORY_ISSUE_OUTPUT.get(blueprint)) or _issue_from_stdout(results)
-    return issue, _output(results, HISTORY_SLICE_OUTPUT.get(blueprint))
+def run_target(blueprint: str, document: dict[str, object]) -> str | None:
+    """Return the issue a run worked on from its session.json step results, or None when absent."""
+    return _output(_results(document), HISTORY_ISSUE_OUTPUT.get(blueprint))
 
 
 def _sum(values: list[object]) -> float | None:
@@ -983,11 +968,10 @@ def history_totals(analysis: dict[str, object]) -> dict[str, object]:
 
 
 def history_row(analysis: dict[str, object], document: dict[str, object]) -> dict[str, object]:
-    """Return the flat history row of an analysed session: identity, the run's issue and slice, totals and steps."""
+    """Return the flat history row of an analysed session: identity, the run's issue, totals and steps."""
     session = _mapping(analysis["session"])
     blueprint = _mapping(_mapping(document.get("manifest")).get("blueprint"))
     steps = analysis["steps"]
-    issue, slice_id = run_target(str(session.get("blueprint")), document)
     return {
         "schema_version": HISTORY_SCHEMA_VERSION,
         "session_id": session.get("id"),
@@ -996,8 +980,7 @@ def history_row(analysis: dict[str, object], document: dict[str, object]) -> dic
         "status": session.get("status"),
         "started_at": session.get("started_at"),
         "completed_at": session.get("completed_at"),
-        "issue": issue,
-        "slice": slice_id,
+        "issue": run_target(str(session.get("blueprint")), document),
         "totals": history_totals(analysis),
         "steps": history_steps(steps if isinstance(steps, list) else []),
     }

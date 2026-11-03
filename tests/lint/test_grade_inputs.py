@@ -37,25 +37,24 @@ FEEDBACK = _load_script("pr_feedback", "pr_feedback")
 INPUTS = _load_script("grade_inputs", "grade_inputs_under_test")
 
 SHOWN_SESSION = {
-    "session": {"blueprint_name": "issue-code-v2", "status": "completed"},
+    "session": {"blueprint_name": "ship", "status": "completed"},
     "steps": [
-        {"kind": "step", "step_id": "plan", "state": "completed", "attempts": 1},
-        {"kind": "loop", "step_id": "code-loop", "iterations": 2},
-        {"kind": "step", "step_id": "verify", "state": "completed", "attempts": 1},
-        {"kind": "step", "step_id": "push", "state": "completed", "attempts": 2},
-        {"kind": "loop", "step_id": "review-loop", "iterations": 1},
-        {"kind": "step", "step_id": "post-review", "state": "failed", "attempts": 1},
+        {"kind": "step", "step_id": "prepare", "state": "completed", "attempts": 1},
+        {"kind": "loop", "step_id": "delivery", "iterations": 5},
+        {"kind": "step", "step_id": "assess", "state": "completed", "attempts": 1},
+        {"kind": "step", "step_id": "implement", "state": "completed", "attempts": 2},
+        {"kind": "step", "step_id": "validate", "state": "completed", "attempts": 1},
+        {"kind": "step", "step_id": "review", "state": "completed", "attempts": 1},
+        {"kind": "step", "step_id": "publish", "state": "failed", "attempts": 1},
     ],
 }
-SLICE_PLAN = {"issue": 1259, "phases": 3, "slices": [{"id": "S3", "phases": [1, 2, 3]}]}
+PLAN_QUESTIONS = {"issue": 1259, "questions": []}
 PROCESS = {
-    "blueprint": "issue-code-v2",
+    "blueprint": "ship",
     "status": "completed",
-    "slice_phases": 3,
-    "code_loop_iterations": 2,
-    "review_loop_iterations": 1,
-    "retried_steps": ["push"],
-    "failed_steps": ["post-review"],
+    "loop_iterations": {"delivery": 5},
+    "retried_steps": ["implement"],
+    "failed_steps": ["publish"],
 }
 
 
@@ -117,30 +116,14 @@ class GradeInputsSummaryTests:
     def test_review_summary(self, review: dict[str, object] | None, expected: dict[str, object] | None) -> None:
         assert INPUTS.review_summary(review, HEAD) == expected
 
-    def test_process_summary_reads_loops_slice_phases_and_step_outcomes(self) -> None:
-        assert INPUTS.process_summary(SHOWN_SESSION, SLICE_PLAN) == PROCESS
-
-    @pytest.mark.parametrize(
-        ("blueprint", "plan"),
-        [
-            pytest.param("issue-code-v2", None, id="issue-code-v2-without-plan"),
-            pytest.param("feature-dev", {"phases": 3}, id="feature-dev"),
-        ],
-    )
-    def test_process_summary_reports_slice_phases_only_for_an_issue_code_plan(
-        self, blueprint: str, plan: dict[str, object] | None
-    ) -> None:
-        payload = {**SHOWN_SESSION, "session": {"blueprint_name": blueprint, "status": "completed"}}
-
-        assert INPUTS.process_summary(payload, plan)["slice_phases"] is None
+    def test_process_summary_reads_loops_and_step_outcomes(self) -> None:
+        assert INPUTS.process_summary(SHOWN_SESSION) == PROCESS
 
     def test_process_summary_without_steps(self) -> None:
-        assert INPUTS.process_summary({"session": None, "steps": None}, None) == {
+        assert INPUTS.process_summary({"session": None, "steps": None}) == {
             "blueprint": None,
             "status": None,
-            "slice_phases": None,
-            "code_loop_iterations": None,
-            "review_loop_iterations": None,
+            "loop_iterations": {},
             "retried_steps": [],
             "failed_steps": [],
         }
@@ -198,7 +181,7 @@ def _fake_archive(args: tuple[str, ...], **_: object) -> subprocess.CompletedPro
 
 def _restore_artifacts(args: tuple[str, ...]) -> str:
     """Stand in for `dovo artifacts download`: write the plan-questions and review artifacts, and fail for the rest."""
-    documents = {"plan-questions": ("plan.json", SLICE_PLAN), "review": ("review.json", _review(blocking=1))}
+    documents = {"plan-questions": ("plan.json", PLAN_QUESTIONS), "review": ("review.json", _review(blocking=1))}
     if args[6] not in documents:
         raise subprocess.CalledProcessError(1, args)
     filename, document = documents[args[6]]
