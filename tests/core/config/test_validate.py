@@ -108,7 +108,6 @@ class ConfigSemanticValidationTests:
         result = validate(config_path)
 
         assert result.error_code is None
-        assert result.error_code is None
         assert result.warnings == []
         assert result.remediations == []
 
@@ -218,7 +217,9 @@ class ConfigProviderRegistryValidationTests:
         monkeypatch.setitem(PROVIDERS, "fake", dataclasses.replace(PROVIDERS["copilot"], token="fake"))
         monkeypatch.delitem(PROVIDERS, "copilot")
 
-        result = validate(self._write_config(tmp_path, "copilot"))
+        config_path = self._write_config(tmp_path, "copilot")
+
+        result = validate(config_path)
 
         assert result.ok is False
         assert result.error_code == ErrorCode.AGENT_PROVIDER_UNSUPPORTED
@@ -226,6 +227,7 @@ class ConfigProviderRegistryValidationTests:
         assert result.remediations == [
             Remediation(message="Set 'default_agent' to one of the supported providers named in the error")
         ]
+        assert result.raw == json.loads(config_path.read_text(encoding="utf-8"))
         assert result.warnings == []
 
     @pytest.mark.parametrize("token", list(PROVIDERS))

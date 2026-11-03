@@ -7,6 +7,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.core.config.generator import build_default_config
+from dovo.core.config.models import ConfigTier
 from dovo.core.diagnostics.checks.config_schema import ConfigSchemaCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
 from dovo.core.git.runner import GitRunner
@@ -122,3 +123,22 @@ class ConfigSchemaCheckTests:
         assert result.status == CheckStatus.OK
         assert result.error_code is None
         assert "`.dovo/config.json` is present and passes schema V1 validation." in result.message
+
+    def test_execute_invalid_user_tier_reports_tier_error_code(
+        self,
+        isolated_workspace: Path,
+        workspace_paths_factory: WorkspacePathsFactory,
+        write_tier_config: Callable[[ConfigTier, dict[str, object] | str], Path],
+    ) -> None:
+        """Fail with CONFIG_TIER_JSON_INVALID when the repo config is valid but the User tier is malformed."""
+        Filesystem.atomic_write_json(isolated_workspace / ".dovo" / "config.json", build_default_config("demo"))
+        write_tier_config(ConfigTier.USER, "{not valid json")
+        context = DiagnosticsContext(
+            cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None), git=GitRunner()
+        )
+
+        result = ConfigSchemaCheck().execute(context)
+
+        assert result.status == CheckStatus.FAILED
+        assert result.error_code == ErrorCode.CONFIG_TIER_JSON_INVALID
+        assert result.details == {}

@@ -11,7 +11,7 @@ from dovo.common.models import BaseResult, Remediation
 from dovo.core.agents.exceptions import AgentError
 from dovo.core.agents.registry import PROVIDERS, require_provider
 from dovo.core.config.agent_settings import agent_settings
-from dovo.core.config.exceptions import ConfigError
+from dovo.core.config.exceptions import ConfigError, ConfigRawObject
 from dovo.core.config.loader import LoadedConfig, load_config_at
 from dovo.core.config.models import DovoConfig
 
@@ -61,6 +61,7 @@ def validate_config(config_path: Path) -> ValidatedConfig:
             exc.error_code,
             f"default_agent: {exc.message}",
             [Remediation(message="Set 'default_agent' to one of the supported providers named in the error")],
+            data=ConfigRawObject(loaded.raw),
         ) from exc
 
     warnings, remediations = _semantic_warnings(loaded.config)
