@@ -4,7 +4,7 @@ dynamic = ["version"]
 authors = [
     { name = "DevEx HQ Team", email = "team@devexhq.com" }
 ]
-description = "Isolated Git worktrees for developer and AI agent automated workflow management.."
+description = "Isolated Git worktrees for developer and AI agent automated workflow management."
 readme = "README.md"
 requires-python = ">=3.13"
 classifiers = [
@@ -23,7 +23,6 @@ dependencies = [
     "pydantic>=2.0.0",
     "sqlmodel>=0.0.22",
     "alembic>=1.13.0",
-    "pre-commit>=4.6.2",
     "psutil>=7.0.0",
 ]
 
@@ -42,6 +41,7 @@ dev = [
     "ruff>=0.6.0",
     "invoke>=2.0.0",
     "complexipy>=6.2.0",
+    "pre-commit>=4.6.2",
     "ty==0.0.89",
 ]
 docs = [
@@ -213,16 +213,11 @@ line-ending = "auto"
 docstring-code-format = true
 docstring-code-line-length = "dynamic"
 
-[dependency-groups]
-dev = [
-    "ty==0.0.89",
-]
-
 [tool.complexipy]
-max-complexity-allowed = 10       # Fails the hook if any function is over 12 (default is 15)
+max-complexity-allowed = 10       # Fails if any function is over 10 (default is 15)
 output-format = "json"            # Change reporting style
 check-script = true               # Score module-level/top-level logic, not just functions
-suggest-refactors = false          # Show deterministic Rust AST-based refactor plans
+suggest-refactors = false         # Do not print refactor suggestions
 failed = true
 
 [tool.ty.environment]
