@@ -9,17 +9,13 @@ import pytest
 from pydantic import ValidationError
 
 from dovo.common.error_codes import ErrorCode
-from dovo.common.filesystem import Filesystem
+from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.common.schema_validation import CONFIG_VALIDATOR
 from dovo.core.agents.registry import PROVIDERS
+from dovo.core.config import Config, ConfigValidationResult
 from dovo.core.config.generator import build_default_config
-from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus, load_config_at
 from dovo.core.config.models import DovoConfig
-from dovo.core.config.validate import (
-    ConfigValidationStatus,
-    validate_config_result,
-)
 from tests.harness.diagnostic_log import diagnostic_record
 
 
@@ -39,41 +35,49 @@ def _deny_read(config_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 VALIDATE_LOAD_FAILURE_CASES = [
-    pytest.param(lambda path, _: None, ConfigValidationStatus.NOT_FOUND, id="not_found"),
-    pytest.param(lambda path, _: path.mkdir(), ConfigValidationStatus.PATH_IS_DIRECTORY, id="path_is_directory"),
+    pytest.param(lambda path, _: None, ErrorCode.CONFIG_NOT_FOUND, id="not_found"),
+    pytest.param(lambda path, _: path.mkdir(), ErrorCode.CONFIG_PATH_INVALID, id="path_is_directory"),
     pytest.param(
         lambda path, _: path.write_text("{not valid json", encoding="utf-8"),
-        ConfigValidationStatus.MALFORMED_JSON,
+        ErrorCode.CONFIG_JSON_INVALID,
         id="malformed_json",
     ),
     pytest.param(
         lambda path, _: path.write_text("[]", encoding="utf-8"),
-        ConfigValidationStatus.ROOT_NOT_OBJECT,
+        ErrorCode.CONFIG_ROOT_INVALID,
         id="root_not_object",
     ),
     pytest.param(
         lambda path, _: Filesystem.atomic_write_json(path, {"version": 1}),
-        ConfigValidationStatus.INVALID,
+        ErrorCode.CONFIG_SCHEMA_INVALID,
         id="schema_invalid",
     ),
-    pytest.param(_deny_read, ConfigValidationStatus.UNREADABLE, id="unreadable"),
+    pytest.param(_deny_read, ErrorCode.CONFIG_UNREADABLE, id="unreadable"),
 ]
+
+ValidateConfig = Callable[[Path], ConfigValidationResult]
+
+
+@pytest.fixture
+def validate(workspace_paths: WorkspacePaths) -> ValidateConfig:
+    """Validate a config.json path through the Config entrypoint, which reports a failure in its result."""
+    return lambda config_path: Config(workspace_paths).validate(config_path=config_path)
 
 
 class ConfigSemanticValidationTests:
     """Unit tests verifying semantic validation rules and warning generation."""
 
     def test_validate_config_warns_when_provider_requires_model_and_model_missing(
-        self, tmp_path: Path, model_required_provider: None
+        self, validate: ValidateConfig, tmp_path: Path, model_required_provider: None
     ) -> None:
         payload = build_default_config("demo")
         payload["agents"] = {"copilot": {}}
         config_path = tmp_path / "config.json"
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = validate_config_result(config_path=config_path)
+        result = validate(config_path)
 
-        assert result.status == ConfigValidationStatus.VALID
+        assert result.error_code is None
         assert result.errors == []
         assert result.warnings == [
             "default_agent 'copilot' requires agents.copilot.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
@@ -81,7 +85,7 @@ class ConfigSemanticValidationTests:
         assert result.remediations == [Remediation(message="Set 'agents.copilot.model'")]
 
     def test_validate_does_not_warn_missing_model_for_non_default_provider(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, validate: ValidateConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Emit no warning when only claude, which requires a model, lacks one while default_agent is copilot."""
         monkeypatch.setitem(PROVIDERS, "claude", dataclasses.replace(PROVIDERS["claude"], requires_model=True))
@@ -90,18 +94,20 @@ class ConfigSemanticValidationTests:
         config_path = tmp_path / "config.json"
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = validate_config_result(config_path=config_path)
+        result = validate(config_path)
 
-        assert result.status == ConfigValidationStatus.VALID
+        assert result.error_code is None
         assert result.warnings == []
 
-    def test_validate_config_default_config_has_no_model_warning(self, tmp_path: Path) -> None:
+    def test_validate_config_default_config_has_no_model_warning(
+        self, validate: ValidateConfig, tmp_path: Path
+    ) -> None:
         config_path = tmp_path / "config.json"
         Filesystem.atomic_write_json(config_path, build_default_config("demo"))
 
-        result = validate_config_result(config_path=config_path)
+        result = validate(config_path)
 
-        assert result.status == ConfigValidationStatus.VALID
+        assert result.error_code is None
         assert result.error_code is None
         assert result.warnings == []
         assert result.remediations == []
@@ -110,7 +116,7 @@ class ConfigSemanticValidationTests:
         "provider", [pytest.param("copilot", id="default-agent"), pytest.param("claude", id="non-default-agent")]
     )
     def test_validate_warns_for_every_agents_block_with_non_absolute_endpoint(
-        self, tmp_path: Path, provider: str
+        self, validate: ValidateConfig, tmp_path: Path, provider: str
     ) -> None:
         """Warn for the block's ftp://x endpoint while default_agent stays copilot."""
         payload = build_default_config("demo")
@@ -118,9 +124,9 @@ class ConfigSemanticValidationTests:
         config_path = tmp_path / "config.json"
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = validate_config_result(config_path=config_path)
+        result = validate(config_path)
 
-        assert result.status == ConfigValidationStatus.VALID
+        assert result.error_code is None
         assert result.config_path == config_path
         assert result.raw == payload
         assert result.config == DovoConfig.model_validate(payload)
@@ -132,15 +138,17 @@ class ConfigSemanticValidationTests:
             Remediation(message=f"Set 'agents.{provider}.endpoint' to an absolute http:// or https:// URL, or null")
         ]
 
-    def test_validate_config_warns_when_worktree_limit_exceeds_threshold(self, tmp_path: Path) -> None:
+    def test_validate_config_warns_when_worktree_limit_exceeds_threshold(
+        self, validate: ValidateConfig, tmp_path: Path
+    ) -> None:
         payload = build_default_config("demo")
         payload["worktree"]["max_active_worktrees"] = 11
         config_path = tmp_path / "config.json"
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = validate_config_result(config_path=config_path)
+        result = validate(config_path)
 
-        assert result.status == ConfigValidationStatus.VALID
+        assert result.error_code is None
         assert result.config_path == config_path
         assert result.raw == payload
         assert result.config == DovoConfig.model_validate(payload)
@@ -148,14 +156,16 @@ class ConfigSemanticValidationTests:
         assert result.warnings == ["worktree.max_active_worktrees (11) exceeds 10 (CONFIG_WARN_WORKTREE_LIMIT)."]
         assert result.remediations == [Remediation(message="Lower 'worktree.max_active_worktrees' to 10 or fewer")]
 
-    def test_validate_schema_violation_carries_load_raw_errors_and_remediations(self, tmp_path: Path) -> None:
+    def test_validate_schema_violation_carries_load_raw_errors_and_remediations(
+        self, validate: ValidateConfig, tmp_path: Path
+    ) -> None:
         payload = {"version": 1}
         config_path = tmp_path / "config.json"
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = validate_config_result(config_path=config_path)
+        result = validate(config_path)
 
-        assert result.status == ConfigValidationStatus.INVALID
+        assert result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert result.config_path == config_path
         assert result.raw == payload
         assert result.config is None
@@ -169,42 +179,28 @@ class ConfigSemanticValidationTests:
             ),
         ]
 
-    @pytest.mark.parametrize(("write", "status"), VALIDATE_LOAD_FAILURE_CASES)
-    def test_validate_copies_load_failure(
+    @pytest.mark.parametrize(("write", "error_code"), VALIDATE_LOAD_FAILURE_CASES)
+    def test_validate_reports_load_failure_by_error_code(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
+        validate: ValidateConfig,
         write: Callable[[Path, pytest.MonkeyPatch], object],
-        status: ConfigValidationStatus,
+        error_code: ErrorCode,
     ) -> None:
-        """Copy the load's error_code, errors, remediations and diagnostics, with the row's status."""
+        """Report the load's error_code with one error, and a diagnostic only for an unreadable file."""
         config_path = tmp_path / "config.json"
         write(config_path, monkeypatch)
 
-        result = validate_config_result(config_path)
+        result = validate(config_path)
 
-        loaded = load_config_at(config_path, bypass_cache=True)
-        assert result.status == status
-        assert loaded.error_code is not None
-        assert result.error_code == loaded.error_code
-        assert result.errors == loaded.errors
-        assert result.remediations == loaded.remediations
-        unreadable = loaded.status == ConfigLoadStatus.UNREADABLE
+        assert result.ok is False
+        assert result.error_code == error_code
+        assert len(result.errors) == 1
+        assert result.remediations != []
+        unreadable = error_code == ErrorCode.CONFIG_UNREADABLE
         assert result.diagnostics == ([diagnostic_record(frozen_diagnostic_clock)] if unreadable else [])
-
-    def test_validate_raises_when_ok_load_has_no_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Raise RuntimeError naming the path when an OK load carries no parsed config."""
-        config_path = tmp_path / "config.json"
-        monkeypatch.setattr(
-            "dovo.core.config.loader.load_config_at",
-            lambda path: ConfigLoadResult(status=ConfigLoadStatus.OK, config_path=path),
-        )
-
-        with pytest.raises(RuntimeError) as exc_info:
-            validate_config_result(config_path)
-
-        assert str(exc_info.value) == f"Configuration loaded from '{config_path}' but the parsed config is missing."
 
 
 class ConfigProviderRegistryValidationTests:
@@ -217,14 +213,13 @@ class ConfigProviderRegistryValidationTests:
         return config_path
 
     def test_validate_rejects_unregistered_default_agent_naming_default_agent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, validate: ValidateConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setitem(PROVIDERS, "fake", dataclasses.replace(PROVIDERS["copilot"], token="fake"))
         monkeypatch.delitem(PROVIDERS, "copilot")
 
-        result = validate_config_result(self._write_config(tmp_path, "copilot"))
+        result = validate(self._write_config(tmp_path, "copilot"))
 
-        assert result.status == ConfigValidationStatus.INVALID
         assert result.ok is False
         assert result.error_code == ErrorCode.AGENT_PROVIDER_UNSUPPORTED
         assert result.errors == ["default_agent: Unsupported agent provider 'copilot'. Supported: claude, fake."]
@@ -234,23 +229,25 @@ class ConfigProviderRegistryValidationTests:
         assert result.warnings == []
 
     @pytest.mark.parametrize("token", list(PROVIDERS))
-    def test_registered_provider_with_model_is_valid(self, token: str, tmp_path: Path) -> None:
+    def test_registered_provider_with_model_is_valid(
+        self, validate: ValidateConfig, token: str, tmp_path: Path
+    ) -> None:
         config_path = self._write_config(tmp_path, token)
         payload = json.loads(config_path.read_text(encoding="utf-8"))
         payload["agents"] = {token: {"model": "m"}}
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = validate_config_result(config_path)
+        result = validate(config_path)
 
-        assert result.status == ConfigValidationStatus.VALID
+        assert result.error_code is None
         assert result.ok is True
         assert result.errors == []
         assert result.warnings == []
 
-    def test_schema_invalid_token_keeps_structural_failure(self, tmp_path: Path) -> None:
-        result = validate_config_result(self._write_config(tmp_path, "bogus"))
+    def test_schema_invalid_token_keeps_structural_failure(self, validate: ValidateConfig, tmp_path: Path) -> None:
+        result = validate(self._write_config(tmp_path, "bogus"))
 
-        assert result.status == ConfigValidationStatus.INVALID
+        assert result.error_code == ErrorCode.CONFIG_SCHEMA_INVALID
         assert result.errors[0].startswith("Config schema validation failed:")
         assert not any("Unsupported agent provider" in error for error in result.errors)
 

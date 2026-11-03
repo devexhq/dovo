@@ -21,6 +21,8 @@ dovo doctor [--category <name>] [--format terminal|json]
 
 `dovo doctor` runs every registered diagnostic check (or, with `--category`, only the checks in that category) and reports one row per check: its id, category, status, and message. Below the table it prints a one-line summary of how many checks are `OK`, `WARNING`, or `FAILED` and the total run time in seconds, and — when any check surfaced a remediation — a `Fix:` block with one line per remediation, in check order.
 
+The `config.schema` check loads the configuration as [`dovo config show`](config.md#dovo-config-show) does. When it fails to load, the check fails with the same `error_code`, `errors` and remediations that `dovo config show` reports, for example `CONFIG_JSON_INVALID` for malformed JSON or `CONFIG_PATH_INVALID` when `.dovo/config.json` is a directory, and its `details` hold `schema_errors` only for `CONFIG_SCHEMA_INVALID`.
+
 The command exits `1` when at least one check has status `FAILED`, and `0` otherwise (including when checks have `WARNING` or `SKIPPED` status). Passing an unrecognized `--category` value exits `2` before any check runs.
 
 ## Diagnostic logs
@@ -110,7 +112,7 @@ Dovo Doctor Report
 └──────────────┴─────────┴────────┴──────────────────────────────────────────────────────────────┘
 2 checks: 1 ok, 0 warning, 1 failed (0.003s)
 Fix:
-- Run 'dovo init' to create '.dovo/config.json' and the required workspace directory structure.
+- Run 'dovo init' to create '.dovo/config.json'
 ```
 
 Running `dovo doctor` against this workspace exits with status code `1`.

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus, load_config_at
+from dovo.common.error_codes import ErrorCode
+from dovo.core.config import Config, ConfigLoadResult
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DiagnosticsContext
 
 
@@ -14,23 +15,13 @@ class ConfigSchemaCheck:
     category: CheckCategory = CheckCategory.CONFIG
 
     def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
-        """Load and validate `.dovo/config.json` under context.paths against config schema V1."""
-        loaded = load_config_at(context.paths.config_file)
+        """Load `.dovo/config.json` under context.paths and fail with the load's error code when it does not load."""
+        loaded = Config(context.paths).load()
 
-        if loaded.status == ConfigLoadStatus.OK:
+        if loaded.ok:
             return _ok_result(self.check_id, self.name, self.category)
 
         return _failure_result(self.check_id, self.name, self.category, loaded)
-
-
-_STATUS_TO_ERROR_CODE: dict[ConfigLoadStatus, str] = {
-    ConfigLoadStatus.NOT_FOUND: "DOCTOR_CONFIG_NOT_FOUND",
-    ConfigLoadStatus.MALFORMED_JSON: "DOCTOR_CONFIG_MALFORMED",
-    ConfigLoadStatus.ROOT_NOT_OBJECT: "DOCTOR_CONFIG_SCHEMA_INVALID",
-    ConfigLoadStatus.SCHEMA_INVALID: "DOCTOR_CONFIG_SCHEMA_INVALID",
-    ConfigLoadStatus.PATH_IS_DIRECTORY: "DOCTOR_CONFIG_SCHEMA_INVALID",
-    ConfigLoadStatus.UNREADABLE: "DOCTOR_CONFIG_SCHEMA_INVALID",
-}
 
 
 def _failure_result(
@@ -39,22 +30,21 @@ def _failure_result(
     category: CheckCategory,
     loaded: ConfigLoadResult,
 ) -> DiagnosticCheckResult:
-    """Build the FAILED result carrying the mapped error code and loader diagnostics."""
-    error_code = _STATUS_TO_ERROR_CODE[loaded.status]
+    """Build the FAILED result carrying the config load's error code, errors and remediations."""
     details: dict[str, object] = {}
-    if error_code == "DOCTOR_CONFIG_SCHEMA_INVALID":
+    if loaded.error_code == ErrorCode.CONFIG_SCHEMA_INVALID:
         details["schema_errors"] = loaded.errors
-    message = loaded.errors[0] if loaded.errors else f"Config validation failed with status '{loaded.status}'."
     return DiagnosticCheckResult(
         check_id=check_id,
         name=name,
         category=category,
         status=CheckStatus.FAILED,
-        message=message,
+        message=loaded.errors[0],
         details=details,
-        error_code=error_code,
+        error_code=loaded.error_code,
         errors=loaded.errors,
         warnings=[],
+        remediations=loaded.remediations,
     )
 
 

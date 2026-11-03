@@ -9,7 +9,6 @@ from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.models import Remediation
 from dovo.core.config.models import DovoConfig
 from dovo.core.config.mutate import ConfigSetStatus
-from dovo.core.config.validate import ConfigValidationStatus
 
 
 class ConfigValidationView(BaseModel):
@@ -17,9 +16,7 @@ class ConfigValidationView(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: ConfigValidationStatus
     config_path: Path
-    status_label: str
     raw: dict[str, Any] | None = None
     config: DovoConfig | None = None
     error_code: str | None = None

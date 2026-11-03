@@ -20,6 +20,6 @@ class ConfigLoadFormatter(ComponentFormatter[ConfigLoadResult]):
             payload = f"Config: {data.config_path.as_posix()}\nStatus: valid\n\n{as_json(data.config)}"
             return Text(payload)
 
-        fallback = f"Configuration failed to load ({data.status.value.upper()})."
+        fallback = f"Configuration failed to load ({data.error_code})."
         panel = build_error_panel("Config Error", data.errors, fallback, remediations=data.remediations)
         return with_diagnostics(panel, data.diagnostics)

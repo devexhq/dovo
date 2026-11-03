@@ -176,7 +176,8 @@ class InitCliTests:
         envelope = json.loads(result.stdout)
         payload = envelope.get("payload", {})
         assert payload.get("health") == "ok"
-        assert payload.get("config_status") == "ok"
+        assert payload.get("config_error_code") is None
+        assert "config_status" not in payload
 
     def test_initialized_git_project_doctor_emits_parseable_json(
         self, run_dovo: DovoRunner, initialized_project: Path

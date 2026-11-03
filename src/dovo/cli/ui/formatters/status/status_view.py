@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 
 from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.models import Remediation
-from dovo.core.config.loader import ConfigLoadStatus
 
 
 class StatusHealth(StrEnum):
@@ -26,7 +25,7 @@ class StatusView(BaseModel):
     health: StatusHealth
     root_dir: Path
     project_name: str | None
-    config_status: ConfigLoadStatus
+    config_error_code: str | None
     config_path_relative: str
     git_branch: str | None
     git_is_dirty: bool

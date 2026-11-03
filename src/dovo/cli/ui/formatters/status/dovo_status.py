@@ -12,13 +12,12 @@ from dovo.cli.ui.formatters.status.status_view import StatusHealth, StatusView
 from dovo.common.formatters import format_remediations
 from dovo.common.utils import display_path
 from dovo.core.config import agent_settings
-from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.status.models import DovoStatusResult
 
 
 def _derive_health(data: DovoStatusResult) -> StatusHealth:
-    """Classify overall workspace health from initialization and status outcome."""
-    if not data.is_initialized or data.config.status == ConfigLoadStatus.NOT_FOUND:
+    """Classify overall workspace health: uninitialized without .dovo/ or config.json, degraded when not ok."""
+    if not data.is_initialized:
         return StatusHealth.UNINITIALIZED
     if not data.ok:
         return StatusHealth.DEGRADED
@@ -65,7 +64,7 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
             health=_derive_health(data),
             root_dir=data.root_dir,
             project_name=_derive_project_name(data),
-            config_status=data.config.status,
+            config_error_code=data.config.error_code,
             config_path_relative=display_path(data.config.config_path, data.root_dir),
             git_branch=git_branch,
             git_is_dirty=data.git.is_dirty,

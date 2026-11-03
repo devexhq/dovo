@@ -10,6 +10,7 @@ import pytest
 
 from dovo.cli.ui.formatters.registry import FORMATTER_GROUPS, formatters_for
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import BaseResult, Remediation
 from dovo.core.artifacts import (
     ArtifactDownloadResult,
@@ -27,13 +28,11 @@ from dovo.core.catalog import (
 )
 from dovo.core.config import (
     ConfigLoadResult,
-    ConfigLoadStatus,
     ConfigSetResult,
     ConfigSetStatus,
     ConfigUnsetResult,
     ConfigUnsetStatus,
     ConfigValidationResult,
-    ConfigValidationStatus,
 )
 from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
 from dovo.core.sessions import (
@@ -84,7 +83,7 @@ def _status_sample() -> DovoStatusResult:
         root_dir=ROOT,
         is_initialized=True,
         git=GitStatusInfo(is_git_repo=True, branch="main", is_dirty=False, uncommitted_files=0),
-        config=ConfigStatusInfo(status=ConfigLoadStatus.OK, config_path=CONFIG_PATH, is_valid=True),
+        config=ConfigStatusInfo(error_code=None, config_path=CONFIG_PATH, is_valid=True),
         catalog=CatalogStatusInfo(
             exists=True,
             catalog_dir=ROOT / ".dovo" / "catalog",
@@ -111,10 +110,10 @@ SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
     CatalogCreateResult: lambda: CatalogCreateResult(diagnostics=[RECORD]),
     CatalogValidateResult: lambda: CatalogValidateResult(valid=False, target="my-bp", diagnostics=[RECORD]),
     ConfigLoadResult: lambda: ConfigLoadResult(
-        status=ConfigLoadStatus.NOT_FOUND, config_path=CONFIG_PATH, diagnostics=[RECORD]
+        error_code=ErrorCode.CONFIG_UNREADABLE, config_path=CONFIG_PATH, diagnostics=[RECORD]
     ),
     ConfigValidationResult: lambda: ConfigValidationResult(
-        status=ConfigValidationStatus.NOT_FOUND, config_path=CONFIG_PATH, diagnostics=[RECORD]
+        error_code=ErrorCode.CONFIG_UNREADABLE, config_path=CONFIG_PATH, diagnostics=[RECORD]
     ),
     ConfigSetResult: lambda: ConfigSetResult(
         status=ConfigSetStatus.NOT_FOUND, config_path=CONFIG_PATH, key="project.name", diagnostics=[RECORD]

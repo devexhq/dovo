@@ -9,21 +9,14 @@ from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.cli.ui.formatters.config.config_views import ConfigValidationView
 from dovo.common.formatters import format_remediations, format_warning_bullets
-from dovo.core.config.validate import ConfigValidationResult, ConfigValidationStatus
-
-
-def _derive_status_label(data: ConfigValidationResult) -> str:
-    """Derive human-readable status label from validation result."""
-    if not data.ok:
-        return "invalid"
-    return "valid with warnings" if data.warnings else "valid"
+from dovo.core.config.validate import ConfigValidationResult
 
 
 def _format_valid_config(view: ConfigValidationView) -> Text:
     """Format successful configuration validation output with optional warnings and the Fix: block."""
     lines = [
         f"Config: {view.config_path.as_posix()}",
-        f"Status: {view.status_label}",
+        f"Status: {'valid with warnings' if view.warnings else 'valid'}",
         "",
     ]
     if view.warnings:
@@ -61,12 +54,10 @@ class ConfigValidateFormatter(ComponentFormatter[ConfigValidationResult, ConfigV
             data: Domain ConfigValidationResult object.
 
         Returns:
-            ConfigValidationView with derived status_label.
+            ConfigValidationView carrying the result's fields.
         """
         return ConfigValidationView(
-            status=data.status,
             config_path=data.config_path,
-            status_label=_derive_status_label(data),
             raw=data.raw,
             config=data.config,
             error_code=data.error_code,
@@ -77,8 +68,8 @@ class ConfigValidateFormatter(ComponentFormatter[ConfigValidationResult, ConfigV
         )
 
     def to_rich(self, data: ConfigValidationResult) -> RenderableType:
-        """Render status label, warning bullets, or error panel."""
+        """Render the valid report with warning bullets, or the error panel."""
         view = self.transform(data)
-        if view.status == ConfigValidationStatus.VALID:
+        if view.error_code is None:
             return _format_valid_config(view)
         return _format_invalid_config(view)

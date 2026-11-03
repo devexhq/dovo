@@ -67,7 +67,7 @@ class GitProbeTests:
         assert result.database.exists is False
         assert result.warnings == ["Dovo workspace is not initialized. Run 'dovo init' to configure."]
         assert result.remediations == [
-            Remediation(message="Run 'dovo init' to initialize Dovo in this repository.", command="dovo init"),
+            Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init"),
             Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init"),
         ]
 

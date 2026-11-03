@@ -11,7 +11,6 @@ import pytest
 from dovo.common.filesystem import Filesystem
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.models import Remediation
-from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status
@@ -62,7 +61,7 @@ class StatusCollectTests:
         assert result.git.branch == "feature-status"
         assert result.git.is_dirty is False
         assert result.git.uncommitted_files == 0
-        assert result.config.status is ConfigLoadStatus.OK
+        assert result.config.error_code is None
         assert result.config.is_valid is True
         assert result.catalog.exists is True
         assert result.catalog.total_items == 3
@@ -220,7 +219,7 @@ class StatusFixesRemediationTests:
         ).collect()
 
         assert result.remediations == [
-            Remediation(message="Run 'dovo init' to initialize Dovo in this repository.", command="dovo init")
+            Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")
         ]
 
     def test_collect_remediations_for_non_git_repo(self, tmp_path: Path) -> None:
@@ -238,29 +237,49 @@ class StatusFixesRemediationTests:
             Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")
         ]
 
+    def test_collect_puts_config_load_remediations_ahead_of_git(self, tmp_path: Path) -> None:
+        """List the config load's remediations in load order, then the git remediation."""
+        non_git_dir = tmp_path / "non_git_repo"
+        fs = Filesystem(non_git_dir)
+        Filesystem.atomic_write_text(fs.config_file, "{}")
+
+        result = Status(
+            initialized_workspace_paths(non_git_dir),
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(non_git_dir).sessions,
+        ).collect()
+
+        assert result.remediations == [
+            Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
+            Remediation(
+                message="Run 'dovo init --repair' to insert missing keys without overwriting values",
+                command="dovo init --repair",
+            ),
+            Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init"),
+        ]
+
     @pytest.mark.parametrize(
         ("payload", "expected_remediations"),
         [
             pytest.param(
                 "{bad json: true",
-                [Remediation(message="Repair JSON syntax in '.dovo/config.json' or restore from backup.")],
+                [Remediation(message="Repair JSON syntax, or restore from backup")],
                 id="malformed_json",
             ),
             pytest.param(
                 "{}",
                 [
+                    Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
                     Remediation(
-                        message="Run 'dovo config validate' to inspect schema errors", command="dovo config validate"
-                    ),
-                    Remediation(
-                        message="Run 'dovo init --repair' to insert missing keys", command="dovo init --repair"
+                        message="Run 'dovo init --repair' to insert missing keys without overwriting values",
+                        command="dovo init --repair",
                     ),
                 ],
                 id="schema_invalid",
             ),
             pytest.param(
                 '["not", "an", "object"]',
-                [Remediation(message="Ensure '.dovo/config.json' contains a JSON object root.")],
+                [Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")],
                 id="root_not_object",
             ),
         ],
@@ -293,9 +312,7 @@ class StatusFixesRemediationTests:
             sessions_db=initialized_workspace_db(workspace).sessions,
         ).collect()
 
-        assert result.remediations == [
-            Remediation(message="Remove directory at '.dovo/config.json' and run 'dovo init'.")
-        ]
+        assert result.remediations == [Remediation(message="Remove the directory or point config_path at a file")]
 
     def test_collect_remediations_for_unreadable(self, status_workspace: BuildStatusWorkspace) -> None:
         workspace = status_workspace(config="{}")
@@ -311,6 +328,6 @@ class StatusFixesRemediationTests:
                 git=GitRunner(),
                 sessions_db=initialized_workspace_db(workspace).sessions,
             ).collect()
-            assert result.remediations == [Remediation(message="Check file permissions for '.dovo/config.json'.")]
+            assert result.remediations == [Remediation(message="Check file permissions and that the path is readable")]
         finally:
             fs.config_file.chmod(stat.S_IRUSR | stat.S_IWUSR)

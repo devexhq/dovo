@@ -12,8 +12,8 @@ from dovo.cli.ui.formatters.status import (
     StatusHealth,
     StatusView,
 )
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
-from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.config.models import AgentSettings, DovoConfig, ProjectConfig
 from dovo.core.status.models import (
     CatalogStatusInfo,
@@ -61,7 +61,7 @@ def _make_status_result(
         ),
         config=config
         or ConfigStatusInfo(
-            status=ConfigLoadStatus.OK,
+            error_code=None,
             config_path=base / ".dovo" / "config.json",
             is_valid=True,
             config=DovoConfig(
@@ -105,7 +105,7 @@ def _make_status_view(**overrides: object) -> StatusView:
         "health": StatusHealth.OK,
         "root_dir": ROOT,
         "project_name": "dovo",
-        "config_status": ConfigLoadStatus.OK,
+        "config_error_code": None,
         "config_path_relative": ".dovo/config.json",
         "git_branch": "feature/status-cmd",
         "git_is_dirty": False,
@@ -136,7 +136,7 @@ UNINITIALIZED_NON_GIT = FormatterCase(
         is_initialized=False,
         git=GitStatusInfo(is_git_repo=False, branch="none", is_dirty=False, uncommitted_files=0),
         config=ConfigStatusInfo(
-            status=ConfigLoadStatus.NOT_FOUND,
+            error_code=ErrorCode.CONFIG_NOT_FOUND,
             config_path=CONFIG_PATH,
             is_valid=False,
             config=None,
@@ -150,7 +150,7 @@ UNINITIALIZED_NON_GIT = FormatterCase(
     view=_make_status_view(
         health=StatusHealth.UNINITIALIZED,
         project_name=None,
-        config_status=ConfigLoadStatus.NOT_FOUND,
+        config_error_code="CONFIG_NOT_FOUND",
         git_branch=None,
         agent_model=None,
         active_worktrees=None,
@@ -173,14 +173,14 @@ UNINITIALIZED_NON_GIT = FormatterCase(
 
 
 def _degraded_config_case(
-    status: ConfigLoadStatus, warning: str, remediations: list[Remediation]
+    error_code: ErrorCode, warning: str, remediations: list[Remediation]
 ) -> FormatterCase[DovoStatusResult, StatusView]:
     """Build a degraded-config case: config-derived fields blank, branch still shown, warning and Fix: block surfaced."""
     return FormatterCase(
         data=_make_status_result(
             root_dir=ROOT,
             config=ConfigStatusInfo(
-                status=status, config_path=CONFIG_PATH, is_valid=False, config=None, errors=[warning]
+                error_code=error_code, config_path=CONFIG_PATH, is_valid=False, config=None, errors=[warning]
             ),
             warnings=[warning],
             remediations=remediations,
@@ -188,7 +188,7 @@ def _degraded_config_case(
         view=_make_status_view(
             health=StatusHealth.DEGRADED,
             project_name=None,
-            config_status=status,
+            config_error_code=error_code,
             agent_model=None,
             active_worktrees=None,
             max_active_worktrees=None,
@@ -197,14 +197,20 @@ def _degraded_config_case(
             warnings=[warning],
             remediations=remediations,
         ),
-        render_expectations=["feature/status-cmd", warning, "Fix:", *(f"- {r.message}" for r in remediations)],
+        render_expectations=[
+            "feature/status-cmd",
+            error_code,
+            warning,
+            "Fix:",
+            *(f"- {r.message}" for r in remediations),
+        ],
     )
 
 
 DEGRADED_CONFIG_CASES = [
     pytest.param(
         _degraded_config_case(
-            ConfigLoadStatus.SCHEMA_INVALID,
+            ErrorCode.CONFIG_SCHEMA_INVALID,
             "Invalid value: expected string",
             [
                 Remediation(
@@ -217,7 +223,7 @@ DEGRADED_CONFIG_CASES = [
     ),
     pytest.param(
         _degraded_config_case(
-            ConfigLoadStatus.MALFORMED_JSON,
+            ErrorCode.CONFIG_JSON_INVALID,
             "Malformed config.json",
             [Remediation(message="Repair JSON syntax in '.dovo/config.json' or restore from backup.")],
         ),
@@ -225,7 +231,7 @@ DEGRADED_CONFIG_CASES = [
     ),
     pytest.param(
         _degraded_config_case(
-            ConfigLoadStatus.ROOT_NOT_OBJECT,
+            ErrorCode.CONFIG_ROOT_INVALID,
             "Malformed config.json: root must be an object",
             [Remediation(message="Ensure '.dovo/config.json' contains a JSON object root.")],
         ),
@@ -233,7 +239,7 @@ DEGRADED_CONFIG_CASES = [
     ),
     pytest.param(
         _degraded_config_case(
-            ConfigLoadStatus.PATH_IS_DIRECTORY,
+            ErrorCode.CONFIG_PATH_INVALID,
             "Config path is a directory, not a file",
             [Remediation(message="Remove directory at '.dovo/config.json' and run 'dovo init'.")],
         ),
@@ -241,7 +247,7 @@ DEGRADED_CONFIG_CASES = [
     ),
     pytest.param(
         _degraded_config_case(
-            ConfigLoadStatus.UNREADABLE,
+            ErrorCode.CONFIG_UNREADABLE,
             "Unable to read config.json: Permission denied",
             [Remediation(message="Check file permissions for '.dovo/config.json'.")],
         ),
@@ -290,7 +296,7 @@ UNNAMED_PROJECT = FormatterCase(
     data=_make_status_result(
         root_dir=ROOT,
         config=ConfigStatusInfo(
-            status=ConfigLoadStatus.OK,
+            error_code=None,
             config_path=CONFIG_PATH,
             is_valid=True,
             config=DovoConfig(
@@ -310,7 +316,7 @@ AGENT_MODEL_UNSET = FormatterCase(
     data=_make_status_result(
         root_dir=ROOT,
         config=ConfigStatusInfo(
-            status=ConfigLoadStatus.OK,
+            error_code=None,
             config_path=CONFIG_PATH,
             is_valid=True,
             config=DovoConfig(
@@ -394,7 +400,7 @@ DEGRADED_RAW_CONFIG_PROJECT = FormatterCase(
     data=_make_status_result(
         root_dir=ROOT,
         config=ConfigStatusInfo(
-            status=ConfigLoadStatus.SCHEMA_INVALID,
+            error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
             config_path=CONFIG_PATH,
             is_valid=False,
             raw={"project": {"name": "raw-project"}},
@@ -407,7 +413,7 @@ DEGRADED_RAW_CONFIG_PROJECT = FormatterCase(
     view=_make_status_view(
         health=StatusHealth.DEGRADED,
         project_name="raw-project",
-        config_status=ConfigLoadStatus.SCHEMA_INVALID,
+        config_error_code="CONFIG_SCHEMA_INVALID",
         agent_model=None,
         active_worktrees=None,
         max_active_worktrees=None,
@@ -440,7 +446,7 @@ STATUS_PAYLOAD_CASES = [
             "health": "ok",
             "root_dir": "/workspace/my-repo",
             "project_name": "dovo",
-            "config_status": "ok",
+            "config_error_code": None,
             "config_path_relative": ".dovo/config.json",
             "git_branch": "feature/status-cmd",
             "git_is_dirty": False,
@@ -464,7 +470,7 @@ STATUS_PAYLOAD_CASES = [
             "health": "uninitialized",
             "root_dir": "/workspace/my-repo",
             "project_name": None,
-            "config_status": "not_found",
+            "config_error_code": "CONFIG_NOT_FOUND",
             "config_path_relative": ".dovo/config.json",
             "git_branch": None,
             "git_is_dirty": False,

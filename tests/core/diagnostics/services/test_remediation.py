@@ -82,51 +82,13 @@ REMEDIATION_RESOLUTION_CASES = [
             name="Config Schema Check",
             category=CheckCategory.CONFIG,
             status=CheckStatus.FAILED,
-            message="Configuration file not found.",
-            error_code="DOCTOR_CONFIG_NOT_FOUND",
+            message="Malformed config.json.",
+            error_code="CONFIG_JSON_INVALID",
+            errors=["Malformed config.json."],
+            remediations=[Remediation(message="Repair JSON syntax, or restore from backup")],
         ),
-        [
-            Remediation(
-                message="Run 'dovo init' to create '.dovo/config.json' and the required workspace directory structure.",
-                command="dovo init",
-            )
-        ],
-        id="config_not_found",
-    ),
-    pytest.param(
-        DiagnosticCheckResult(
-            check_id="config.schema",
-            name="Config Schema Check",
-            category=CheckCategory.CONFIG,
-            status=CheckStatus.FAILED,
-            message="Invalid JSON.",
-            error_code="DOCTOR_CONFIG_MALFORMED",
-        ),
-        [
-            Remediation(message="Edit '.dovo/config.json' by hand to fix the invalid JSON syntax."),
-            Remediation(
-                message="Run 'dovo init --overwrite' to replace it with a default configuration, discarding its contents.",
-                command="dovo init --overwrite",
-            ),
-        ],
-        id="config_malformed",
-    ),
-    pytest.param(
-        DiagnosticCheckResult(
-            check_id="config.schema",
-            name="Config Schema Check",
-            category=CheckCategory.CONFIG,
-            status=CheckStatus.FAILED,
-            message="Schema invalid.",
-            error_code="DOCTOR_CONFIG_SCHEMA_INVALID",
-        ),
-        [
-            Remediation(
-                message="Run 'dovo config validate' to see detailed schema errors, then fix '.dovo/config.json' or run 'dovo init --repair' to restore missing defaults.",
-                command="dovo config validate",
-            )
-        ],
-        id="config_schema_invalid",
+        [Remediation(message="Repair JSON syntax, or restore from backup")],
+        id="check_carries_own_remediations",
     ),
     pytest.param(
         DiagnosticCheckResult(

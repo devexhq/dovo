@@ -1,56 +1,50 @@
-"""Load and validate `.dovo/config.json`, writing nothing but a diagnostic record when it cannot be read."""
+"""Load and validate `.dovo/config.json`, raising ConfigError when it cannot be loaded."""
 
 from __future__ import annotations
 
 import json
 import os
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
-from dovo.common.diagnostic_log import DiagnosticLevel, error_diagnostics, record_exception
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult, Remediation
 from dovo.common.schema_validation import CONFIG_VALIDATOR, format_validation_error
+from dovo.core.config.exceptions import ConfigError, ConfigRawObject
 from dovo.core.config.models import DovoConfig
 
 
-class ConfigLoadStatus(StrEnum):
-    """Classified outcomes for loading `.dovo/config.json`."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    MALFORMED_JSON = "malformed_json"
-    ROOT_NOT_OBJECT = "root_not_object"
-    SCHEMA_INVALID = "schema_invalid"
-    PATH_IS_DIRECTORY = "path_is_directory"
-    UNREADABLE = "unreadable"
-    TIER_INVALID = "tier_invalid"
-
-
 class ConfigLoadResult(BaseResult):
-    """Non-raising result of load + schema validation for config.json."""
+    """Result of `Config.load`: the loaded config, or the failure's error code, errors and remediations."""
 
-    status: ConfigLoadStatus
     config_path: Path
     raw: dict[str, Any] | None = None
     config: DovoConfig | None = None
 
     @property
     def ok(self) -> bool:
-        """Return True when config loaded and validated successfully."""
-        return self.status == ConfigLoadStatus.OK
+        """Return True exactly when error_code is None."""
+        return self.error_code is None
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedConfig:
+    """A config.json that loaded and validated: its path, raw JSON object and typed model."""
+
+    config_path: Path
+    raw: dict[str, object]
+    config: DovoConfig
 
 
 @dataclass
 class _CachedConfig:
     mtime_ns: int
     size: int
-    result: ConfigLoadResult
+    loaded: LoadedConfig
 
 
 _CONFIG_CACHE: dict[Path, _CachedConfig] = {}
@@ -77,139 +71,122 @@ def resolve_config_path(paths: WorkspacePaths, *, config_path: Path | None = Non
     return config_path.expanduser().resolve() if config_path is not None else paths.config_file
 
 
-def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
-    """Read, parse, and validate config.json from disk."""
-    try:
-        text = target_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        record = record_exception(
-            exc, level=DiagnosticLevel.ERROR, operation="config.read", context={"path": str(target_path)}
-        )
-        return ConfigLoadResult(
-            status=ConfigLoadStatus.UNREADABLE,
-            error_code=ErrorCode.CONFIG_UNREADABLE,
-            config_path=target_path,
-            errors=[f"Unable to read config.json at '{target_path}': {exc}."],
-            remediations=[Remediation(message="Check file permissions and that the path is readable")],
-            diagnostics=error_diagnostics(record),
-        )
+_SCHEMA_REMEDIATIONS = (
+    Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
+    Remediation(
+        message="Run 'dovo init --repair' to insert missing keys without overwriting values",
+        command="dovo init --repair",
+    ),
+)
 
+
+def _schema_error(messages: list[str], raw: dict[str, object]) -> ConfigError:
+    """Return the CONFIG_SCHEMA_INVALID error listing messages under the schema-failure heading, carrying raw."""
+    return ConfigError(
+        ErrorCode.CONFIG_SCHEMA_INVALID,
+        "\n".join(["Config schema validation failed:", *(f"- {msg}" for msg in messages)]),
+        _SCHEMA_REMEDIATIONS,
+        data=ConfigRawObject(raw),
+    )
+
+
+def _read_config_text(target_path: Path) -> str:
+    """Return the text of config.json at target_path.
+
+    Raises:
+        ConfigError: CONFIG_UNREADABLE, from the OSError that prevented the read.
+    """
+    try:
+        return target_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ConfigError(
+            ErrorCode.CONFIG_UNREADABLE,
+            f"Unable to read config.json at '{target_path}': {exc}.",
+            [Remediation(message="Check file permissions and that the path is readable")],
+        ) from exc
+
+
+def _parse_config_object(text: str, target_path: Path) -> dict[str, object]:
+    """Return the JSON object text holds.
+
+    Raises:
+        ConfigError: CONFIG_JSON_INVALID for malformed JSON, CONFIG_ROOT_INVALID for a non-object root.
+    """
     try:
         data: Any = json.loads(text)
     except json.JSONDecodeError as exc:
         detail = f"line {exc.lineno} column {exc.colno} (char {exc.pos})"
         if exc.msg:
             detail = f"{exc.msg} at {detail}"
-        return ConfigLoadResult(
-            status=ConfigLoadStatus.MALFORMED_JSON,
-            error_code=ErrorCode.CONFIG_JSON_INVALID,
-            config_path=target_path,
-            errors=[f"Malformed config.json at '{target_path}': {detail}."],
-            remediations=[Remediation(message="Repair JSON syntax, or restore from backup")],
-        )
+        raise ConfigError(
+            ErrorCode.CONFIG_JSON_INVALID,
+            f"Malformed config.json at '{target_path}': {detail}.",
+            [Remediation(message="Repair JSON syntax, or restore from backup")],
+        ) from exc
 
     if not isinstance(data, dict):
-        return ConfigLoadResult(
-            status=ConfigLoadStatus.ROOT_NOT_OBJECT,
-            error_code=ErrorCode.CONFIG_ROOT_INVALID,
-            config_path=target_path,
-            errors=[f"Malformed config.json at '{target_path}': root must be an object."],
-            remediations=[Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")],
+        raise ConfigError(
+            ErrorCode.CONFIG_ROOT_INVALID,
+            f"Malformed config.json at '{target_path}': root must be an object.",
+            [Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")],
         )
+    return data
+
+
+def _read_and_validate_disk_config(target_path: Path) -> LoadedConfig:
+    """Read, parse, and validate config.json from disk.
+
+    Raises:
+        ConfigError: When the file cannot be read, parsed or validated.
+    """
+    data = _parse_config_object(_read_config_text(target_path), target_path)
 
     schema_errors = CONFIG_VALIDATOR.validate(data)
     if schema_errors:
-        return ConfigLoadResult(
-            status=ConfigLoadStatus.SCHEMA_INVALID,
-            error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
-            config_path=target_path,
-            raw=data,
-            errors=[
-                "\n".join(
-                    [
-                        "Config schema validation failed:",
-                        *(f"- {msg}" for msg in schema_errors),
-                    ]
-                )
-            ],
-            remediations=[
-                Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
-                Remediation(
-                    message="Run 'dovo init --repair' to insert missing keys without overwriting values",
-                    command="dovo init --repair",
-                ),
-            ],
-        )
+        raise _schema_error(list(schema_errors), data)
 
     try:
         config = _map_dovo_config(data)
-    except Exception as exc:  # pydantic ValidationError and similar
-        return ConfigLoadResult(
-            status=ConfigLoadStatus.SCHEMA_INVALID,
-            error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
-            config_path=target_path,
-            raw=data,
-            errors=[
-                "\n".join(
-                    [
-                        "Config schema validation failed:",
-                        *(f"- {msg}" for msg in [str(exc)]),
-                    ]
-                )
-            ],
-            remediations=[
-                Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
-                Remediation(
-                    message="Run 'dovo init --repair' to insert missing keys without overwriting values",
-                    command="dovo init --repair",
-                ),
-            ],
-        )
+    except ValueError as exc:
+        raise _schema_error([str(exc)], data) from exc
 
-    return ConfigLoadResult(
-        status=ConfigLoadStatus.OK,
-        config_path=target_path,
-        raw=data,
-        config=config,
-        errors=[],
-    )
+    return LoadedConfig(config_path=target_path, raw=data, config=config)
 
 
-def _check_path_existence(target_path: Path) -> ConfigLoadResult | None:
-    """Validate that target_path exists and is a file."""
+def _check_path_existence(target_path: Path) -> None:
+    """Require target_path to exist as a file.
+
+    Raises:
+        ConfigError: CONFIG_PATH_INVALID for a directory, CONFIG_NOT_FOUND for a missing path.
+    """
     if target_path.exists() and target_path.is_dir():
         _CONFIG_CACHE.pop(target_path, None)
-        return ConfigLoadResult(
-            status=ConfigLoadStatus.PATH_IS_DIRECTORY,
-            error_code=ErrorCode.CONFIG_PATH_INVALID,
-            config_path=target_path,
-            errors=[f"Config path is a directory, not a file: '{target_path}'."],
-            remediations=[Remediation(message="Remove the directory or point config_path at a file")],
+        raise ConfigError(
+            ErrorCode.CONFIG_PATH_INVALID,
+            f"Config path is a directory, not a file: '{target_path}'.",
+            [Remediation(message="Remove the directory or point config_path at a file")],
         )
 
     if not target_path.exists():
         _CONFIG_CACHE.pop(target_path, None)
-        return ConfigLoadResult(
-            status=ConfigLoadStatus.NOT_FOUND,
-            error_code=ErrorCode.CONFIG_NOT_FOUND,
-            config_path=target_path,
-            errors=[f"Configuration file not found at '{target_path}'."],
-            remediations=[Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")],
+        raise ConfigError(
+            ErrorCode.CONFIG_NOT_FOUND,
+            f"Configuration file not found at '{target_path}'.",
+            [Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")],
         )
-    return None
 
 
 def _get_cached_config(
     target_path: Path,
     stat: os.stat_result | None,
     bypass_cache: bool,
-) -> ConfigLoadResult | None:
-    """Return cached ConfigLoadResult if stat matches in-memory entry."""
+) -> LoadedConfig | None:
+    """Return the cached LoadedConfig if stat matches the in-memory entry."""
     if bypass_cache or stat is None:
         return None
     cached = _CONFIG_CACHE.get(target_path)
     if cached is not None and cached.mtime_ns == stat.st_mtime_ns and cached.size == stat.st_size:
-        return cached.result
+        return cached.loaded
     return None
 
 
@@ -218,11 +195,11 @@ def load_config(
     *,
     config_path: Path | None = None,
     bypass_cache: bool = False,
-) -> ConfigLoadResult:
-    """Load and validate config without raising.
+) -> LoadedConfig:
+    """Load and validate config.json.
 
-    Primary load surface for commands. Does not print, exit, create, or mutate
-    config files. Uses an in-memory cache validated against file modification time.
+    Does not print, exit, create, or mutate config files. Uses an in-memory
+    cache validated against file modification time.
 
     Args:
         paths: Resolved command-invocation workspace paths.
@@ -230,28 +207,29 @@ def load_config(
         bypass_cache: When True, bypasses the in-memory cache and reads disk directly.
 
     Returns:
-        Classified ``ConfigLoadResult`` with absolute ``config_path``.
+        The loaded config with its absolute ``config_path``.
+
+    Raises:
+        ConfigError: When the file is missing, unreadable, malformed or fails schema validation.
     """
     target_path = resolve_config_path(paths, config_path=config_path)
     return load_config_at(target_path, bypass_cache=bypass_cache)
 
 
-def load_config_at(target_path: Path, *, bypass_cache: bool = False) -> ConfigLoadResult:
+def load_config_at(target_path: Path, *, bypass_cache: bool = False) -> LoadedConfig:
     """Load and validate config.json at an already-resolved path, without any ambient fallback.
-
-    Primary load surface for callers that hold a concrete config file path rather
-    than a full ``WorkspacePaths`` snapshot (e.g. standalone config validation).
 
     Args:
         target_path: Absolute path to the config.json file to load.
         bypass_cache: When True, bypasses the in-memory cache and reads disk directly.
 
     Returns:
-        Classified ``ConfigLoadResult`` with absolute ``config_path``.
+        The loaded config with its absolute ``config_path``.
+
+    Raises:
+        ConfigError: When the file is missing, unreadable, malformed or fails schema validation.
     """
-    path_error = _check_path_existence(target_path)
-    if path_error is not None:
-        return path_error
+    _check_path_existence(target_path)
 
     try:
         stat = target_path.stat()
@@ -262,14 +240,10 @@ def load_config_at(target_path: Path, *, bypass_cache: bool = False) -> ConfigLo
     if cached is not None:
         return cached
 
-    result = _read_and_validate_disk_config(target_path)
-    if stat is not None and result.ok:
-        _CONFIG_CACHE[target_path] = _CachedConfig(
-            mtime_ns=stat.st_mtime_ns,
-            size=stat.st_size,
-            result=result,
-        )
-    return result
+    loaded = _read_and_validate_disk_config(target_path)
+    if stat is not None:
+        _CONFIG_CACHE[target_path] = _CachedConfig(mtime_ns=stat.st_mtime_ns, size=stat.st_size, loaded=loaded)
+    return loaded
 
 
 def _map_dovo_config(raw: dict[str, Any]) -> DovoConfig:

@@ -1,8 +1,8 @@
-"""Non-raising config validation engine for structured error/warning lists."""
+"""Config validation: structural load, default_agent check and semantic warnings."""
 
 from __future__ import annotations
 
-from enum import StrEnum
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -11,110 +11,60 @@ from dovo.common.models import BaseResult, Remediation
 from dovo.core.agents.exceptions import AgentError
 from dovo.core.agents.registry import PROVIDERS, require_provider
 from dovo.core.config.agent_settings import agent_settings
-from dovo.core.config.loader import ConfigLoadStatus
+from dovo.core.config.exceptions import ConfigError
+from dovo.core.config.loader import LoadedConfig, load_config_at
 from dovo.core.config.models import DovoConfig
 
 
-class ConfigValidationStatus(StrEnum):
-    """Classified outcomes for validating `.dovo/config.json`."""
-
-    VALID = "valid"
-    INVALID = "invalid"
-    NOT_FOUND = "not_found"
-    MALFORMED_JSON = "malformed_json"
-    ROOT_NOT_OBJECT = "root_not_object"
-    PATH_IS_DIRECTORY = "path_is_directory"
-    UNREADABLE = "unreadable"
-
-
 class ConfigValidationResult(BaseResult):
-    """Non-raising result of structural + semantic config validation."""
+    """Result of `Config.validate`: the valid config and its warnings, or the failure's error code and errors."""
 
-    status: ConfigValidationStatus
     config_path: Path
     raw: dict[str, Any] | None = None
     config: DovoConfig | None = None
 
     @property
     def ok(self) -> bool:
-        """Return True when config is structurally and semantically valid."""
-        return self.status == ConfigValidationStatus.VALID
+        """Return True exactly when error_code is None."""
+        return self.error_code is None
 
 
-_LOAD_STATUS_TO_VALIDATION: dict[ConfigLoadStatus, ConfigValidationStatus] = {
-    ConfigLoadStatus.OK: ConfigValidationStatus.VALID,
-    ConfigLoadStatus.NOT_FOUND: ConfigValidationStatus.NOT_FOUND,
-    ConfigLoadStatus.MALFORMED_JSON: ConfigValidationStatus.MALFORMED_JSON,
-    ConfigLoadStatus.ROOT_NOT_OBJECT: ConfigValidationStatus.ROOT_NOT_OBJECT,
-    ConfigLoadStatus.SCHEMA_INVALID: ConfigValidationStatus.INVALID,
-    ConfigLoadStatus.PATH_IS_DIRECTORY: ConfigValidationStatus.PATH_IS_DIRECTORY,
-    ConfigLoadStatus.UNREADABLE: ConfigValidationStatus.UNREADABLE,
-}
+@dataclass(frozen=True, slots=True)
+class ValidatedConfig:
+    """A config.json that passed structural and semantic validation, with its semantic warnings."""
+
+    loaded: LoadedConfig
+    warnings: list[str]
+    remediations: list[Remediation]
 
 
-def validate_config_result(config_path: Path) -> ConfigValidationResult:
-    """Validate config without raising.
+def validate_config(config_path: Path) -> ValidatedConfig:
+    """Load config.json at config_path, check its default_agent and collect its semantic warnings.
 
-    Primary validation surface for ``dovo config validate``. Does not print,
-    exit, create, or mutate config files.
+    Does not print, exit, create, or mutate config files.
 
     Args:
         config_path: Absolute path to the config.json file to validate.
 
     Returns:
-        Classified ``ConfigValidationResult`` with absolute ``config_path``.
+        The validated config with its warnings and their remediations.
 
     Raises:
-        RuntimeError: When a successful load carries no parsed config, a broken invariant.
+        ConfigError: When the config fails to load or names an unsupported default_agent.
     """
-    from dovo.core.config.loader import load_config_at
-
     loaded = load_config_at(config_path)
-    status = _LOAD_STATUS_TO_VALIDATION[loaded.status]
-
-    if loaded.status != ConfigLoadStatus.OK:
-        return ConfigValidationResult(
-            status=status,
-            config_path=loaded.config_path,
-            raw=loaded.raw,
-            config=None,
-            error_code=loaded.error_code,
-            errors=list(loaded.errors),
-            warnings=[],
-            remediations=list(loaded.remediations),
-            diagnostics=list(loaded.diagnostics),
-        )
-
-    if loaded.config is None:
-        raise RuntimeError(f"Configuration loaded from '{loaded.config_path}' but the parsed config is missing.")
 
     try:
         require_provider(loaded.config.default_agent)
     except AgentError as exc:
-        return ConfigValidationResult(
-            status=ConfigValidationStatus.INVALID,
-            config_path=loaded.config_path,
-            raw=loaded.raw,
-            config=None,
-            error_code=exc.error_code,
-            errors=[f"default_agent: {exc.message}"],
-            warnings=[],
-            remediations=[
-                Remediation(message="Set 'default_agent' to one of the supported providers named in the error")
-            ],
-        )
+        raise ConfigError(
+            exc.error_code,
+            f"default_agent: {exc.message}",
+            [Remediation(message="Set 'default_agent' to one of the supported providers named in the error")],
+        ) from exc
 
-    warnings, warning_remediations = _semantic_warnings(loaded.config)
-
-    return ConfigValidationResult(
-        status=ConfigValidationStatus.VALID,
-        config_path=loaded.config_path,
-        raw=loaded.raw,
-        config=loaded.config,
-        errors=[],
-        warnings=warnings,
-        remediations=warning_remediations,
-    )
+    warnings, remediations = _semantic_warnings(loaded.config)
+    return ValidatedConfig(loaded=loaded, warnings=warnings, remediations=remediations)
 
 
 def _provider_requires_model(provider: str) -> bool:

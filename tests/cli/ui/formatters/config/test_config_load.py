@@ -8,8 +8,9 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.config.config_load import ConfigLoadFormatter
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
-from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
+from dovo.core.config.loader import ConfigLoadResult
 from dovo.core.config.models import DovoConfig, ProjectConfig
 from tests.harness.formatter import (
     FormatterCase,
@@ -21,7 +22,6 @@ _CONFIG_PATH = Path("/workspace/.dovo/config.json")
 
 VALID_CONFIG = FormatterCase.identity(
     data=ConfigLoadResult(
-        status=ConfigLoadStatus.OK,
         config_path=_CONFIG_PATH,
         config=DovoConfig(version=1, project=ProjectConfig(name="test-project")),
     ),
@@ -30,8 +30,8 @@ VALID_CONFIG = FormatterCase.identity(
 
 NOT_FOUND = FormatterCase.identity(
     data=ConfigLoadResult(
-        status=ConfigLoadStatus.NOT_FOUND,
         config_path=_CONFIG_PATH,
+        error_code=ErrorCode.CONFIG_NOT_FOUND,
         errors=["Configuration file not found at '/workspace/.dovo/config.json'."],
         remediations=[Remediation(message="Run 'dovo init' to initialize Dovo", command="dovo init")],
     ),
@@ -42,16 +42,21 @@ NOT_FOUND = FormatterCase.identity(
     ],
 )
 
+NO_MESSAGE = FormatterCase.identity(
+    data=ConfigLoadResult(config_path=_CONFIG_PATH, error_code=ErrorCode.CONFIG_UNREADABLE),
+    render_expectations=["Configuration failed to load (CONFIG_UNREADABLE)."],
+)
+
 CONFIG_LOAD_CASES = [
     pytest.param(VALID_CONFIG, id="valid_config"),
     pytest.param(NOT_FOUND, id="not_found"),
+    pytest.param(NO_MESSAGE, id="no_message_fallback"),
 ]
 
 CONFIG_LOAD_PAYLOAD_CASES = [
     pytest.param(
         VALID_CONFIG,
         {
-            "status": "ok",
             "config_path": "/workspace/.dovo/config.json",
             "raw": None,
             "config": {
@@ -108,7 +113,6 @@ CONFIG_LOAD_PAYLOAD_CASES = [
     pytest.param(
         NOT_FOUND,
         {
-            "status": "not_found",
             "config_path": "/workspace/.dovo/config.json",
             "raw": None,
             "config": None,
@@ -116,7 +120,7 @@ CONFIG_LOAD_PAYLOAD_CASES = [
             "errors": ["Configuration file not found at '/workspace/.dovo/config.json'."],
             "remediations": [{"message": "Run 'dovo init' to initialize Dovo", "command": "dovo init"}],
             "diagnostics": [],
-            "error_code": None,
+            "error_code": "CONFIG_NOT_FOUND",
         },
         id="not_found",
     ),

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dovo.common.diagnostic_log import error_diagnostics
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import Remediation
-from dovo.core.config import ConfigLoadStatus, agent_settings
+from dovo.core.config import agent_settings
 from dovo.core.db import SessionsRepository
 from dovo.core.git import GitRunner
 from dovo.core.sessions import reconcile_stale_sessions
@@ -54,7 +55,7 @@ def _collect_config_error_warnings(config: ConfigStatusInfo) -> list[str]:
     Returns:
         List of cleaned warning strings extracted from config errors.
     """
-    if config.status in (ConfigLoadStatus.OK, ConfigLoadStatus.NOT_FOUND):
+    if config.error_code in (None, ErrorCode.CONFIG_NOT_FOUND):
         return []
 
     warnings: list[str] = []
@@ -75,7 +76,7 @@ def _collect_warnings(
     """Aggregate actionable developer warnings in deterministic order."""
     warnings: list[str] = []
 
-    if config.status == ConfigLoadStatus.NOT_FOUND:
+    if config.error_code == ErrorCode.CONFIG_NOT_FOUND:
         warnings.append("Dovo workspace is not initialized. Run 'dovo init' to configure.")
 
     if git.branch in ("main", "master"):
@@ -98,31 +99,12 @@ def _collect_warnings(
     return warnings
 
 
-_CONFIG_REMEDIATIONS: dict[ConfigLoadStatus, list[Remediation]] = {
-    ConfigLoadStatus.NOT_FOUND: [
-        Remediation(message="Run 'dovo init' to initialize Dovo in this repository.", command="dovo init")
-    ],
-    ConfigLoadStatus.MALFORMED_JSON: [
-        Remediation(message="Repair JSON syntax in '.dovo/config.json' or restore from backup.")
-    ],
-    ConfigLoadStatus.SCHEMA_INVALID: [
-        Remediation(message="Run 'dovo config validate' to inspect schema errors", command="dovo config validate"),
-        Remediation(message="Run 'dovo init --repair' to insert missing keys", command="dovo init --repair"),
-    ],
-    ConfigLoadStatus.ROOT_NOT_OBJECT: [Remediation(message="Ensure '.dovo/config.json' contains a JSON object root.")],
-    ConfigLoadStatus.PATH_IS_DIRECTORY: [
-        Remediation(message="Remove directory at '.dovo/config.json' and run 'dovo init'.")
-    ],
-    ConfigLoadStatus.UNREADABLE: [Remediation(message="Check file permissions for '.dovo/config.json'.")],
-}
-
-
 def _collect_remediations(
     *,
     git: GitStatusInfo,
     config: ConfigStatusInfo,
 ) -> list[Remediation]:
-    """Aggregate the config load status remediations, then the git step, in deterministic order.
+    """Aggregate the config load remediations in load order, then the git step.
 
     Args:
         git: Git repository status information.
@@ -132,7 +114,7 @@ def _collect_remediations(
         List of remediation steps.
     """
     remediations: list[Remediation] = []
-    remediations.extend(_CONFIG_REMEDIATIONS.get(config.status, []))
+    remediations.extend(config.remediations)
     if not git.is_git_repo:
         remediations.append(Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init"))
     return remediations
@@ -177,7 +159,7 @@ class Status:
             config=config_status,
         )
 
-        is_initialized = paths.dovo_dir.is_dir() and config_status.status != ConfigLoadStatus.NOT_FOUND
+        is_initialized = paths.dovo_dir.is_dir() and config_status.error_code != ErrorCode.CONFIG_NOT_FOUND
 
         return DovoStatusResult(
             root_dir=paths.root_dir,

@@ -14,7 +14,6 @@ from dovo.common.models import Remediation
 from dovo.core.config.config import Config
 from dovo.core.config.exceptions import ConfigError, ConfigLoadDiagnostics
 from dovo.core.config.generator import build_default_config
-from dovo.core.config.loader import ConfigLoadStatus, load_config
 from dovo.core.config.models import AgentSettings, ConfigTier, DovoConfig
 from dovo.core.config.mutate import ConfigSetResult, ConfigUnsetResult
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
@@ -41,7 +40,7 @@ class ConfigLoadTests:
         result = Config(workspace_paths).load()
 
         expected_config = DovoConfig.model_validate(payload)
-        assert result.status == ConfigLoadStatus.OK
+        assert result.error_code is None
         assert result.config_path == config_path
         assert result.config == expected_config
         assert result.raw == expected_config.model_dump(mode="json")
@@ -63,46 +62,43 @@ class ConfigLoadTests:
         Filesystem.atomic_write_json(workspace_paths.config_file, repo_payload)
 
         result = Config(workspace_paths).load()
-
-        assert result.status == ConfigLoadStatus.OK
         assert result.config is not None
         assert result.config.agents["copilot"].temperature == 0.6
         assert result.config.agents["copilot"].model == "user-model"
         assert result.config.worktree.base_ref == "main"
 
     @pytest.mark.parametrize(
-        ("repo_content", "expected_status"),
+        ("repo_content", "expected_code"),
         [
-            pytest.param(None, ConfigLoadStatus.NOT_FOUND, id="missing"),
-            pytest.param("{not valid json", ConfigLoadStatus.MALFORMED_JSON, id="malformed"),
-            pytest.param({"version": 1}, ConfigLoadStatus.SCHEMA_INVALID, id="schema_invalid"),
+            pytest.param(None, ErrorCode.CONFIG_NOT_FOUND, id="missing"),
+            pytest.param("{not valid json", ErrorCode.CONFIG_JSON_INVALID, id="malformed"),
+            pytest.param({"version": 1}, ErrorCode.CONFIG_SCHEMA_INVALID, id="schema_invalid"),
         ],
     )
-    def test_repo_failure_returns_repo_status_without_reading_tiers(
+    def test_repo_failure_returns_repo_error_code_without_reading_tiers(
         self,
         workspace_paths: WorkspacePaths,
         write_tier_config: WriteTierConfig,
         repo_content: dict[str, int] | str | None,
-        expected_status: ConfigLoadStatus,
+        expected_code: ErrorCode,
     ) -> None:
         write_tier_config(ConfigTier.USER, "{not valid json")
         if isinstance(repo_content, str):
             Filesystem.atomic_write_text(workspace_paths.config_file, repo_content)
         elif repo_content is not None:
             Filesystem.atomic_write_json(workspace_paths.config_file, repo_content)
-        flat_result = load_config(workspace_paths)
 
         result = Config(workspace_paths).load()
 
-        assert result.status == expected_status
+        assert result.error_code == expected_code
         assert result.config is None
         assert result.config_path == workspace_paths.config_file
-        assert result.errors == flat_result.errors
+        assert len(result.errors) == 1
 
     @pytest.mark.parametrize(
         "tier", [pytest.param(ConfigTier.GLOBAL, id="global"), pytest.param(ConfigTier.USER, id="user")]
     )
-    def test_invalid_global_or_user_tier_returns_tier_invalid(
+    def test_invalid_global_or_user_tier_reports_tier_json_invalid(
         self,
         workspace_paths: WorkspacePaths,
         write_tier_config: WriteTierConfig,
@@ -113,8 +109,6 @@ class ConfigLoadTests:
         Filesystem.atomic_write_json(workspace_paths.config_file, build_default_config("demo-workspace"))
 
         result = Config(workspace_paths).load()
-
-        assert result.status == ConfigLoadStatus.TIER_INVALID
         assert result.error_code == ErrorCode.CONFIG_TIER_JSON_INVALID
         assert result.errors == [
             f"Invalid configuration in {tier} tier ({tier_config_path}): "
@@ -145,8 +139,6 @@ class ConfigLoadTests:
         monkeypatch.setattr(Path, "read_text", _denied_read)
 
         result = Config(workspace_paths).load()
-
-        assert result.status == ConfigLoadStatus.TIER_INVALID
         assert result.error_code == ErrorCode.CONFIG_TIER_UNREADABLE
         assert result.errors == [
             f"Invalid configuration in user tier ({tier_config_path}): unable to read file: denied. "
@@ -170,8 +162,6 @@ class ConfigLoadTests:
         monkeypatch.setattr("dovo.core.config.config.load_tiered_config", _boom)
 
         result = Config(workspace_paths).load()
-
-        assert result.status == ConfigLoadStatus.TIER_INVALID
         assert result.error_code == ErrorCode.INTERNAL_ERROR
         assert result.errors == ["Unexpected error during config.load: boom"]
         assert result.config_path == workspace_paths.config_file

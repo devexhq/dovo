@@ -46,7 +46,6 @@ class ConfigShowCliIntegrationTests:
         assert json.loads(res.stdout) == {
             "event_type": "ConfigLoadResult",
             "payload": {
-                "status": "ok",
                 "config_path": str(config_path),
                 "raw": raw_payload,
                 "config": raw_payload,
@@ -68,12 +67,12 @@ class ConfigShowCliIntegrationTests:
     def test_config_show_cli_missing_config_json_reports_config_not_found(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """Exit 1 with status not_found and error_code CONFIG_NOT_FOUND."""
+        """Exit 1 with error_code CONFIG_NOT_FOUND and no status key."""
         res = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "show", "--format", "json"])
 
         assert res.exit_code == 1
         payload = json.loads(res.stdout)["payload"]
-        assert payload["status"] == "not_found"
+        assert "status" not in payload
         assert payload["error_code"] == "CONFIG_NOT_FOUND"
 
     def test_config_show_cli_malformed_user_tier_exits_one_with_config_error_panel(
@@ -99,7 +98,7 @@ class ConfigShowCliIntegrationTests:
         isolated_workspace: Path,
         write_tier_config: WriteTierConfig,
     ) -> None:
-        """Exit 1 with status tier_invalid, error_code CONFIG_TIER_JSON_INVALID and the tier-attributed message."""
+        """Exit 1 with error_code CONFIG_TIER_JSON_INVALID and the tier-attributed message."""
         tier_config_path = write_tier_config(ConfigTier.USER, "")
         Filesystem.atomic_write_json(
             isolated_workspace / ".dovo" / "config.json", build_default_config("demo-workspace")
@@ -109,7 +108,6 @@ class ConfigShowCliIntegrationTests:
 
         assert res.exit_code == 1
         payload = json.loads(res.stdout)["payload"]
-        assert payload["status"] == "tier_invalid"
         assert payload["error_code"] == "CONFIG_TIER_JSON_INVALID"
         assert payload["errors"] == [
             f"Invalid configuration in user tier ({tier_config_path}): Expecting value at line 1 column 1 (char 0)"

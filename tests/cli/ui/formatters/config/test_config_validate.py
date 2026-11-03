@@ -14,10 +14,7 @@ from dovo.cli.ui.formatters.config import (
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.config.models import DovoConfig, ProjectConfig
-from dovo.core.config.validate import (
-    ConfigValidationResult,
-    ConfigValidationStatus,
-)
+from dovo.core.config.validate import ConfigValidationResult
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -32,7 +29,6 @@ VALID_CONFIG = DovoConfig(version=1, project=ProjectConfig(name="valid-proj", in
 
 VALID_CASE = FormatterCase(
     data=ConfigValidationResult(
-        status=ConfigValidationStatus.VALID,
         config_path=CONFIG_PATH,
         config=VALID_CONFIG,
         warnings=[],
@@ -40,9 +36,7 @@ VALID_CASE = FormatterCase(
         remediations=[],
     ),
     view=ConfigValidationView(
-        status=ConfigValidationStatus.VALID,
         config_path=CONFIG_PATH,
-        status_label="valid",
         raw=None,
         config=VALID_CONFIG,
         errors=[],
@@ -54,7 +48,6 @@ VALID_CASE = FormatterCase(
 
 VALID_WITH_WARNINGS_CASE = FormatterCase(
     data=ConfigValidationResult(
-        status=ConfigValidationStatus.VALID,
         config_path=CONFIG_PATH,
         config=VALID_CONFIG,
         warnings=[
@@ -64,9 +57,7 @@ VALID_WITH_WARNINGS_CASE = FormatterCase(
         remediations=[Remediation(message="Set agents.copilot.model in .dovo/config.json")],
     ),
     view=ConfigValidationView(
-        status=ConfigValidationStatus.VALID,
         config_path=CONFIG_PATH,
-        status_label="valid with warnings",
         raw=None,
         config=VALID_CONFIG,
         errors=[],
@@ -85,18 +76,17 @@ VALID_WITH_WARNINGS_CASE = FormatterCase(
 
 INVALID_CASE = FormatterCase(
     data=ConfigValidationResult(
-        status=ConfigValidationStatus.INVALID,
         config_path=CONFIG_PATH,
+        error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
         errors=["semantic failure (CONFIG_ERROR)."],
         warnings=["warning message (CONFIG_WARN)."],
         remediations=[Remediation(message="Fix the reported configuration error")],
     ),
     view=ConfigValidationView(
-        status=ConfigValidationStatus.INVALID,
         config_path=CONFIG_PATH,
-        status_label="invalid",
         raw=None,
         config=None,
+        error_code="CONFIG_SCHEMA_INVALID",
         errors=["semantic failure (CONFIG_ERROR)."],
         warnings=["warning message (CONFIG_WARN)."],
         remediations=[Remediation(message="Fix the reported configuration error")],
@@ -119,16 +109,13 @@ NOT_FOUND_REMEDIATION = Remediation(message="Run 'dovo init' to create '.dovo/co
 
 NOT_FOUND_CASE = FormatterCase(
     data=ConfigValidationResult(
-        status=ConfigValidationStatus.NOT_FOUND,
         config_path=CONFIG_PATH,
         error_code=ErrorCode.CONFIG_NOT_FOUND,
         errors=[NOT_FOUND_ERROR],
         remediations=[NOT_FOUND_REMEDIATION],
     ),
     view=ConfigValidationView(
-        status=ConfigValidationStatus.NOT_FOUND,
         config_path=CONFIG_PATH,
-        status_label="invalid",
         error_code="CONFIG_NOT_FOUND",
         errors=[NOT_FOUND_ERROR],
         remediations=[NOT_FOUND_REMEDIATION],
@@ -148,9 +135,7 @@ VALIDATION_PAYLOAD_CASES = [
     pytest.param(
         VALID_CASE,
         {
-            "status": "valid",
             "config_path": "/workspace/.dovo/config.json",
-            "status_label": "valid",
             "raw": None,
             "config": {
                 "version": 1,
@@ -193,12 +178,10 @@ VALIDATION_PAYLOAD_CASES = [
     pytest.param(
         INVALID_CASE,
         {
-            "status": "invalid",
             "config_path": "/workspace/.dovo/config.json",
-            "status_label": "invalid",
             "raw": None,
             "config": None,
-            "error_code": None,
+            "error_code": "CONFIG_SCHEMA_INVALID",
             "errors": ["semantic failure (CONFIG_ERROR)."],
             "warnings": ["warning message (CONFIG_WARN)."],
             "remediations": [{"message": "Fix the reported configuration error", "command": None}],
@@ -209,9 +192,7 @@ VALIDATION_PAYLOAD_CASES = [
     pytest.param(
         NOT_FOUND_CASE,
         {
-            "status": "not_found",
             "config_path": "/workspace/.dovo/config.json",
-            "status_label": "invalid",
             "raw": None,
             "config": None,
             "error_code": "CONFIG_NOT_FOUND",
