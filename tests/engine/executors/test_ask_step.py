@@ -104,6 +104,22 @@ class AskStepExecutorTests:
         assert (resolution.result.status, resolution.result.exit_code) == ("failed", 1)
         assert "for options_from was not found." in (resolution.result.error_message or "")
 
+    def test_message_with_uninlinable_content_becomes_failed_step_result(
+        self, engine_paths: WorkspacePaths, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
+    ) -> None:
+        publish_artifact("plan", {"a.md": "a", "b.md": "b"})
+        interaction = {"mode": "confirm", "message": "Approve {{ artifacts.plan.content }}?"}
+
+        resolution = resolve_ask_request(_context(engine_paths, artifact_store, interaction))
+
+        assert resolution.request is None
+        assert resolution.result is not None
+        assert (resolution.result.status, resolution.result.exit_code, resolution.result.error_message) == (
+            "failed",
+            1,
+            "Artifact 'plan' cannot be inlined: artifact has 2 files, content needs exactly one",
+        )
+
     def test_empty_multiselect_settles_completed_without_a_request(
         self, engine_paths: WorkspacePaths, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
     ) -> None:

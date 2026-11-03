@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.artifacts.models import ArtifactUploadResult, ArtifactUploadStatus
+from dovo.core.artifacts.models import ArtifactUploadResult
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
@@ -36,11 +36,16 @@ class PublishDeclaredArtifactsTests:
         [
             pytest.param(
                 True,
-                "Failed to publish artifact 'plan': boom",
+                "Failed to publish artifact 'plan': Unexpected error during artifacts.publish: boom",
                 [],
                 id="required-fails-step",
             ),
-            pytest.param(False, None, ["Failed to publish artifact 'plan': boom"], id="optional-warns"),
+            pytest.param(
+                False,
+                None,
+                ["Failed to publish artifact 'plan': Unexpected error during artifacts.publish: boom"],
+                id="optional-warns",
+            ),
         ],
     )
     def test_publish_exception_maps_by_required_flag(
@@ -53,7 +58,7 @@ class PublishDeclaredArtifactsTests:
         artifact_store: ArtifactStore,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """Map a raising publish by the required flag, carry its engine.step record in diagnostics and write one event."""
+        """Map a raising publish by the required flag, carry its artifacts.publish record in diagnostics and write one event."""
 
         def _raising_publish(*_args: object, **_kwargs: object) -> ArtifactUploadResult:
             raise ValueError("boom")
@@ -75,27 +80,25 @@ class PublishDeclaredArtifactsTests:
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"], event["context"]) == (
             "error",
-            "engine.step",
-            {"step_id": "plan-step", "path": str(worktree_path)},
+            "artifacts.publish",
+            {"session_id": "wf_1", "name": "plan"},
         )
 
-    def test_error_result_without_detail_uses_generic_text(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, artifact_store: ArtifactStore
+    def test_optional_artifact_without_matching_file_warns_with_prefixed_message(
+        self, tmp_path: Path, artifact_store: ArtifactStore
     ) -> None:
-        monkeypatch.setattr(
-            "dovo.core.artifacts.artifacts.publish_artifact",
-            lambda *_args, **_kwargs: ArtifactUploadResult(status=ArtifactUploadStatus.ERROR),
-        )
-
         outcome = publish_declared_artifacts(
-            _step(ArtifactPublishSpec(name="plan", path="PLAN.md")),
-            worktree_path=_worktree(tmp_path, "PLAN.md"),
+            _step(ArtifactPublishSpec(name="plan", path="PLAN.md", required=False)),
+            worktree_path=_worktree(tmp_path),
             store=artifact_store,
             attempt=1,
             loop_iteration=None,
         )
 
-        assert outcome.error_message == "Failed to publish artifact 'plan': publish failed"
+        assert outcome == ArtifactPublishOutcome(
+            error_message=None,
+            warnings=["Failed to publish artifact 'plan': Artifact 'plan' matched no files at 'PLAN.md'."],
+        )
 
     def test_no_session_returns_empty_outcome(self, tmp_path: Path) -> None:
         outcome = publish_declared_artifacts(

@@ -44,20 +44,28 @@ class Artifacts:
         provenance: ArtifactProvenance,
     ) -> ArtifactUploadResult:
         """Publish a named artifact bundle matching path_glob from worktree_path into persistent storage."""
-        return publish_artifact(
-            worktree_path,
-            self.paths.artifacts_dir,
-            self.db,
-            session_id=session_id,
-            name=name,
-            path_glob=path_glob,
-            retention_days=retention_days,
-            provenance=provenance,
-        )
+        with catch_failure("artifacts.publish", session_id=session_id, name=name) as caught:
+            published = publish_artifact(
+                worktree_path,
+                self.paths.artifacts_dir,
+                self.db,
+                session_id=session_id,
+                name=name,
+                path_glob=path_glob,
+                retention_days=retention_days,
+                provenance=provenance,
+            )
+        if caught.failure is not None:
+            return ArtifactUploadResult(name=name, session_id=session_id, **caught.failure.result_fields())
+        return published
 
     def resolve_references(self, session_id: str, requested: Mapping[str, Collection[str]]) -> ArtifactReferencesResult:
         """Resolve requested artifact placeholder fields against session_id's latest revisions."""
-        return resolve_artifact_references(self.db, session_id=session_id, requested=requested)
+        with catch_failure("artifacts.resolve_references", session_id=session_id) as caught:
+            resolved = resolve_artifact_references(self.db, session_id=session_id, requested=requested)
+        if caught.failure is not None:
+            return ArtifactReferencesResult(**caught.failure.result_fields())
+        return resolved
 
     def list(self, session_id: str | None = None) -> ArtifactsListResult:
         """List artifacts for the current project, optionally filtered to one session."""

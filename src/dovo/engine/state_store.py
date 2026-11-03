@@ -11,7 +11,7 @@ from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import BlueprintStep, IfStepBlock, LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionsRepository
-from dovo.engine.exceptions import EngineError
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.models import DefinitionsManifest, LifecycleUpdate
 from dovo.engine.projection import build_session_json_payload
 from dovo.engine.state_models import (

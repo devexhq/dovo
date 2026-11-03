@@ -3,7 +3,7 @@
 from dovo.core.db import SessionStatus
 from dovo.engine.coordinator import RunCoordinator
 from dovo.engine.engine import Engine
-from dovo.engine.exceptions import EngineError
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.loader import EngineLoader
 from dovo.engine.models import (
     DefinitionRef,

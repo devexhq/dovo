@@ -26,7 +26,7 @@ from dovo.core.worktree import (
     WorktreeCreateResult,
     WorktreeSession,
 )
-from dovo.engine.exceptions import EngineError
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.models import RunSettings
 from dovo.engine.notify import safe_notify
 from dovo.engine.storage_bridge import create_storage_bridge, remove_storage_bridge

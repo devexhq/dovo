@@ -203,7 +203,6 @@ class InputsPackageTests:
             "InputResolveResult",
             "InputType",
             "NamespaceProvider",
-            "NamespaceResolutionError",
             "ParameterInput",
             "StepOutputValue",
             "UNDEFINED",

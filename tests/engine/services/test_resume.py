@@ -21,7 +21,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.core.worktree import Worktree
 from dovo.engine import BlueprintRunService
-from dovo.engine.exceptions import EngineError
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.executors.models import StepResult
 from dovo.engine.models import BlueprintRunResult, RunOutcome
 from dovo.engine.services.resume import BlueprintResumeService

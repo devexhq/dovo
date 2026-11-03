@@ -1,7 +1,6 @@
 """Blueprint input declarations, resolution, interpolation and formatting."""
 
 from dovo.core.inputs.artifact_reference import ARTIFACT_FIELDS, artifact_reference
-from dovo.core.inputs.exceptions import NamespaceResolutionError
 from dovo.core.inputs.inputs import resolve_inputs
 from dovo.core.inputs.interpolate import (
     ExecutionMetadataView,
@@ -33,7 +32,6 @@ __all__ = [
     "InputResolveResult",
     "InputType",
     "NamespaceProvider",
-    "NamespaceResolutionError",
     "ParameterInput",
     "StepOutputValue",
     "Undefined",

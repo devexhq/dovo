@@ -14,7 +14,6 @@ from dovo.core.inputs import (
     UNDEFINED,
     ExecutionMetadataView,
     NamespaceProvider,
-    NamespaceResolutionError,
     build_providers,
     interpolate_step_fields,
     interpolate_string,
@@ -34,12 +33,12 @@ class _MappingProvider(NamespaceProvider):
 
 
 class _RaisingProvider(NamespaceProvider):
-    """NamespaceProvider that always fails with a user-facing message."""
+    """NamespaceProvider that always raises RuntimeError."""
 
     namespace = "boom"
 
     def resolve(self, path: Path) -> object:
-        raise NamespaceResolutionError("boom")
+        raise RuntimeError("boom")
 
 
 _BARE = object()
@@ -355,7 +354,7 @@ class InterpolatePlaceholderExpressionTests:
         providers = [*build_providers(inputs={"s": "text"}), _RaisingProvider()]
 
         assert interpolate_string("{{ inputs.s || boom.x }}", providers) == "text"
-        with pytest.raises(NamespaceResolutionError, match="boom"):
+        with pytest.raises(RuntimeError, match="boom"):
             interpolate_string("{{ boom.x || 'd' }}", providers)
 
     @pytest.mark.parametrize(
@@ -385,7 +384,7 @@ class InterpolateProvidersTests:
         assert interpolate_string("{{ nope.field }}|{{ steps.nope }}", providers) == "{{ nope.field }}|{{ steps.nope }}"
 
     def test_provider_exception_propagates_from_interpolate_string(self) -> None:
-        with pytest.raises(NamespaceResolutionError, match="boom"):
+        with pytest.raises(RuntimeError, match="boom"):
             interpolate_string("{{ boom.x }}", [_RaisingProvider()])
 
     @pytest.mark.parametrize(

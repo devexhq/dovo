@@ -113,3 +113,99 @@ class ArtifactsDownloadFailureTests:
             "plan",
         )
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+
+
+class ArtifactsPublishFailureTests:
+    """Contract tests for the failures Artifacts.publish and Artifacts.resolve_references copy into their results."""
+
+    def test_publish_no_matching_files_reports_file_not_found(
+        self, tmp_path: Path, artifacts_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+    ) -> None:
+        artifacts = Artifacts(artifacts_paths, artifacts_repository)
+
+        result = artifacts.publish(
+            "wf_1", "plan", "PLAN.md", worktree_path=_worktree(tmp_path, {}), provenance=ArtifactProvenance()
+        )
+
+        assert (result.ok, result.error_code, result.errors, result.diagnostics, result.name, result.session_id) == (
+            False,
+            ErrorCode.ARTIFACT_FILE_NOT_FOUND,
+            ["Artifact 'plan' matched no files at 'PLAN.md'."],
+            [],
+            "plan",
+            "wf_1",
+        )
+
+    def test_publish_write_failure_under_storage_lists_its_diagnostic_record(
+        self,
+        tmp_path: Path,
+        artifacts_paths: WorkspacePaths,
+        artifacts_repository: ArtifactsRepository,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        artifacts = Artifacts(artifacts_paths, artifacts_repository)
+        manifest_path = artifacts_paths.artifacts_dir / "wf_1" / ".tmp-plan" / "manifest.json"
+
+        def _broken_write(*_args: object, **_kwargs: object) -> None:
+            raise OSError(28, "No space left on device", str(manifest_path))
+
+        monkeypatch.setattr("dovo.core.artifacts.services.upload.Filesystem.atomic_write_json", _broken_write)
+
+        result = artifacts.publish(
+            "wf_1",
+            "plan",
+            "PLAN.md",
+            worktree_path=_worktree(tmp_path, {"PLAN.md": "plan"}),
+            provenance=ArtifactProvenance(),
+        )
+
+        assert (result.error_code, result.errors) == (
+            ErrorCode.ARTIFACT_PUBLISH_FAILED,
+            [f"[Errno 28] No space left on device: '{manifest_path}'"],
+        )
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+
+    def test_resolve_references_content_unavailable_reports_code(
+        self, tmp_path: Path, artifacts_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+    ) -> None:
+        artifacts = Artifacts(artifacts_paths, artifacts_repository)
+        result = artifacts.publish(
+            "wf_1",
+            "plan",
+            "*.md",
+            worktree_path=_worktree(tmp_path, {"a.md": "a", "b.md": "b"}),
+            provenance=ArtifactProvenance(),
+        )
+        assert result.ok
+
+        references = artifacts.resolve_references("wf_1", {"plan": {"content"}})
+
+        assert (references.ok, references.error_code, references.errors, references.diagnostics) == (
+            False,
+            ErrorCode.ARTIFACT_CONTENT_UNAVAILABLE,
+            ["Artifact 'plan' cannot be inlined: artifact has 2 files, content needs exactly one"],
+            [],
+        )
+
+    def test_resolve_references_unreadable_manifest_lists_its_diagnostic_record(
+        self,
+        tmp_path: Path,
+        artifacts_paths: WorkspacePaths,
+        artifacts_repository: ArtifactsRepository,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        artifacts = Artifacts(artifacts_paths, artifacts_repository)
+        _publish_plan(artifacts, _worktree(tmp_path, {"PLAN.md": "plan"}))
+        manifest_path = artifacts_paths.artifacts_dir / "wf_1" / "plan" / "1" / "manifest.json"
+        manifest_path.unlink()
+
+        references = artifacts.resolve_references("wf_1", {"plan": {"content"}})
+
+        assert (references.error_code, references.errors) == (
+            ErrorCode.ARTIFACT_CONTENT_UNAVAILABLE,
+            [
+                f"Artifact 'plan' cannot be inlined: cannot read file: [Errno 2] No such file or directory: '{manifest_path}'"
+            ],
+        )
+        assert references.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]

@@ -299,7 +299,7 @@ class StepExecutionDiagnosticLogTests:
         monkeypatch: pytest.MonkeyPatch,
         artifact_store: ArtifactStore,
     ) -> None:
-        """Keep the publish warning on the step result and put the engine.step record only in the diagnostics list."""
+        """Keep the publish warning on the step result and put the artifacts.publish record only in the diagnostics list."""
 
         def _raising_publish(*_args: object, **_kwargs: object) -> ArtifactUploadResult:
             raise ValueError("boom")
@@ -319,7 +319,10 @@ class StepExecutionDiagnosticLogTests:
 
         result = execution.run()
 
-        assert (result.status, result.warnings) == ("completed", ["Failed to publish artifact 'plan': boom"])
+        assert (result.status, result.warnings) == (
+            "completed",
+            ["Failed to publish artifact 'plan': Unexpected error during artifacts.publish: boom"],
+        )
         assert sink == [diagnostic_record(frozen_diagnostic_clock)]
 
     def test_launch_failure_unchanged_when_recorder_cannot_write(

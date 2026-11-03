@@ -26,7 +26,7 @@ from dovo.core.catalog.definitions import (
 from dovo.core.catalog.exceptions import CatalogError
 from dovo.core.catalog.models import CatalogItemType, CatalogRecord
 from dovo.core.catalog.services.resolve_step import merge_uses_step, resolve_step_definition
-from dovo.engine.exceptions import EngineError
+from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.models import DefinitionRef, DefinitionsManifest
 from dovo.engine.state_models import SessionJsonPayload
 

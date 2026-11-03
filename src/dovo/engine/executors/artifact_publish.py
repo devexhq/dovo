@@ -6,49 +6,21 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
-from dovo.core.artifacts.models import ArtifactProvenance, ArtifactUploadResult, ArtifactUploadStatus
+from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
+from dovo.core.artifacts.models import ArtifactProvenance, ArtifactUploadResult
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition
 
 
 class ArtifactPublishOutcome(BaseModel):
-    """Result of publishing a step's declared artifacts: the first required failure, non-fatal warnings and recorded failures."""
+    """Result of publishing a step's declared artifacts: the first required failure, non-fatal warnings and the store's records."""
 
     model_config = {"extra": "forbid", "strict": True}
 
     error_message: str | None = None
     warnings: list[str] = Field(default_factory=list)
     diagnostics: list[DiagnosticRecord] = Field(default_factory=list)  # Records for the run's diagnostics only.
-
-
-def _publish_one(
-    spec: ArtifactPublishSpec,
-    *,
-    step_id: str,
-    worktree_path: Path,
-    store: ArtifactStore,
-    provenance: ArtifactProvenance,
-) -> tuple[ArtifactUploadResult, list[DiagnosticRecord]]:
-    """Publish one spec; an exception becomes an ERROR result plus the recorded event's record, never raised."""
-    try:
-        result = store.publish(
-            worktree_path,
-            name=spec.name,
-            path_glob=spec.path,
-            retention_days=spec.retention_days,
-            provenance=provenance,
-        )
-    except Exception as exc:
-        record = record_exception(
-            exc,
-            level=DiagnosticLevel.ERROR,
-            operation="engine.step",
-            context={"step_id": step_id, "path": str(worktree_path)},
-        )
-        return ArtifactUploadResult(status=ArtifactUploadStatus.ERROR, errors=[str(exc)]), error_diagnostics(record)
-
-    return result, []
 
 
 def publish_declared_artifacts(
@@ -67,10 +39,14 @@ def publish_declared_artifacts(
     warnings: list[str] = []
     diagnostics: list[DiagnosticRecord] = []
     for spec in step.artifacts:
-        result, records = _publish_one(
-            spec, step_id=step.id, worktree_path=worktree_path, store=store, provenance=provenance
+        result = store.publish(
+            worktree_path,
+            name=spec.name,
+            path_glob=spec.path,
+            retention_days=spec.retention_days,
+            provenance=provenance,
         )
-        diagnostics.extend(records)
+        diagnostics.extend(result.diagnostics)
         if result.ok:
             continue
 
@@ -88,12 +64,12 @@ def _failed_publish(
     diagnostics: list[DiagnosticRecord],
 ) -> ArtifactPublishOutcome | None:
     """Append an optional spec's warning to warnings and return None; return the step-failing outcome for a required spec."""
-    detail = "; ".join(result.errors) or "publish failed"
+    detail = "; ".join(result.errors)
     if not spec.required:
         warnings.append(f"Failed to publish artifact '{spec.name}': {detail}")
         return None
 
-    if result.status == ArtifactUploadStatus.NO_MATCHING_FILES:
+    if result.error_code == ErrorCode.ARTIFACT_FILE_NOT_FOUND:
         return ArtifactPublishOutcome(error_message=detail, warnings=warnings, diagnostics=diagnostics)
 
     return ArtifactPublishOutcome(

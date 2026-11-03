@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.artifacts.models import ArtifactProvenance, ArtifactUploadStatus
+from dovo.common.error_codes import ErrorCode
+from dovo.core.artifacts.exceptions import ArtifactError
+from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.core.artifacts.services.upload import publish_artifact
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
@@ -45,17 +47,21 @@ def _worktree_with_wheel(tmp_path: Path, content: bytes = b"package-bytes") -> P
 class UploadServiceTests:
     """Contract tests for publish_artifact."""
 
-    def test_publish_artifact_no_matching_files_returns_no_matching_files_status(
+    def test_publish_artifact_no_matching_files_raises_file_not_found(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
         worktree_path = tmp_path / "worktree"
         worktree_path.mkdir()
         artifacts_dir = tmp_path / "artifacts"
 
-        result = _publish(worktree_path, artifacts_dir, artifacts_repository)
+        with pytest.raises(ArtifactError) as raised:
+            _publish(worktree_path, artifacts_dir, artifacts_repository)
 
-        assert result.status == ArtifactUploadStatus.NO_MATCHING_FILES
-        assert result.errors == ["Artifact 'dist-packages' matched no files at 'dist/*.whl'."]
+        assert (raised.value.error_code, raised.value.message, raised.value.__cause__) == (
+            ErrorCode.ARTIFACT_FILE_NOT_FOUND,
+            "Artifact 'dist-packages' matched no files at 'dist/*.whl'.",
+            None,
+        )
         assert not (artifacts_dir / "wf_abc123" / "dist-packages").exists()
         assert artifacts_repository.get("wf_abc123", "dist-packages") is None
 
@@ -67,7 +73,7 @@ class UploadServiceTests:
 
         result = _publish(worktree_path, artifacts_dir, artifacts_repository)
 
-        assert result.status == ArtifactUploadStatus.OK
+        assert result.ok
         assert result.file_count == 1
         assert result.revision == 1
 
@@ -85,7 +91,7 @@ class UploadServiceTests:
         assert record.file_count == 1
         assert record.size_bytes == len(b"package-bytes")
 
-    def test_publish_artifact_copy_failure_returns_error_status(
+    def test_publish_artifact_copy_failure_outside_storage_raises_publish_failed_unchained(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         worktree_path = _worktree_with_wheel(tmp_path)
@@ -96,11 +102,32 @@ class UploadServiceTests:
 
         monkeypatch.setattr("dovo.core.artifacts.services.upload.shutil.copy2", _broken_copy2)
 
-        result = _publish(worktree_path, artifacts_dir, artifacts_repository)
+        with pytest.raises(ArtifactError) as raised:
+            _publish(worktree_path, artifacts_dir, artifacts_repository)
 
-        assert result.status == ArtifactUploadStatus.ERROR
-        assert "disk full" in result.errors[0]
+        assert (raised.value.error_code, raised.value.message, raised.value.__cause__) == (
+            ErrorCode.ARTIFACT_PUBLISH_FAILED,
+            "disk full",
+            None,
+        )
         assert artifacts_repository.get("wf_abc123", "dist-packages") is None
+
+    def test_publish_artifact_write_failure_under_storage_chains_the_os_error(
+        self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        worktree_path = _worktree_with_wheel(tmp_path)
+        artifacts_dir = tmp_path / "artifacts"
+        error = OSError(28, "No space left on device", str(artifacts_dir / "wf_abc123" / ".tmp-x" / "dist"))
+
+        def _broken_copy2(*_args: object, **_kwargs: object) -> None:
+            raise error
+
+        monkeypatch.setattr("dovo.core.artifacts.services.upload.shutil.copy2", _broken_copy2)
+
+        with pytest.raises(ArtifactError) as raised:
+            _publish(worktree_path, artifacts_dir, artifacts_repository)
+
+        assert (raised.value.error_code, raised.value.__cause__) == (ErrorCode.ARTIFACT_PUBLISH_FAILED, error)
 
     def test_publish_artifact_twice_creates_revisions_one_and_two_leaving_first_untouched(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
@@ -133,8 +160,8 @@ class UploadServiceTests:
 
         again = _publish(worktree_path, artifacts_dir, artifacts_repository, provenance=ArtifactProvenance(attempt=2))
 
-        assert (again.status, again.revision, again.digest, again.file_count) == (
-            ArtifactUploadStatus.OK,
+        assert (again.ok, again.revision, again.digest, again.file_count) == (
+            True,
             1,
             first.digest,
             1,
@@ -167,7 +194,7 @@ class UploadServiceTests:
 
         again = _publish(worktree_path, artifacts_dir, artifacts_repository)
 
-        assert (again.status, again.revision, again.digest) == (ArtifactUploadStatus.OK, 2, first.digest)
+        assert (again.ok, again.revision, again.digest) == (True, 2, first.digest)
         assert sorted(record.revision for record in artifacts_repository.list("wf_abc123")) == [1, 2]
 
     def test_publish_artifact_lost_revision_race_takes_next_revision(
@@ -199,12 +226,12 @@ class UploadServiceTests:
 
         result = _publish(worktree_path, artifacts_dir, artifacts_repository)
 
-        assert result.status == ArtifactUploadStatus.OK
+        assert result.ok
         assert result.revision == 2
         assert sorted(record.revision for record in artifacts_repository.list("wf_abc123")) == [1, 2]
         assert (artifacts_dir / "wf_abc123" / "dist-packages" / "2" / "manifest.json").is_file()
 
-    def test_publish_artifact_exhausted_revision_claims_returns_error_status(
+    def test_publish_artifact_exhausted_revision_claims_raises_publish_failed(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         worktree_path = _worktree_with_wheel(tmp_path)
@@ -213,10 +240,14 @@ class UploadServiceTests:
         (worktree_path / "dist" / "pkg.whl").write_bytes(b"changed")
         monkeypatch.setattr(artifacts_repository, "next_revision", lambda _session_id, _name: 1)
 
-        result = _publish(worktree_path, artifacts_dir, artifacts_repository)
+        with pytest.raises(ArtifactError) as raised:
+            _publish(worktree_path, artifacts_dir, artifacts_repository)
 
-        assert result.status == ArtifactUploadStatus.ERROR
-        assert result.errors == ["Could not allocate a revision for artifact 'dist-packages'."]
+        assert (raised.value.error_code, raised.value.message, raised.value.__cause__) == (
+            ErrorCode.ARTIFACT_PUBLISH_FAILED,
+            "Could not allocate a revision for artifact 'dist-packages'.",
+            None,
+        )
         assert [path.name for path in (artifacts_dir / "wf_abc123").iterdir()] == ["dist-packages"]
 
     def test_publish_artifact_move_failure_removes_claimed_row(
@@ -230,10 +261,13 @@ class UploadServiceTests:
 
         monkeypatch.setattr(Path, "rename", _broken_rename)
 
-        result = _publish(worktree_path, artifacts_dir, artifacts_repository)
+        with pytest.raises(ArtifactError) as raised:
+            _publish(worktree_path, artifacts_dir, artifacts_repository)
 
-        assert result.status == ArtifactUploadStatus.ERROR
-        assert result.errors == ["cross-device link"]
+        assert (raised.value.error_code, raised.value.message) == (
+            ErrorCode.ARTIFACT_PUBLISH_FAILED,
+            "cross-device link",
+        )
         assert artifacts_repository.list() == []
         assert list((artifacts_dir / "wf_abc123").glob(".tmp-*")) == []
 
