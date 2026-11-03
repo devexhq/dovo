@@ -4,10 +4,14 @@
 Threads are rebuilt from the pull request's review comments, read through
 GitHub's REST API: a comment with no `in_reply_to_id` starts a thread and every
 reply names that first comment. A thread's id is its first comment's REST id,
-as a string. Replies are posted through the REST API too. Only whether a
-thread is resolved, and resolving it, go through GraphQL, because GitHub's
-REST API offers neither; resolved_roots and resolve_thread are the only
-functions that do.
+as a string. Replies are posted through the REST API too. GitHub's REST API
+cannot tell whether a thread is resolved or resolve one, so resolved_roots and
+resolve_thread go through the backend DOVO_GITHUB_THREADS names, read at call
+time: `graphql` (the default) uses GitHub's GraphQL API, and `claude-cloud`
+uses the REST routes the GitHub proxy of a Claude Code cloud session adds,
+for environments that refuse GraphQL. An agent step sees the variable only
+when it is passed through, for example with
+`dovo run pr-fix -p <n> --env-passthrough DOVO_GITHUB_THREADS`.
 
 Each thread is a dict:
     {"id", "isResolved", "path", "line", "originalStartLine", "originalLine",
@@ -21,11 +25,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 
 from publish_review import PublishReviewError, pr_repository, pull_request, run, write_comment
 
+THREADS_BACKEND_ENV = "DOVO_GITHUB_THREADS"
+THREADS_BACKENDS = ("graphql", "claude-cloud")
 STATES_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
@@ -47,6 +54,24 @@ COMMENT_FIELDS = (
     ".[] | {id, in_reply_to_id, path, line, original_line, original_start_line, original_commit_id, "
     "login: .user.login, body, url: .html_url}"
 )
+
+
+class ReviewThreadsError(RuntimeError):
+    """Raised when DOVO_GITHUB_THREADS names no backend."""
+
+
+def _cloud_backend() -> bool:
+    """Return whether DOVO_GITHUB_THREADS selects `claude-cloud`; unset or empty selects `graphql`.
+
+    Raises:
+        ReviewThreadsError: When it names neither backend.
+    """
+    backend = os.environ.get(THREADS_BACKEND_ENV) or "graphql"
+    if backend not in THREADS_BACKENDS:
+        raise ReviewThreadsError(
+            f"{THREADS_BACKEND_ENV}={backend!r} names no review thread backend; use graphql or claude-cloud"
+        )
+    return backend == "claude-cloud"
 
 
 def list_review_comments(host: str, repository: str, number: int) -> list[dict[str, object]]:
@@ -124,7 +149,21 @@ def _thread_states(host: str, repository: str, number: int) -> list[dict[str, ob
 
 
 def resolved_roots(host: str, repository: str, number: int) -> set[int]:
-    """Return the REST ids of the first comments of the pull request's resolved review threads."""
+    """Return the REST ids of the first comments of the pull request's resolved review threads.
+
+    With the `claude-cloud` backend the set also holds the ids of their replies.
+    """
+    if _cloud_backend():
+        output = run(
+            "gh",
+            "api",
+            "--hostname",
+            host,
+            f"repos/{repository}/pulls/{number}/ccr/review_threads",
+            "--jq",
+            ".[] | select(.resolved) | .comment_ids[]",
+        )
+        return {int(line) for line in output.splitlines() if line.strip()}
     return {int(str(state["root"])) for state in _thread_states(host, repository, number) if state.get("isResolved")}
 
 
@@ -132,8 +171,19 @@ def resolve_thread(host: str, repository: str, number: int, thread: str) -> None
     """Resolve the review thread whose first comment has the REST id thread.
 
     Raises:
-        LookupError: When the pull request has no such thread.
+        LookupError: When the pull request has no such thread (`graphql` backend; `claude-cloud` fails the call).
     """
+    if _cloud_backend():
+        run(
+            "gh",
+            "api",
+            "--hostname",
+            host,
+            "-X",
+            "POST",
+            f"repos/{repository}/pulls/{number}/ccr/comments/{thread}/resolve",
+        )
+        return
     states = _thread_states(host, repository, number)
     node = next((state["id"] for state in states if str(state.get("root")) == thread), None)
     if node is None:
@@ -173,7 +223,7 @@ def main() -> int:
         number, _, url = pull_request(pr)
         host, repository = pr_repository(url)
         threads = list_threads(host, repository, number)
-    except PublishReviewError as error:
+    except (PublishReviewError, ReviewThreadsError) as error:
         sys.stderr.write(f"review_threads.py: {error}\n")
         return 1
     except subprocess.CalledProcessError as error:

@@ -41,7 +41,7 @@ from publish_review import (
     run,
     thread_comments,
 )
-from review_threads import list_threads
+from review_threads import ReviewThreadsError, list_threads
 
 AGENTIC_DIR = Path(".agentic")
 FEEDBACK_JSON = AGENTIC_DIR / "feedback.json"
@@ -532,7 +532,7 @@ def main() -> int:
 
     try:
         sys.stdout.write(collect(pr))
-    except PrFeedbackError as error:
+    except (PrFeedbackError, ReviewThreadsError) as error:
         sys.stderr.write(f"pr_feedback.py: {error}\n")
         return 1
     except subprocess.CalledProcessError as error:
