@@ -4,4 +4,4 @@ from dovo.common.exceptions import DomainError
 
 
 class ArtifactError(DomainError):
-    """Business failure listing, downloading or pruning session artifacts."""
+    """Business failure in an artifacts operation."""

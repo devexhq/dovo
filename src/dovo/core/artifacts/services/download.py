@@ -13,12 +13,19 @@ from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
 
 def _verify_manifest_checksums(artifact_dir: Path, manifest: ArtifactManifest) -> list[str]:
-    """Return the relative paths whose live SHA256 no longer matches manifest.json, without copying anything."""
+    """Return the relative paths whose live SHA256 no longer matches manifest.json, without copying anything.
+
+    Raises:
+        ArtifactError: ARTIFACT_DOWNLOAD_FAILED when a stored file cannot be read.
+    """
     mismatches: list[str] = []
-    for entry in manifest.files:
-        file_path = artifact_dir / entry.path
-        if not file_path.is_file() or compute_file_checksum(file_path) != entry.sha256:
-            mismatches.append(entry.path)
+    try:
+        for entry in manifest.files:
+            file_path = artifact_dir / entry.path
+            if not file_path.is_file() or compute_file_checksum(file_path) != entry.sha256:
+                mismatches.append(entry.path)
+    except OSError as error:
+        raise ArtifactError(ErrorCode.ARTIFACT_DOWNLOAD_FAILED, str(error)) from error
     return mismatches
 
 

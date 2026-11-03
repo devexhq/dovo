@@ -119,6 +119,31 @@ class DownloadServiceTests:
 
         assert (raised.value.error_code, raised.value.__cause__) == (ErrorCode.ARTIFACT_DOWNLOAD_FAILED, read_error)
 
+    def test_download_artifact_stored_file_checksum_read_failure_raises_download_failed_before_any_copy(
+        self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        artifacts_dir = _publish(tmp_path, artifacts_repository, session_id="wf_abc123", name="dist-packages")
+        stored = artifacts_dir / "wf_abc123" / "dist-packages" / "1" / "dist" / "pkg.whl"
+        read_error = PermissionError(13, "Permission denied", str(stored))
+        dest = tmp_path / "out"
+
+        def _broken_checksum(_path: Path) -> str:
+            raise read_error
+
+        monkeypatch.setattr("dovo.core.artifacts.services.download.compute_file_checksum", _broken_checksum)
+
+        with pytest.raises(ArtifactError) as raised:
+            download_artifact(
+                artifacts_dir, artifacts_repository, session_id="wf_abc123", name="dist-packages", dest=dest
+            )
+
+        assert (raised.value.error_code, raised.value.message, raised.value.__cause__) == (
+            ErrorCode.ARTIFACT_DOWNLOAD_FAILED,
+            f"[Errno 13] Permission denied: '{stored}'",
+            read_error,
+        )
+        assert not dest.exists()
+
     def test_download_artifact_verified_copies_all_files(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:

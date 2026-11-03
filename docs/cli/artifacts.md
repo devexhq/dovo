@@ -59,7 +59,7 @@ Pruning deletes artifact revisions whose `expires_at` (set from a step's `retent
 - no artifact named `<name>` exists for `<session_id>`: `ARTIFACT_NOT_FOUND`, `Artifact '<name>' not found for session '<session_id>'`,
 - `--revision <n>` names a revision that does not exist: `ARTIFACT_NOT_FOUND`, `Artifact '<name>' revision <n> not found for session '<session_id>'`,
 - a stored file's live checksum no longer matches `manifest.json`: `ARTIFACT_CHECKSUM_INVALID`, `Checksum mismatch for: <paths>`, and `--dest` is left untouched,
-- the stored `manifest.json` cannot be read, or a file cannot be copied (for example, a permissions error on the destination): `ARTIFACT_DOWNLOAD_FAILED`, with the operating system's error text,
+- the stored `manifest.json` or a stored file cannot be read, or a file cannot be copied (for example, a permissions error on the destination): `ARTIFACT_DOWNLOAD_FAILED`, with the operating system's error text,
 - an unexpected error occurs: `INTERNAL_ERROR`.
 
 A failure to read Dovo's own artifact storage writes a [diagnostic log](doctor.md#diagnostic-logs) record, listed in `diagnostics` with `--format json`.
