@@ -1,7 +1,7 @@
 version: 1
 name: save-session
 id: save-session
-description: Push a finished session's records, logs, step outputs and worktree .agentic/ directory to the session-data repository, and record the session against its pull request in ledger.md.
+description: Push a finished session's records, logs, step outputs (without agent scratch files) and worktree .agentic/ directory to the session-data repository, and record the session against its pull request in ledger.md.
 summary: Archive one session under sessions/<session_id>/ in devexhq/dovo-session-data and link it to its PR in ledger.md
 use_worktree: false
 

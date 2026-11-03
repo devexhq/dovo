@@ -80,6 +80,10 @@ testpaths = ["tests"]
 # `pytest` console script (sys.path[0] is not cwd in that mode).
 pythonpath = ["."]
 python_classes = ["Test*", "*Tests"]
+# Delete each passing test's tmp_path when the session ends; many tests create a
+# git repository there, and an agent running pytest under its scratch TMPDIR
+# would otherwise leave hundreds of them behind.
+tmp_path_retention_policy = "failed"
 markers = [
     "slow: Long-running tests involving process group signal escalation, locks, or timeouts",
 ]
