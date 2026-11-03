@@ -153,16 +153,71 @@ class ReviewThreadsTests:
         )
         assert err.endswith("HTTP 502\n\n")
 
+    def test_cloud_backend_lists_resolved_threads(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        ran: list[tuple[str, ...]] = []
+        monkeypatch.setenv("DOVO_GITHUB_THREADS", "claude-cloud")
+        monkeypatch.setattr(THREADS, "run", _fake_run(ran))
+
+        assert THREADS.list_threads("github.com", "o/r", 7) == [THREAD_10, THREAD_20]
+        assert ran[-1] == (
+            "gh",
+            "api",
+            "--hostname",
+            "github.com",
+            "repos/o/r/pulls/7/ccr/review_threads",
+            "--jq",
+            ".[] | select(.resolved) | .comment_ids[]",
+        )
+        assert not [args for args in ran if "graphql" in args]
+
+    def test_cloud_backend_resolves_thread(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        ran: list[tuple[str, ...]] = []
+        monkeypatch.setenv("DOVO_GITHUB_THREADS", "claude-cloud")
+        monkeypatch.setattr(THREADS, "run", _fake_run(ran))
+
+        THREADS.resolve_thread("github.com", "o/r", 7, "20")
+
+        assert ran == [
+            ("gh", "api", "--hostname", "github.com", "-X", "POST", "repos/o/r/pulls/7/ccr/comments/20/resolve")
+        ]
+
+    @pytest.mark.parametrize("backend", [pytest.param("graphql", id="graphql"), pytest.param("", id="empty")])
+    def test_graphql_backend_by_name_or_default(self, backend: str, monkeypatch: pytest.MonkeyPatch) -> None:
+        ran: list[tuple[str, ...]] = []
+        monkeypatch.setenv("DOVO_GITHUB_THREADS", backend)
+        monkeypatch.setattr(THREADS, "run", _fake_run(ran))
+
+        assert THREADS.resolved_roots("github.com", "o/r", 7) == {10}
+        assert ran[0][2] == "graphql"
+
+    def test_main_refuses_unknown_backend(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = _fake_run([])
+        monkeypatch.setenv("DOVO_GITHUB_THREADS", "rest")
+        monkeypatch.setattr(THREADS, "run", fake)
+        monkeypatch.setattr(PUBLISH, "run", fake)
+        monkeypatch.setattr(sys, "argv", ["review_threads.py", "--pr", "7"])
+
+        assert THREADS.main() == 1
+
+        assert capsys.readouterr().err == (
+            "review_threads.py: DOVO_GITHUB_THREADS='rest' names no review thread backend; use graphql or claude-cloud\n"
+        )
+
 
 def _fake_run(ran: list[tuple[str, ...]], *, failing: bool = False) -> Callable[..., str]:
     """Return a `run` double for PR #7 of o/r recording each command in ran: the pull request read, COMMENTS,
-    STATES, a resolve and a reply; failing makes the review comment listing raise CalledProcessError.
+    STATES, a resolve and a reply, and the claude-cloud backend's resolved comment ids (thread 10 and its reply)
+    and resolve; failing makes the review comment listing raise CalledProcessError.
     """
     answers = {
         "repos/{owner}/{repo}/pulls/7": json.dumps({"number": 7, "head": COMMIT, "url": PR_URL}),
         "repos/o/r/pulls/7/comments": "\n".join(json.dumps(comment) for comment in COMMENTS),
         f"query={THREADS.STATES_QUERY}": "\n".join(json.dumps(state) for state in STATES),
         f"query={THREADS.RESOLVE_MUTATION}": "true",
+        "repos/o/r/pulls/7/ccr/review_threads": "10\n11",
+        "repos/o/r/pulls/7/ccr/comments/20/resolve": "",
         "repos/o/r/pulls/7/comments/10/replies": "https://x/reply",
     }
 

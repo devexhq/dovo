@@ -49,7 +49,7 @@ from publish_review import (
     thread_comments,
     write_comment,
 )
-from review_threads import list_threads, reply_on_thread, resolve_thread
+from review_threads import ReviewThreadsError, list_threads, reply_on_thread, resolve_thread
 
 TRIAGE_JSON = AGENTIC_DIR / "triage.json"
 TRIAGE_MD = AGENTIC_DIR / "triage.md"
@@ -619,7 +619,7 @@ def main() -> int:
         else:
             report = reply_all()
         sys.stdout.write(report)
-    except (ReplyThreadsError, PublishReviewError) as error:
+    except (ReplyThreadsError, PublishReviewError, ReviewThreadsError) as error:
         sys.stderr.write(f"reply_threads.py: {error}\n")
         return 1
     except subprocess.CalledProcessError as error:

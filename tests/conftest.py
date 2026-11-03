@@ -43,6 +43,12 @@ def _isolated_dovo_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: p
 
 
 @pytest.fixture(autouse=True)
+def _default_review_thread_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unset DOVO_GITHUB_THREADS, so the review thread scripts use their default backend whatever the shell sets."""
+    monkeypatch.delenv("DOVO_GITHUB_THREADS", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _plain_typer_output(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep Typer's Rich output free of ANSI styling in CI.
 

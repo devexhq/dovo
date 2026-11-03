@@ -4,6 +4,13 @@ id: pr-fix
 description: Run one round of fixes on a pull request's open feedback, fixing only the items you pick.
 summary: One fix round on a pull request
 
+# Review threads are read and replied on through GitHub's REST API. Whether a
+# thread is resolved, and resolving it, use GitHub's GraphQL API unless
+# DOVO_GITHUB_THREADS=claude-cloud selects the routes a Claude Code cloud
+# session's GitHub proxy adds, for environments that refuse GraphQL. Pass it
+# through to the review step too:
+#   DOVO_GITHUB_THREADS=claude-cloud dovo run pr-fix -p <n> --env-passthrough DOVO_GITHUB_THREADS
+
 inputs:
   pr:
     type: string
