@@ -128,14 +128,15 @@ def _own_review(
     commit: str = PR_HEAD,
     submitted: str | None = "2026-10-19T09:00:00Z",
     url: str = REVIEW_URL,
+    review_id: int = 11,
 ) -> dict[str, object]:
-    """Return a REVIEWS_QUERY node by login on commit with body, inline comment bodies, submittedAt and url."""
+    """Return a list_reviews node by login on commit with id, body, inline comment bodies, submittedAt and url."""
     return {
-        "author": {"__typename": "User", "login": login},
+        "id": review_id,
+        "author": {"login": login},
         "body": body,
         "url": url,
         "submittedAt": submitted,
-        "lastEditedAt": None,
         "commit": {"oid": commit},
         "comments": {"nodes": [{"body": text} for text in inline]},
     }
@@ -170,7 +171,7 @@ def _posted(
     submitted: str | None = "2026-10-19T09:00:00Z",
     url: str = REVIEW_URL,
 ) -> dict[str, object]:
-    """Return login's REVIEWS_QUERY node for payload as posted, with body and inline bodies replaced when given."""
+    """Return login's list_reviews node for payload as posted, with body and inline bodies replaced when given."""
     return _own_review(
         str(payload["body"]) if body is None else body,
         login,
@@ -228,8 +229,8 @@ class PublishReviewTests:
         posted: list[str] = []
 
         def fake_run(*args: str) -> str:
-            if args[:3] == ("gh", "pr", "view"):
-                return json.dumps({"number": 7, "headRefOid": PR_HEAD, "url": "https://github.com/o/r/pull/7"})
+            if args[:3] == ("gh", "api", "repos/{owner}/{repo}/pulls/7"):
+                return json.dumps({"number": 7, "head": PR_HEAD, "url": "https://github.com/o/r/pull/7"})
             if "user" in args:
                 return "me"
             body_arg = next((arg for arg in args if arg.startswith("body=@")), None)
@@ -405,6 +406,78 @@ class PublishReviewTests:
     def test_pr_repository_rejects_non_pr_url(self) -> None:
         with pytest.raises(PUBLISHER.PublishReviewError, match="is not a pull request URL"):
             PUBLISHER.pr_repository("https://github.com/devexhq/dovo/issues/5")
+
+    @pytest.mark.parametrize(
+        ("pr", "read"),
+        [
+            pytest.param("7", ("repos/{owner}/{repo}/pulls/7", "--jq", "."), id="number"),
+            pytest.param(PR_URL, ("--hostname", "github.com", "repos/o/r/pulls/7", "--jq", "."), id="url"),
+            pytest.param(
+                "me/fix#1",
+                ("repos/{owner}/{repo}/pulls?state=open&head={owner}:me%2Ffix%231", "--jq", ".[0] // empty"),
+                id="branch",
+            ),
+        ],
+    )
+    def test_main_reads_pull_request_through_rest(
+        self, pr: str, read: tuple[str, ...], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        writes: list[tuple[object, ...]] = []
+        reads: list[tuple[str, ...]] = []
+        fake = _fake_gh(writes)
+
+        def recording_run(*args: str) -> str:
+            if "number" in args[-1]:
+                reads.append(args)
+                return json.dumps({"number": 7, "head": PR_HEAD, "url": PR_URL})
+            return fake(*args)
+
+        report = f"**Verdict:** APPROVE · **Action:** none\n**Reviewed commit:** `{PR_HEAD}`\n"
+        _setup(tmp_path, monkeypatch, _review(), report, writes, recording_run)
+        monkeypatch.setattr(sys, "argv", ["publish_review.py", "--pr", pr])
+
+        assert PUBLISHER.main() == 0
+
+        prefix, select = read[:-1], read[-1]
+        assert reads == [("gh", "api", *prefix, f"{select} | {{number, head: .head.sha, url: .html_url}}")]
+        assert [write[:2] for write in writes] == [("comment", "POST")]
+
+    def test_main_refuses_branch_without_open_pull_request(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        writes: list[tuple[object, ...]] = []
+        report = f"**Verdict:** APPROVE · **Action:** none\n**Reviewed commit:** `{PR_HEAD}`\n"
+        _setup(tmp_path, monkeypatch, _review(), report, writes, lambda *args: "")
+        monkeypatch.setattr(sys, "argv", ["publish_review.py", "--pr", "gone"])
+
+        assert PUBLISHER.main() == 1
+
+        assert capsys.readouterr().err == "publish_review.py: no open pull request for 'gone'\n"
+        assert writes == []
+
+    def test_list_reviews_reads_inline_comments_of_own_heading_reviews_only(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        reviews = (
+            _own_review(f"{HEADING}\nx", inline=("a", "b"), review_id=11),
+            _own_review("plain", inline=("c",), review_id=12),
+            _own_review(f"{HEADING}\ny", login="bob", inline=("d",), review_id=13),
+        )
+        calls: list[tuple[str, ...]] = []
+        fake = _fake_gh([], reviews=reviews)
+
+        def recording_run(*args: str) -> str:
+            calls.append(args)
+            return fake(*args)
+
+        monkeypatch.setattr(PUBLISHER, "run", recording_run)
+
+        found = PUBLISHER.list_reviews("github.com", "o/r", 7, "me")
+
+        assert [PUBLISHER.thread_comments(node) for node in found] == [[{"body": "a"}, {"body": "b"}], [], []]
+        assert [node["url"] for node in found] == [REVIEW_URL] * 3
+        assert sum("repos/o/r/pulls/7/reviews/11/comments" in call for call in calls) == 1
+        assert not any("reviews/12/comments" in call or "reviews/13/comments" in call for call in calls)
 
     @pytest.mark.parametrize(
         ("comments", "expected"),
@@ -1025,8 +1098,8 @@ def _fake_gh(
 ) -> Callable[..., str]:
     """Return a `run` double answering one post to PR #7 by `me`, recording each write in writes.
 
-    It answers `gh pr view`, the viewer, the issue comments, the `reviews` GraphQL listing and the changed
-    files, and fails on any other GraphQL call, so a review thread read or mutation fails the test. A review
+    It answers the REST pull request read, the viewer, the issue comments, the reviews and their inline comments,
+    and the changed files, and fails on any GraphQL call or `gh pr` command. A review
     POST is recorded as ("review", <payload>) and answers REVIEW_URL; a comment write as ("comment", "POST"
     or "PATCH", <body>) and answers COMMENT_URL. failing="review" makes the review POST raise
     CalledProcessError with `HTTP 422`.
@@ -1035,8 +1108,10 @@ def _fake_gh(
     listings = {"reviews": reviews, "files": files, "comments": comments}
 
     def fake_run(*args: str) -> str:
-        if args[:3] == ("gh", "pr", "view"):
-            return json.dumps({"number": 7, "headRefOid": PR_HEAD, "url": PR_URL})
+        assert args[:2] == ("gh", "api"), f"ran {args}"
+        assert "graphql" not in args, f"ran {args}"
+        if args[2] == "repos/{owner}/{repo}/pulls/7":
+            return json.dumps({"number": 7, "head": PR_HEAD, "url": PR_URL})
         if args[-3:] == ("user", "--jq", ".login"):
             return "me"
         if "--input" in args:
@@ -1057,13 +1132,27 @@ def _write_comment(args: tuple[str, ...], writes: list[tuple[object, ...]]) -> s
 
 
 def _gh_api(args: tuple[str, ...], listings: dict[str, tuple[dict[str, object], ...]]) -> str:
-    """Answer the `reviews` GraphQL listing, the changed files or the issue comments from listings, one JSON line per node."""
-    if args[2] == "graphql":
-        assert args[-1] == ".data.repository.pullRequest.reviews.nodes[]", f"ran {args}"
-        return "\n".join(json.dumps(node) for node in listings["reviews"])
+    """Answer the reviews, a review's inline comments, the changed files or the issue comments from listings, one JSON line per node."""
+    answer = _review_listing(args, listings["reviews"])
+    if answer is not None:
+        return answer
     listing = "files" if "repos/o/r/pulls/7/files" in args else "comments"
     assert listing == "files" or "repos/o/r/issues/7/comments" in args, f"ran {args}"
     return "\n".join(json.dumps(node) for node in listings[listing])
+
+
+def _review_listing(args: tuple[str, ...], reviews: tuple[dict[str, object], ...]) -> str | None:
+    """Answer the REST reviews listing, without inline comments, or one review's inline comments; None for another call."""
+    answers = {"repos/o/r/pulls/7/reviews": "\n".join(json.dumps(_without_comments(node)) for node in reviews)}
+    for node in reviews:
+        comments = PUBLISHER.thread_comments(node)
+        answers[f"repos/o/r/pulls/7/reviews/{node['id']}/comments"] = "\n".join(map(json.dumps, comments))
+    return next((answers[arg] for arg in args if arg in answers), None)
+
+
+def _without_comments(node: dict[str, object]) -> dict[str, object]:
+    """Return node without its `comments` key, as the REST reviews listing returns it."""
+    return {key: value for key, value in node.items() if key != "comments"}
 
 
 def _post_review(args: tuple[str, ...], writes: list[tuple[object, ...]], failing: str | None) -> str:

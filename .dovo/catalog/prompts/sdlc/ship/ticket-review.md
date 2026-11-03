@@ -34,7 +34,12 @@ Choose one disposition accepted by [ship_state.py](../../../scripts/sdlc/ship/sh
 ## Required outputs
 
 1. Write `.agentic/review.md` and `.agentic/review.json` in the exact format validated by `scripts/publish_review.py`:
-   - `.agentic/review.md` must include `**Verdict:** APPROVE` (or `**Verdict:** CHANGES REQUIRED`) with `**Action:** <none|fix|replan|needs_human>` and `**Reviewed commit:** \`<full HEAD sha>\``.
+   - `.agentic/review.md` must hold these two lines, with the verdict and action on the same line, or publishing the review fails:
+
+     ```markdown
+     **Verdict:** <APPROVE|CHANGES REQUIRED> · **Action:** <none|fix|replan|needs_human>
+     **Reviewed commit:** `<full HEAD sha>`
+     ```
    - `.agentic/review.json` must include `head` (full `HEAD` SHA), `verdict` (`"APPROVE"` or `"CHANGES_REQUIRED"`), `action` (`"none"`, `"fix"`, `"replan"`, or `"needs_human"`), `round` (`review_rounds + 1`), `counts` (`blocking`, `warnings`, `suggestions`, `nits`), `findings` (each with `id`, `severity`, `path`, `start_line`, `line`, `rule`, `summary`, `issue`, `fix`, `also_affects`), and `coverage`.
 2. Write `.agentic/ship/stage.json` tying the review verdict to the exact `body_sha` and `head_sha`:
 

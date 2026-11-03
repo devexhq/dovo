@@ -17,7 +17,8 @@ the comment is refused unless review.json's verdict, action and blocking count
 agree and the pull request head is the commit the review covered. With
 --session, the header also names the dovo session that produced the review, so
 pr-fix can restore that run's state. Every API call targets the pull request's
-own repository.
+own repository, and every call goes through GitHub's REST API, never GraphQL, which
+some environments (such as Claude Code cloud sessions) refuse.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 AGENTIC_DIR = Path(".agentic")
 MARKER = "<!-- dovo-review -->"
@@ -763,6 +764,48 @@ def create_review(host: str, repository: str, number: int, payload: dict[str, ob
         payload_file.unlink(missing_ok=True)
 
 
+def list_reviews(host: str, repository: str, number: int, viewer: str) -> list[dict[str, object]]:
+    """Return the pull request's reviews as REVIEWS_QUERY-shaped nodes, read through the REST API.
+
+    Only viewer's reviews headed REVIEW_HEADING carry their inline comments, the only ones matching_review
+    compares; every other node has none.
+    """
+    output = run(
+        "gh",
+        "api",
+        "--hostname",
+        host,
+        "--paginate",
+        f"repos/{repository}/pulls/{number}/reviews",
+        "--jq",
+        ".[] | {id, author: {login: .user.login}, body, url: .html_url, submittedAt: .submitted_at, "
+        "commit: {oid: .commit_id}}",
+    )
+    reviews = [json.loads(line) for line in output.splitlines() if line.strip()]
+    for review in reviews:
+        author = review.get("author")
+        own = (author.get("login") if isinstance(author, dict) else None) == viewer
+        headed = str(review.get("body") or "").splitlines()[:1] == [REVIEW_HEADING]
+        comments = review_comments(host, repository, number, int(review["id"])) if own and headed else []
+        review["comments"] = {"nodes": comments}
+    return reviews
+
+
+def review_comments(host: str, repository: str, number: int, review_id: int) -> list[dict[str, object]]:
+    """Return the review's inline comments, each as `{body}`, through the REST API."""
+    output = run(
+        "gh",
+        "api",
+        "--hostname",
+        host,
+        "--paginate",
+        f"repos/{repository}/pulls/{number}/reviews/{review_id}/comments",
+        "--jq",
+        ".[] | {body}",
+    )
+    return [json.loads(line) for line in output.splitlines() if line.strip()]
+
+
 def list_pr_nodes(host: str, repository: str, number: int, query: str, connection: str) -> list[dict[str, object]]:
     """Return every node of the pull request's GraphQL connection, one dict per node, through paginated query."""
     owner, name = repository.split("/", 1)
@@ -808,10 +851,33 @@ def thread_graphql(host: str, query: str, thread: str, *fields: str, jq: str) ->
     )
 
 
+def _pr_endpoint(pr: str) -> tuple[list[str], str]:
+    """Return the `gh api` arguments that read pr, a number, URL or branch, and the jq filter selecting it.
+
+    A number or branch names a pull request of the current checkout's repository; a branch selects its open one.
+    """
+    if pr.isdigit():
+        return [f"repos/{{owner}}/{{repo}}/pulls/{pr}"], "."
+    if urlparse(pr).hostname:
+        host, repository = pr_repository(pr)
+        number = urlparse(pr).path.strip("/").split("/")[3]
+        return ["--hostname", host, f"repos/{repository}/pulls/{number}"], "."
+    head = quote(pr, safe="")
+    return [f"repos/{{owner}}/{{repo}}/pulls?state=open&head={{owner}}:{head}"], ".[0] // empty"
+
+
 def _pull_request(pr: str) -> tuple[int, str, str]:
-    """Return pr's number, head commit and URL."""
-    view = json.loads(run("gh", "pr", "view", pr, "--json", "number,headRefOid,url"))
-    return int(view["number"]), str(view["headRefOid"]), str(view["url"])
+    """Return pr's number, head commit and URL, read through the REST API.
+
+    Raises:
+        PublishReviewError: If pr is a branch with no open pull request.
+    """
+    args, select = _pr_endpoint(pr)
+    output = run("gh", "api", *args, "--jq", f"{select} | {{number, head: .head.sha, url: .html_url}}")
+    if not output:
+        raise PublishReviewError(f"no open pull request for {pr!r}")
+    view = json.loads(output)
+    return int(view["number"]), str(view["head"]), str(view["url"])
 
 
 def _raise_on(problem: str | None) -> None:
@@ -833,9 +899,10 @@ def prepare(pr: str, *, session: str | None) -> Posting:
     _raise_on(publish_problem(review, "", pr_head) or report_problem(review, report))
     viewer = run("gh", "api", "--hostname", host, "user", "--jq", ".login")
     comment_id = find_own_comment(list_comments(host, repository, number), viewer)
-    reviews = list_pr_nodes(host, repository, number, REVIEWS_QUERY, "reviews")
     payload = review_payload(review, list_files(host, repository, number))
-    reused = None if payload is None else matching_review(reviews, viewer, payload)
+    reused = (
+        None if payload is None else matching_review(list_reviews(host, repository, number, viewer), viewer, payload)
+    )
     reused_url = None if reused is None else str(reused.get("url"))
     payload = None if reused is not None else payload
     findings = _findings(review)
