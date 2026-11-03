@@ -338,6 +338,7 @@ class ConfigCacheTests:
         [
             pytest.param(lambda config: config.set("worktree.base_ref", "main"), id="set"),
             pytest.param(lambda config: config.unset("worktree.base_ref"), id="unset"),
+            pytest.param(lambda config: config.unset("telemetry.nosuch"), id="unset_absent"),
         ],
     )
     def test_failed_mutation_keeps_cached_config(
@@ -358,12 +359,19 @@ class ConfigCacheTests:
         assert config.worktree.base_ref == "develop"
 
 
+def _write_schema_invalid_config(path: Path) -> None:
+    payload = build_default_config("demo-workspace")
+    payload["worktree"]["max_active_worktrees"] = "three"
+    Filesystem.atomic_write_json(path, payload)
+
+
 class ConfigMutationLoadFailureTests:
     @pytest.mark.parametrize(
         "mutate",
         [
             pytest.param(lambda config: config.set("worktree.base_ref", "main"), id="set"),
             pytest.param(lambda config: config.unset("worktree.base_ref"), id="unset"),
+            pytest.param(lambda config: config.unset("telemetry.nosuch"), id="unset_absent"),
         ],
     )
     @pytest.mark.parametrize(
@@ -373,6 +381,7 @@ class ConfigMutationLoadFailureTests:
             pytest.param(lambda path: path.mkdir(), id="directory"),
             pytest.param(lambda path: path.write_text("{not valid json", encoding="utf-8"), id="malformed"),
             pytest.param(lambda path: path.write_text("[]", encoding="utf-8"), id="root_not_object"),
+            pytest.param(_write_schema_invalid_config, id="schema_invalid"),
         ],
     )
     def test_load_failure_reports_what_load_reports(
@@ -381,13 +390,16 @@ class ConfigMutationLoadFailureTests:
         mutate: ConfigMutation,
         break_config: Callable[[Path], object],
     ) -> None:
-        """Report the error code, errors, remediations and diagnostics Config.load reports for the same file."""
-        break_config(workspace_paths.config_file)
+        """Report the error code, errors, remediations and diagnostics Config.load reports, leaving the file as it was."""
+        config_path = workspace_paths.config_file
+        break_config(config_path)
+        before = config_path.read_bytes() if config_path.is_file() else None
         loaded = Config(workspace_paths).load()
 
         result = mutate(Config(workspace_paths))
 
         assert loaded.error_code is not None
+        assert (config_path.read_bytes() if config_path.is_file() else None) == before
         assert (result.error_code, result.errors, result.remediations, result.diagnostics) == (
             loaded.error_code,
             loaded.errors,

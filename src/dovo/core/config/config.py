@@ -10,7 +10,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.config.exceptions import ConfigError, ConfigLoadDiagnostics, ConfigRawObject, ConfigTierSource
-from dovo.core.config.loader import ConfigLoadResult, load_config, read_config_object
+from dovo.core.config.loader import ConfigLoadResult, load_config, load_config_at, read_config_object
 from dovo.core.config.models import (
     ConcurrencyConfig,
     DoctorConfig,
@@ -125,11 +125,15 @@ class Config:
         return ConfigSetResult(config_path=config_path, key=key, value=value)
 
     def unset(self, key: str) -> ConfigUnsetResult:
-        """Remove the dot-path key from ``config.json`` and persist it, writing nothing when absent; never raises."""
+        """Remove the dot-path key from a ``config.json`` that loads and persist it, writing nothing when absent.
+
+        Never raises: a file that cannot be loaded, including one failing schema validation, is reported in the
+        result whether or not the key is present.
+        """
         config_path = self._paths.config_file
         removal: ConfigRemoval | None = None
         with catch_failure("config.unset", path=str(config_path)) as caught:
-            removal = without_value(read_config_object(config_path), key)
+            removal = without_value(load_config_at(config_path, bypass_cache=True).raw, key)
             if removal is not None:
                 write_mutated_config(config_path, removal.updated)
         existed = removal is not None

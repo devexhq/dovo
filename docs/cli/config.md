@@ -101,9 +101,9 @@ dovo config unset agents.copilot.model
 dovo config unset agents
 ```
 
-Removing a key that is already absent is a no-op and exits successfully without writing to disk. Removing the last key of a provider block leaves an empty block (`"copilot": {}`) under `agents`.
+On a `.dovo/config.json` that loads, removing a key that is already absent is a no-op and exits successfully without writing to disk. Removing the last key of a provider block leaves an empty block (`"copilot": {}`) under `agents`.
 
-On failure, `dovo config unset` exits with code 1, leaves `.dovo/config.json` unchanged and reports the same `error_code`, `Details logged:` line and `diagnostics` entry as [`dovo config set`](#dovo-config-set), with `CONFIG_SCHEMA_INVALID` when the file would fail schema validation without the key. Its JSON payload has no `status` key; `existed` reports whether the key was present and `previous_value` holds the value it removed. A successful run reports `error_code` `null` and empty `errors`.
+On failure, `dovo config unset` exits with code 1, leaves `.dovo/config.json` unchanged and reports the same `error_code`, `Details logged:` line and `diagnostics` entry as [`dovo config set`](#dovo-config-set), with `CONFIG_SCHEMA_INVALID` when the file would fail schema validation without the key. When `.dovo/config.json` cannot be loaded, including when it already fails schema validation, `dovo config unset` fails with the failure [`dovo config show`](#dovo-config-show) reports for that file, whether or not the key is present. Its JSON payload has no `status` key; `existed` reports whether the key was present and `previous_value` holds the value it removed. A successful run reports `error_code` `null` and empty `errors`.
 
 ### `dovo config validate`
 
