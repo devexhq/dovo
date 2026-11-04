@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.credentials import resolve_credential
 from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config import agent_settings
 from dovo.core.config.models import DEFAULT_AGENT, AgentProvider, AgentSettings
-from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DiagnosticsContext
+from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckRecord, DiagnosticsContext
 
 
 class AgentSetupCheck:
@@ -17,7 +18,7 @@ class AgentSetupCheck:
     name: str = "Agent Setup Check"
     category: CheckCategory = CheckCategory.AGENT
 
-    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
+    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckRecord:
         """Validate the active provider's required credential, if any, and its configured model entry."""
         provider = context.config.default_agent if context.config is not None else DEFAULT_AGENT
         settings = agent_settings(context.config) if context.config is not None else AgentSettings()
@@ -55,19 +56,19 @@ def _with_auth_label(label: str | None, sentence: str, details: dict[str, str]) 
 
 def _key_missing_result(
     check_id: str, name: str, category: CheckCategory, provider: AgentProvider, spec: ProviderSpec
-) -> DiagnosticCheckResult:
+) -> DiagnosticCheckRecord:
     """Build the FAILED DOCTOR_AGENT_KEY_MISSING result naming the missing environment variables."""
     env_names = spec.credential_envs
     joined_names = " or ".join(env_names)
     message = f"Agent provider '{provider}' is missing required credential '{joined_names}'."
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check_id,
         name=name,
         category=category,
         status=CheckStatus.FAILED,
         message=message,
         details={"provider": provider, "missing_env_var": joined_names, "credential_envs": list(env_names)},
-        error_code="DOCTOR_AGENT_KEY_MISSING",
+        error_code=ErrorCode.DOCTOR_AGENT_KEY_MISSING,
         errors=[message],
         warnings=[],
     )
@@ -75,20 +76,20 @@ def _key_missing_result(
 
 def _no_model_result(
     check_id: str, name: str, category: CheckCategory, provider: AgentProvider, label: str | None
-) -> DiagnosticCheckResult:
-    """Build the WARNING DOCTOR_AGENT_NO_MODEL result for a provider configured with no model."""
+) -> DiagnosticCheckRecord:
+    """Build the WARNING DOCTOR_AGENT_MODEL_MISSING result for a provider configured with no model."""
     message, details = _with_auth_label(
         label, f"Agent provider '{provider}' has no model configured", {"provider": provider}
     )
 
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check_id,
         name=name,
         category=category,
         status=CheckStatus.WARNING,
         message=message,
         details=details,
-        error_code="DOCTOR_AGENT_NO_MODEL",
+        error_code=ErrorCode.DOCTOR_AGENT_MODEL_MISSING,
         errors=[],
         warnings=[message],
     )
@@ -96,9 +97,9 @@ def _no_model_result(
 
 def _ok_result(
     check_id: str, name: str, category: CheckCategory, message: str, details: dict[str, str]
-) -> DiagnosticCheckResult:
+) -> DiagnosticCheckRecord:
     """Build the OK result carrying the configured provider and model."""
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check_id,
         name=name,
         category=category,

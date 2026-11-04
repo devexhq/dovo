@@ -237,7 +237,7 @@ class ResultRenderDiagnosticsTests:
             check_id="check.crash",
             status=CheckStatus.FAILED,
             message="Unhandled exception during check execution: boom",
-            error_code="DOCTOR_CHECK_CRASH",
+            error_code=ErrorCode.DOCTOR_CHECK_CRASHED,
             errors=["Unhandled exception in check.crash: boom"],
             remediations=[Remediation(message="Rerun 'dovo doctor' after fixing the check.")],
             diagnostics=[RECORD],

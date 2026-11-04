@@ -5,9 +5,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from dovo.common.diagnostic_log import DiagnosticRecord, error_diagnostics
+from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import Failure, catch_failure
 from dovo.core.db import WorktreesRepository
-from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DiagnosticsContext
+from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckRecord, DiagnosticsContext
 from dovo.core.worktree.models import StaleWorktreeItem, WorktreeDetection
 from dovo.core.worktree.services.detector import detect_stale_worktrees
 
@@ -19,7 +20,7 @@ class WorktreeRefsCheck:
     name: str = "Worktree References Check"
     category: CheckCategory = CheckCategory.WORKTREE
 
-    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
+    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckRecord:
         """Scan worktree directories against DB records and Git worktree metadata for stale or orphaned entries."""
         db_path = context.paths.database_file
         if not db_path.is_file():
@@ -35,7 +36,7 @@ class WorktreeRefsCheck:
 
 def _detection_result(
     check_id: str, name: str, category: CheckCategory, detection: WorktreeDetection
-) -> DiagnosticCheckResult:
+) -> DiagnosticCheckRecord:
     """Return the stale, orphan or OK result for a completed detection, stale taking priority."""
     diagnostics = list(detection.diagnostics)
     stale_items = [*detection.stale_worktrees, *detection.stale_db_records]
@@ -56,10 +57,10 @@ def _identifiers(items: Sequence[StaleWorktreeItem]) -> list[str]:
 
 def _detection_unavailable_result(
     check_id: str, name: str, category: CheckCategory, failure: Failure
-) -> DiagnosticCheckResult:
+) -> DiagnosticCheckRecord:
     """Build the WARNING result naming the detection failure's error_code and message, carrying its recorded diagnostic."""
     message = f"Worktree detection could not complete ({failure.error_code.value}): {failure.message}"
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check_id,
         name=name,
         category=category,
@@ -75,17 +76,17 @@ def _detection_unavailable_result(
 
 def _stale_result(
     check_id: str, name: str, category: CheckCategory, stale_ids: list[str], *, diagnostics: list[DiagnosticRecord]
-) -> DiagnosticCheckResult:
+) -> DiagnosticCheckRecord:
     """Build the WARNING DOCTOR_WORKTREE_STALE result naming the stale worktree identifiers."""
     message = f"{len(stale_ids)} stale worktree reference(s) detected."
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check_id,
         name=name,
         category=category,
         status=CheckStatus.WARNING,
         message=message,
         details={"stale_ids": stale_ids},
-        error_code="DOCTOR_WORKTREE_STALE",
+        error_code=ErrorCode.DOCTOR_WORKTREE_STALE,
         errors=[],
         warnings=[message],
         diagnostics=diagnostics,
@@ -94,17 +95,17 @@ def _stale_result(
 
 def _orphan_result(
     check_id: str, name: str, category: CheckCategory, orphan_dirs: list[str], *, diagnostics: list[DiagnosticRecord]
-) -> DiagnosticCheckResult:
-    """Build the WARNING DOCTOR_WORKTREE_ORPHAN result naming the orphaned directory names."""
+) -> DiagnosticCheckRecord:
+    """Build the WARNING DOCTOR_WORKTREE_ORPHANED result naming the orphaned directory names."""
     message = f"{len(orphan_dirs)} orphaned worktree directory(s) detected."
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check_id,
         name=name,
         category=category,
         status=CheckStatus.WARNING,
         message=message,
         details={"orphan_directories": orphan_dirs},
-        error_code="DOCTOR_WORKTREE_ORPHAN",
+        error_code=ErrorCode.DOCTOR_WORKTREE_ORPHANED,
         errors=[],
         warnings=[message],
         diagnostics=diagnostics,
@@ -113,9 +114,9 @@ def _orphan_result(
 
 def _ok_result(
     check_id: str, name: str, category: CheckCategory, verified_count: int, *, diagnostics: list[DiagnosticRecord]
-) -> DiagnosticCheckResult:
+) -> DiagnosticCheckRecord:
     """Build the OK result carrying the count of worktrees verified against DB and Git state."""
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check_id,
         name=name,
         category=category,

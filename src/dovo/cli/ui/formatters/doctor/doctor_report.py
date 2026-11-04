@@ -62,7 +62,7 @@ class DoctorReportFormatter(ComponentFormatter[DiagnosticsReport, DoctorReportVi
     """Formatter for aggregated diagnostic doctor reports."""
 
     def transform(self, data: DiagnosticsReport) -> DoctorReportView:
-        """Reshape DiagnosticsReport and its DiagnosticCheckResult entries into DoctorReportView/DoctorCheckView, field for field."""
+        """Reshape DiagnosticsReport and its DiagnosticCheckRecord entries into DoctorReportView/DoctorCheckView, field for field."""
         return DoctorReportView(
             ok=data.ok,
             has_warnings=data.has_warnings,

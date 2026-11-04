@@ -7,11 +7,12 @@ from pathlib import Path
 import pytest
 
 from dovo.cli.ui.formatters.doctor import DoctorCheckView, DoctorReportFormatter, DoctorReportView
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.diagnostics import (
     CheckCategory,
     CheckStatus,
-    DiagnosticCheckResult,
+    DiagnosticCheckRecord,
     DiagnosticsReport,
 )
 from tests.harness.formatter import (
@@ -28,7 +29,7 @@ NO_MODEL_MESSAGE = (
 )
 CONFIG_NOT_FOUND_MESSAGE = "Run 'dovo init' to create '.dovo/config.json'"
 
-OK_CHECK = DiagnosticCheckResult(
+OK_CHECK = DiagnosticCheckRecord(
     check_id="git.repo",
     name="Git Repository Check",
     category=CheckCategory.GIT,
@@ -42,7 +43,7 @@ OK_CHECK = DiagnosticCheckResult(
     remediations=[],
 )
 
-WARNING_CHECK = DiagnosticCheckResult(
+WARNING_CHECK = DiagnosticCheckRecord(
     check_id="agent.setup",
     name="Agent Setup Check",
     category=CheckCategory.AGENT,
@@ -50,7 +51,7 @@ WARNING_CHECK = DiagnosticCheckResult(
     message="Agent provider 'copilot' has no model configured.",
     details={"provider": "copilot"},
     duration_seconds=0.0005,
-    error_code="DOCTOR_AGENT_NO_MODEL",
+    error_code=ErrorCode.DOCTOR_AGENT_MODEL_MISSING,
     errors=[],
     warnings=["Agent provider 'copilot' has no model configured."],
     remediations=[
@@ -61,7 +62,7 @@ WARNING_CHECK = DiagnosticCheckResult(
     ],
 )
 
-FAILED_CHECK = DiagnosticCheckResult(
+FAILED_CHECK = DiagnosticCheckRecord(
     check_id="config.schema",
     name="Config Schema Check",
     category=CheckCategory.CONFIG,
@@ -69,13 +70,13 @@ FAILED_CHECK = DiagnosticCheckResult(
     message="Configuration file not found at '/workspace/my-repo/.dovo/config.json'.",
     details={},
     duration_seconds=0.0003,
-    error_code="CONFIG_NOT_FOUND",
+    error_code=ErrorCode.CONFIG_NOT_FOUND,
     errors=["Configuration file not found at '/workspace/my-repo/.dovo/config.json'."],
     warnings=[],
     remediations=[Remediation(message=CONFIG_NOT_FOUND_MESSAGE, command="dovo init")],
 )
 
-SKIPPED_CHECK = DiagnosticCheckResult(
+SKIPPED_CHECK = DiagnosticCheckRecord(
     check_id="worktree.refs",
     name="Worktree References Check",
     category=CheckCategory.WORKTREE,
@@ -90,8 +91,8 @@ SKIPPED_CHECK = DiagnosticCheckResult(
 )
 
 
-def _check_view(check: DiagnosticCheckResult) -> DoctorCheckView:
-    """Build the expected DoctorCheckView for a DiagnosticCheckResult, field for field."""
+def _check_view(check: DiagnosticCheckRecord) -> DoctorCheckView:
+    """Build the expected DoctorCheckView for a DiagnosticCheckRecord, field for field."""
     return DoctorCheckView(
         check_id=check.check_id,
         name=check.name,
@@ -168,7 +169,7 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                     "message": "Agent provider 'copilot' has no model configured.",
                     "details": {"provider": "copilot"},
                     "duration_seconds": 0.0005,
-                    "error_code": "DOCTOR_AGENT_NO_MODEL",
+                    "error_code": "DOCTOR_AGENT_MODEL_MISSING",
                     "errors": [],
                     "warnings": ["Agent provider 'copilot' has no model configured."],
                     "remediations": [

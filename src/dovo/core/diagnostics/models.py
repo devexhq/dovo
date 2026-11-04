@@ -7,8 +7,9 @@ from typing import Any, Protocol, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field
 
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
-from dovo.common.models import BaseResult
+from dovo.common.models import Remediation
 from dovo.core.config.models import DovoConfig
 from dovo.core.git import GitRunner
 
@@ -45,8 +46,11 @@ class DiagnosticsContext(BaseModel):
     git: GitRunner
 
 
-class DiagnosticCheckResult(BaseResult):
-    """Individual diagnostic check outcome."""
+class DiagnosticCheckRecord(BaseModel):
+    """One diagnostic check's outcome: a record, not a command result, so a warning check carries its code with no errors.
+
+    error_code is a published ErrorCode or None; any other value is refused when the record is built.
+    """
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -57,6 +61,11 @@ class DiagnosticCheckResult(BaseResult):
     message: str
     details: dict[str, Any] = Field(default_factory=dict)
     duration_seconds: float = 0.0
+    error_code: ErrorCode | None = None
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)  # error-level records only
 
     @property
     def ok(self) -> bool:
@@ -70,7 +79,7 @@ class DiagnosticsReport(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     workspace_root: Path
-    checks: list[DiagnosticCheckResult]
+    checks: list[DiagnosticCheckRecord]
     diagnostics: list[DiagnosticRecord] = Field(default_factory=list)  # every check's records, in check order
     duration_seconds: float = 0.0
 
@@ -93,6 +102,6 @@ class DiagnosticCheck(Protocol):
     name: str
     category: CheckCategory
 
-    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
-        """Execute check against context and return typed DiagnosticCheckResult."""
+    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckRecord:
+        """Execute check against context and return its DiagnosticCheckRecord."""
         ...

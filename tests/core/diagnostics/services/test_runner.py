@@ -214,7 +214,7 @@ class DiagnosticRunnerContainmentTests:
         assert result.name == "Crashing Check"
         assert result.category == CheckCategory.WORKTREE
         assert result.status == CheckStatus.FAILED
-        assert result.error_code == "DOCTOR_CHECK_CRASH"
+        assert result.error_code == "DOCTOR_CHECK_CRASHED"
         assert "Simulated crash in worktree inspection" in result.message
         assert result.details == {
             "exception": "Simulated crash in worktree inspection",
@@ -224,7 +224,7 @@ class DiagnosticRunnerContainmentTests:
             Remediation(
                 message=(
                     "No deterministic remediation is registered for check 'crashing.check' "
-                    "(error_code='DOCTOR_CHECK_CRASH'). Review the check message and details to diagnose and resolve "
+                    "(error_code='DOCTOR_CHECK_CRASHED'). Review the check message and details to diagnose and resolve "
                     "the issue."
                 )
             )
@@ -297,7 +297,7 @@ class DiagnosticRunnerContainmentTests:
         assert report.ok is False
         assert [c.check_id for c in report.checks] == ["check.crash", "check.healthy"]
         assert report.checks[0].status == CheckStatus.FAILED
-        assert report.checks[0].error_code == "DOCTOR_CHECK_CRASH"
+        assert report.checks[0].error_code == "DOCTOR_CHECK_CRASHED"
         assert report.checks[1].status == CheckStatus.OK
 
     def test_report_diagnostics_concatenates_checks_in_order(

@@ -3,13 +3,14 @@
 from typing import Final
 
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
+from dovo.common.error_codes import ErrorCode
 from dovo.common.timing import Stopwatch
 from dovo.core.config.models import DovoConfig
 from dovo.core.diagnostics.models import (
     CheckCategory,
     CheckStatus,
     DiagnosticCheck,
-    DiagnosticCheckResult,
+    DiagnosticCheckRecord,
     DiagnosticsContext,
     DiagnosticsReport,
 )
@@ -49,7 +50,7 @@ def should_skip_by_config(check_id: str, config: DovoConfig | None) -> bool:
 def execute_single_check(
     check: DiagnosticCheck,
     context: DiagnosticsContext,
-) -> DiagnosticCheckResult:
+) -> DiagnosticCheckRecord:
     """Execute a single check with exception containment, measured duration, and remediation enrichment."""
     watch = Stopwatch.start()
     try:
@@ -66,23 +67,23 @@ def execute_single_check(
     return _with_remediations(result.model_copy(update={"duration_seconds": watch.elapsed_seconds}))
 
 
-def _crash_result(check: DiagnosticCheck, exc: Exception, record: DiagnosticRecord | None) -> DiagnosticCheckResult:
-    """Return the FAILED DOCTOR_CHECK_CRASH result for a check that raised exc, carrying its recorded diagnostic."""
-    return DiagnosticCheckResult(
+def _crash_result(check: DiagnosticCheck, exc: Exception, record: DiagnosticRecord | None) -> DiagnosticCheckRecord:
+    """Return the FAILED DOCTOR_CHECK_CRASHED result for a check that raised exc, carrying its recorded diagnostic."""
+    return DiagnosticCheckRecord(
         check_id=check.check_id,
         name=check.name,
         category=check.category,
         status=CheckStatus.FAILED,
         message=f"Unhandled exception during check execution: {exc}",
         details={"exception": str(exc), "type": type(exc).__name__},
-        error_code="DOCTOR_CHECK_CRASH",
+        error_code=ErrorCode.DOCTOR_CHECK_CRASHED,
         errors=[f"Unhandled exception in {check.check_id}: {exc}"],
         warnings=[],
         diagnostics=error_diagnostics(record),
     )
 
 
-def _with_remediations(result: DiagnosticCheckResult) -> DiagnosticCheckResult:
+def _with_remediations(result: DiagnosticCheckRecord) -> DiagnosticCheckRecord:
     """Return result with remediations populated via resolve_remediations."""
     return result.model_copy(update={"remediations": resolve_remediations(result)})
 
@@ -103,11 +104,11 @@ class DiagnosticRunner:
         candidate_checks = self.registry.all()
         checks_to_run = filter_checks_by_categories(candidate_checks, categories)
 
-        results: list[DiagnosticCheckResult] = []
+        results: list[DiagnosticCheckRecord] = []
         for check in checks_to_run:
             if should_skip_by_config(check.check_id, context.config):
                 results.append(
-                    DiagnosticCheckResult(
+                    DiagnosticCheckRecord(
                         check_id=check.check_id,
                         name=check.name,
                         category=check.category,
