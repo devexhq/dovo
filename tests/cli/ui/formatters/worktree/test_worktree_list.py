@@ -9,6 +9,7 @@ import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_list import WorktreeListFormatter
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.core.db import WorktreeRecord, WorktreeStatus
 from dovo.core.worktree.models import WorktreeListResult
 from tests.harness.formatter import (
@@ -47,7 +48,7 @@ _RECORD_LOG = DiagnosticRecord(
 
 INTERNAL_ERROR = FormatterCase.identity(
     data=WorktreeListResult(
-        error_code="INTERNAL_ERROR",
+        error_code=ErrorCode.INTERNAL_ERROR,
         errors=["Unexpected error during worktree.list: database is locked"],
         diagnostics=[_RECORD_LOG],
     ),
@@ -57,16 +58,10 @@ INTERNAL_ERROR = FormatterCase.identity(
     ],
 )
 
-FAILURE_WITHOUT_ERRORS = FormatterCase.identity(
-    data=WorktreeListResult(error_code="INTERNAL_ERROR"),
-    render_expectations=["Worktree List Failed", "Failed to list worktrees."],
-)
-
 WORKTREE_LIST_CASES = [
     pytest.param(WITH_WORKTREES, id="with_worktrees"),
     pytest.param(EMPTY_WORKTREES, id="empty_worktrees"),
     pytest.param(INTERNAL_ERROR, id="internal_error"),
-    pytest.param(FAILURE_WITHOUT_ERRORS, id="failure_without_errors"),
 ]
 
 WORKTREE_LIST_PAYLOAD_CASES = [

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dovo.common.models import FailurePolicy, OnFailureSpec
 from dovo.core.catalog.definitions import StepDefinition
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import StepRecord
 from dovo.engine.models import FailurePromptDecision, FailurePrompter, StepAction
 
 USER_CONTINUED_MARKER = "user continued after prompt_user"
@@ -22,7 +22,7 @@ def effective_terminal_policy(spec: OnFailureSpec) -> FailurePolicy:
     return spec.action
 
 
-def step_failure_diagnostic(result: StepResult) -> str:
+def step_failure_diagnostic(result: StepRecord) -> str:
     """Build a compact diagnostic string for a failed step result.
 
     @TODO: Check if exit code return is reachable
@@ -30,14 +30,14 @@ def step_failure_diagnostic(result: StepResult) -> str:
     return result.error_message or result.stderr or f"exit code {result.exit_code}"
 
 
-def mark_continued_after_prompt(result: StepResult) -> StepResult:
+def mark_continued_after_prompt(result: StepRecord) -> StepRecord:
     """Rewrite a failed step as non-fatal after the user chooses continue."""
     diagnostic = step_failure_diagnostic(result)
     marker = f"{diagnostic} ({USER_CONTINUED_MARKER})" if diagnostic else USER_CONTINUED_MARKER
     return result.model_copy(update={"status": "ignored", "error_message": marker})
 
 
-def failed_step_message(result: StepResult) -> str:
+def failed_step_message(result: StepRecord) -> str:
     """Format diagnostic message describing step failure."""
     detail = step_failure_diagnostic(result)
     return f"Step '{result.step_id}' failed: {detail}"
@@ -46,7 +46,7 @@ def failed_step_message(result: StepResult) -> str:
 def prompt_failure_decision(
     prompter: FailurePrompter | None,
     step: StepDefinition,
-    result: StepResult,
+    result: StepRecord,
     *,
     no_tty: bool,
 ) -> tuple[FailurePromptDecision, str | None]:
@@ -67,8 +67,8 @@ def prompt_failure_decision(
 
 def apply_prompt_decision(
     decision: FailurePromptDecision,
-    result: StepResult,
-) -> tuple[StepAction, StepResult | None, str | None]:
+    result: StepRecord,
+) -> tuple[StepAction, StepRecord | None, str | None]:
     """Map a prompt decision to ``(StepAction, result_to_record, error_message)``."""
     if decision == FailurePromptDecision.RETRY:
         return StepAction.RETRY, None, None
@@ -79,8 +79,8 @@ def apply_prompt_decision(
 
 def resolve_terminal_action(
     policy: FailurePolicy,
-    result: StepResult,
-) -> tuple[StepAction, StepResult | None, str | None]:
+    result: StepRecord,
+) -> tuple[StepAction, StepRecord | None, str | None]:
     """Map a non-prompt terminal policy to ``(StepAction, result_to_record, error_message)``: CONTINUE records an ignored result; every other policy aborts with the failed result."""
     if policy == FailurePolicy.CONTINUE:
         return StepAction.CONTINUE, mark_continued_after_prompt(result), None

@@ -13,6 +13,7 @@ from dovo.cli.ui.formatters.catalog.catalog_views import (
     CatalogListView,
     CatalogTemplateView,
 )
+from dovo.common.error_codes import ErrorCode
 from dovo.core.catalog.models import CatalogItemType, CatalogListResult, CatalogRecord, CatalogTier
 from tests.harness.formatter import (
     FormatterCase,
@@ -105,7 +106,9 @@ TEMPLATES = FormatterCase(
 )
 
 WITH_ERRORS = FormatterCase(
-    data=CatalogListResult(item_type=_BP, error_code="CATALOG_WRITE_FAILED", errors=["Failed to write catalog index."]),
+    data=CatalogListResult(
+        item_type=_BP, error_code=ErrorCode.CATALOG_WRITE_FAILED, errors=["Failed to write catalog index."]
+    ),
     view=_EMPTY_VIEW.model_copy(update={"type_filter": None, "errors": ["Failed to write catalog index."]}),
     render_expectations=["Failed to write catalog index."],
 )

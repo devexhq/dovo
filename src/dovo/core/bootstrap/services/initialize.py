@@ -130,7 +130,7 @@ def auto_initialize_workspace(root: Path | None = None) -> WorkspaceInitResult:
 
     rollback_error = _rollback(snapshot)
     if rollback_error is not None:
-        return result.model_copy(update={"errors": [*result.errors, rollback_error]})
+        return WorkspaceInitResult.model_validate({**dict(result), "errors": [*result.errors, rollback_error]})
     return result
 
 

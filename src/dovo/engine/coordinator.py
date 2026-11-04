@@ -29,7 +29,7 @@ from dovo.engine.executors.models import (
     PreviousStepMetadata,
     ProgressCallback,
     StepExecutionContext,
-    StepResult,
+    StepRecord,
 )
 from dovo.engine.executors.session_log import append_session_log_event
 from dovo.engine.failure import (
@@ -125,14 +125,14 @@ class RunCoordinator:
         self._agent = agent
         self._paused_prompt_id: str | None = None
         self._errors: list[str] = []
-        self._error_code: str | None = None
+        self._error_code: ErrorCode | None = None
         self._warnings: list[str] = []
         self._diagnostics: list[DiagnosticRecord] = []
         self._loaded: _LoadedRun | None = None
         self._load_ok: bool | None = None
         self._in_flight: ExecutionPlanNode | None = None
 
-    def _fail(self, error_code: str, message: str) -> None:
+    def _fail(self, error_code: ErrorCode, message: str) -> None:
         """Append message to the run's errors and make error_code the run's code unless an earlier failure set one."""
         self._errors.append(message)
         if self._error_code is None:
@@ -346,7 +346,7 @@ class RunCoordinator:
             steps=steps,
         )
 
-    def _run_attempt(self, invocation: StepInvocation) -> StepResult:
+    def _run_attempt(self, invocation: StepInvocation) -> StepRecord:
         """Notify and log the start, run one StepExecution with observer-forwarding callbacks, notify and log the done, and append the result's warnings."""
         self._log_step_start(invocation)
         observer = self._run.settings.observer
@@ -381,7 +381,7 @@ class RunCoordinator:
 
     def _complete_ask(
         self, invocation: StepInvocation, request: InteractionRequest, answer: InteractionAnswer
-    ) -> StepResult:
+    ) -> StepRecord:
         """Build the answered ask's result, notify and log the done, and append its warnings."""
         result = complete_ask_step(self._execution_context(invocation), request, answer)
         self._log_step_done(invocation, result)
@@ -447,7 +447,7 @@ class RunCoordinator:
             ),
         )
 
-    def _log_step_done(self, invocation: StepInvocation, result: StepResult) -> None:
+    def _log_step_done(self, invocation: StepInvocation, result: StepRecord) -> None:
         """Notify the observer and append STEP_DONE for the settled result."""
         step = invocation.step
         safe_notify(self._run.settings.observer, "on_step_done", invocation.idx, invocation.total, step, result)
@@ -829,7 +829,7 @@ class RunCoordinator:
         self,
         node: ExecutionLeafNode,
         step_def: StepDefinition,
-        result: StepResult,
+        result: StepRecord,
     ) -> NodeTransitionKind:
         """Close the attempt's span and record its result, commit terminal success, or hand a failed result to the failure gate."""
         attempt = node.attempts[-1]
@@ -862,7 +862,7 @@ class RunCoordinator:
         self,
         node: ExecutionLeafNode,
         step_def: StepDefinition,
-        result: StepResult,
+        result: StepRecord,
     ) -> NodeTransitionKind:
         """Persist the PAUSED state, ask for a decision, and apply it as retry, continue, or abort."""
         interactive = self._interactive
@@ -880,7 +880,7 @@ class RunCoordinator:
         action, recorded, _ = apply_prompt_decision(decision, result)
         return self._apply_action(node, action, recorded or result, SessionStatus.RUNNING if interactive else None)
 
-    def _persist_paused(self, node: ExecutionLeafNode, result: StepResult) -> bool:
+    def _persist_paused(self, node: ExecutionLeafNode, result: StepRecord) -> bool:
         """Commit the leaf as PAUSED and the run as paused before the prompter is consulted."""
         node.state = NodeState.PAUSED
         return self._commit(f"before prompting for step '{node.id}'", SessionStatus.PAUSED, failed_step_message(result))
@@ -889,7 +889,7 @@ class RunCoordinator:
         self,
         node: ExecutionLeafNode,
         action: StepAction,
-        result: StepResult,
+        result: StepRecord,
         run_status: SessionStatus | None,
     ) -> NodeTransitionKind:
         """Apply a StepAction: retry begins the next attempt, continue ignores the leaf, abort fails it."""
@@ -904,7 +904,7 @@ class RunCoordinator:
     def _continue_leaf(
         self,
         node: ExecutionLeafNode,
-        result: StepResult,
+        result: StepRecord,
         run_status: SessionStatus | None,
     ) -> NodeTransitionKind:
         """Persist the leaf as IGNORED with its non-fatal result."""
@@ -915,7 +915,7 @@ class RunCoordinator:
     def _abort_leaf(
         self,
         node: ExecutionLeafNode,
-        result: StepResult,
+        result: StepRecord,
         run_status: SessionStatus | None,
     ) -> NodeTransitionKind:
         """Persist the leaf as FAILED and record the step failure as the run error."""
@@ -927,7 +927,7 @@ class RunCoordinator:
         self,
         node: ExecutionLeafNode,
         state: NodeState,
-        result: StepResult | None,
+        result: StepRecord | None,
         boundary: str,
         run_status: SessionStatus | None = None,
     ) -> bool:

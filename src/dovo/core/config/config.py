@@ -6,7 +6,6 @@ from pathlib import Path
 
 from pydantic import JsonValue
 
-from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.config.exceptions import ConfigError, ConfigLoadDiagnostics, ConfigRawObject, ConfigTierSource
@@ -47,7 +46,7 @@ def _require_config(result: ConfigLoadResult, root_dir: Path) -> DovoConfig:
     if result.error_code is None:
         raise RuntimeError(f"Config load at '{root_dir}' failed without an error_code")
     raise ConfigError(
-        ErrorCode(result.error_code),
+        result.error_code,
         f"Failed to load config at '{root_dir}': {'; '.join(result.errors)}",
         result.remediations,
         data=ConfigLoadDiagnostics(tuple(result.diagnostics)),

@@ -19,7 +19,7 @@ from dovo.cli.ui.events import (
 from dovo.core.catalog.definitions import CommentPolicy, LoopStepBlock, StepDefinition
 from dovo.core.interaction import COMMENT_MAX_CHARACTERS, Interaction, InteractionAnswer, InteractionRequest
 from dovo.engine import FailurePromptDecision, FailurePrompter, InteractionPrompter, LoopPromptDecision
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import StepRecord
 
 _STEP_CHOICE_MAP: dict[str, FailurePromptDecision] = {
     "r": FailurePromptDecision.RETRY,
@@ -84,7 +84,7 @@ class DispatcherFailurePrompter(FailurePrompter):
         self,
         *,
         step: StepDefinition,
-        result: StepResult,
+        result: StepRecord,
         diagnostic: str,
     ) -> FailurePromptDecision:
         """Dispatch prompt event and resolve user decision."""

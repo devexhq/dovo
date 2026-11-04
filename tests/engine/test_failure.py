@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from dovo.common.models import FailurePolicy, OnFailureSpec
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import StepRecord
 from dovo.engine.failure import (
     USER_CONTINUED_MARKER,
     apply_prompt_decision,
@@ -34,7 +34,7 @@ class FailurePolicyHelperTests:
         assert effective_terminal_policy(spec) == FailurePolicy.CONTINUE
 
     def test_mark_continued_after_prompt_sets_status_ignored_and_appends_continued_marker(self) -> None:
-        original = StepResult(
+        original = StepRecord(
             step_id="publish",
             status="failed",
             exit_code=1,
@@ -43,7 +43,6 @@ class FailurePolicyHelperTests:
             duration_seconds=0.1,
             attempts=1,
             error_message="boom",
-            errors=[],
             warnings=[],
         )
 
@@ -54,7 +53,7 @@ class FailurePolicyHelperTests:
         )
 
     def test_step_failure_diagnostic_prefers_error_message_over_stderr_and_exit_code(self) -> None:
-        result = StepResult(
+        result = StepRecord(
             step_id="publish",
             status="failed",
             exit_code=1,
@@ -78,7 +77,7 @@ class ResolveTerminalActionTests:
     def test_resolve_terminal_action_maps_policy_to_action_result_and_message(
         self, policy: FailurePolicy, action: StepAction, recorded_status: str, error_message: str | None
     ) -> None:
-        failed = StepResult(
+        failed = StepRecord(
             step_id="fail",
             status="failed",
             exit_code=1,
@@ -101,8 +100,8 @@ class ResolveTerminalActionTests:
             assert recorded == failed
 
 
-def _failed_result() -> StepResult:
-    return StepResult(
+def _failed_result() -> StepRecord:
+    return StepRecord(
         step_id="fail",
         status="failed",
         exit_code=1,

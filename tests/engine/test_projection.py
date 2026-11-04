@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dovo.core.db import SessionRecord, SessionStatus
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import StepRecord
 from dovo.engine.models import DefinitionRef, DefinitionsManifest, IfBranch
 from dovo.engine.projection import (
     build_session_json_payload,
@@ -28,8 +28,8 @@ from tests.harness.sessions import SEEDED_SPAN
 _MANIFEST = DefinitionsManifest(blueprint=DefinitionRef(ref="repo:blueprint:demo", sha="sha", resolved_at="now"))
 
 
-def _result(step_id: str, status: str = "completed", attempts: int = 1) -> StepResult:
-    return StepResult(
+def _result(step_id: str, status: str = "completed", attempts: int = 1) -> StepRecord:
+    return StepRecord(
         step_id=step_id,
         status=status,
         exit_code=0 if status != "failed" else 1,
@@ -43,7 +43,7 @@ def _result(step_id: str, status: str = "completed", attempts: int = 1) -> StepR
 def _leaf(
     step_id: str,
     state: NodeState,
-    results: list[StepResult | None] | None = None,
+    results: list[StepRecord | None] | None = None,
     name: str | None = None,
 ) -> ExecutionLeafNode:
     attempts = [

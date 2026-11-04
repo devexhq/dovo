@@ -11,7 +11,7 @@ from dovo.core.interaction import Interaction, InteractionAnswer, InteractionReq
 from dovo.engine.executors.artifact_namespace import ArtifactNamespaceProvider
 from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.executors.metadata import build_execution_metadata
-from dovo.engine.executors.models import AskResolution, StepExecutionContext, StepResult
+from dovo.engine.executors.models import AskResolution, StepExecutionContext, StepRecord
 
 
 def resolve_ask_request(context: StepExecutionContext) -> AskResolution:
@@ -58,7 +58,7 @@ def resolve_ask_request(context: StepExecutionContext) -> AskResolution:
 
 def complete_ask_step(
     context: StepExecutionContext, request: InteractionRequest, answer: InteractionAnswer
-) -> StepResult:
+) -> StepRecord:
     """Build the step result from a validated answer: masked outputs, JSON stdout, and a failed result for a `fail: true` option."""
     redactor = _redactor(context)
     masked = answer.model_copy(
@@ -69,7 +69,7 @@ def complete_ask_step(
     )
     outputs = Interaction.outputs(request, masked)
     failing = Interaction.failing_option(request, masked)
-    return StepResult(
+    return StepRecord(
         step_id=request.step_id,
         status="completed" if failing is None else "failed",
         exit_code=0 if failing is None else 1,
@@ -94,9 +94,9 @@ def _stdout_json(outputs: dict[str, str]) -> str:
 
 
 def _failed_resolution(step_id: str, message: str) -> AskResolution:
-    """Wrap a failed resolve result as a failed StepResult with exit code 1 and the ASK_* message."""
+    """Wrap a failed resolve result as a failed StepRecord with exit code 1 and the ASK_* message."""
     return AskResolution(
-        result=StepResult(
+        result=StepRecord(
             step_id=step_id,
             status="failed",
             exit_code=1,

@@ -124,7 +124,7 @@ class Workspace:
         create_result = manager.create(session_id=self.context.session_id)
         diagnostics.extend(create_result.diagnostics)
         if create_result.error_code is not None:
-            raise EngineError(ErrorCode(create_result.error_code), _creation_failure_message(create_result))
+            raise EngineError(create_result.error_code, _creation_failure_message(create_result))
         session = create_result.session
         if session is None:
             raise RuntimeError("Worktree creation succeeded without a worktree session.")

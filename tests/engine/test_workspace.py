@@ -45,7 +45,7 @@ from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 def _create_returns_git_failure(self: Worktree, *args: object, **kwargs: object) -> WorktreeCreateResult:
-    return WorktreeCreateResult(error_code="GIT_FAILED", errors=["git worktree add failed"])
+    return WorktreeCreateResult(error_code=ErrorCode.GIT_FAILED, errors=["git worktree add failed"])
 
 
 def _record(tmp_path: Path) -> DiagnosticRecord:
@@ -74,7 +74,9 @@ class WorkspaceSetupTests:
         """Raise the 'Git worktree creation failed: …' EngineError with the create result's code and add the WorktreeCreateResult's diagnostics to the diagnostics list when Worktree.create returns a failed result carrying one record."""
         record = _record(tmp_path)
         failed = WorktreeCreateResult(
-            error_code="INTERNAL_ERROR", errors=["Unexpected error during worktree.create: boom"], diagnostics=[record]
+            error_code=ErrorCode.INTERNAL_ERROR,
+            errors=["Unexpected error during worktree.create: boom"],
+            diagnostics=[record],
         )
         monkeypatch.setattr(Worktree, "create", lambda self, *args, **kwargs: failed)
         warnings: list[str] = []

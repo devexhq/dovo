@@ -13,7 +13,7 @@ from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.engine.executors.exceptions import EngineError
-from dovo.engine.executors.models import StepExecutionContext, StepResult
+from dovo.engine.executors.models import StepExecutionContext, StepRecord
 from dovo.engine.executors.step_executor import StepExecution
 from tests.conftest import PublishArtifact
 
@@ -39,7 +39,7 @@ def _run(
     repository: ArtifactsRepository,
     *,
     loop_iteration: int | None = None,
-) -> StepResult:
+) -> StepRecord:
     """Execute step in worktree_path as session wf_1 with artifact storage attached."""
     worktree_path.mkdir(parents=True, exist_ok=True)
     return StepExecution(
@@ -61,8 +61,36 @@ class StepExecutionArtifactsTests:
     ) -> None:
         result = _run(_command_step("true"), tmp_path / "wt", engine_paths, artifacts_repository)
 
-        assert (result.status, result.exit_code, result.error_message) == ("failed", 0, _NOT_PRODUCED)
+        assert (result.status, result.exit_code, result.error_message, result.error_code) == (
+            "failed",
+            0,
+            _NOT_PRODUCED,
+            ErrorCode.ARTIFACT_FILE_NOT_FOUND,
+        )
         assert artifacts_repository.list() == []
+
+    def test_unexpected_store_failure_fails_the_step_with_internal_error(
+        self,
+        tmp_path: Path,
+        engine_paths: WorkspacePaths,
+        artifacts_repository: ArtifactsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """Fail a step whose required publish raises unexpectedly with INTERNAL_ERROR and today's publish message."""
+
+        def _raising_publish(*_args: object, **_kwargs: object) -> None:
+            raise ValueError("boom")
+
+        monkeypatch.setattr("dovo.core.artifacts.artifacts.publish_artifact", _raising_publish)
+
+        result = _run(_command_step("touch PLAN.md"), tmp_path / "wt", engine_paths, artifacts_repository)
+
+        assert (result.status, result.error_code, result.error_message) == (
+            "failed",
+            ErrorCode.INTERNAL_ERROR,
+            "Failed to publish artifact 'plan': Unexpected error during artifacts.publish: boom",
+        )
 
     def test_optional_artifact_missing_completes_with_warning(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository

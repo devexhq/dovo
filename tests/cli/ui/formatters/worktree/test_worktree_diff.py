@@ -9,6 +9,7 @@ import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_diff import WorktreeDiffFormatter
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.worktree.models import WorktreeDiffResult
 from tests.harness.formatter import (
@@ -34,7 +35,7 @@ EMPTY_SUCCESS = FormatterCase.identity(
 NOT_FOUND = FormatterCase.identity(
     data=WorktreeDiffResult(
         worktree_id="dovo_missing",
-        error_code="WORKTREE_NOT_FOUND",
+        error_code=ErrorCode.WORKTREE_NOT_FOUND,
         errors=["Worktree 'dovo_missing' not found."],
         remediations=[
             Remediation(message="Run 'dovo worktree list' to see known worktrees", command="dovo worktree list")
@@ -57,7 +58,7 @@ RECORD = DiagnosticRecord(
 FAILED_WITH_DIAGNOSTICS = FormatterCase.identity(
     data=WorktreeDiffResult(
         worktree_id="dovo_boom",
-        error_code="INTERNAL_ERROR",
+        error_code=ErrorCode.INTERNAL_ERROR,
         errors=["Unexpected error during worktree.diff: boom"],
         diagnostics=[RECORD],
     ),

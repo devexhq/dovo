@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.expressions import ABSENT, InvalidExpression, Path, evaluate_expression, parse_expression
 from dovo.core.inputs import ArtifactReference, artifact_reference, read_json_path, resolve_step_output
-from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
+from dovo.engine.executors.models import ConditionEvaluationResult, StepRecord
 
 _STEPS_ROOT = "steps"
 _ITERATION_ROOT = "iteration"
@@ -23,8 +23,8 @@ _CONTENT_FIELD = "content"
 _ITERATION_FIELDS = frozenset({"index", "attempt"})
 
 
-def _resolve_step_field(result: StepResult, field: str, subpath: tuple[str | int, ...]) -> object:
-    """Extract a step attribute or its `outputs.<key>[.<path>]` value from a StepResult, or ABSENT when it has none.
+def _resolve_step_field(result: StepRecord, field: str, subpath: tuple[str | int, ...]) -> object:
+    """Extract a step attribute or its `outputs.<key>[.<path>]` value from a StepRecord, or ABSENT when it has none.
 
     An int segment, an unquoted bracket index, finds nothing.
     """
@@ -49,7 +49,7 @@ class _ConditionResolver:
     """Reads a condition's paths: the iteration number, a step's recorded result, an artifact, and a lone name as its own text."""
 
     iteration_index: int
-    step_results: dict[str, StepResult]
+    step_results: dict[str, StepRecord]
     artifact_store: ArtifactStore | None
 
     def resolve(self, path: Path) -> object:
@@ -101,7 +101,7 @@ def evaluate_condition(
     expression: str,
     *,
     iteration_index: int = 1,
-    step_results: dict[str, StepResult] | None = None,
+    step_results: dict[str, StepRecord] | None = None,
     artifact_store: ArtifactStore | None = None,
 ) -> ConditionEvaluationResult:
     """Parse and evaluate one condition entry: a comparison, several combined with '&&', '||' and '!', or a value."""

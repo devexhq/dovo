@@ -23,7 +23,7 @@ from dovo.core.catalog.services.inventory import scan_and_index_tier
 from dovo.core.catalog.services.resolve_step import resolve_step_definition
 from dovo.core.inputs import resolve_inputs
 from dovo.engine.executors.conditions import evaluate_condition
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import StepRecord
 from tests.harness.workspace_paths import initialized_workspace_paths
 from tests.lint.astlib import REPO_ROOT
 
@@ -188,10 +188,10 @@ def _delivery_loop(blueprint: BlueprintDefinition) -> LoopStepBlock:
     return loop
 
 
-def _step_result(step_id: str, outputs: dict[str, object]) -> StepResult:
-    """Build a succeeded StepResult with stringified output values."""
+def _step_result(step_id: str, outputs: dict[str, object]) -> StepRecord:
+    """Build a succeeded StepRecord with stringified output values."""
     str_outputs = {key: str(value) for key, value in outputs.items()}
-    return StepResult(
+    return StepRecord(
         step_id=step_id,
         status="completed",
         exit_code=0,
@@ -202,7 +202,7 @@ def _step_result(step_id: str, outputs: dict[str, object]) -> StepResult:
     )
 
 
-def _active_do_steps(loop: LoopStepBlock, step_results: dict[str, StepResult]) -> list[str]:
+def _active_do_steps(loop: LoopStepBlock, step_results: dict[str, StepRecord]) -> list[str]:
     """Return the IDs of loop.do steps whose when guard passes (or has no when guard) for step_results."""
     active: list[str] = []
     for step in loop.do:
@@ -214,7 +214,7 @@ def _active_do_steps(loop: LoopStepBlock, step_results: dict[str, StepResult]) -
     return active
 
 
-def _until_passed(loop: LoopStepBlock, step_results: dict[str, StepResult]) -> bool:
+def _until_passed(loop: LoopStepBlock, step_results: dict[str, StepRecord]) -> bool:
     """Evaluate the delivery loop's until condition list against step_results."""
     return all(evaluate_condition(expr, step_results=step_results).passed for expr in loop.until)
 
@@ -367,7 +367,7 @@ class ShipBlueprintCatalogResolutionTests:
 
     @pytest.mark.parametrize("flag", ["-p", "--pull-request"])
     def test_pull_request_flag_binds_the_pull_request_input(self, flag: str) -> None:
-        result = resolve_inputs(_load_ship_blueprint().inputs, cli_args=["-i", "1394", flag, "1399"])
+        result = resolve_inputs(_load_ship_blueprint().inputs, name="ship", cli_args=["-i", "1394", flag, "1399"])
 
         assert result.values == {"issue": "1394", "pull_request": "1399"}
         assert (result.missing, result.errors, result.warnings) == ([], [], [])
@@ -434,7 +434,7 @@ class ShipBlueprintTransitionTests:
         _mock_git_and_gh(monkeypatch, head_sha_ref)
         _seed_contract_and_progress(isolated_workspace)
 
-        step_results: dict[str, StepResult] = {}
+        step_results: dict[str, StepRecord] = {}
         stages: list[tuple[str, str, str, Mapping[str, object] | None]] = [
             ("assess", "implement", HEAD_SHA, None),
             ("implement", "validate", NEW_HEAD_SHA, None),
@@ -489,7 +489,7 @@ class ShipBlueprintTransitionTests:
         _mock_git_and_gh(monkeypatch, head_sha_ref)
         _seed_contract_and_progress(isolated_workspace)
 
-        step_results: dict[str, StepResult] = {}
+        step_results: dict[str, StepRecord] = {}
         next_1 = _run_ship(["next"], capsys)
         step_results["next"] = _step_result("next", next_1)
         assert _active_do_steps(loop, step_results) == ["next", "assess", "record"]
@@ -576,7 +576,7 @@ class ShipBlueprintTransitionTests:
         rec_ask = _run_record(capsys, action="assess")
         assert rec_ask == {"outcome": "working", "next_action": "ask"}
 
-        step_results: dict[str, StepResult] = {}
+        step_results: dict[str, StepRecord] = {}
         for q_id, answer_text, expected_next in [
             ("Q-1", "Repository tier", "ask"),
             ("Q-2", "Yes, reject unknown keys", "assess"),

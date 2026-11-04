@@ -13,6 +13,7 @@ from dovo.cli.ui.formatters.worktree.worktree_views import (
     WorktreePruneView,
 )
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.worktree.models import (
     PruneAction,
@@ -102,7 +103,7 @@ PRUNED_MULTIPLE_ITEMS = FormatterCase(
                 error="Ref locked",
             ),
         ],
-        error_code="WORKTREE_PRUNE_FAILED",
+        error_code=ErrorCode.WORKTREE_PRUNE_FAILED,
         errors=["Ref lock failure"],
     ),
     view=_make_prune_view(
@@ -134,7 +135,7 @@ PRUNED_MULTIPLE_ITEMS = FormatterCase(
         pruned_count=1,
         skipped_count=1,
         failed_count=1,
-        error_code="WORKTREE_PRUNE_FAILED",
+        error_code=ErrorCode.WORKTREE_PRUNE_FAILED,
         errors=["Ref lock failure"],
     ),
     render_expectations=["feature/stale", "dovo_dirty", "/tmp/dovo_ref", "Ref lock failure"],
@@ -208,12 +209,12 @@ STOPPED = FormatterCase(
         status=None,
         dry_run=False,
         force=False,
-        error_code="GIT_FAILED",
+        error_code=ErrorCode.GIT_FAILED,
         errors=["Git execution failed ('git worktree list'): fatal error"],
     ),
     view=_make_prune_view(
         status=None,
-        error_code="GIT_FAILED",
+        error_code=ErrorCode.GIT_FAILED,
         errors=["Git execution failed ('git worktree list'): fatal error"],
     ),
     render_expectations=["Error: Git execution failed ('git worktree list'): fatal error"],

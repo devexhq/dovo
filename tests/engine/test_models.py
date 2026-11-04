@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.agents import default_tool_policy
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.db import SessionRecord, SessionStatus
@@ -29,7 +30,9 @@ class BlueprintRunResultTests:
             else None
         )
 
-        result = BlueprintRunResult(session_record=record, errors=errors)
+        result = BlueprintRunResult(
+            session_record=record, errors=errors, error_code=ErrorCode.RUN_STEP_FAILED if errors else None
+        )
 
         assert result.ok is expected
 

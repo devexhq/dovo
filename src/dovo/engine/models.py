@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from dovo.common.clock import Clock
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult, Remediation
 from dovo.common.session_id import SessionIdFactory
@@ -27,7 +28,7 @@ from dovo.engine.executors.models import (
     ConditionEvaluationResult,
     ExecutionIdentity,
     PreviousStepMetadata,
-    StepResult,
+    StepRecord,
 )
 
 
@@ -165,7 +166,7 @@ class FailurePrompter(Protocol):
         self,
         *,
         step: StepDefinition,
-        result: StepResult,
+        result: StepRecord,
         diagnostic: str,
     ) -> FailurePromptDecision:
         """Return the caller's decision. Must not block for non-interactive callers."""
@@ -292,7 +293,7 @@ class RunObserver(Protocol):
         """Called when a running agent step reports an action, a note or a tool result."""
         ...
 
-    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
+    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepRecord) -> None:
         """Called immediately after a step finishes."""
         ...
 
@@ -352,7 +353,7 @@ class RunOutcome(BaseModel):
     model_config = {"extra": "forbid", "strict": True}
 
     status: SessionStatus
-    step_results: list[StepResult] = Field(default_factory=list)
+    step_results: list[StepRecord] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
@@ -361,7 +362,9 @@ class RunOutcome(BaseModel):
     session_id: str | None = None
     worktree_id: str | None = None
     paused_prompt_id: str | None = None
-    error_code: str | None = None  # the code of errors[0]; None exactly when the run neither failed nor was cancelled
+    error_code: ErrorCode | None = (
+        None  # the code of errors[0]; None exactly when the run neither failed nor was cancelled
+    )
 
     @property
     def ok(self) -> bool:

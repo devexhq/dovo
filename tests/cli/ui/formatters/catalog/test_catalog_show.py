@@ -13,6 +13,7 @@ from dovo.cli.ui.formatters.catalog.catalog_views import (
     CatalogShowView,
     CatalogTemplateView,
 )
+from dovo.common.error_codes import ErrorCode
 from dovo.core.catalog.models import CatalogItemType, CatalogRecord, CatalogShowResult, CatalogTier
 from tests.harness.formatter import (
     FormatterCase,
@@ -126,7 +127,7 @@ TEMPLATE_MATCH = FormatterCase(
 ERRORS = FormatterCase(
     data=CatalogShowResult(
         item_type=CatalogItemType.BLUEPRINT,
-        error_code="CATALOG_NOT_FOUND",
+        error_code=ErrorCode.CATALOG_NOT_FOUND,
         errors=["Catalog item 'missing' not found."],
     ),
     view=CatalogShowView(
@@ -135,7 +136,7 @@ ERRORS = FormatterCase(
         content=None,
         template_matches=[],
         catalog_path_relative=None,
-        error_code="CATALOG_NOT_FOUND",
+        error_code=ErrorCode.CATALOG_NOT_FOUND,
         errors=["Catalog item 'missing' not found."],
         warnings=[],
         remediations=[],

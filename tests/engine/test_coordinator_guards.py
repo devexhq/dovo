@@ -12,7 +12,7 @@ from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import InteractionAnswer, InteractionRequest
 from dovo.engine import EngineLoader, RunCoordinator, SessionStateStore
-from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
+from dovo.engine.executors.models import ConditionEvaluationResult, StepRecord
 from dovo.engine.models import (
     FailurePromptDecision,
     IfBranch,
@@ -122,7 +122,7 @@ def _mark_check_ignored(paths: WorkspacePaths, sessions: SessionsRepository) -> 
     state = store.load([])
     check = _node(state, "check")
     assert isinstance(check, ExecutionLeafNode)
-    ignored = StepResult(step_id="check", status="ignored", exit_code=0, stdout="", stderr="", duration_seconds=0.0)
+    ignored = StepRecord(step_id="check", status="ignored", exit_code=0, stdout="", stderr="", duration_seconds=0.0)
     check.attempts[-1] = check.attempts[-1].model_copy(update={"result": ignored})
     store.save(state, [])
 

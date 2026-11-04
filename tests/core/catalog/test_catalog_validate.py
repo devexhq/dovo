@@ -339,7 +339,11 @@ class CatalogValidateServiceTests:
     def test_validate_result_ok_follows_error_code(self) -> None:
         """Return ok False for a result with error_code CATALOG_SCHEMA_INVALID and ok True for one with error_code None and errors []."""
         failed = CatalogValidateResult(
-            valid=False, target="x", item_type=CatalogItemType.BLUEPRINT, error_code=ErrorCode.CATALOG_SCHEMA_INVALID
+            valid=False,
+            target="x",
+            item_type=CatalogItemType.BLUEPRINT,
+            error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
+            errors=["Schema validation failed."],
         )
         passed = CatalogValidateResult(
             valid=True, target="x", item_type=CatalogItemType.BLUEPRINT, error_code=None, errors=[]

@@ -46,7 +46,7 @@ class StepExecutionResolutionTests:
     def test_uses_step_failure_fails_step_with_failure_message(
         self, tmp_path: Path, engine_paths: WorkspacePaths
     ) -> None:
-        """Return a failed StepResult with error_message == "Catalog item 'missing-step' not found." for uses: missing-step, and add no record to the diagnostics list."""
+        """Return a failed StepRecord with error_message == "Catalog item 'missing-step' not found." for uses: missing-step, and add no record to the diagnostics list."""
         step = StepDefinition(id="s1", uses="missing-step")
         sink: list[DiagnosticRecord] = []
         execution = StepExecution(
@@ -159,7 +159,7 @@ class StepExecutionDurationTests:
     def test_completed_step_duration_is_the_attempts_stopwatch_duration(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return a completed StepResult for `run: echo ok` with duration_seconds == 2.5 for readings [10.0, 12.5]."""
+        """Return a completed StepRecord for `run: echo ok` with duration_seconds == 2.5 for readings [10.0, 12.5]."""
         readings = iter([10.0, 12.5])
         monkeypatch.setattr("dovo.common.timing.monotonic", lambda: next(readings))
         step = StepDefinition(id="s1", run="echo ok")
@@ -173,7 +173,7 @@ class StepExecutionDurationTests:
     def test_step_failing_before_dispatch_has_zero_duration(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
     ) -> None:
-        """Return a failed StepResult with duration_seconds == 0.0 and read no clock (patched monotonic raises)."""
+        """Return a failed StepRecord with duration_seconds == 0.0 and read no clock (patched monotonic raises)."""
         monkeypatch.setattr("dovo.common.timing.monotonic", _unread_clock)
         if failure == "missing_worktree":
             context = StepExecutionContext(

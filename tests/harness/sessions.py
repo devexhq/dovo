@@ -20,7 +20,7 @@ from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus, Workt
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.engine import RunCoordinator, RunObserver, RunOutcome
-from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult, StepResult
+from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult, StepRecord
 from dovo.engine.models import (
     FailurePromptDecision,
     FailurePrompter,
@@ -82,7 +82,7 @@ class NoOpRunObserver(RunObserver):
     def on_step_progress(self, idx: int, total: int, step: StepDefinition, update: AgentProgressUpdate) -> None:
         pass
 
-    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
+    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepRecord) -> None:
         pass
 
     def on_step_skipped(self, idx: int, total: int, step: StepSkipNotice) -> None:
@@ -130,7 +130,7 @@ def _recorded(value: object) -> object:
     """Reduce a hook argument to what observer tests compare: ids for steps and loops, statuses, passed flags."""
     if isinstance(value, StepDefinition | LoopStepBlock | IfStepBlock):
         return value.id
-    if isinstance(value, StepResult):
+    if isinstance(value, StepRecord):
         return value.status
     if isinstance(value, ConditionEvaluationResult):
         return value.passed
@@ -143,7 +143,7 @@ class RecordingRunObserver(NoOpRunObserver):
     """Record every observer hook call, in order, as (hook name, arguments).
 
     Each call is one flat tuple: the hook name without its ``on_`` prefix, then every argument
-    in signature order. Steps and loops are recorded by id, a StepResult by its status and each
+    in signature order. Steps and loops are recorded by id, a StepRecord by its status and each
     condition result by whether it passed; paths, outcomes and progress updates are kept as passed.
     """
 
@@ -175,7 +175,7 @@ class RecordingRunObserver(NoOpRunObserver):
     def on_step_progress(self, idx: int, total: int, step: StepDefinition, update: AgentProgressUpdate) -> None:
         self._record("step_progress", idx, total, step, update)
 
-    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
+    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepRecord) -> None:
         self._record("step_done", idx, total, step, result)
 
     def on_step_skipped(self, idx: int, total: int, step: StepSkipNotice) -> None:
@@ -226,7 +226,7 @@ class ScriptedFailurePrompter(FailurePrompter):
     """Return queued decisions in order and record each prompted step; raise KeyboardInterrupt when queued.
 
     A queued exception instance is raised instead of answering. ``prompted`` holds each failed
-    StepResult and ``diagnostics`` the diagnostic shown with it; ``loop_prompts`` holds the
+    StepRecord and ``diagnostics`` the diagnostic shown with it; ``loop_prompts`` holds the
     (iteration, grant_count) of each max-iterations prompt. ``on_prompt`` runs before a
     step-failure answer is taken from the queue.
     """
@@ -236,7 +236,7 @@ class ScriptedFailurePrompter(FailurePrompter):
     ) -> None:
         self.decisions: list[ScriptedDecision] = list(decisions)
         self.on_prompt = on_prompt
-        self.prompted: list[StepResult] = []
+        self.prompted: list[StepRecord] = []
         self.diagnostics: list[str] = []
         self.loop_prompts: list[tuple[int, int]] = []
 
@@ -251,7 +251,7 @@ class ScriptedFailurePrompter(FailurePrompter):
         self,
         *,
         step: StepDefinition,
-        result: StepResult,
+        result: StepRecord,
         diagnostic: str,
     ) -> FailurePromptDecision:
         self.prompted.append(result)
@@ -379,7 +379,7 @@ def seed_paused_session(
     for node in state.nodes:
         assert isinstance(node, ExecutionLeafNode)
         completed = node.id != paused_step_id
-        result = StepResult(
+        result = StepRecord(
             step_id=node.id,
             status="completed" if completed else "failed",
             exit_code=0 if completed else 1,
@@ -436,7 +436,7 @@ def seed_failed_session(
     for node in state.nodes:
         assert isinstance(node, ExecutionLeafNode)
         completed = node.id != failed_step_id
-        result = StepResult(
+        result = StepRecord(
             step_id=node.id,
             status="completed" if completed else "failed",
             exit_code=0 if completed else 1,

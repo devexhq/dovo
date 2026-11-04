@@ -12,7 +12,7 @@ from dovo.common.timing import TimeSpan
 from dovo.core.db import SessionRecord, SessionsRepository
 from dovo.core.sessions import StepRunSummary
 from dovo.engine.executors.exceptions import EngineError
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import StepRecord
 from dovo.engine.models import DefinitionRef, DefinitionsManifest, IfBranch, SkipCause
 from dovo.engine.session_steps import NO_STEP_DATA_WARNING, summarize_session_steps
 from dovo.engine.state_models import (
@@ -37,8 +37,8 @@ _REDACTOR = SecretRedactor([])
 def _attempt(
     number: int, *, exit_code: int, duration_seconds: float, error_message: str | None = None
 ) -> StepAttemptRecord:
-    """Build a finished attempt carrying a StepResult with stdout, stderr and outputs populated."""
-    result = StepResult(
+    """Build a finished attempt carrying a StepRecord with stdout, stderr and outputs populated."""
+    result = StepRecord(
         step_id="step",
         status="completed" if exit_code == 0 else "failed",
         exit_code=exit_code,

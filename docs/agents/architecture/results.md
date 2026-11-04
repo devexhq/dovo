@@ -47,16 +47,20 @@ What a public entrypoint returns and what a caller branches on. These entries ho
 
 - **Decision:** on every command-result payload, the result a CLI command dispatches, `ok` is true exactly when `error_code` is null.
   - No command result computes `ok` from `status`, `errors` or any other field.
-  - Internal results that no command dispatches (step, interaction, input resolution, agent settings) may define `ok` for their own callers.
+  - Internal results that no command dispatches (interaction, input resolution, agent settings) may define `ok` for their own callers.
+  - A step's outcome inside a run is a `StepRecord`, a record rather than a result: a failed step's text is its `error_message`, and its optional `error_code` is a published one with no `errors`.
 - **Why:** callers branch on `ok`, so it must agree with the one failure classification.
 - **Since:** #925
 
 ## errors and error_code agree
 
-- **Decision:** `errors` is non-empty exactly when `error_code` is set.
+- **Decision:** `error_code` is a published `ErrorCode` member, set exactly when `errors` is non-empty.
+  - `BaseResult` refuses a result where they disagree when it is built, with `error_code must be set exactly when errors is non-empty`, and its field type refuses any value outside the published set, a plain string included.
+  - A result with only `warnings` or `remediations` carries no code.
+  - A result that reports several errors carries the code of its first, chosen where that error is produced, and no result has `errors` added after it is built. A site that reports one more error builds a new result through validation, never with `model_copy`, which skips the check.
   - A result that sets one without the other is a programmer error, never a way to report a failure.
 - **Why:** a failure without a code cannot be branched on, and a code without a message cannot be shown.
-- **Since:** #925
+- **Since:** #925, #1421
 
 ## A declined confirmation is a success
 

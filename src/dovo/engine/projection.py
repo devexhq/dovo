@@ -6,7 +6,7 @@ from collections.abc import Iterator
 
 from dovo.core.db import SessionRecord
 from dovo.engine.executors.metadata import previous_step_metadata_from_result
-from dovo.engine.executors.models import PreviousStepMetadata, StepResult
+from dovo.engine.executors.models import PreviousStepMetadata, StepRecord
 from dovo.engine.state_models import (
     TERMINAL_NODE_STATES,
     ExecutionIterationRecord,
@@ -32,21 +32,21 @@ def iter_leaves(state: ExecutionStateTree) -> Iterator[ExecutionLeafNode]:
                 yield from iteration.steps
 
 
-def terminal_result(leaf: ExecutionLeafNode) -> StepResult | None:
+def terminal_result(leaf: ExecutionLeafNode) -> StepRecord | None:
     """Return the last attempt's result when the leaf is terminal and has one, else None."""
     if leaf.state not in _TERMINAL_LEAF_STATES or not leaf.attempts:
         return None
     return leaf.attempts[-1].result
 
 
-def scope_results(state: ExecutionStateTree) -> dict[str, StepResult]:
+def scope_results(state: ExecutionStateTree) -> dict[str, StepRecord]:
     """Map step id to terminal result for every top-level step and every step of a chosen if branch, in tree order.
 
     Steps inside loops are left out: a condition outside a loop cannot reference them. A skipped step, one that
     never ran, or one in the branch an if block did not take has no entry, so a condition that references it does
     not resolve.
     """
-    results: dict[str, StepResult] = {}
+    results: dict[str, StepRecord] = {}
     for leaf in _scope_leaves(state):
         result = terminal_result(leaf)
         if result is not None:
@@ -63,9 +63,9 @@ def _scope_leaves(state: ExecutionStateTree) -> Iterator[ExecutionLeafNode]:
             yield from node.steps
 
 
-def iteration_results(iteration: ExecutionIterationRecord) -> dict[str, StepResult]:
+def iteration_results(iteration: ExecutionIterationRecord) -> dict[str, StepRecord]:
     """Map step id to terminal result for every terminal body leaf of iteration that has one, in body order."""
-    results: dict[str, StepResult] = {}
+    results: dict[str, StepRecord] = {}
     for leaf in iteration.steps:
         result = terminal_result(leaf)
         if result is not None:
@@ -73,7 +73,7 @@ def iteration_results(iteration: ExecutionIterationRecord) -> dict[str, StepResu
     return results
 
 
-def _terminal_leaves(state: ExecutionStateTree) -> Iterator[tuple[ExecutionLeafNode, StepResult]]:
+def _terminal_leaves(state: ExecutionStateTree) -> Iterator[tuple[ExecutionLeafNode, StepRecord]]:
     """Yield each terminal leaf with its last attempt's result, in tree order through loop iterations."""
     for leaf in iter_leaves(state):
         result = terminal_result(leaf)
@@ -81,7 +81,7 @@ def _terminal_leaves(state: ExecutionStateTree) -> Iterator[tuple[ExecutionLeafN
             yield leaf, result
 
 
-def flatten_step_results(state: ExecutionStateTree) -> list[StepResult]:
+def flatten_step_results(state: ExecutionStateTree) -> list[StepRecord]:
     """Flatten terminal leaf results from linear steps and loop iterations into an ordered list for RunOutcome and CLI consumers."""
     return [result for _, result in _terminal_leaves(state)]
 
