@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from dovo.common.error_codes import ErrorCode
@@ -35,7 +37,12 @@ _REDACTOR = SecretRedactor([])
 
 
 def _attempt(
-    number: int, *, exit_code: int, duration_seconds: float, error_message: str | None = None
+    number: int,
+    *,
+    exit_code: int,
+    duration_seconds: float,
+    error_message: str | None = None,
+    error_code: ErrorCode | None = None,
 ) -> StepAttemptRecord:
     """Build a finished attempt carrying a StepRecord with stdout, stderr and outputs populated."""
     result = StepRecord(
@@ -46,6 +53,7 @@ def _attempt(
         stderr="STDERR-TEXT",
         duration_seconds=duration_seconds,
         error_message=error_message,
+        error_code=error_code,
         outputs={"key": "OUTPUT-TEXT"},
     )
     return StepAttemptRecord(number=number, span=SEEDED_SPAN, result=result)
@@ -81,7 +89,13 @@ class SummarizeSessionStepsTests:
             name="Flaky step",
             state=NodeState.COMPLETED,
             attempts=[
-                _attempt(1, exit_code=2, duration_seconds=1.5, error_message="first failure"),
+                _attempt(
+                    1,
+                    exit_code=2,
+                    duration_seconds=1.5,
+                    error_message="first failure",
+                    error_code=ErrorCode.STEP_COMMAND_FAILED,
+                ),
                 _attempt(2, exit_code=0, duration_seconds=2.0, error_message="recovered with warning"),
             ],
         )
@@ -150,12 +164,13 @@ class SummarizeSessionStepsTests:
             ("step", "review", "build-loop", 2, None),
         ]
         loop_row = steps[1]
-        assert (loop_row.attempts, loop_row.exit_code, loop_row.duration_seconds, loop_row.error_message) == (
-            None,
-            None,
-            None,
-            None,
-        )
+        assert (
+            loop_row.attempts,
+            loop_row.exit_code,
+            loop_row.duration_seconds,
+            loop_row.error_message,
+            loop_row.error_code,
+        ) == (None, None, None, None, None)
 
     def test_skipped_step_and_loop_report_their_cause_and_a_skipped_loop_has_no_body_rows(self) -> None:
         false_skip = StepSkip(cause=SkipCause.WHEN_FALSE, expression="steps.a.exit_code == 1")
@@ -283,3 +298,35 @@ class SummarizeSessionStepsRejectedPatchTests:
         steps = summarize_session_steps(_record([saved, legacy]), _REDACTOR)
 
         assert [(row.step_id, row.rejected_patch_path) for row in steps] == [("saved", "P"), ("legacy", None)]
+
+
+class SummarizeSessionStepsErrorCodeTests:
+    def test_failed_leaf_reports_its_last_attempts_code(self) -> None:
+        leaf = ExecutionLeafNode(
+            id="flaky",
+            state=NodeState.FAILED,
+            attempts=[
+                _attempt(1, exit_code=1, duration_seconds=1.0, error_code=ErrorCode.STEP_COMMAND_FAILED),
+                _attempt(2, exit_code=124, duration_seconds=1.0, error_code=ErrorCode.STEP_TIMEOUT),
+            ],
+        )
+
+        steps = summarize_session_steps(_record([leaf]), _REDACTOR)
+
+        assert [(row.step_id, row.error_code) for row in steps] == [("flaky", ErrorCode.STEP_TIMEOUT)]
+
+    def test_state_saved_without_error_code_and_with_legacy_keys_reports_none(self) -> None:
+        """Load a step result saved with errors and remediations but no error_code, and report error_code None."""
+        leaf = ExecutionLeafNode(
+            id="old", state=NodeState.FAILED, attempts=[_attempt(1, exit_code=1, duration_seconds=1.0)]
+        )
+        record = _record([leaf])
+        state = json.loads(record.execution_state_json or "")
+        result = state["nodes"][0]["attempts"][0]["result"]
+        del result["error_code"]
+        result.update({"errors": ["Command failed with exit code 1."], "remediations": [{"text": "retry"}]})
+        legacy = record.model_copy(update={"execution_state_json": json.dumps(state)})
+
+        steps = summarize_session_steps(legacy, _REDACTOR)
+
+        assert [(row.step_id, row.state, row.error_code) for row in steps] == [("old", "failed", None)]

@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.engine.executors.internal_dispatch import handle_artifacts_download, handle_artifacts_upload
-from dovo.engine.executors.models import InternalCommandContext
+from dovo.engine.executors.models import InternalCommandContext, StepDispatchOutcome
 from tests.conftest import PublishArtifact
 
 
@@ -28,10 +30,11 @@ class HandleArtifactsUploadTests:
 
         outcome = handle_artifacts_upload(ctx)
 
-        assert (outcome.status, outcome.exit_code, outcome.error_message) == (
+        assert (outcome.status, outcome.exit_code, outcome.error_message, outcome.error_code) == (
             "failed",
             1,
             "Artifact 'dist-packages' matched no files at 'dist/*.whl'.",
+            ErrorCode.ARTIFACT_FILE_NOT_FOUND,
         )
 
     def test_handle_artifacts_upload_records_context_provenance(
@@ -52,7 +55,7 @@ class HandleArtifactsUploadTests:
         outcome = handle_artifacts_upload(ctx)
 
         record = artifacts_repository.get("wf_1", "plan")
-        assert (outcome.status, outcome.exit_code) == ("completed", 0)
+        assert (outcome.status, outcome.exit_code, outcome.error_code) == ("completed", 0, None)
         assert record is not None
         manifest = json.loads((record.path / "manifest.json").read_text(encoding="utf-8"))
         assert (record.step_id, record.attempt, record.loop_iteration) == ("up", 2, 3)
@@ -99,7 +102,7 @@ class HandleArtifactsDownloadTests:
 
         outcome = handle_artifacts_download(ctx)
 
-        assert (outcome.status, outcome.exit_code) == ("failed", 1)
+        assert (outcome.status, outcome.exit_code, outcome.error_code) == ("failed", 1, ErrorCode.STEP_INPUT_INVALID)
         assert outcome.error_message == (
             "Internal command 'artifacts.download' requires ARTIFACT_REVISION to be a positive integer."
         )
@@ -117,5 +120,48 @@ class HandleArtifactsDownloadTests:
 
         outcome = handle_artifacts_download(ctx)
 
-        assert outcome.status == "failed"
+        assert (outcome.status, outcome.error_code) == ("failed", ErrorCode.ARTIFACT_NOT_FOUND)
         assert outcome.error_message == "Artifact 'plan' revision 9 not found for session 'wf_1'"
+
+
+_HANDLERS = [
+    pytest.param(handle_artifacts_upload, "artifacts.upload", "ARTIFACT_PATH", id="upload"),
+    pytest.param(handle_artifacts_download, "artifacts.download", "ARTIFACT_DEST", id="download"),
+]
+
+
+class InternalCommandInputTests:
+    @pytest.mark.parametrize(("handler", "command", "_key"), _HANDLERS)
+    def test_handler_without_session_fails_with_session_missing(
+        self, tmp_path: Path, handler: Callable[[InternalCommandContext], StepDispatchOutcome], command: str, _key: str
+    ) -> None:
+        ctx = InternalCommandContext(worktree_path=tmp_path, env={"ARTIFACT_NAME": "plan"}, artifact_store=None)
+
+        outcome = handler(ctx)
+
+        assert (outcome.status, outcome.error_code, outcome.error_message) == (
+            "failed",
+            ErrorCode.STEP_SESSION_MISSING,
+            f"Internal command '{command}' requires an active session, but none is set.",
+        )
+
+    @pytest.mark.parametrize(("handler", "command", "key"), _HANDLERS)
+    def test_handler_missing_its_env_fails_with_input_invalid(
+        self,
+        tmp_path: Path,
+        artifact_store: ArtifactStore,
+        handler: Callable[[InternalCommandContext], StepDispatchOutcome],
+        command: str,
+        key: str,
+    ) -> None:
+        ctx = InternalCommandContext(
+            worktree_path=tmp_path, env={"ARTIFACT_NAME": "plan"}, artifact_store=artifact_store
+        )
+
+        outcome = handler(ctx)
+
+        assert (outcome.status, outcome.error_code, outcome.error_message) == (
+            "failed",
+            ErrorCode.STEP_INPUT_INVALID,
+            f"Internal command '{command}' requires ARTIFACT_NAME and {key}.",
+        )

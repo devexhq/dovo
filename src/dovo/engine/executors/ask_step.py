@@ -19,7 +19,9 @@ def resolve_ask_request(context: StepExecutionContext) -> AskResolution:
     step = context.step
     spec = step.interaction
     if spec is None:
-        return _failed_resolution(step.id, f"Step '{step.id}' has no interaction to ask.")
+        return _failed_resolution(
+            step.id, ErrorCode.STEP_DEFINITION_INVALID, f"Step '{step.id}' has no interaction to ask."
+        )
 
     metadata = build_execution_metadata(
         step,
@@ -42,11 +44,13 @@ def resolve_ask_request(context: StepExecutionContext) -> AskResolution:
     except EngineError as error:
         if error.error_code is not ErrorCode.ARTIFACT_CONTENT_UNAVAILABLE:
             raise
-        return _failed_resolution(step.id, error.message)
+        return _failed_resolution(step.id, error.error_code, error.message)
 
     resolved = Interaction(context.artifact_store, _redactor(context)).resolve(step.id, spec, message)
-    if not resolved.ok or resolved.request is None:
-        return _failed_resolution(step.id, resolved.errors[0])
+    if resolved.error_code is not None:
+        return _failed_resolution(step.id, resolved.error_code, resolved.errors[0])
+    if resolved.request is None:
+        raise RuntimeError(f"Resolving the interaction of '{step.id}' returned neither a request nor an error code.")
 
     if resolved.request.mode == "multiselect" and not resolved.request.options:
         notice = f"No options to choose from for '{step.id}'; continuing with an empty selection."
@@ -78,6 +82,7 @@ def complete_ask_step(
         duration_seconds=0.0,
         attempts=context.initial_attempt,
         error_message=None if failing is None else f"Prompt '{request.step_id}' answered '{failing.value}'.",
+        error_code=None if failing is None else ErrorCode.STEP_ANSWER_FAILED,
         outputs=outputs,
     )
 
@@ -93,8 +98,8 @@ def _stdout_json(outputs: dict[str, str]) -> str:
     return json.dumps({**outputs, "selected_count": int(outputs["selected_count"])})
 
 
-def _failed_resolution(step_id: str, message: str) -> AskResolution:
-    """Wrap a failed resolve result as a failed StepRecord with exit code 1 and the ASK_* message."""
+def _failed_resolution(step_id: str, error_code: ErrorCode, message: str) -> AskResolution:
+    """Wrap a failure as a failed StepRecord with exit code 1, its error code and its message."""
     return AskResolution(
         result=StepRecord(
             step_id=step_id,
@@ -104,5 +109,6 @@ def _failed_resolution(step_id: str, message: str) -> AskResolution:
             stderr="",
             duration_seconds=0.0,
             error_message=message,
+            error_code=error_code,
         )
     )

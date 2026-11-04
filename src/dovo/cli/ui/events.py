@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.agents import AgentProgressKind
 
@@ -61,6 +62,7 @@ class StepDoneEvent(BaseModel):
     exit_code: int
     duration_seconds: float | None = None
     error_message: str | None = None
+    error_code: ErrorCode | None = None
 
 
 class StepSkippedEvent(BaseModel):

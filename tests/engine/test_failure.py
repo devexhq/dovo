@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import FailurePolicy, OnFailureSpec
 from dovo.engine.executors.models import StepRecord
 from dovo.engine.failure import (
@@ -34,6 +35,7 @@ class FailurePolicyHelperTests:
         assert effective_terminal_policy(spec) == FailurePolicy.CONTINUE
 
     def test_mark_continued_after_prompt_sets_status_ignored_and_appends_continued_marker(self) -> None:
+        """Mark the record ignored with the continued marker and keep its error code."""
         original = StepRecord(
             step_id="publish",
             status="failed",
@@ -43,10 +45,13 @@ class FailurePolicyHelperTests:
             duration_seconds=0.1,
             attempts=1,
             error_message="boom",
+            error_code=ErrorCode.STEP_COMMAND_FAILED,
             warnings=[],
         )
 
         updated = mark_continued_after_prompt(original)
+
+        assert updated.error_code == ErrorCode.STEP_COMMAND_FAILED
 
         assert updated == original.model_copy(
             update={"status": "ignored", "error_message": f"boom ({USER_CONTINUED_MARKER})"}
@@ -85,13 +90,14 @@ class ResolveTerminalActionTests:
             stderr="",
             duration_seconds=0.0,
             error_message="boom",
+            error_code=ErrorCode.STEP_TIMEOUT,
         )
 
         resolved_action, recorded, message = resolve_terminal_action(policy, failed)
 
         assert resolved_action is action
         assert recorded is not None
-        assert recorded.status == recorded_status
+        assert (recorded.status, recorded.error_code) == (recorded_status, ErrorCode.STEP_TIMEOUT)
         assert message == error_message
         if policy == FailurePolicy.CONTINUE:
             assert recorded.error_message is not None

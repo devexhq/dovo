@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.common.timing import TimeSpan
@@ -420,7 +421,7 @@ def seed_failed_session(
 ) -> SessionRecord:
     """Seed a session whose earlier steps completed and whose failed_step_id attempt failed, saved FAILED.
 
-    The failed attempt has exit 1 and error_message SEEDED_FAILURE,
+    The failed attempt has exit 1, error_code STEP_COMMAND_FAILED and error_message SEEDED_FAILURE,
     followed by a 'Discarded edit saved to' line when rejected_patch_path is given.
     """
     seed_new_session(paths, sessions, session_id=session_id, steps=steps)
@@ -438,6 +439,7 @@ def seed_failed_session(
             stderr="",
             duration_seconds=0.5,
             error_message=None if completed else _seeded_error_message(rejected_patch_path),
+            error_code=None if completed else ErrorCode.STEP_COMMAND_FAILED,
             rejected_patch_path=None if completed else rejected_patch_path,
         )
         node.attempts = [StepAttemptRecord(number=1, span=SEEDED_SPAN, result=result)]
