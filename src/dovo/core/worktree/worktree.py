@@ -6,11 +6,11 @@ from collections.abc import Callable
 from contextlib import nullcontext
 
 from dovo.common.clock import Clock
-from dovo.common.exceptions import catch_failure
+from dovo.common.exceptions import RecordedDiagnostics, catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
 from dovo.common.session_id import SessionIdFactory
-from dovo.core.config import Config, ConfigLoadDiagnostics
+from dovo.core.config import Config
 from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.exceptions import WorktreeApplyConflict
@@ -140,7 +140,7 @@ class Worktree:
             )
         if caught.failure is not None:
             data = caught.failure.data
-            records = data.records if isinstance(data, ConfigLoadDiagnostics) else ()
+            records = data.records if isinstance(data, RecordedDiagnostics) else ()
             return WorktreeCreateResult(
                 **caught.failure.result_fields(prior_diagnostics=records),
             )

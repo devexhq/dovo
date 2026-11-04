@@ -8,11 +8,12 @@ import pytest
 from pydantic import ValidationError
 
 from dovo.common.error_codes import ErrorCode
+from dovo.common.exceptions import RecordedDiagnostics
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.models import Remediation
 from dovo.core.config.config import Config
-from dovo.core.config.exceptions import ConfigError, ConfigLoadDiagnostics
+from dovo.core.config.exceptions import ConfigError
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.models import AgentSettings, ConfigTier, DovoConfig
 from dovo.core.config.mutate import ConfigSetResult, ConfigUnsetResult
@@ -200,7 +201,7 @@ class ConfigLoadRequiredTests:
         assert list(error.remediations) == expected_remediations
         assert "Fix:" not in error.message
         assert "Details logged:" not in error.message
-        assert error.data == ConfigLoadDiagnostics(records=())
+        assert error.data == RecordedDiagnostics(records=())
 
     def test_load_required_unreadable_config_carries_the_load_record(
         self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
@@ -229,7 +230,7 @@ class ConfigLoadRequiredTests:
             f"Unable to read config.json at '{config_path}': denied."
         )
         assert list(error.remediations) == [Remediation(message="Check file permissions and that the path is readable")]
-        assert error.data == ConfigLoadDiagnostics(records=(diagnostic_record(frozen_diagnostic_clock),))
+        assert error.data == RecordedDiagnostics(records=(diagnostic_record(frozen_diagnostic_clock),))
         assert read_single_event(frozen_diagnostic_clock)["operation"] == "config.read"
 
 

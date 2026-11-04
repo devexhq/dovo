@@ -35,6 +35,7 @@ EXCEPTIONS: Final[frozenset[str]] = frozenset({"INTERNAL_ERROR"})
 
 OWNERS: Final[dict[str, frozenset[str]]] = {
     "INTERNAL": frozenset({"common"}),
+    "WORKSPACE": frozenset({"common"}),
     "GIT": frozenset({"core/git"}),
     "PATCH": frozenset({"core/git"}),
     "AGENT": frozenset({"core/agents"}),
@@ -54,6 +55,7 @@ OWNERS: Final[dict[str, frozenset[str]]] = {
 
 STATES: Final[tuple[str, ...]] = (
     "NOT_FOUND",
+    "NOT_INITIALIZED",
     "NOT_RESUMABLE",
     "NOT_PENDING",
     "MISSING",

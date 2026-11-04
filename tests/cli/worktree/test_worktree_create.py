@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeCreateResult
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.fakes import FakeGitRunner, SequentialIds, use_fake_git, use_fixed_clock_and_ids
 
 
@@ -195,3 +196,27 @@ class WorktreeCreateCliIntegrationTests:
             },
             {"message": "Raise 'worktree.max_active_worktrees' in '.dovo/config.json'", "command": None},
         ]
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("base_ref", "exit_code", "error_code"),
+        [
+            pytest.param("HEAD", 0, None, id="valid_base_ref"),
+            pytest.param("nope", 1, "GIT_FAILED", id="unknown_base_ref"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        output_format: str,
+        base_ref: str,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        result = cli_runner.invoke(
+            app,
+            ["-p", str(cli_workspace), "worktree", "create", "--base-ref", base_ref, "--format", output_format],
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)

@@ -1,12 +1,15 @@
 """Typer CLI entrypoint for the Dovo (`dovo`) command."""
 
 import importlib
-import sys
-from collections.abc import Iterator, MutableMapping
+from collections.abc import Iterator, MutableMapping, Sequence
+from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import typer
+
+# Typer's vendored click exceptions have no public name; usage errors and exits must pass through the failure handler.
+from typer._click.exceptions import Abort, ClickException, Exit
 from typer.core import TyperGroup
 
 if TYPE_CHECKING:
@@ -16,20 +19,20 @@ if TYPE_CHECKING:
 from dovo.cli.context import CliContext, default_lock_wait_notifier, ensure_lazy_project_init
 from dovo.cli.outcome import exit_for
 from dovo.cli.ui.dispatcher import ui_dispatcher
-from dovo.cli.ui.events import ErrorPanelEvent, MessageEvent, WelcomeBannerEvent
-from dovo.common.diagnostic_log import (
-    DiagnosticLevel,
-    append_diagnostic_hint,
-    bind_cli_command,
-    record_exception,
-    reset_cli_command,
+from dovo.cli.ui.events import ErrorEvent, MessageEvent, WelcomeBannerEvent
+from dovo.common.diagnostic_log import DiagnosticLevel, bind_cli_command, record_exception, reset_cli_command
+from dovo.common.exceptions import (
+    FailureFields,
+    WorkspaceError,
+    escaped_failure_fields,
+    fatal_failure_fields,
 )
-from dovo.common.filesystem import Filesystem, WorkspaceNotInitializedError
-from dovo.common.formatters import format_remediations
+from dovo.common.filesystem import Filesystem
 from dovo.common.interrupt import install_interrupt_handlers, reraise_interrupt_signal
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.common.models import OutputFormatOptions
 from dovo.common.version import get_version
-from dovo.core.config import ConfigError, ConfigLoadDiagnostics
+from dovo.core.config import ConfigError
 
 # Package Metadata matching our PyPI footprint
 __version__ = get_version()
@@ -112,12 +115,36 @@ class DovoTyperGroup(TyperGroup):
         return list(self.commands)
 
     def invoke(self, ctx: "Context") -> object:
-        """Capture help flags before executing command callbacks."""
-        if getattr(ctx, "_protected_args", None) or getattr(ctx, "args", None):
-            raw_args = [*ctx._protected_args, *ctx.args]
+        """Capture help flags, then run the command, reporting a failure no command result carries and exiting 1."""
+        raw_args = [*getattr(ctx, "_protected_args", []), *getattr(ctx, "args", [])]
+        if raw_args:
             ctx.ensure_object(dict)
             ctx.obj["is_help"] = any(a in ("--help", "-h") for a in raw_args)
-        return super().invoke(ctx)
+        try:
+            return super().invoke(ctx)
+        except (ClickException, Exit, Abort):
+            raise
+        except LockTimeoutError as error:
+            _report_failure("Workspace Lock Timeout", escaped_failure_fields(error), raw_args)
+        except WorkspaceError as error:
+            _report_failure("Workspace Not Initialized", escaped_failure_fields(error), raw_args)
+        except ConfigError as error:
+            _report_failure("Invalid Configuration", escaped_failure_fields(error), raw_args)
+        except Exception as error:
+            record = record_exception(error, level=DiagnosticLevel.ERROR, operation="cli.run")
+            _report_failure("Fatal Error", fatal_failure_fields(error, record), raw_args)
+        raise typer.Exit(code=1)
+
+
+def requests_json(args: Sequence[str]) -> bool:
+    """Return whether the command line asks for JSON output: `--format json` or `--format=json`."""
+    return "--format=json" in args or any(flag == "--format" and value == "json" for flag, value in pairwise(args))
+
+
+def _report_failure(title: str, fields: FailureFields, raw_args: Sequence[str]) -> None:
+    """Dispatch the failure as the `error` event under JSON output, else as a titled panel."""
+    output_format = OutputFormatOptions.JSON if requests_json(raw_args) else OutputFormatOptions.TERMINAL
+    ui_dispatcher.dispatch(ErrorEvent(title=title, **fields), output_format=output_format)
 
 
 # Initialize Typer App with clean configuration defaults
@@ -207,74 +234,18 @@ def main(
     if not ctx.obj.get("is_help", False) and ctx.invoked_subcommand != "init":
         if ctx.invoked_subcommand == "run":
             _ensure_run_workspace(path)
-        try:
-            ctx.obj["context"] = CliContext.build(
-                path=path, load_config=ctx.invoked_subcommand not in NON_STRICT_CONFIG_COMMANDS
-            )
-        except ConfigError as exc:
-            ui_dispatcher.dispatch(_config_error_panel(exc))
-            raise typer.Exit(code=1) from exc
-        except WorkspaceNotInitializedError as exc:
-            ui_dispatcher.dispatch(
-                ErrorPanelEvent(title="Workspace Not Initialized", message=str(exc), border_style="red")
-            )
-            raise typer.Exit(code=1) from exc
-
-
-def _config_error_panel(exc: ConfigError) -> ErrorPanelEvent:
-    """Return the Invalid Configuration panel: the message, its Fix: block, then a hint per carried diagnostic record."""
-    message = exc.message
-    if exc.remediations:
-        message += "\n" + format_remediations(exc.remediations)
-    records = exc.data.records if isinstance(exc.data, ConfigLoadDiagnostics) else ()
-    for record in records:
-        message = append_diagnostic_hint(message, record)
-    return ErrorPanelEvent(title="Invalid Configuration", message=message, border_style="red")
-
-
-def _exception_details(exc: BaseException) -> str:
-    """Return exc's message followed by each note added to it, one per line."""
-    return "\n".join([str(exc), *getattr(exc, "__notes__", [])])
+        ctx.obj["context"] = CliContext.build(
+            path=path, load_config=ctx.invoked_subcommand not in NON_STRICT_CONFIG_COMMANDS
+        )
 
 
 def run_cli() -> None:
     """Main entrypoint: route interrupts to KeyboardInterrupt and, once an interrupted command has unwound, end the process by the signal it received."""
     install_interrupt_handlers()
     try:
-        _run_app()
+        app()
     finally:
         reraise_interrupt_signal()
-
-
-def _run_app() -> None:
-    """Run the Typer app, mapping lock timeouts, config load failures and unexpected errors to panels and exit 1."""
-    try:
-        app()
-    except LockTimeoutError as exc:
-        ui_dispatcher.dispatch(
-            ErrorPanelEvent(
-                title="Workspace Lock Timeout",
-                message=_exception_details(exc),
-                border_style="red",
-            )
-        )
-        sys.exit(1)
-    except ConfigError as exc:
-        ui_dispatcher.dispatch(_config_error_panel(exc))
-        sys.exit(1)
-    except Exception as exc:
-        # Global Catch-All for unexpected bugs (e.g., missing record.id)
-        record = record_exception(exc, level=DiagnosticLevel.ERROR, operation="cli.run")
-        ui_dispatcher.dispatch(
-            ErrorPanelEvent(
-                title="Fatal Error",
-                message=append_diagnostic_hint(
-                    f"A fatal unexpected error occurred.\nDetails: {_exception_details(exc)}", record
-                ),
-                border_style="red",
-            )
-        )
-        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ def _event_formatters(console: Console | None) -> FormatterTable:
     import dovo.cli.ui.formatters.global_cli as global_formatters
 
     return {
-        models.ErrorPanelEvent: formatters.ErrorPanelFormatter(),
+        models.ErrorEvent: formatters.ErrorEventFormatter(),
         models.LockWaitEvent: formatters.LockWaitFormatter(),
         models.MessageEvent: formatters.MessageFormatter(),
         models.StepStartEvent: formatters.StepStartFormatter(),

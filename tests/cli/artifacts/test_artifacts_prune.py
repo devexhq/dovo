@@ -10,9 +10,9 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.common.lock import WorkspaceLock
 from dovo.core.artifacts.models import ArtifactsPruneResult
-from tests.harness.lock import raise_lock_timeout
+from tests.harness.lock import lock_timeout_reported, raise_lock_timeout
 from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
 
@@ -124,4 +124,4 @@ class ArtifactsPruneCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "artifacts", "prune"])
 
         assert result.exit_code == 1
-        assert isinstance(result.exception, LockTimeoutError)
+        assert lock_timeout_reported(result.stdout)

@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.sessions import LogsShowResult, SessionLogEvent, SessionLogEventType
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 _EVENTS = [
@@ -39,6 +40,31 @@ def _seed_session(workspace: Path) -> Path:
 
 class SessionLogsCliIntegrationTests:
     """Typer runner integration tests for dovo session logs."""
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("session_id", "exit_code", "error_code"),
+        [
+            pytest.param("sess-logs", 0, None, id="known_session"),
+            pytest.param("ghost-session", 1, "SESSION_NOT_FOUND", id="unknown_session"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        output_format: str,
+        session_id: str,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        _seed_session(cli_workspace)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "session", "logs", session_id, "--format", output_format]
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
 
     def test_logs_command_exit_0_prints_run_log_events_for_valid_session(
         self, cli_runner: CliRunner, cli_workspace: Path

@@ -12,14 +12,21 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.core.git.exceptions import git_command_error
+from dovo.core.git.models import GitProcessOutput
 from dovo.core.worktree.models import WorktreePruneStatus
 from dovo.core.worktree.services.detector import WorktreeDetector
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.fakes import FakeGitRunner, use_fake_git
 
 
 def _raise_type_error(*args: object, **kwargs: object) -> NoReturn:
     """Stand in for detection failing with an unexpected TypeError("boom")."""
     raise TypeError("boom")
+
+
+_WORKTREE_LIST_FAILED: dict[tuple[str, ...], GitProcessOutput | Exception] = {
+    ("worktree", "list"): git_command_error(["worktree", "list"], 1, "", "fatal error")
+}
 
 
 class WorktreePruneCliIntegrationTests:
@@ -129,3 +136,27 @@ class WorktreePruneCliIntegrationTests:
             assert payload["diagnostics"] == [
                 {"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}
             ]
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("git_responses", "exit_code", "error_code"),
+        [
+            pytest.param({}, 0, None, id="git_succeeds"),
+            pytest.param(_WORKTREE_LIST_FAILED, 1, "GIT_FAILED", id="git_worktree_list_fails"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        output_format: str,
+        git_responses: dict[tuple[str, ...], GitProcessOutput | Exception],
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        use_fake_git(monkeypatch, FakeGitRunner(git_responses))
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "prune", "--format", output_format])
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)

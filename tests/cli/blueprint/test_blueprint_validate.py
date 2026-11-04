@@ -16,6 +16,7 @@ from dovo.core.catalog.definitions import BlueprintDefinition
 from dovo.core.catalog.models import CatalogItemType
 from tests.harness.ask import approval_gate_blueprint, review_triage_blueprint, revise_loop_blueprint
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID, read_single_event
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
@@ -41,6 +42,31 @@ _SEMANTIC_WARNINGS: tuple[str, ...] = (
 class BlueprintValidateCliIntegrationTests:
     """Typer runner integration tests for dovo blueprint validate."""
 
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("name", "exit_code", "error_code"),
+        [
+            pytest.param("valid-blueprint", 0, None, id="valid_blueprint"),
+            pytest.param("missing-blueprint", 1, "CATALOG_NOT_FOUND", id="unknown_blueprint"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        isolated_workspace: Path,
+        output_format: str,
+        name: str,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "valid-blueprint")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "blueprint", "validate", name, "--format", output_format]
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
+
     def test_blueprint_validate_cli_valid_blueprint_exits_zero(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
@@ -65,12 +91,6 @@ class BlueprintValidateCliIntegrationTests:
         assert payload["event_type"] == "CatalogValidateResult"
         assert payload["payload"]["valid"] is True
         assert payload["payload"]["item_type"] == "blueprint"
-
-    def test_blueprint_validate_cli_missing_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "validate", "missing-blueprint"])
-
-        assert result.exit_code == 1
-        assert "Catalog item 'missing-blueprint' not found." in result.stdout
 
     def test_validate_missing_json_has_catalog_not_found(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         result = cli_runner.invoke(

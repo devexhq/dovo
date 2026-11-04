@@ -62,7 +62,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 ## ErrorCode naming
 
 - **Decision:** `ErrorCode` members are named `<PREFIX>_<NOUN>_<STATE>`, such as `CATALOG_SCHEMA_INVALID`, `PROJECT_IDENTITY_WRITE_FAILED` or `SESSION_STATE_CORRUPT`. `INTERNAL_ERROR` is the one exception.
-  - The prefix names what failed as a user sees it. Usually that is the raising package's folder name in the singular (`AGENT`, `CATALOG`, `GIT`, `WORKTREE`). For `engine`, it is what the engine runs (`SESSION`, `RUN`). `core/interaction` owns `INTERACTION` and `ASK`, the prompt it asks, and `core/inputs` owns `BLUEPRINT`, the inputs it resolves. No prefix names a layer such as `ENGINE`.
+  - The prefix names what failed as a user sees it. Usually that is the raising package's folder name in the singular (`AGENT`, `CATALOG`, `GIT`, `WORKTREE`). For `engine`, it is what the engine runs (`SESSION`, `RUN`). `common` owns `INTERNAL` and `WORKSPACE`, the workspace a command runs in. `core/interaction` owns `INTERACTION` and `ASK`, the prompt it asks, and `core/inputs` owns `BLUEPRINT`, the inputs it resolves. No prefix names a layer such as `ENGINE`.
   - A package raises a literal code only under a prefix `OWNERS` gives it, and never raises another package's member literally, so one failure has one code and one owner. A failure the engine detects gets an engine code. A caller copies a caught failure's code into its result and never raises it again. A wrap that only adds context and passes the caught `exc.error_code` through (`raise WorktreeError(exc.error_code, …)`, as in [Wrapping another package's DomainError](#wrapping-another-packages-domainerror)) is a copy, not a literal raise, and stays allowed. The lint lists each prefix's packages and rejects a literal raise from any other package.
   - The noun is left out when it is the prefix's own subject (`WORKTREE_NOT_FOUND`). The state comes last, from the lint's closed list; a failed operation is `<VERB>_FAILED` with the verb in its base form (`CREATE_FAILED`, never `CREATION_FAILED`).
   - The issue that adds a member whose state is not in `STATES` in `tests/lint/test_error_codes.py` adds that state in the same PR, and only when no listed state fits. A new prefix adds its `OWNERS` entry the same way.
@@ -77,7 +77,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
   - Code behind an entrypoint catches only to recover, or to collect per-item failures and continue. It records what it caught with `record_exception`, at the level [diagnostics.md](diagnostics.md) sets.
   - Nothing inside a `catch_failure` block catches and re-raises a `DomainError` to carry data out of it; the raise passes `data=` instead.
   - `catch_failure` re-raises `LockTimeoutError` and records unexpected exceptions, so no helper catches broad `Exception` to report it.
-  - A `DomainError` never leaves a public entrypoint, except one the entrypoint lists under `Raises:` and hands to a top-level handler in `cli/cli.py` that renders it, such as a required config that fails to load.
+  - A `DomainError` never leaves a public entrypoint, except one the entrypoint lists under `Raises:` and hands to the top-level handler in `DovoTyperGroup.invoke` (`cli/cli.py`), such as a required config that fails to load (`ConfigError`) or a workspace with no project identity (`WorkspaceError`). The handler builds the failed-result header with `escaped_failure_fields`, carrying the records the raise passed as `RecordedDiagnostics`, and reports it as a panel or the `error` event.
 - **Why:** one catch site means one copy into the result, one diagnostic record and one place a caller looks.
 - **Since:** #1214
 - **Example:**
@@ -123,9 +123,9 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 
 ## Lock timeouts propagate
 
-- **Decision:** every `LockTimeoutError` propagates to the top-level `Workspace Lock Timeout` handler.
-  - No package turns it into an error code, a warning or a status. `catch_failure` re-raises it, so an entrypoint needs no handler of its own.
-  - An entrypoint that rolls back a failed attempt, such as `auto_initialize_workspace`, rolls back before re-raising it.
+- **Decision:** every `LockTimeoutError` propagates to the top-level handler in `DovoTyperGroup.invoke`, which reports it as `WORKSPACE_LOCK_TIMEOUT`: the `Workspace Lock Timeout` panel, or the `error` event under `--format json`.
+  - No package turns it into an error code, a warning or a status. `catch_failure` re-raises it, so an entrypoint needs no handler of its own. A timeout while a finished run's worktree is discarded propagates too, so that run ends with the `error` event and no run result.
+  - An entrypoint that rolls back a failed attempt, such as `auto_initialize_workspace`, rolls back before re-raising it, adding any rollback failure as a note; each note becomes its own `errors` entry.
 - **Why:** this is what R6's "report it" means: one handler reports contention the same way for every command.
 - **Since:** #1214
 

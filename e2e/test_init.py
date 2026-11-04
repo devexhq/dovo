@@ -92,7 +92,7 @@ class InitCliTests:
 
         assert result.exit_code == 1
         assert "Workspace is not initialized" in result.stdout
-        assert "dovo init" in result.stdout
+        assert "Initialize the workspace." in result.stdout
         assert not (git_project / ".dovo" / "project.json").exists()
         assert not (git_project / ".dovo" / "config.json").exists()
 

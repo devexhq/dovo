@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.common.filesystem import Filesystem
 from dovo.core.config.generator import build_default_config
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 
 
 class ConfigUnsetCliIntegrationTests:
@@ -130,3 +132,29 @@ class ConfigUnsetCliIntegrationTests:
                 "diagnostics": [],
             },
         }
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("key", "exit_code", "error_code"),
+        [
+            pytest.param("agents.copilot.model", 0, None, id="valid_key"),
+            pytest.param("", 2, "CONFIG_KEY_PATH_INVALID", id="empty_key"),
+            pytest.param("a..b", 2, "CONFIG_KEY_PATH_INVALID", id="empty_segment"),
+            pytest.param("project", 1, "CONFIG_SCHEMA_INVALID", id="schema_required_key"),
+        ],
+    )
+    @pytest.mark.usefixtures("workspace_config")
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        isolated_workspace: Path,
+        output_format: str,
+        key: str,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "config", "unset", "--format", output_format, "--", key]
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)

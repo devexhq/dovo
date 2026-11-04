@@ -16,6 +16,7 @@ from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeDiffResult, WorktreeSession
 from dovo.core.worktree.worktree import Worktree
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id, use_fake_git
 from tests.harness.git_index import snapshot_index
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -186,3 +187,29 @@ class WorktreeDiffCliIntegrationTests:
         assert payload["error_code"] == "INTERNAL_ERROR"
         assert payload["errors"] == ["Unexpected error during worktree.diff: boom"]
         assert payload["diagnostics"] == [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("missing_id", "exit_code", "error_code"),
+        [
+            pytest.param(None, 0, None, id="known_worktree"),
+            pytest.param("missing-id", 1, "WORKTREE_NOT_FOUND", id="unknown_worktree"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        output_format: str,
+        missing_id: str | None,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        session = _create_worktree_with_committed_change(cli_workspace)
+
+        result = cli_runner.invoke(
+            app,
+            ["-p", str(cli_workspace), "worktree", "diff", missing_id or session.session_id, "--format", output_format],
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)

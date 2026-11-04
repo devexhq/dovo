@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 from typing import NoReturn
 
@@ -15,8 +16,14 @@ from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeListResult
 from dovo.core.worktree.worktree import Worktree
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.workspace_paths import initialized_workspace_paths
+
+
+def _locked(*args: object, **kwargs: object) -> NoReturn:
+    """Stand in for a repository call failing with sqlite3.OperationalError("database is locked")."""
+    raise sqlite3.OperationalError("database is locked")
 
 
 class WorktreeListCliIntegrationTests:
@@ -97,9 +104,6 @@ class WorktreeListCliIntegrationTests:
     ) -> None:
         """Exit 1 and emit payload error_code "INTERNAL_ERROR", errors == ["Unexpected error during worktree.list: database is locked"], diagnostics == [RECORD_JSON] and no "status" key when reconcile_stale_active raises sqlite3.OperationalError("database is locked")."""
 
-        def _locked(*args: object, **kwargs: object) -> NoReturn:
-            raise sqlite3.OperationalError("database is locked")
-
         monkeypatch.setattr(WorktreesRepository, "reconcile_stale_active", _locked)
 
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "list", "--format", "json"])
@@ -110,3 +114,27 @@ class WorktreeListCliIntegrationTests:
         assert payload["errors"] == ["Unexpected error during worktree.list: database is locked"]
         assert payload["diagnostics"] == [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]
         assert "status" not in payload
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("reconcile_stale_active", "exit_code", "error_code"),
+        [
+            pytest.param(WorktreesRepository.reconcile_stale_active, 0, None, id="readable_database"),
+            pytest.param(_locked, 1, "INTERNAL_ERROR", id="locked_database"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        output_format: str,
+        reconcile_stale_active: Callable[..., object],
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        monkeypatch.setattr(WorktreesRepository, "reconcile_stale_active", reconcile_stale_active)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "list", "--format", output_format])
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)

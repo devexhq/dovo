@@ -5,21 +5,59 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.lock import LockTimeoutError
-from dovo.core.db import SessionStatus
+from dovo.core.db import SessionsRepository, SessionStatus
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
-from tests.harness.lock import time_out_first_lock
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
+from tests.harness.lock import lock_timeout_reported, time_out_first_lock
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_db
 
 
+def _list_normally(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Leave SessionsRepository.list unpatched."""
+
+
+def _fail_every_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch SessionsRepository.list so every call raises RuntimeError("db unavailable")."""
+
+    def _list(self: SessionsRepository, **kwargs: object) -> NoReturn:
+        raise RuntimeError("db unavailable")
+
+    monkeypatch.setattr(SessionsRepository, "list", _list)
+
+
 class SessionListCliIntegrationTests:
     """Typer runner integration tests for dovo session / dovo session list."""
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("patch_listing", "exit_code", "error_code"),
+        [
+            pytest.param(_list_normally, 0, None, id="listing_succeeds"),
+            pytest.param(_fail_every_list, 1, "INTERNAL_ERROR", id="listing_raises"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        output_format: str,
+        patch_listing: Callable[[pytest.MonkeyPatch], None],
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        patch_listing(monkeypatch)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "list", "--format", output_format])
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
 
     def test_session_list_cli_format_json_emits_result_event(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         db = initialized_workspace_db(cli_workspace)
@@ -68,13 +106,13 @@ class SessionListCliIntegrationTests:
     def test_session_list_cli_json_under_lock_timeout_exits_one(
         self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Exit 1 with result.exception a LockTimeoutError for `session list --format json`."""
+        """Exit 1 with the lock timeout reported for `session list --format json`."""
         time_out_first_lock(monkeypatch)
 
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "list", "--format", "json"])
 
         assert result.exit_code == 1
-        assert isinstance(result.exception, LockTimeoutError)
+        assert lock_timeout_reported(result.stdout)
 
     def test_bare_session_and_ls_alias_equal_session_list(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         db = initialized_workspace_db(cli_workspace)

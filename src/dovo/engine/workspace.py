@@ -10,7 +10,6 @@ from pathlib import Path
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.error_codes import ErrorCode
 from dovo.common.formatters import format_remediations
-from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
 from dovo.common.redact import SecretRedactor
 from dovo.common.utils import display_path
@@ -172,13 +171,12 @@ class Workspace:
     def _discard_worktree(
         self, manager: Worktree, session: WorktreeSession, diagnostics: list[DiagnosticRecord]
     ) -> list[str]:
-        """Remove the worktree, add its records to diagnostics, and return `Failed to remove worktree '<path>': <problem>` for each of its errors and warnings."""
+        """Remove the worktree, add its records to diagnostics, and return `Failed to remove worktree '<path>': <problem>` for each of its errors and warnings.
+
+        A lock timeout propagates to the top-level handler, which reports it as the invocation's only failure.
+        """
         message = f"Failed to remove worktree '{session.worktree_path}'"
-        try:
-            removal = manager.cleanup(session)
-        except LockTimeoutError as exc:
-            # No record: lock contention is expected; the message names the cause.
-            return [f"{message}: {exc}"]
+        removal = manager.cleanup(session)
         diagnostics.extend(removal.diagnostics)
         return [f"{message}: {problem}" for problem in [*removal.errors, *removal.warnings]]
 

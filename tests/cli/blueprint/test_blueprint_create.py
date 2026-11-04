@@ -10,15 +10,44 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.common.lock import WorkspaceLock
+from dovo.core.catalog import Catalog
+from dovo.core.catalog.models import CatalogItemType
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID, details_line, read_single_event, unwrapped
-from tests.harness.lock import raise_lock_timeout
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
+from tests.harness.lock import lock_timeout_reported, raise_lock_timeout
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
 
 
 class BlueprintCreateCliIntegrationTests:
     """Typer runner integration tests for dovo blueprint create."""
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("name", "exit_code", "error_code"),
+        [
+            pytest.param("new-blueprint", 0, None, id="new_name"),
+            pytest.param("dup-blueprint", 1, "CATALOG_ALREADY_EXISTS", id="colliding_name"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        isolated_workspace: Path,
+        output_format: str,
+        name: str,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "dup-blueprint")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "blueprint", "create", "--name", name, "--format", output_format]
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
 
     def test_blueprint_create_cli_creates_item_terminal(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         result = cli_runner.invoke(
@@ -42,16 +71,6 @@ class BlueprintCreateCliIntegrationTests:
         assert payload["payload"]["item"]["tier"] == "repo"
         assert payload["payload"]["item"]["item_type"] == "blueprint"
         assert payload["payload"]["item_type"] == "blueprint"
-
-    def test_blueprint_create_cli_collision_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "create", "--name", "dup-blueprint"])
-
-        result = cli_runner.invoke(
-            app, ["-p", str(isolated_workspace), "blueprint", "create", "--name", "dup-blueprint"]
-        )
-
-        assert result.exit_code == 1
-        assert "collision" in result.stdout
 
     @pytest.mark.parametrize(
         ("tier", "catalog_dir_attr"),
@@ -86,13 +105,13 @@ class BlueprintCreateCliIntegrationTests:
     def test_blueprint_create_cli_lock_timeout_propagates(
         self, cli_runner: CliRunner, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Exit 1 with result.exception a LockTimeoutError and no 'Catalog Creation Failed' in stdout."""
+        """Exit 1 with the lock timeout reported and no 'Catalog Creation Failed' in stdout."""
         monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "create", "--name", "demo"])
 
         assert result.exit_code == 1
-        assert isinstance(result.exception, LockTimeoutError)
+        assert lock_timeout_reported(result.stdout)
         assert "Catalog Creation Failed" not in result.stdout
 
 
@@ -134,19 +153,6 @@ class BlueprintCreateCliTests:
         assert not (isolated_workspace / ".dovo" / "catalog" / "blueprints" / "both-blueprint.yml").exists()
         assert not (global_paths.user_catalog_dir / "blueprints" / "both-blueprint.yml").exists()
         assert not (global_paths.global_catalog_dir / "blueprints" / "both-blueprint.yml").exists()
-
-    def test_collision_json_has_already_exists_code(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """Exit 1 with error_code CATALOG_ALREADY_EXISTS."""
-        cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "create", "--name", "dup-blueprint"])
-
-        result = cli_runner.invoke(
-            app,
-            ["-p", str(isolated_workspace), "blueprint", "create", "--name", "dup-blueprint", "--format", "json"],
-        )
-
-        assert result.exit_code == 1
-        payload = json.loads(result.stdout)["payload"]
-        assert payload["error_code"] == "CATALOG_ALREADY_EXISTS"
 
     def test_unexpected_error_reports_internal_error_json(
         self,

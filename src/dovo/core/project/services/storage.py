@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dovo.common.diagnostic_log import DiagnosticLevel, record_exception
-from dovo.common.filesystem.exceptions import WorkspaceNotInitializedError
+from dovo.common.exceptions import workspace_not_initialized_error
 from dovo.common.filesystem.models import GlobalPaths, RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.paths import get_catalog_templates_dir
 from dovo.core.project.exceptions import ProjectIdentityError
@@ -41,23 +41,28 @@ def build_workspace_paths(
 def resolve_workspace_paths(repository_paths: RepositoryPaths, global_paths: GlobalPaths) -> WorkspacePaths:
     """Load the project identity once and build the invocation's paths.
 
-    Raises WorkspaceNotInitializedError when the identity is missing or unusable, recording an OSError
-    that prevented reading it, or when the .dovo directory is the global Dovo home, whose files are
-    never read as workspace files.
+    Raises WorkspaceError with WORKSPACE_NOT_INITIALIZED when the identity is missing or unusable, carrying the
+    record of an OSError that prevented reading it, or when the .dovo directory is the global Dovo home, whose files
+    are never read as workspace files.
     """
     identity_path = repository_paths.dovo_dir / "project.json"
     if repository_paths.dovo_dir.resolve() == global_paths.root:
-        raise WorkspaceNotInitializedError(identity_path, identity_present=False)
+        raise workspace_not_initialized_error(identity_path, identity_present=False, diagnostic=None)
     try:
         identity = load_project_identity(identity_path)
     except ProjectIdentityError as error:
-        if isinstance(error.__cause__, OSError):
+        diagnostic = (
             record_exception(
                 error.__cause__,
                 level=DiagnosticLevel.ERROR,
                 operation="project.resolve_workspace_paths",
                 context={"path": str(identity_path)},
             )
-        raise WorkspaceNotInitializedError(identity_path, identity_present=identity_path.is_file()) from error
+            if isinstance(error.__cause__, OSError)
+            else None
+        )
+        raise workspace_not_initialized_error(
+            identity_path, identity_present=identity_path.is_file(), diagnostic=diagnostic
+        ) from error.__cause__
 
     return build_workspace_paths(repository_paths, global_paths, identity.id)

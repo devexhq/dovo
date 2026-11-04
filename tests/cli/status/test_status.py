@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -11,17 +12,30 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.common.error_codes import ErrorCode
-from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.common.lock import WorkspaceLock
 from dovo.core.db import SessionStatus
 from dovo.core.git import GitError
 from dovo.core.status.models import (
     DovoStatusResult,
 )
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
+from tests.harness.exit_codes import OUTPUT_FORMATS
 from tests.harness.fakes import FakeGitRunner, use_fake_git
-from tests.harness.lock import raise_lock_timeout
+from tests.harness.lock import lock_timeout_reported, raise_lock_timeout
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_db
+
+
+def _leave_healthy(_workspace: Path) -> None:
+    return None
+
+
+def _break_config(workspace: Path) -> None:
+    (workspace / ".dovo" / "config.json").write_text("{not valid json", encoding="utf-8")
+
+
+def _remove_config(workspace: Path) -> None:
+    (workspace / ".dovo" / "config.json").unlink()
 
 
 class StatusCliIntegrationTests:
@@ -80,6 +94,33 @@ class StatusCliIntegrationTests:
         assert payload["config_error_code"] == "CONFIG_JSON_INVALID"
         assert "config_status" not in payload
 
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        "arrange",
+        [
+            pytest.param(_leave_healthy, id="healthy"),
+            pytest.param(_break_config, id="degraded"),
+            pytest.param(_remove_config, id="missing_config"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        status_workspace: Path,
+        dispatch_spy: list[object],
+        output_format: str,
+        arrange: Callable[[Path], None],
+    ) -> None:
+        """Exit 0 with no error_code whatever health status reports, read from the dispatched result since error_code is not in the payload."""
+        arrange(status_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", output_format])
+
+        assert result.exit_code == 0, result.output
+        result_dto = dispatch_spy[0]
+        assert isinstance(result_dto, DovoStatusResult)
+        assert result_dto.error_code is None
+
     def test_status_cli_json_reports_reconciliation_record_in_diagnostics(
         self,
         cli_runner: CliRunner,
@@ -119,13 +160,13 @@ class StatusCliIntegrationTests:
     def test_status_cli_json_under_lock_timeout_exits_one(
         self, cli_runner: CliRunner, status_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Exit 1 with result.exception a LockTimeoutError for `status --format json`."""
+        """Exit 1 with the lock timeout reported for `status --format json`."""
         monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
         result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", "json"])
 
         assert result.exit_code == 1
-        assert isinstance(result.exception, LockTimeoutError)
+        assert lock_timeout_reported(result.stdout)
 
     def test_status_cli_json_reports_unknown_branch_when_git_is_missing(
         self,

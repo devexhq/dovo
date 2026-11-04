@@ -16,18 +16,23 @@ from dovo.common.constants import DOVO_GITIGNORE_TRACKED_ENTRIES
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.common.lock import WorkspaceLock
 from dovo.common.utils import display_path
 from dovo.core.bootstrap.models import BootstrapOutcome
 from dovo.core.config.exceptions import ConfigError
 from dovo.core.project.models import PROJECT_ID_REGEX, ProjectIdentity
 from tests.harness.builders import init_git_repository
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
-from tests.harness.lock import raise_lock_timeout
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
+from tests.harness.lock import lock_timeout_reported, raise_lock_timeout
 
 
 def _dovo_dir(workspace: Path) -> Path:
     return workspace / ".dovo"
+
+
+def _leave_without_git(_root: Path) -> None:
+    return None
 
 
 class InitCliIntegrationTests:
@@ -101,6 +106,31 @@ class InitCliIntegrationTests:
         assert event["payload"]["error_code"] is None
         assert "failure_mode" not in event["payload"]
         assert event["payload"]["project_id"] == "test-project"
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("prepare", "id_args", "exit_code", "error_code"),
+        [
+            pytest.param(init_git_repository, [], 0, None, id="git_repo"),
+            pytest.param(init_git_repository, ["--id", "BAD!"], 2, "PROJECT_ID_INVALID", id="invalid_id"),
+            pytest.param(_leave_without_git, [], 1, "BOOTSTRAP_REPO_NOT_FOUND", id="non_git_dir"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        output_format: str,
+        prepare: Callable[[Path], object],
+        id_args: list[str],
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        prepare(tmp_path)
+
+        result = cli_runner.invoke(app, ["-p", str(tmp_path), "init", *id_args, "--format", output_format])
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
 
     def test_init_cli_with_id_flag_creates_project_json_with_explicit_id(
         self, cli_runner: CliRunner, tmp_path: Path
@@ -188,7 +218,7 @@ class InitCliIntegrationTests:
     @pytest.mark.parametrize(
         "format_args", [pytest.param([], id="terminal"), pytest.param(["--format", "json"], id="json")]
     )
-    def test_init_cli_identity_lock_timeout_raises_and_dispatches_no_result(
+    def test_init_cli_identity_lock_timeout_reports_it_and_dispatches_no_result(
         self,
         cli_runner: CliRunner,
         tmp_path: Path,
@@ -196,16 +226,15 @@ class InitCliIntegrationTests:
         dispatch_spy: list[object],
         format_args: list[str],
     ) -> None:
-        """Exit 1 with result.exception the LockTimeoutError, no WorkspaceInitResult dispatched, and no project.json."""
+        """Exit 1 with the lock timeout reported, no WorkspaceInitResult dispatched, and no project.json."""
         init_git_repository(tmp_path)
         monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
         result = cli_runner.invoke(app, ["-p", str(tmp_path), "init", *format_args])
 
         assert result.exit_code == 1
-        assert isinstance(result.exception, LockTimeoutError)
-        assert str(result.exception) == "lock held"
-        assert dispatch_spy == []
+        assert lock_timeout_reported(result.stdout)
+        assert [type(event).__name__ for event in dispatch_spy] == ["ErrorEvent"]
         assert not (_dovo_dir(tmp_path) / "project.json").exists()
 
     def test_init_cli_overwrite_repair_rerun_orders_warnings(self, cli_runner: CliRunner, tmp_path: Path) -> None:

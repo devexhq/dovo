@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.common.filesystem import Filesystem
 from dovo.core.config.generator import build_default_config
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 
 
 class ConfigValidateCliIntegrationTests:
@@ -101,3 +103,28 @@ class ConfigValidateCliIntegrationTests:
                 "diagnostics": [],
             },
         }
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("config_text", "exit_code", "error_code"),
+        [
+            pytest.param(json.dumps(build_default_config("demo-workspace")), 0, None, id="valid_config"),
+            pytest.param("{not valid json", 1, "CONFIG_JSON_INVALID", id="malformed_config"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        isolated_workspace: Path,
+        output_format: str,
+        config_text: str,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        (isolated_workspace / ".dovo" / "config.json").write_text(config_text, encoding="utf-8")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "config", "validate", "--format", output_format]
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)

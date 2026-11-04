@@ -1,11 +1,12 @@
-"""Shared exceptions: the DomainError base, Failure and its data, and catch_failure for entrypoints."""
+"""Shared exceptions: the DomainError base, Failure and its data, catch_failure, and escaped-failure headers."""
 
 from __future__ import annotations
 
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TypedDict
+from pathlib import Path
+from typing import Final, TypedDict
 
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.error_codes import ErrorCode
@@ -18,6 +19,13 @@ _ContextValue = str | int | float | bool | None
 @dataclass(frozen=True, slots=True)
 class FailureData:
     """Base for the typed extra data a package attaches to a failure, such as an apply conflict's paths."""
+
+
+@dataclass(frozen=True, slots=True)
+class RecordedDiagnostics(FailureData):
+    """The diagnostic records written where the failure arose, carried to the handler that reports it."""
+
+    records: tuple[DiagnosticRecord, ...]
 
 
 class DomainError(Exception):
@@ -112,4 +120,74 @@ def _unexpected_failure(error: Exception, operation: str, context: Mapping[str, 
         message=f"Unexpected error during {operation}: {error}",
         remediations=(),
         diagnostic=record_exception(error, level=DiagnosticLevel.ERROR, operation=operation, context=context),
+    )
+
+
+class WorkspaceError(DomainError):
+    """Business failure resolving the workspace a command runs in."""
+
+
+INIT_REMEDIATION: Final[Remediation] = Remediation(message="Initialize the workspace.", command="dovo init")
+REPLACE_IDENTITY_REMEDIATION: Final[Remediation] = Remediation(
+    message="Run 'dovo init --id <project-id> --force' to replace the unusable identity.",
+    command="dovo init --id <project-id> --force",
+)
+LOCK_TIMEOUT_REMEDIATION: Final[Remediation] = Remediation(
+    message="Wait for the other dovo process to release the workspace lock, then retry."
+)
+
+
+def workspace_not_initialized_error(
+    identity_path: Path, *, identity_present: bool, diagnostic: DiagnosticRecord | None
+) -> WorkspaceError:
+    """Return WORKSPACE_NOT_INITIALIZED naming identity_path, carrying diagnostic as RecordedDiagnostics.
+
+    It has the init remediation, then the --force one when the identity file is present.
+    """
+    remediations = [INIT_REMEDIATION, REPLACE_IDENTITY_REMEDIATION] if identity_present else [INIT_REMEDIATION]
+    return WorkspaceError(
+        ErrorCode.WORKSPACE_NOT_INITIALIZED,
+        f"Workspace is not initialized: no valid project identity at '{identity_path}'.",
+        remediations,
+        data=RecordedDiagnostics(tuple(error_diagnostics(diagnostic))),
+    )
+
+
+def _notes(error: BaseException) -> list[str]:
+    """Return each note added to error, in order."""
+    return list(getattr(error, "__notes__", []))
+
+
+def escaped_failure_fields(error: DomainError | LockTimeoutError) -> FailureFields:
+    """Return the failed-result header of a failure no command result carries.
+
+    A DomainError gives its code, message, remediations and carried RecordedDiagnostics records; a lock timeout gives
+    WORKSPACE_LOCK_TIMEOUT, its message and the wait remediation. errors ends with one entry per note on error.
+    """
+    if isinstance(error, LockTimeoutError):
+        return FailureFields(
+            error_code=ErrorCode.WORKSPACE_LOCK_TIMEOUT,
+            errors=[str(error), *_notes(error)],
+            remediations=[LOCK_TIMEOUT_REMEDIATION],
+            diagnostics=[],
+        )
+    records = error.data.records if isinstance(error.data, RecordedDiagnostics) else ()
+    return FailureFields(
+        error_code=error.error_code,
+        errors=[error.message, *_notes(error)],
+        remediations=list(error.remediations),
+        diagnostics=list(records),
+    )
+
+
+def fatal_failure_fields(error: Exception, record: DiagnosticRecord | None) -> FailureFields:
+    """Return the INTERNAL_ERROR header of an unexpected exception that reached the top-level handler.
+
+    errors holds the fatal message, then one entry per note on error; diagnostics holds record when it is error-level.
+    """
+    return FailureFields(
+        error_code=ErrorCode.INTERNAL_ERROR,
+        errors=[f"A fatal unexpected error occurred. Details: {error}", *_notes(error)],
+        remediations=[],
+        diagnostics=error_diagnostics(record),
     )

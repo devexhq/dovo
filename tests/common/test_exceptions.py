@@ -12,7 +12,18 @@ import pytest
 
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
-from dovo.common.exceptions import DomainError, Failure, FailureData, FailureFields, catch_failure
+from dovo.common.exceptions import (
+    DomainError,
+    Failure,
+    FailureData,
+    FailureFields,
+    RecordedDiagnostics,
+    WorkspaceError,
+    catch_failure,
+    escaped_failure_fields,
+    fatal_failure_fields,
+    workspace_not_initialized_error,
+)
 from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID, FROZEN_TIMESTAMP, read_single_event
@@ -247,4 +258,85 @@ class FailureResultFieldsTests:
             errors=["Worktree 'x' not found."],
             remediations=[REMEDIATION],
             diagnostics=expected_diagnostics,
+        )
+
+
+class EscapedFailureFieldsTests:
+    """Contract tests for the header of a failure no command result carries."""
+
+    def test_domain_error_reports_its_own_header(self, tmp_path: Path) -> None:
+        """Give the code, the message then each note, the remediations, and the carried records."""
+        record = DiagnosticRecord(event_id=FROZEN_EVENT_ID, log_path=tmp_path / "e.json", level=DiagnosticLevel.ERROR)
+        error = DomainError(
+            ErrorCode.CONFIG_UNREADABLE, "unreadable", [REMEDIATION], data=RecordedDiagnostics((record,))
+        )
+        error.add_note("first note")
+        error.add_note("second note")
+
+        assert escaped_failure_fields(error) == FailureFields(
+            error_code=ErrorCode.CONFIG_UNREADABLE,
+            errors=["unreadable", "first note", "second note"],
+            remediations=[REMEDIATION],
+            diagnostics=[record],
+        )
+
+    def test_lock_timeout_reports_workspace_lock_timeout(self) -> None:
+        error = LockTimeoutError("Timed out waiting for workspace lock.")
+        error.add_note("Rollback failed.")
+
+        assert escaped_failure_fields(error) == FailureFields(
+            error_code=ErrorCode.WORKSPACE_LOCK_TIMEOUT,
+            errors=["Timed out waiting for workspace lock.", "Rollback failed."],
+            remediations=[
+                Remediation(message="Wait for the other dovo process to release the workspace lock, then retry.")
+            ],
+            diagnostics=[],
+        )
+
+
+class FatalFailureFieldsTests:
+    def test_unexpected_exception_is_internal_error_with_its_record(self, tmp_path: Path) -> None:
+        record = DiagnosticRecord(event_id=FROZEN_EVENT_ID, log_path=tmp_path / "e.json", level=DiagnosticLevel.ERROR)
+        error = RuntimeError("missing record.id")
+        error.add_note("a note")
+
+        assert fatal_failure_fields(error, record) == FailureFields(
+            error_code=ErrorCode.INTERNAL_ERROR,
+            errors=["A fatal unexpected error occurred. Details: missing record.id", "a note"],
+            remediations=[],
+            diagnostics=[record],
+        )
+
+
+class WorkspaceNotInitializedErrorTests:
+    @pytest.mark.parametrize(
+        ("identity_present", "expected"),
+        [
+            pytest.param(False, (Remediation(message="Initialize the workspace.", command="dovo init"),), id="absent"),
+            pytest.param(
+                True,
+                (
+                    Remediation(message="Initialize the workspace.", command="dovo init"),
+                    Remediation(
+                        message="Run 'dovo init --id <project-id> --force' to replace the unusable identity.",
+                        command="dovo init --id <project-id> --force",
+                    ),
+                ),
+                id="present",
+            ),
+        ],
+    )
+    def test_factory_builds_code_message_and_remediations(
+        self, tmp_path: Path, identity_present: bool, expected: tuple[Remediation, ...]
+    ) -> None:
+        identity_path = tmp_path / ".dovo" / "project.json"
+
+        error = workspace_not_initialized_error(identity_path, identity_present=identity_present, diagnostic=None)
+
+        assert isinstance(error, WorkspaceError)
+        assert (error.error_code, error.message, error.remediations, error.data) == (
+            ErrorCode.WORKSPACE_NOT_INITIALIZED,
+            f"Workspace is not initialized: no valid project identity at '{identity_path}'.",
+            expected,
+            RecordedDiagnostics(records=()),
         )

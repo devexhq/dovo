@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogItemType
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
@@ -28,6 +29,33 @@ def _write_repo_step(workspace: Path, name: str, definition: Mapping[str, object
 
 class StepValidateCliIntegrationTests:
     """Typer runner integration tests for dovo step validate."""
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("name", "exit_code", "error_code"),
+        [
+            pytest.param("valid-step", 0, None, id="valid_step"),
+            pytest.param("invalid-step", 1, "CATALOG_SCHEMA_INVALID", id="schema_invalid_step"),
+            pytest.param("missing-step", 1, "CATALOG_NOT_FOUND", id="unknown_step"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        isolated_workspace: Path,
+        output_format: str,
+        name: str,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "valid-step")
+        _write_repo_step(isolated_workspace, "invalid-step", {"id": "invalid-step", "type": "unknown_type"})
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "step", "validate", name, "--format", output_format]
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
 
     def test_step_validate_cli_valid_step_exits_zero(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "valid-step")
@@ -49,22 +77,6 @@ class StepValidateCliIntegrationTests:
         assert payload["event_type"] == "CatalogValidateResult"
         assert payload["payload"]["valid"] is True
         assert payload["payload"]["item_type"] == "step"
-
-    def test_step_validate_cli_invalid_step_schema_exits_one(
-        self, cli_runner: CliRunner, isolated_workspace: Path
-    ) -> None:
-        _write_repo_step(isolated_workspace, "invalid-step", {"id": "invalid-step", "type": "unknown_type"})
-
-        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", "invalid-step"])
-
-        assert result.exit_code == 1
-        assert "FAILED" in result.stdout
-
-    def test_step_validate_cli_missing_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", "missing-step"])
-
-        assert result.exit_code == 1
-        assert "Catalog item 'missing-step' not found." in result.stdout
 
     def test_validate_missing_json_has_catalog_not_found(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         result = cli_runner.invoke(

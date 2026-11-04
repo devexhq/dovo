@@ -16,6 +16,7 @@ from dovo.core.db import WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeShowResult
 from dovo.core.worktree.worktree import Worktree
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -94,6 +95,43 @@ class WorktreeShowCliIntegrationTests:
         assert event["event_type"] == "WorktreeShowResult"
         assert event["payload"]["error_code"] is None
         assert event["payload"]["worktree"]["id"] == session.session_id
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("missing_id", "exit_code", "error_code"),
+        [
+            pytest.param(None, 0, None, id="known_worktree"),
+            pytest.param("missing-id", 1, "WORKTREE_NOT_FOUND", id="unknown_worktree"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        output_format: str,
+        missing_id: str | None,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        create_result = Worktree(
+            paths=initialized_workspace_paths(cli_workspace), git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+        ).create(name="show-me")
+        assert create_result.session is not None
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "-p",
+                str(cli_workspace),
+                "worktree",
+                "show",
+                missing_id or create_result.session.session_id,
+                "--format",
+                output_format,
+            ],
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
 
     def test_worktree_show_cli_unexpected_failure_json_reports_internal_error(
         self, cli_runner: CliRunner, cli_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -15,8 +16,22 @@ from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
 from dovo.core.diagnostics.checks.git_repo import GitRepoCheck
 from dovo.core.git import git_command_error
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
+from tests.harness.exit_codes import OUTPUT_FORMATS
 from tests.harness.fakes import FakeGitRunner, use_fake_git
 from tests.harness.workspace_paths import initialized_workspace_paths
+
+
+def _leave_healthy(_monkeypatch: pytest.MonkeyPatch) -> None:
+    return None
+
+
+def _hide_binaries(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("dovo.core.diagnostics.checks.env_binaries.shutil.which", lambda _name: None)
+
+
+def _fail_git_repo_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    failure = git_command_error(["git", "rev-parse", "--is-inside-work-tree"], 128, "", "fatal: not a git repository")
+    use_fake_git(monkeypatch, FakeGitRunner({("rev-parse", "--is-inside-work-tree"): failure}))
 
 
 class DoctorCliIntegrationTests:
@@ -131,21 +146,42 @@ class DoctorCliIntegrationTests:
             "diagnostics": [],
         }
 
-    def test_doctor_cli_json_reports_not_repo_from_injected_git(
-        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("arrange", "category", "check_status", "exit_code", "error_code"),
+        [
+            pytest.param(_leave_healthy, "git", CheckStatus.OK, 0, None, id="ok_check"),
+            pytest.param(_hide_binaries, "environment", CheckStatus.WARNING, 0, None, id="warning_check"),
+            pytest.param(
+                _fail_git_repo_probe, "git", CheckStatus.FAILED, 1, "DOCTOR_GIT_REPO_NOT_FOUND", id="failed_check"
+            ),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        dispatch_spy: list[object],
+        monkeypatch: pytest.MonkeyPatch,
+        output_format: str,
+        arrange: Callable[[pytest.MonkeyPatch], None],
+        category: str,
+        check_status: CheckStatus,
+        exit_code: int,
+        error_code: str | None,
     ) -> None:
-        """Exit 1 for `doctor --category git --format json` with use_fake_git raising a GIT_FAILED GitError for rev-parse --is-inside-work-tree, and report git.repo error_code "DOCTOR_GIT_REPO_NOT_FOUND"."""
-        failure = git_command_error(
-            ["git", "rev-parse", "--is-inside-work-tree"], 128, "", "fatal: not a git repository"
+        """Exit 0 for an ok or warning check and 1 for a failed one, read from the dispatched report since error_code is not in the payload."""
+        arrange(monkeypatch)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "doctor", "--category", category, "--format", output_format]
         )
-        use_fake_git(monkeypatch, FakeGitRunner({("rev-parse", "--is-inside-work-tree"): failure}))
 
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "doctor", "--category", "git", "--format", "json"])
-
-        assert result.exit_code == 1
-        check_payload = json.loads(result.stdout)["payload"]["checks"][0]
-        assert check_payload["check_id"] == "git.repo"
-        assert check_payload["error_code"] == "DOCTOR_GIT_REPO_NOT_FOUND"
+        assert result.exit_code == exit_code, result.output
+        report = dispatch_spy[0]
+        assert isinstance(report, DiagnosticsReport)
+        assert [check.status for check in report.checks] == [check_status]
+        assert report.error_code == error_code
 
     def test_doctor_cli_json_crashed_check_reports_diagnostics(
         self, cli_runner: CliRunner, cli_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch

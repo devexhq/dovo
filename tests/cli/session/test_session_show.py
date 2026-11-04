@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.utils import display_path
 from dovo.core.db import DovoDb, SessionStatus
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.sessions import seed_failed_session
 from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
@@ -32,6 +33,33 @@ def _seed_failed_session(workspace: Path) -> None:
 
 class SessionShowCliIntegrationTests:
     """Typer runner integration tests for dovo session show."""
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("session_id", "exit_code", "error_code"),
+        [
+            pytest.param("session-known", 0, None, id="known_session"),
+            pytest.param("missing-id", 1, "SESSION_NOT_FOUND", id="unknown_session"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        output_format: str,
+        session_id: str,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        initialized_workspace_db(cli_workspace).sessions.create(
+            session_id="session-known", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.COMPLETED
+        )
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "session", "show", session_id, "--format", output_format]
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
 
     def test_session_show_cli_known_session_exits_zero(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         db = DovoDb(

@@ -61,7 +61,6 @@ ANY_BUDGET: Final[dict[str, int]] = {
     "tests/cli/ui/formatters/config/test_config_unset.py": 1,
     "tests/cli/ui/formatters/config/test_config_validate.py": 1,
     "tests/cli/ui/formatters/events/test_agent_progress.py": 1,
-    "tests/cli/ui/formatters/events/test_error_panel.py": 1,
     "tests/cli/ui/formatters/events/test_lock_wait.py": 1,
     "tests/cli/ui/formatters/events/test_loop.py": 1,
     "tests/cli/ui/formatters/events/test_message.py": 1,

@@ -10,14 +10,43 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.common.lock import LockTimeoutError, WorkspaceLock
-from tests.harness.lock import raise_lock_timeout
+from dovo.common.lock import WorkspaceLock
+from dovo.core.catalog import Catalog
+from dovo.core.catalog.models import CatalogItemType
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
+from tests.harness.lock import lock_timeout_reported, raise_lock_timeout
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
 
 
 class StepCreateCliIntegrationTests:
     """Typer runner integration tests for dovo step create."""
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("name", "exit_code", "error_code"),
+        [
+            pytest.param("new-step", 0, None, id="new_name"),
+            pytest.param("dup-step", 1, "CATALOG_ALREADY_EXISTS", id="colliding_name"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        isolated_workspace: Path,
+        output_format: str,
+        name: str,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "dup-step")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "step", "create", "--name", name, "--format", output_format]
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
 
     def test_step_create_cli_creates_item_terminal(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "create", "--name", "new-step"])
@@ -62,13 +91,13 @@ class StepCreateCliIntegrationTests:
     def test_step_create_cli_lock_timeout_propagates(
         self, cli_runner: CliRunner, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Exit 1 with result.exception a LockTimeoutError and no 'Catalog Creation Failed' in stdout."""
+        """Exit 1 with the lock timeout reported and no 'Catalog Creation Failed' in stdout."""
         monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "create", "--name", "demo"])
 
         assert result.exit_code == 1
-        assert isinstance(result.exception, LockTimeoutError)
+        assert lock_timeout_reported(result.stdout)
         assert "Catalog Creation Failed" not in result.stdout
 
 

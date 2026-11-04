@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem import Filesystem
 from dovo.core.config.generator import build_default_config
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 
 
 class ConfigSetCliIntegrationTests:
@@ -163,3 +164,31 @@ class ConfigSetCliIntegrationTests:
                 "diagnostics": [],
             },
         }
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("key", "value", "exit_code", "error_code"),
+        [
+            pytest.param("agents.copilot.model", "qwen2.5-coder", 0, None, id="valid_key"),
+            pytest.param("", "x", 2, "CONFIG_KEY_PATH_INVALID", id="empty_key"),
+            pytest.param("a..b", "x", 2, "CONFIG_KEY_PATH_INVALID", id="empty_segment"),
+            pytest.param("worktree.max_active_worktrees", "-1", 1, "CONFIG_SCHEMA_INVALID", id="schema_invalid_value"),
+        ],
+    )
+    @pytest.mark.usefixtures("workspace_config")
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        isolated_workspace: Path,
+        output_format: str,
+        key: str,
+        value: str,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        result = cli_runner.invoke(
+            app,
+            ["-p", str(isolated_workspace), "config", "set", "--format", output_format, "--", key, value],
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
