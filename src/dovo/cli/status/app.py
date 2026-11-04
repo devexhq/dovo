@@ -4,6 +4,7 @@ import typer
 
 from dovo.cli.context import CliContext
 from dovo.cli.options import FormatOption
+from dovo.cli.outcome import exit_for
 from dovo.common.models import OutputFormatOptions
 
 from .commands.root import status_command
@@ -22,4 +23,4 @@ def status_callback(
 ) -> None:
     """Display configuration status for Dovo CLI."""
     context: CliContext = ctx.obj["context"]
-    status_command(context, output_format=format)
+    exit_for(status_command(context, output_format=format))

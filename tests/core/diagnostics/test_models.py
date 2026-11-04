@@ -82,6 +82,17 @@ class DiagnosticsModelsTests:
         with pytest.raises(ValidationError):
             diagnostic_result(status=CheckStatus.FAILED, error_code=error_code, errors=["boom"])
 
+    def test_failed_record_requires_error_code(self) -> None:
+        """Raise ValidationError when a FAILED DiagnosticCheckRecord carries no error_code."""
+        with pytest.raises(ValidationError, match="a failed check must carry an error_code"):
+            DiagnosticCheckRecord(
+                check_id="test.check",
+                name="Test Check",
+                category=CheckCategory.GIT,
+                status=CheckStatus.FAILED,
+                message="Check failed.",
+            )
+
     def test_doctor_context_extra_fields_forbidden(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
@@ -164,3 +175,31 @@ class DiagnosticsReportModelsTests:
 
         assert report.ok is False
         assert report.has_warnings is True
+
+    @pytest.mark.parametrize(
+        ("statuses", "expected"),
+        [
+            pytest.param([CheckStatus.OK, CheckStatus.WARNING, CheckStatus.SKIPPED], None, id="no_failed_check"),
+            pytest.param(
+                [CheckStatus.WARNING, CheckStatus.FAILED, CheckStatus.FAILED],
+                ErrorCode.DOCTOR_FS_UNWRITABLE,
+                id="first_failed_check",
+            ),
+        ],
+    )
+    def test_error_code_is_first_failed_checks_code(
+        self, tmp_path: Path, statuses: list[CheckStatus], expected: ErrorCode | None
+    ) -> None:
+        """Return the first FAILED check's error_code, or None; the property is not part of the dumped payload."""
+        codes = iter([ErrorCode.DOCTOR_FS_UNWRITABLE, ErrorCode.DOCTOR_BINARY_MISSING])
+        checks = [
+            diagnostic_result(status=status, error_code=next(codes))
+            if status == CheckStatus.FAILED
+            else diagnostic_result(status=status)
+            for status in statuses
+        ]
+
+        report = DiagnosticsReport(workspace_root=tmp_path, checks=checks)
+
+        assert report.error_code == expected
+        assert "error_code" not in report.model_dump()

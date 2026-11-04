@@ -8,6 +8,7 @@ import typer
 
 from dovo.cli.context import CliContext
 from dovo.cli.options import FormatOption
+from dovo.cli.outcome import exit_for
 from dovo.common.models import OutputFormatOptions
 
 from .commands.step_create import step_create_command
@@ -31,8 +32,7 @@ def step_list(
     """List step catalog items across all tiers."""
     context: CliContext = ctx.obj["context"]
     result = step_list_command(context, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @step_app.command("show")
@@ -44,8 +44,7 @@ def step_show(
     """Show metadata and definition content of a step."""
     context: CliContext = ctx.obj["context"]
     result = step_show_command(context, name, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @step_app.command("create")
@@ -63,8 +62,7 @@ def step_create(
     """Create a new step at the REPO tier by default, or at USER/GLOBAL tier with --user/--global."""
     context: CliContext = ctx.obj["context"]
     result = step_create_command(context, name, user=user, global_=global_, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @step_app.command("delete")
@@ -81,8 +79,7 @@ def step_delete(
     """Delete a repo-tier step file and reindex."""
     context: CliContext = ctx.obj["context"]
     result = step_delete_command(context, name, force=force, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @step_app.command("validate")
@@ -94,5 +91,4 @@ def step_validate(
     """Validate a step definition without executing it."""
     context: CliContext = ctx.obj["context"]
     result = step_validate_command(context, target, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)

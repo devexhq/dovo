@@ -2,9 +2,9 @@
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, Self, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
@@ -49,7 +49,8 @@ class DiagnosticsContext(BaseModel):
 class DiagnosticCheckRecord(BaseModel):
     """One diagnostic check's outcome: a record, not a command result, so a warning check carries its code with no errors.
 
-    error_code is a published ErrorCode or None; any other value is refused when the record is built.
+    error_code is a published ErrorCode or None; any other value, or a FAILED record without one, is refused when the
+    record is built.
     """
 
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -66,6 +67,13 @@ class DiagnosticCheckRecord(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
     diagnostics: list[DiagnosticRecord] = Field(default_factory=list)  # error-level records only
+
+    @model_validator(mode="after")
+    def _require_error_code_when_failed(self) -> Self:
+        """Refuse a FAILED record that carries no error_code."""
+        if self.status == CheckStatus.FAILED and self.error_code is None:
+            raise ValueError("a failed check must carry an error_code")
+        return self
 
     @property
     def ok(self) -> bool:
@@ -87,6 +95,11 @@ class DiagnosticsReport(BaseModel):
     def ok(self) -> bool:
         """Return True when no checks FAILED (OK, WARNING, SKIPPED)."""
         return all(c.status != CheckStatus.FAILED for c in self.checks)
+
+    @property
+    def error_code(self) -> ErrorCode | None:
+        """Return the error_code of the first FAILED check, or None when no check failed; not part of the payload."""
+        return next((c.error_code for c in self.checks if c.status == CheckStatus.FAILED), None)
 
     @property
     def has_warnings(self) -> bool:

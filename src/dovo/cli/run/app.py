@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 from dovo.cli.context import CliContext
 from dovo.cli.options import FormatOption
+from dovo.cli.outcome import exit_for
 from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
 
 from .commands.root import run_command
@@ -122,5 +123,4 @@ def run_callback(
         output_format=format,
         display_format=display,
     )
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)

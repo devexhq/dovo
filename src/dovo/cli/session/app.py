@@ -9,6 +9,7 @@ import typer
 
 from dovo.cli.context import CliContext
 from dovo.cli.options import FormatOption
+from dovo.cli.outcome import exit_for
 from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
 from dovo.core.db import SessionStatus
 from dovo.core.sessions import LogStreamFilter
@@ -55,8 +56,7 @@ def session_callback(
             status=status.value if status is not None else None,
             output_format=format,
         )
-        if not result.ok:
-            raise typer.Exit(code=1)
+        exit_for(result)
 
 
 def session_list(
@@ -86,8 +86,7 @@ def session_list(
         status=status.value if status is not None else None,
         output_format=format,
     )
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 def session_show(
@@ -106,8 +105,7 @@ def session_show(
         logs=logs,
         output_format=format,
     )
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 def session_logs(
@@ -135,8 +133,7 @@ def session_logs(
         tail=tail,
         output_format=format,
     )
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 def session_diff(
@@ -168,8 +165,7 @@ def session_diff(
         full=full,
         output_format=format,
     )
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 def session_resume(
@@ -233,8 +229,7 @@ def session_resume(
         output_format=format,
         display_format=display,
     )
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 session_app.command("list")(session_list)

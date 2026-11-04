@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.core.diagnostics.models import (
     CheckCategory,
     CheckStatus,
@@ -13,7 +14,10 @@ from dovo.core.diagnostics.models import (
 
 
 def diagnostic_result(**overrides: object) -> DiagnosticCheckRecord:
-    """Build a passing DiagnosticCheckRecord for 'test.check', with any field replaced by overrides."""
+    """Build a passing DiagnosticCheckRecord for 'test.check', with any field replaced by overrides.
+
+    A FAILED record given no error_code carries DOCTOR_GIT_REPO_NOT_FOUND, since a failed check must carry one.
+    """
     fields: dict[str, object] = {
         "check_id": "test.check",
         "name": "Test Check",
@@ -21,6 +25,8 @@ def diagnostic_result(**overrides: object) -> DiagnosticCheckRecord:
         "status": CheckStatus.OK,
         "message": "Check passed.",
     }
+    if overrides.get("status") == CheckStatus.FAILED:
+        fields["error_code"] = ErrorCode.DOCTOR_GIT_REPO_NOT_FOUND
     return DiagnosticCheckRecord.model_validate(fields | overrides)
 
 

@@ -325,12 +325,18 @@ class ParseAnswerArgumentsTests:
         assert result.error_code == ErrorCode.INTERACTION_ARGUMENTS_INVALID
         assert result.errors == ["Use --comment or --comment-file together with --answer, not both."]
 
-    def test_unreadable_answers_file_reports_arguments_invalid(self, tmp_path: Path) -> None:
-        missing = tmp_path / "missing.json"
+    @pytest.mark.parametrize(
+        "flag", [pytest.param("comment", id="comment_file"), pytest.param("answers", id="answers_file")]
+    )
+    def test_unreadable_argument_file_reports_file_unreadable(self, tmp_path: Path, flag: str) -> None:
+        missing = tmp_path / "missing.txt"
+        comment_file, answers_file = (missing, None) if flag == "comment" else (None, missing)
 
-        result = parse_answer_arguments(None, None, None, missing)
+        result = parse_answer_arguments(
+            "approve=revise" if flag == "comment" else None, None, comment_file, answers_file
+        )
 
-        assert result.error_code == ErrorCode.INTERACTION_ARGUMENTS_INVALID
+        assert result.error_code == ErrorCode.INTERACTION_ARGUMENT_FILE_UNREADABLE
         assert result.errors[0].startswith(f"Cannot read '{missing}': ")
 
 

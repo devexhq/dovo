@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from typer._click.core import Command, Context
 
 from dovo.cli.context import CliContext, default_lock_wait_notifier, ensure_lazy_project_init
+from dovo.cli.outcome import exit_for
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.cli.ui.events import ErrorPanelEvent, MessageEvent, WelcomeBannerEvent
 from dovo.common.diagnostic_log import (
@@ -142,11 +143,11 @@ def version_callback(value: bool) -> None:
 
 
 def _ensure_run_workspace(path: Path | None) -> None:
-    """Auto-initialize the workspace for `dovo run`; on failure render the init result and exit 1."""
+    """Auto-initialize the workspace for `dovo run`; on failure render the init result and exit by its error_code."""
     result = ensure_lazy_project_init(Filesystem(path))
     if result is not None and not result.ok:
         ui_dispatcher.dispatch(result)
-        raise typer.Exit(code=1)
+        exit_for(result)
 
 
 @app.callback(invoke_without_command=True)

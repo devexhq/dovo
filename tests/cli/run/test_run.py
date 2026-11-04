@@ -289,7 +289,7 @@ class RunCliIntegrationTests:
     ) -> None:
         """Persist PAUSED when the interactive prompter raises KeyboardInterrupt after the paused state is saved.
 
-        `--no-tty` aborts before any prompter call, so PAUSED is reachable only this way; the run still exits 1.
+        `--no-tty` aborts before any prompter call, so PAUSED is reachable only this way; the cancelled run exits 130.
         """
         _force_interactive(monkeypatch)
         monkeypatch.setattr("builtins.input", _raise_keyboard_interrupt)
@@ -304,7 +304,7 @@ class RunCliIntegrationTests:
             ["-p", str(cli_workspace), "run", "pause-task", "--no-worktree", "--session-id", "paused-session-1"],
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 130
         assert "Run Cancelled" in result.stdout
         run_paths = initialized_workspace_paths(cli_workspace)
         record = DovoDb(database_file=run_paths.database_file, project_id=run_paths.project_id).sessions.get(
@@ -313,10 +313,10 @@ class RunCliIntegrationTests:
         assert record is not None
         assert record.status == SessionStatus.PAUSED
 
-    def test_run_cli_ask_keyboard_interrupt_pauses_and_exits_1(
+    def test_run_cli_ask_keyboard_interrupt_pauses_and_exits_130(
         self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
-        """Exit 1 and leave the session paused when the interactive terminal raises KeyboardInterrupt at an ask prompt."""
+        """Exit 130 and leave the session paused when the interactive terminal raises KeyboardInterrupt at an ask prompt."""
         _force_interactive(monkeypatch)
         monkeypatch.setattr("builtins.input", _raise_keyboard_interrupt)
         interaction = {
@@ -332,7 +332,7 @@ class RunCliIntegrationTests:
             app, ["-p", str(cli_workspace), "run", "ask-task", "--no-worktree", "--session-id", "ask-session-1"]
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 130
         assert "Run Cancelled" in result.stdout
         assert "Execution cancelled by user." in result.stdout
         run_paths = initialized_workspace_paths(cli_workspace)
@@ -883,7 +883,7 @@ class RunEnvFlagsCliIntegrationTests:
         ("flags", "exit_code", "expected_text"),
         [
             pytest.param(
-                ["--env-passthrough", "A*B"], 1, "Invalid --env-passthrough value 'A*B':", id="invalid-passthrough"
+                ["--env-passthrough", "A*B"], 2, "Invalid --env-passthrough value 'A*B':", id="invalid-passthrough"
             ),
             pytest.param(["--env-mode", "bogus"], 2, "'bogus' is not one of", id="invalid-mode"),
         ],
@@ -1292,7 +1292,7 @@ class RunResultCliTests:
 
         exit_code, payload = _run_json(cli_runner, cli_workspace, "long-task")
 
-        assert exit_code == 1
+        assert exit_code == 130
         assert _outcome(payload) == (
             False,
             "RUN_CANCELLED",
@@ -1314,7 +1314,7 @@ class RunResultCliTests:
 
         exit_code, payload = _run_json(cli_runner, cli_workspace, "pause-task")
 
-        assert exit_code == 1
+        assert exit_code == 130
         assert (payload["ok"], payload["error_code"], payload["session_status"]) == (False, "RUN_CANCELLED", "paused")
         assert len(payload["errors"]) == 1
         assert payload["errors"][0].startswith("Step 's1' failed")
@@ -1330,7 +1330,7 @@ class RunResultCliTests:
 
         exit_code, payload = _run_json(cli_runner, cli_workspace, "ask-task")
 
-        assert exit_code == 1
+        assert exit_code == 130
         assert _outcome(payload) == (
             False,
             "RUN_CANCELLED",

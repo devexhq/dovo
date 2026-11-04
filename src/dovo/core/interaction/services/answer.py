@@ -159,13 +159,14 @@ def parse_answer_arguments(
     """Read the comment and answers files, then combine the answer flags into one headless input.
 
     `<step_id>=<value>` is split on the first `=`, and the answers file is decoded as a JSON object; conflicting
-    flags and unreadable files are rejected.
+    flags are rejected as INTERACTION_ARGUMENTS_INVALID, and a file that cannot be read as
+    INTERACTION_ARGUMENT_FILE_UNREADABLE.
     """
     if comment is not None and comment_file is not None:
         return _invalid_arguments("Use --comment or --comment-file together with --answer, not both.")
     texts = _read_argument_files(comment_file, answers_file)
     if isinstance(texts, str):
-        return _invalid_arguments(texts)
+        return HeadlessArgumentsResult(error_code=ErrorCode.INTERACTION_ARGUMENT_FILE_UNREADABLE, errors=[texts])
     return _combine_arguments(answer, texts.get("comment", comment), texts.get("answers"))
 
 

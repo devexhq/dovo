@@ -8,6 +8,7 @@ import typer
 
 from dovo.cli.context import CliContext
 from dovo.cli.options import FormatOption
+from dovo.cli.outcome import exit_for
 from dovo.common.models import OutputFormatOptions
 from dovo.core.diagnostics import CheckCategory
 
@@ -34,11 +35,10 @@ def doctor_callback(
     ] = None,
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
-    """Run registered diagnostic checks, dispatch the report, and exit 1 when any check failed."""
+    """Run registered diagnostic checks, dispatch the report, and exit 1 when any check failed (warnings exit 0)."""
     context: CliContext = ctx.obj["context"]
 
     categories = [category] if category is not None else None
     result = doctor_command(context, categories=categories, output_format=format)
 
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
