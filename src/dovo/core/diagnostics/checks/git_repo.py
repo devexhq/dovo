@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Final
 
 from dovo.common.error_codes import ErrorCode
-from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DiagnosticsContext
+from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckRecord, DiagnosticsContext
 from dovo.core.git import GitError
 
 _NOT_REPO_CODES: Final = frozenset({ErrorCode.GIT_FAILED, ErrorCode.GIT_TIMEOUT})
@@ -21,7 +21,7 @@ class GitRepoCheck:
     name: str = "Git Repository Check"
     category: CheckCategory = CheckCategory.GIT
 
-    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
+    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckRecord:
         """Validate the git binary is on PATH and context.cwd is a Git repository with a resolvable HEAD."""
         if shutil.which("git") is None:
             return _binary_missing_result(self.check_id, self.name, self.category)
@@ -50,33 +50,33 @@ class GitRepoCheck:
         return _ok_result(self.check_id, self.name, self.category, root, branch)
 
 
-def _binary_missing_result(check_id: str, name: str, category: CheckCategory) -> DiagnosticCheckResult:
+def _binary_missing_result(check_id: str, name: str, category: CheckCategory) -> DiagnosticCheckRecord:
     """Build the FAILED result for a missing git executable on PATH."""
     message = "git binary was not found on PATH."
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check_id,
         name=name,
         category=category,
         status=CheckStatus.FAILED,
         message=message,
         details={},
-        error_code="DOCTOR_GIT_BINARY_MISSING",
+        error_code=ErrorCode.DOCTOR_GIT_BINARY_MISSING,
         errors=[message],
         warnings=[],
     )
 
 
-def _not_repo_result(check_id: str, name: str, category: CheckCategory, cwd: Path) -> DiagnosticCheckResult:
+def _not_repo_result(check_id: str, name: str, category: CheckCategory, cwd: Path) -> DiagnosticCheckRecord:
     """Build the FAILED result for a directory that is not a valid Git repository."""
     message = f"'{cwd}' is not a Git repository."
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check_id,
         name=name,
         category=category,
         status=CheckStatus.FAILED,
         message=message,
         details={},
-        error_code="DOCTOR_GIT_NOT_REPO",
+        error_code=ErrorCode.DOCTOR_GIT_REPO_NOT_FOUND,
         errors=[message],
         warnings=[],
     )
@@ -88,10 +88,10 @@ def _ok_result(
     category: CheckCategory,
     root: str,
     branch: str,
-) -> DiagnosticCheckResult:
+) -> DiagnosticCheckRecord:
     """Build the OK result carrying the resolved repository root and active branch."""
     message = f"Git repository detected at '{root}' on branch '{branch}'."
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check_id,
         name=name,
         category=category,

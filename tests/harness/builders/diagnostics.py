@@ -7,13 +7,13 @@ from dovo.core.diagnostics.models import (
     CheckCategory,
     CheckStatus,
     DiagnosticCheck,
-    DiagnosticCheckResult,
+    DiagnosticCheckRecord,
     DiagnosticsContext,
 )
 
 
-def diagnostic_result(**overrides: object) -> DiagnosticCheckResult:
-    """Build a passing DiagnosticCheckResult for 'test.check', with any field replaced by overrides."""
+def diagnostic_result(**overrides: object) -> DiagnosticCheckRecord:
+    """Build a passing DiagnosticCheckRecord for 'test.check', with any field replaced by overrides."""
     fields: dict[str, object] = {
         "check_id": "test.check",
         "name": "Test Check",
@@ -21,7 +21,7 @@ def diagnostic_result(**overrides: object) -> DiagnosticCheckResult:
         "status": CheckStatus.OK,
         "message": "Check passed.",
     }
-    return DiagnosticCheckResult.model_validate(fields | overrides)
+    return DiagnosticCheckRecord.model_validate(fields | overrides)
 
 
 class StubCheck(DiagnosticCheck):
@@ -48,7 +48,7 @@ class StubCheck(DiagnosticCheck):
         self.executed = False
         self.captured_context: DiagnosticsContext | None = None
 
-    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
+    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckRecord:
         """Record context, then raise crash when set, else return a result carrying this check's status."""
         self.executed = True
         self.captured_context = context

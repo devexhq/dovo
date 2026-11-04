@@ -134,7 +134,7 @@ class DoctorCliIntegrationTests:
     def test_doctor_cli_json_reports_not_repo_from_injected_git(
         self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Exit 1 for `doctor --category git --format json` with use_fake_git raising a GIT_FAILED GitError for rev-parse --is-inside-work-tree, and report git.repo error_code "DOCTOR_GIT_NOT_REPO"."""
+        """Exit 1 for `doctor --category git --format json` with use_fake_git raising a GIT_FAILED GitError for rev-parse --is-inside-work-tree, and report git.repo error_code "DOCTOR_GIT_REPO_NOT_FOUND"."""
         failure = git_command_error(
             ["git", "rev-parse", "--is-inside-work-tree"], 128, "", "fatal: not a git repository"
         )
@@ -145,7 +145,7 @@ class DoctorCliIntegrationTests:
         assert result.exit_code == 1
         check_payload = json.loads(result.stdout)["payload"]["checks"][0]
         assert check_payload["check_id"] == "git.repo"
-        assert check_payload["error_code"] == "DOCTOR_GIT_NOT_REPO"
+        assert check_payload["error_code"] == "DOCTOR_GIT_REPO_NOT_FOUND"
 
     def test_doctor_cli_json_crashed_check_reports_diagnostics(
         self, cli_runner: CliRunner, cli_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
@@ -163,7 +163,7 @@ class DoctorCliIntegrationTests:
         payload = json.loads(result.stdout)["payload"]
         check_payload = payload["checks"][0]
         record_json = {"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}
-        assert check_payload["error_code"] == "DOCTOR_CHECK_CRASH"
+        assert check_payload["error_code"] == "DOCTOR_CHECK_CRASHED"
         assert check_payload["message"] == "Unhandled exception during check execution: boom"
         assert check_payload["errors"] == ["Unhandled exception in git.repo: boom"]
         assert check_payload["diagnostics"] == [record_json]

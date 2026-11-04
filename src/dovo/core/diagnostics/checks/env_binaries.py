@@ -5,9 +5,10 @@ from __future__ import annotations
 import shutil
 from typing import Final
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.models import DEFAULT_AGENT
-from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DiagnosticsContext
+from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckRecord, DiagnosticsContext
 
 REQUIRED_HOST_BINARIES: Final[tuple[str, ...]] = ("git",)
 
@@ -19,7 +20,7 @@ class EnvBinariesCheck:
     name: str = "Environment Binaries Check"
     category: CheckCategory = CheckCategory.ENVIRONMENT
 
-    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
+    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckRecord:
         """Verify `git` and the active agent provider's CLI binary, if any, are present on PATH."""
         provider = context.config.default_agent if context.config is not None else DEFAULT_AGENT
         required = _required_binaries(provider)
@@ -41,25 +42,25 @@ def _required_binaries(provider: str) -> list[str]:
     return required
 
 
-def _missing_result(check_id: str, name: str, category: CheckCategory, missing: list[str]) -> DiagnosticCheckResult:
+def _missing_result(check_id: str, name: str, category: CheckCategory, missing: list[str]) -> DiagnosticCheckRecord:
     """Build the WARNING DOCTOR_BINARY_MISSING result naming the binaries absent from PATH."""
     message = f"{len(missing)} required binary(s) not found on PATH: {', '.join(missing)}."
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check_id,
         name=name,
         category=category,
         status=CheckStatus.WARNING,
         message=message,
         details={"missing_binaries": missing},
-        error_code="DOCTOR_BINARY_MISSING",
+        error_code=ErrorCode.DOCTOR_BINARY_MISSING,
         errors=[],
         warnings=[message],
     )
 
 
-def _ok_result(check_id: str, name: str, category: CheckCategory, verified: list[str]) -> DiagnosticCheckResult:
+def _ok_result(check_id: str, name: str, category: CheckCategory, verified: list[str]) -> DiagnosticCheckRecord:
     """Build the OK result listing every verified binary."""
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check_id,
         name=name,
         category=category,

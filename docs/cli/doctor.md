@@ -23,6 +23,24 @@ dovo doctor [--category <name>] [--format terminal|json]
 
 The `config.schema` check loads the configuration as [`dovo config show`](config.md#dovo-config-show) does. When it fails to load, the check fails with the same `error_code`, `errors` and remediations that `dovo config show` reports, for example `CONFIG_JSON_INVALID` for malformed JSON or `CONFIG_PATH_INVALID` when `.dovo/config.json` is a directory, and its `details` hold `schema_errors` only for `CONFIG_SCHEMA_INVALID`.
 
+Each check in the JSON output reports an `error_code`: `null` for a check that passed or was skipped, otherwise one of the codes below. A check that only warns carries its code with an empty `errors` list.
+
+| `error_code` | Check | Meaning |
+| --- | --- | --- |
+| `DOCTOR_GIT_REPO_NOT_FOUND` | `git.repo` | The workspace is not a Git repository. |
+| `DOCTOR_GIT_BINARY_MISSING` | `git.repo` | The `git` executable is not on `PATH`. |
+| `DOCTOR_FS_UNWRITABLE` | `filesystem.writable` | A workspace path is not writable. |
+| `DOCTOR_WORKTREE_STALE` | `worktree.refs` | A worktree record no longer matches a live Git worktree. |
+| `DOCTOR_WORKTREE_ORPHANED` | `worktree.refs` | A worktree directory has no matching record. |
+| `DOCTOR_ARTIFACT_DIR_ORPHANED` | `artifacts.integrity` | An artifact revision directory has no database row. |
+| `DOCTOR_ARTIFACT_DIR_MISSING` | `artifacts.integrity` | An artifact revision's directory is missing. |
+| `DOCTOR_BINARY_MISSING` | `env.binaries` | A required binary is not on `PATH`. |
+| `DOCTOR_AGENT_KEY_MISSING` | `agent.setup` | The agent provider's credential is missing. |
+| `DOCTOR_AGENT_MODEL_MISSING` | `agent.setup` | The agent provider has no model configured. |
+| `DOCTOR_CHECK_CRASHED` | any | The check raised an unexpected error. |
+
+The `config.schema` check reports the configuration load's own codes, described above.
+
 The command exits `1` when at least one check has status `FAILED`, and `0` otherwise (including when checks have `WARNING` or `SKIPPED` status). Passing an unrecognized `--category` value exits `2` before any check runs.
 
 ## Diagnostic logs
@@ -81,7 +99,7 @@ Dovo Doctor Report
 7 checks: 7 ok, 0 warning, 0 failed (0.008s)
 ```
 
-`artifacts.integrity` warns when an artifact revision directory has no database row (`DOCTOR_ARTIFACT_ORPHAN_DIR`) or a row's directory is missing (`DOCTOR_ARTIFACT_MISSING_DIR`); it never repairs either.
+`artifacts.integrity` warns when an artifact revision directory has no database row (`DOCTOR_ARTIFACT_DIR_ORPHANED`) or a row's directory is missing (`DOCTOR_ARTIFACT_DIR_MISSING`); it never repairs either.
 
 The default provider (`copilot`) requires `gh` on `PATH` and a `GH_TOKEN` or `GITHUB_TOKEN` credential; without them `env.binaries` warns and `agent.setup` fails. For `claude`, `agent.setup` passes with a `CLAUDE_CODE_OAUTH_TOKEN`, a `claude auth login` session or `ANTHROPIC_API_KEY`, and its message and `details.auth` name the mode in use (`cli session`, `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`).
 

@@ -5,8 +5,9 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
-from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DiagnosticsContext
+from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckRecord, DiagnosticsContext
 
 
 class FilesystemWritableCheck:
@@ -16,7 +17,7 @@ class FilesystemWritableCheck:
     name: str = "Filesystem Writable Check"
     category: CheckCategory = CheckCategory.FILESYSTEM
 
-    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
+    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckRecord:
         """Probe-write every resolved workspace directory (plus worktrees) under context.paths."""
         targets = _target_paths(context.paths)
 
@@ -30,19 +31,19 @@ class FilesystemWritableCheck:
 
         if unwritable_paths:
             message = f"{len(unwritable_paths)} configured path(s) are not writable."
-            return DiagnosticCheckResult(
+            return DiagnosticCheckRecord(
                 check_id=self.check_id,
                 name=self.name,
                 category=self.category,
                 status=CheckStatus.FAILED,
                 message=message,
                 details={"unwritable_paths": unwritable_paths},
-                error_code="DOCTOR_FS_UNWRITABLE",
+                error_code=ErrorCode.DOCTOR_FS_UNWRITABLE,
                 errors=[message],
                 warnings=[],
             )
 
-        return DiagnosticCheckResult(
+        return DiagnosticCheckRecord(
             check_id=self.check_id,
             name=self.name,
             category=self.category,

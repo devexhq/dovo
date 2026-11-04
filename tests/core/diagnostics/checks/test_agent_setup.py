@@ -70,7 +70,7 @@ class AgentSetupCheckTests:
         assert result.check_id == "agent.setup"
         assert result.category == CheckCategory.AGENT
         assert result.status == CheckStatus.WARNING
-        assert result.error_code == "DOCTOR_AGENT_NO_MODEL"
+        assert result.error_code == "DOCTOR_AGENT_MODEL_MISSING"
         assert result.details == {"provider": DEFAULT_TOKEN}
         assert result.warnings == [f"Agent provider '{DEFAULT_TOKEN}' has no model configured."]
 
