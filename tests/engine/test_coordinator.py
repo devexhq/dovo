@@ -35,7 +35,7 @@ from dovo.engine.executors.models import (
     AskResolution,
     ConditionEvaluationResult,
     StepExecutionContext,
-    StepResult,
+    StepRecord,
 )
 from dovo.engine.failure import USER_CONTINUED_MARKER
 from dovo.engine.models import (
@@ -106,7 +106,7 @@ class _RaisingObserver(NoOpRunObserver):
     ) -> None:
         raise RuntimeError("observer output")
 
-    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
+    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepRecord) -> None:
         raise RuntimeError("observer done")
 
 
@@ -248,7 +248,7 @@ def _session_log(paths: WorkspacePaths, session_id: str) -> list[dict[str, objec
     return [json.loads(line) for line in lines]
 
 
-def _last_result(node: ExecutionLeafNode) -> StepResult:
+def _last_result(node: ExecutionLeafNode) -> StepRecord:
     result = node.attempts[-1].result
     assert result is not None
     return result
@@ -270,7 +270,7 @@ def _interrupt(leaf: ExecutionLeafNode) -> None:
 def _complete(leaf: ExecutionLeafNode) -> None:
     """Leave leaf COMPLETED with one settled, passing attempt."""
     leaf.state = NodeState.COMPLETED
-    result = StepResult(
+    result = StepRecord(
         step_id=leaf.id, status="completed", exit_code=0, stdout="", stderr="", duration_seconds=0.0, attempts=1
     )
     span = TimeSpan(started_at=_SEEDED_START, ended_at=_SEEDED_START, duration_seconds=0.0)
@@ -473,7 +473,7 @@ class CoordinatorExecuteTests:
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
 
-        def interrupted(self: StepExecution) -> StepResult:
+        def interrupted(self: StepExecution) -> StepRecord:
             raise KeyboardInterrupt
 
         monkeypatch.setattr(StepExecution, "run", interrupted)
@@ -2022,11 +2022,11 @@ class CoordinatorWorktreeIdTests:
         )
         observed: list[str | None] = []
 
-        def read_row_from_step(self: StepExecution) -> StepResult:
+        def read_row_from_step(self: StepExecution) -> StepRecord:
             row = sessions_repo.get("worktree-run")
             assert row is not None
             observed.append(row.worktree_id)
-            return StepResult(step_id="a", status="completed", exit_code=0, stdout="", stderr="", duration_seconds=0.0)
+            return StepRecord(step_id="a", status="completed", exit_code=0, stdout="", stderr="", duration_seconds=0.0)
 
         monkeypatch.setattr(StepExecution, "run", read_row_from_step)
         seed_new_session(engine_paths, sessions_repo, session_id="worktree-run", steps=[_step("a", "true")])
@@ -2600,8 +2600,8 @@ class CoordinatorStepWiringTests:
     ) -> None:
         """Return outcome.warnings == ["w1"] when StepExecution.run returns a completed result carrying warning "w1"."""
 
-        def run_with_warning(self: StepExecution) -> StepResult:
-            return StepResult(
+        def run_with_warning(self: StepExecution) -> StepRecord:
+            return StepRecord(
                 step_id="a",
                 status="completed",
                 exit_code=0,

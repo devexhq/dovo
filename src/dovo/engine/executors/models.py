@@ -5,9 +5,10 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
 from dovo.core.agents.models import AgentProgress, AgentProgressKind, AgentResponseStatus
@@ -119,6 +120,9 @@ class ExecutionMetadata(BaseModel):
 DiagnosticContext = Mapping[str, str | int | float | bool | None]
 
 
+_LEGACY_STEP_RESULT_KEYS: Final[frozenset[str]] = frozenset({"errors", "remediations", "diagnostics"})
+
+
 class StepDispatchOutcome(BaseModel):
     """Raw outcome of one or more step primitive dispatches (before finalization)."""
 
@@ -129,6 +133,7 @@ class StepDispatchOutcome(BaseModel):
     stdout: str
     stderr: str
     error_message: str | None = None
+    error_code: ErrorCode | None = None
     attempts: int = 1
     rejected_patch_path: str | None = None
     diagnostics: list[DiagnosticRecord] = Field(
@@ -278,8 +283,14 @@ class AgentStepSummary(BaseModel):
         }
 
 
-class StepResult(BaseResult):
-    """Normalized result of a step execution."""
+class StepRecord(BaseModel):
+    """A step's normalized outcome inside a run: a record, not a command result, so a failed step's text is its error_message.
+
+    error_code is a published ErrorCode or None, and needs no errors. A state saved while step results still held
+    errors, remediations and diagnostics loads with those keys dropped.
+    """
+
+    model_config = {"extra": "forbid", "strict": True}
 
     step_id: str
     status: str  # "completed" | "failed" | "ignored"
@@ -289,8 +300,18 @@ class StepResult(BaseResult):
     duration_seconds: float
     attempts: int = 1
     error_message: str | None = None
+    error_code: ErrorCode | None = None
     outputs: dict[str, str] = Field(default_factory=dict)
     rejected_patch_path: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def drop_legacy_result_keys(cls, data: object) -> object:
+        """Drop the errors, remediations and diagnostics keys a step result saved before it became a record holds."""
+        if not isinstance(data, dict):
+            return data
+        return {key: value for key, value in data.items() if key not in _LEGACY_STEP_RESULT_KEYS}
 
     @property
     def ok(self) -> bool:
@@ -304,4 +325,4 @@ class AskResolution(BaseModel):
     model_config = {"extra": "forbid", "strict": True}
 
     request: InteractionRequest | None = None
-    result: StepResult | None = None
+    result: StepRecord | None = None

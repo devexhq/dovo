@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.artifacts.models import ArtifactUploadResult
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
@@ -32,16 +33,18 @@ class PublishDeclaredArtifactsTests:
     """Contract tests for publish_declared_artifacts."""
 
     @pytest.mark.parametrize(
-        ("required", "error_message", "warnings"),
+        ("required", "error_message", "error_code", "warnings"),
         [
             pytest.param(
                 True,
                 "Failed to publish artifact 'plan': Unexpected error during artifacts.publish: boom",
+                ErrorCode.INTERNAL_ERROR,
                 [],
                 id="required-fails-step",
             ),
             pytest.param(
                 False,
+                None,
                 None,
                 ["Failed to publish artifact 'plan': Unexpected error during artifacts.publish: boom"],
                 id="optional-warns",
@@ -52,13 +55,14 @@ class PublishDeclaredArtifactsTests:
         self,
         required: bool,
         error_message: str | None,
+        error_code: ErrorCode | None,
         warnings: list[str],
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         artifact_store: ArtifactStore,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """Map a raising publish by the required flag, carry its artifacts.publish record in diagnostics and write one event."""
+        """Map a raising publish by the required flag, failing a required one with INTERNAL_ERROR, carry its artifacts.publish record in diagnostics and write one event."""
 
         def _raising_publish(*_args: object, **_kwargs: object) -> ArtifactUploadResult:
             raise ValueError("boom")
@@ -75,7 +79,10 @@ class PublishDeclaredArtifactsTests:
         )
 
         assert outcome == ArtifactPublishOutcome(
-            error_message=error_message, warnings=warnings, diagnostics=[diagnostic_record(frozen_diagnostic_clock)]
+            error_message=error_message,
+            error_code=error_code,
+            warnings=warnings,
+            diagnostics=[diagnostic_record(frozen_diagnostic_clock)],
         )
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"], event["context"]) == (

@@ -22,7 +22,7 @@ from dovo.core.interaction import HeadlessAnswerInput
 from dovo.core.worktree import Worktree
 from dovo.engine import BlueprintRunService
 from dovo.engine.executors.exceptions import EngineError
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import StepRecord
 from dovo.engine.models import BlueprintRunResult, RunOutcome
 from dovo.engine.services.resume import BlueprintResumeService
 from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
@@ -68,7 +68,7 @@ def _end_crashed_run(paths: WorkspacePaths, sessions: SessionsRepository, sessio
     state = store.load([])
     leaf = state.nodes[0]
     assert isinstance(leaf, ExecutionLeafNode)
-    result = StepResult(
+    result = StepRecord(
         step_id=leaf.id,
         status=status,
         exit_code=0 if status == "completed" else 1,

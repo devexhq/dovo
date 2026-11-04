@@ -9,6 +9,7 @@ import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_delete import WorktreeDeleteFormatter
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.worktree.models import WorktreeDeleteResult
 from tests.harness.formatter import (
@@ -72,7 +73,7 @@ DELETED_WITH_DIAGNOSTICS = FormatterCase.identity(
 
 NOT_FOUND = FormatterCase.identity(
     data=WorktreeDeleteResult(
-        error_code="WORKTREE_NOT_FOUND",
+        error_code=ErrorCode.WORKTREE_NOT_FOUND,
         worktree_id="dovo_missing",
         errors=["Worktree 'dovo_missing' not found."],
         remediations=[

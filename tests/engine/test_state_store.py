@@ -16,8 +16,9 @@ from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import IfStepBlock, LoopStepBlock
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.engine import EngineError, SessionStateStore
+from dovo.engine.executors.models import StepRecord
 from dovo.engine.models import DefinitionRef, DefinitionsManifest, LifecycleUpdate
-from dovo.engine.projection import build_session_json_payload
+from dovo.engine.projection import build_session_json_payload, flatten_step_results
 from dovo.engine.state_models import (
     ExecutionIfNode,
     ExecutionIterationRecord,
@@ -368,6 +369,23 @@ class SessionStateStoreLoadTests:
         assert raised.value.message == message
         assert fixture.sessions.get(store.session_id) == row_before
         assert (projection.read_bytes() if projection.exists() else None) == projection_before
+
+    def test_load_accepts_state_saved_before_step_records(self, tmp_path: Path) -> None:
+        """Load a row whose step result holds the legacy errors, remediations and diagnostics keys, reporting the same step."""
+        fixture = _Fixture(tmp_path)
+        done = StepRecord(
+            step_id="setup", status="completed", exit_code=0, stdout="ok", stderr="", duration_seconds=1.0
+        )
+        leaf = ExecutionLeafNode(
+            id="setup", state=NodeState.COMPLETED, attempts=[StepAttemptRecord(number=1, span=SEEDED_SPAN, result=done)]
+        )
+        document = ExecutionStateTree(revision=1, manifest=fixture.manifest, nodes=[leaf]).model_dump(mode="json")
+        document["nodes"][0]["attempts"][0]["result"].update({"errors": [], "remediations": [], "diagnostics": []})
+        fixture.sessions.save_execution_state(SESSION_ID, json.dumps(document), expected_revision=0, next_revision=1)
+
+        loaded = fixture.store.load([])
+
+        assert flatten_step_results(loaded) == [done]
 
     def test_load_returns_validated_state_when_projection_matches(self, tmp_path: Path) -> None:
         fixture = _Fixture(tmp_path)

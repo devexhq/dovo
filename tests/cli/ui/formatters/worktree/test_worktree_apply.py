@@ -9,6 +9,7 @@ import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_apply import WorktreeApplyFormatter
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
@@ -43,7 +44,7 @@ APPLIED_PATCH = FormatterCase.identity(
 FAILED_CONFLICT = FormatterCase.identity(
     data=WorktreeApplyResult(
         worktree_id="dovo_3",
-        error_code="GIT_FAILED",
+        error_code=ErrorCode.GIT_FAILED,
         strategy=WorktreeApplyStrategy.SQUASH,
         conflicting_files=["src/conflict.py"],
         errors=["Merge conflict in src/conflict.py"],
@@ -77,7 +78,7 @@ APPLIED_DELETE_WITH_DIAGNOSTICS = FormatterCase.identity(
 ALREADY_MERGED = FormatterCase.identity(
     data=WorktreeApplyResult(
         worktree_id="dovo_5",
-        error_code="WORKTREE_ALREADY_MERGED",
+        error_code=ErrorCode.WORKTREE_ALREADY_MERGED,
         errors=["Worktree 'dovo_5' is already merged."],
     ),
     render_expectations=["Worktree 'dovo_5' is already merged."],

@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.config.config_unset import ConfigUnsetFormatter
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.config.mutate import ConfigUnsetResult
 from tests.harness.formatter import (
@@ -30,7 +31,7 @@ OK_EXISTED = FormatterCase.identity(
 
 SCHEMA_INVALID = FormatterCase.identity(
     data=ConfigUnsetResult(
-        error_code="CONFIG_SCHEMA_INVALID",
+        error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
         config_path=_CONFIG_PATH,
         key="project",
         existed=True,

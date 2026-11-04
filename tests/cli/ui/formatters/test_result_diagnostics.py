@@ -100,7 +100,7 @@ def _status_sample() -> DovoStatusResult:
 SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
     ArtifactsListResult: lambda: ArtifactsListResult(diagnostics=[RECORD]),
     ArtifactDownloadResult: lambda: ArtifactDownloadResult(
-        error_code=ErrorCode.ARTIFACT_DOWNLOAD_FAILED, diagnostics=[RECORD]
+        error_code=ErrorCode.ARTIFACT_DOWNLOAD_FAILED, errors=["boom"], diagnostics=[RECORD]
     ),
     ArtifactsPruneResult: lambda: ArtifactsPruneResult(diagnostics=[RECORD]),
     CatalogListResult: lambda: CatalogListResult(item_type=CatalogItemType.BLUEPRINT, diagnostics=[RECORD]),
@@ -111,42 +111,53 @@ SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
         valid=False, target="my-bp", item_type=CatalogItemType.BLUEPRINT, diagnostics=[RECORD]
     ),
     ConfigLoadResult: lambda: ConfigLoadResult(
-        error_code=ErrorCode.CONFIG_UNREADABLE, config_path=CONFIG_PATH, diagnostics=[RECORD]
+        error_code=ErrorCode.CONFIG_UNREADABLE, errors=["boom"], config_path=CONFIG_PATH, diagnostics=[RECORD]
     ),
     ConfigValidationResult: lambda: ConfigValidationResult(
-        error_code=ErrorCode.CONFIG_UNREADABLE, config_path=CONFIG_PATH, diagnostics=[RECORD]
+        error_code=ErrorCode.CONFIG_UNREADABLE, errors=["boom"], config_path=CONFIG_PATH, diagnostics=[RECORD]
     ),
     ConfigSetResult: lambda: ConfigSetResult(
-        error_code=ErrorCode.CONFIG_NOT_FOUND, config_path=CONFIG_PATH, key="project.name", diagnostics=[RECORD]
+        error_code=ErrorCode.CONFIG_NOT_FOUND,
+        errors=["boom"],
+        config_path=CONFIG_PATH,
+        key="project.name",
+        diagnostics=[RECORD],
     ),
     ConfigUnsetResult: lambda: ConfigUnsetResult(
         error_code=ErrorCode.CONFIG_NOT_FOUND,
+        errors=["boom"],
         config_path=CONFIG_PATH,
         key="project.name",
         existed=False,
         diagnostics=[RECORD],
     ),
-    DiffResult: lambda: DiffResult(error_code="SESSION_NOT_FOUND", errors=["No sessions found."], diagnostics=[RECORD]),
+    DiffResult: lambda: DiffResult(
+        error_code=ErrorCode.SESSION_NOT_FOUND, errors=["No sessions found."], diagnostics=[RECORD]
+    ),
     HistoryListResult: lambda: HistoryListResult(diagnostics=[RECORD]),
     HistoryShowResult: lambda: HistoryShowResult(
-        error_code="SESSION_NOT_FOUND", errors=["No sessions found."], diagnostics=[RECORD]
+        error_code=ErrorCode.SESSION_NOT_FOUND, errors=["No sessions found."], diagnostics=[RECORD]
     ),
     LogsShowResult: lambda: LogsShowResult(
-        error_code="SESSION_NOT_FOUND", errors=["No sessions found."], diagnostics=[RECORD]
+        error_code=ErrorCode.SESSION_NOT_FOUND, errors=["No sessions found."], diagnostics=[RECORD]
     ),
     WorkspaceInitResult: lambda: WorkspaceInitResult(
-        error_code="INTERNAL_ERROR", errors=["boom"], diagnostics=[RECORD]
+        error_code=ErrorCode.INTERNAL_ERROR, errors=["boom"], diagnostics=[RECORD]
     ),
     WorktreePruneResult: lambda: WorktreePruneResult(diagnostics=[RECORD]),
-    WorktreeShowResult: lambda: WorktreeShowResult(error_code="WORKTREE_NOT_FOUND", diagnostics=[RECORD]),
+    WorktreeShowResult: lambda: WorktreeShowResult(
+        error_code=ErrorCode.WORKTREE_NOT_FOUND, errors=["boom"], diagnostics=[RECORD]
+    ),
     WorktreeListResult: lambda: WorktreeListResult(diagnostics=[RECORD]),
-    WorktreeCreateResult: lambda: WorktreeCreateResult(error_code="WORKTREE_PATH_CONFLICT", diagnostics=[RECORD]),
+    WorktreeCreateResult: lambda: WorktreeCreateResult(
+        error_code=ErrorCode.WORKTREE_PATH_CONFLICT, errors=["boom"], diagnostics=[RECORD]
+    ),
     WorktreeApplyResult: lambda: WorktreeApplyResult(
-        error_code="WORKTREE_NOT_FOUND", worktree_id="wt-1", diagnostics=[RECORD]
+        error_code=ErrorCode.WORKTREE_NOT_FOUND, errors=["boom"], worktree_id="wt-1", diagnostics=[RECORD]
     ),
     WorktreeDeleteResult: lambda: WorktreeDeleteResult(diagnostics=[RECORD]),
     WorktreeDiffResult: lambda: WorktreeDiffResult(
-        error_code="WORKTREE_NOT_FOUND", worktree_id="wt-1", diagnostics=[RECORD]
+        error_code=ErrorCode.WORKTREE_NOT_FOUND, errors=["boom"], worktree_id="wt-1", diagnostics=[RECORD]
     ),
     DovoStatusResult: _status_sample,
     BlueprintRunResult: lambda: BlueprintRunResult(

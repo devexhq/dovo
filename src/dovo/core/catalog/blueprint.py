@@ -98,4 +98,4 @@ class Blueprint:
         overrides: dict[str, str | int | bool] | None = None,
     ) -> InputResolveResult:
         """Parse CLI args against this blueprint's declared inputs."""
-        return resolve_inputs(self.inputs, cli_args=cli_args, overrides=overrides)
+        return resolve_inputs(self.inputs, name=self.key, cli_args=cli_args, overrides=overrides)

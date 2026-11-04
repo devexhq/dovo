@@ -9,6 +9,7 @@ import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_show import WorktreeShowFormatter
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.db import WorktreeRecord, WorktreeStatus
 from dovo.core.worktree.models import WorktreeShowResult
@@ -49,7 +50,7 @@ RECONCILED_MISSING_DISK = FormatterCase.identity(
 
 NOT_FOUND = FormatterCase.identity(
     data=WorktreeShowResult(
-        error_code="WORKTREE_NOT_FOUND",
+        error_code=ErrorCode.WORKTREE_NOT_FOUND,
         errors=["Worktree 'dovo_missing' not found."],
         remediations=[
             Remediation(message="Run 'dovo worktree list' to see known worktrees", command="dovo worktree list")
@@ -70,7 +71,7 @@ _RECORD_LOG = DiagnosticRecord(
 
 INTERNAL_ERROR = FormatterCase.identity(
     data=WorktreeShowResult(
-        error_code="INTERNAL_ERROR",
+        error_code=ErrorCode.INTERNAL_ERROR,
         errors=["Unexpected error during worktree.show: database is locked"],
         diagnostics=[_RECORD_LOG],
     ),

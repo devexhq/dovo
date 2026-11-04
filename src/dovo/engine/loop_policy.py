@@ -10,7 +10,7 @@ from dovo.common.models import FailurePolicy
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.engine.executors import evaluate_condition
-from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
+from dovo.engine.executors.models import ConditionEvaluationResult, StepRecord
 from dovo.engine.state_models import (
     TERMINAL_NODE_STATES,
     ExecutionIterationRecord,
@@ -64,7 +64,7 @@ class LoopPolicy:
     @staticmethod
     def evaluate_conditions(
         until_expressions: Sequence[str],
-        iteration_results: dict[str, StepResult],
+        iteration_results: dict[str, StepRecord],
         iteration_index: int,
         *,
         artifact_store: ArtifactStore | None,

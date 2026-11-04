@@ -6,14 +6,14 @@ from collections.abc import Sequence
 
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.engine.executors import evaluate_condition
-from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
+from dovo.engine.executors.models import ConditionEvaluationResult, StepRecord
 from dovo.engine.models import IfBranch, SkipCause
 from dovo.engine.state_models import StepSkip
 
 
 def evaluate_guard(
     expressions: Sequence[str],
-    step_results: dict[str, StepResult],
+    step_results: dict[str, StepRecord],
     iteration_index: int = 1,
     *,
     artifact_store: ArtifactStore | None,

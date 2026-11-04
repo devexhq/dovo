@@ -11,7 +11,7 @@ from dovo.common.models import FailurePolicy
 from dovo.common.timing import TimeSpan
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import InteractionRequest
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import StepRecord
 from dovo.engine.models import DefinitionsManifest, IfBranch, SkipCause
 
 
@@ -49,7 +49,7 @@ class StepAttemptRecord(BaseModel):
 
     number: int = Field(ge=1)
     span: TimeSpan
-    result: StepResult | None = None  # None while attempt is running; populated on complete/fail
+    result: StepRecord | None = None  # None while attempt is running; populated on complete/fail
     ask: InteractionRequest | None = None  # The prompt an ask step's attempt was answered for; None otherwise
 
 
@@ -149,4 +149,4 @@ class SessionJsonPayload(BaseModel):
     manifest: DefinitionsManifest
     nodes: list[ExecutionPlanNode] = Field(default_factory=list)
     lifecycle: SessionLifecycle
-    results: list[StepResult] = Field(default_factory=list)
+    results: list[StepRecord] = Field(default_factory=list)

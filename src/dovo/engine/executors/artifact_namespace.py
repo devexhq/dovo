@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dovo.common.error_codes import ErrorCode
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.expressions import ABSENT, Path
 from dovo.core.inputs import UNDEFINED
@@ -36,5 +35,5 @@ class ArtifactNamespaceProvider:
         name, field_name = ".".join(map(str, segments[:-1])), str(segments[-1])
         references = self._store.resolve_references({name: {field_name}})
         if references.error_code is not None:
-            raise EngineError(ErrorCode(references.error_code), references.errors[0])
+            raise EngineError(references.error_code, references.errors[0])
         return references.references.get(name, {}).get(field_name, ABSENT)

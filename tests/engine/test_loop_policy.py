@@ -6,7 +6,7 @@ import pytest
 
 from dovo.common.models import FailurePolicy
 from dovo.core.catalog.definitions import StepDefinition
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import StepRecord
 from dovo.engine.loop_policy import LoopDecision, LoopPolicy, LoopTransitionKind
 from dovo.engine.state_models import (
     ExecutionIterationRecord,
@@ -19,8 +19,8 @@ from tests.harness.builders import StepBuilder
 _BODY: list[StepDefinition] = [StepBuilder.command("true").with_id(step_id).build() for step_id in ("a", "b", "c")]
 
 
-def _result(step_id: str, exit_code: int = 0) -> StepResult:
-    return StepResult(
+def _result(step_id: str, exit_code: int = 0) -> StepRecord:
+    return StepRecord(
         step_id=step_id,
         status="completed" if exit_code == 0 else "failed",
         exit_code=exit_code,

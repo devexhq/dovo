@@ -55,7 +55,7 @@ class EngineRunStartFailureTests:
             pytest.param(
                 "snapshot",
                 "Failed to snapshot run definitions: Catalog item 'uncataloged' not found.",
-                None,
+                ErrorCode.RUN_SNAPSHOT_FAILED,
                 False,
                 id="snapshot",
             ),
@@ -86,7 +86,7 @@ class EngineRunStartFailureTests:
         error_code: ErrorCode | None,
         recorded: bool,
     ) -> None:
-        """Fail before any step runs with the message alone; an unexpected start fault carries INTERNAL_ERROR and adds its engine.persist record to diagnostics."""
+        """Fail before any step runs; a snapshot failure carries RUN_SNAPSHOT_FAILED, and an unexpected start fault carries INTERNAL_ERROR and adds its engine.persist record to diagnostics."""
         if fault == "snapshot":
             blueprint = Blueprint(
                 BlueprintBuilder("uncataloged")
@@ -499,7 +499,7 @@ class EngineRunSnapshotsDefinitionsTests:
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With the uses: step file unreadable, return a FAILED outcome whose errors hold 'Failed to snapshot run definitions: <message>', with empty diagnostics and no event file."""
+        """With the uses: step file unreadable, return a FAILED outcome carrying RUN_SNAPSHOT_FAILED whose errors hold 'Failed to snapshot run definitions: <message>', with empty diagnostics and no event file."""
         write_runnable_step(
             engine_paths.root_dir, key="locked-step", definition={"id": "locked-step", "run": "echo hi"}
         )
@@ -518,13 +518,36 @@ class EngineRunSnapshotsDefinitionsTests:
         finally:
             step_file.chmod(0o644)
 
-        assert outcome.status == SessionStatus.FAILED
+        assert (outcome.status, outcome.error_code) == (SessionStatus.FAILED, ErrorCode.RUN_SNAPSHOT_FAILED)
         assert outcome.errors == [
             "Failed to snapshot run definitions: Failed to read file for catalog blueprint 'locked-step': "
             f"[Errno 13] Permission denied: '{step_file}'"
         ]
         assert outcome.diagnostics == []
         assert frozen_diagnostic_clock.exists() is False
+
+    def test_snapshot_write_failure_fails_run_with_run_snapshot_failed(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the snapshot write raising OSError, return a FAILED outcome carrying RUN_SNAPSHOT_FAILED and the write's message, without recording a run row."""
+        blueprint = _catalog_blueprint(engine_paths, "snap-write", [{"id": "a", "run": "touch marker"}])
+
+        def _raise_disk_full(*_args: object, **_kwargs: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(Filesystem, "atomic_write_text", _raise_disk_full)
+
+        outcome = _engine(engine_paths, sessions_repo).run(
+            blueprint, RunRequest(session_id="snap-2", use_worktree=False)
+        )
+
+        assert (outcome.status, outcome.error_code, outcome.errors) == (
+            SessionStatus.FAILED,
+            ErrorCode.RUN_SNAPSHOT_FAILED,
+            ["Failed to write run definitions snapshot: disk full"],
+        )
+        assert sessions_repo.get("snap-2") is None
+        assert not (engine_paths.root_dir / "marker").exists()
 
     def test_run_writes_snapshot_files_and_records_manifest_in_state(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun

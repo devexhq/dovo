@@ -18,7 +18,7 @@ from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
-from dovo.core.inputs import InputResolveResult, format_input_error_message
+from dovo.core.inputs import InputResolveResult
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.core.sessions import current_process_started_at
 from dovo.engine.executors.exceptions import EngineError
@@ -71,7 +71,13 @@ class Engine:
         engine_diagnostics: list[DiagnosticRecord] = []
         manifest = self._snapshot_definitions(blueprint, sid, snapshot_warnings, engine_diagnostics)
         if manifest is None:
-            return self._failed_outcome(sid, snapshot_warnings, engine_warnings, diagnostics=engine_diagnostics)
+            return self._failed_outcome(
+                sid,
+                snapshot_warnings,
+                engine_warnings,
+                diagnostics=engine_diagnostics,
+                error_code=ErrorCode.RUN_SNAPSHOT_FAILED,
+            )
 
         engine_warnings.extend(snapshot_warnings)
         caller_worktree = True if req.use_worktree is None else req.use_worktree
@@ -195,7 +201,7 @@ class Engine:
         warnings: list[str],
         *,
         diagnostics: Sequence[DiagnosticRecord] = (),
-        error_code: str | None = None,
+        error_code: ErrorCode | None = None,
     ) -> RunOutcome:
         """Build the FAILED RunOutcome for a run that could not start, carrying its failure's code and any recorded diagnostics."""
         return RunOutcome(
@@ -308,10 +314,7 @@ class Engine:
         """Apply defaults and required checks; raise before a session row is inserted."""
         result = blueprint.resolve_inputs(request.cli_args, overrides=request.inputs)
         if not result.ok:
-            raise EngineError(
-                ErrorCode(result.error_code),
-                format_input_error_message(name=blueprint.key, result=result, declarations=blueprint.inputs),
-            )
+            raise EngineError(ErrorCode(result.error_code), result.errors[0])
         return result
 
     def _finalize_outcome(

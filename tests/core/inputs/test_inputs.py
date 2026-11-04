@@ -38,7 +38,7 @@ class InputSyntaxValidationTests:
 
     @pytest.mark.parametrize("cli_args", MALFORMED_SYNTAX_CASES)
     def test_resolve_inputs_invalid_syntax_names_malformed_token(self, cli_args: list[str]) -> None:
-        result = resolve_inputs(_sample_declarations(), cli_args=cli_args)
+        result = resolve_inputs(_sample_declarations(), name="deploy", cli_args=cli_args)
 
         assert result.values == {}
         assert result.missing == []
@@ -49,6 +49,7 @@ class InputSyntaxValidationTests:
     def test_resolve_inputs_warns_on_unrecognized_cli_options(self) -> None:
         result = resolve_inputs(
             _sample_declarations(),
+            name="deploy",
             cli_args=["-m", "ship it", "--unrecognized-option", "positional_arg"],
         )
 
@@ -114,7 +115,7 @@ class InputFlagResolutionTests:
         cli_args: list[str],
         expected_values: dict[str, str | int | bool],
     ) -> None:
-        result = resolve_inputs(_sample_declarations(), cli_args=cli_args)
+        result = resolve_inputs(_sample_declarations(), name="deploy", cli_args=cli_args)
 
         assert result.values == expected_values
         assert result.missing == []
@@ -129,7 +130,7 @@ class InputFlagResolutionTests:
                 aliases=["-i", "--issue"],
             ),
         }
-        result = resolve_inputs(inputs, cli_args=["-i", "616"])
+        result = resolve_inputs(inputs, name="deploy", cli_args=["-i", "616"])
 
         assert result.values == {"issue": "616"}
         assert result.missing == []
@@ -159,7 +160,7 @@ class InputResolutionOutcomeTests:
     def test_resolve_inputs_reports_parse_failures_verbatim(
         self, cli_args: list[str], errors: list[str], warnings: list[str]
     ) -> None:
-        result = resolve_inputs(_declarations_with_count(), cli_args=cli_args)
+        result = resolve_inputs(_declarations_with_count(), name="deploy", cli_args=cli_args)
 
         assert result.values == {}
         assert result.missing == []
@@ -168,7 +169,7 @@ class InputResolutionOutcomeTests:
         assert result.warnings == warnings
 
     def test_resolve_inputs_warns_on_unknown_override_key(self) -> None:
-        result = resolve_inputs(_sample_declarations(), cli_args=["-m", "x", "-i", "nope=1"])
+        result = resolve_inputs(_sample_declarations(), name="deploy", cli_args=["-m", "x", "-i", "nope=1"])
 
         assert result.values == {"message": "x", "allow_empty": False}
         assert result.missing == []
@@ -178,6 +179,7 @@ class InputResolutionOutcomeTests:
     def test_resolve_inputs_overrides_beat_cli_values_and_defaults_fill_gaps(self) -> None:
         result = resolve_inputs(
             _sample_declarations(),
+            name="deploy",
             cli_args=["-m", "cli"],
             overrides={"message": "from-override"},
         )
@@ -190,12 +192,16 @@ class InputResolutionOutcomeTests:
         assert result.warnings == []
 
     def test_resolve_inputs_lists_missing_required_inputs(self) -> None:
-        result = resolve_inputs(_sample_declarations())
+        result = resolve_inputs(_sample_declarations(), name="deploy")
 
         assert result.missing == ["message"]
         assert result.values == {"allow_empty": False}
         assert result.ok is False
         assert result.error_code == ErrorCode.BLUEPRINT_INPUT_INVALID
+        assert result.errors == [
+            "Missing required input 'message' for 'deploy'.\n\nUsage:\n"
+            "  dovo run deploy -m <value>\n  dovo run deploy -i message=<value>"
+        ]
 
 
 class InputsPackageTests:
@@ -217,7 +223,6 @@ class InputsPackageTests:
             "build_providers",
             "coerce_input_value",
             "find_placeholders",
-            "format_input_error_message",
             "format_missing_inputs_error",
             "interpolate_step_fields",
             "interpolate_string",

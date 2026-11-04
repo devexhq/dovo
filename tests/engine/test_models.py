@@ -19,7 +19,7 @@ class BlueprintRunResultTests:
         ("error_code", "session_status", "errors", "expected"),
         [
             pytest.param(None, SessionStatus.COMPLETED, [], True, id="no-code-with-session"),
-            pytest.param(None, None, ["Failed to load session record"], True, id="no-code-without-session"),
+            pytest.param(None, None, [], True, id="no-code-without-session"),
             pytest.param(ErrorCode.RUN_STEP_FAILED, SessionStatus.FAILED, ["boom"], False, id="code-with-session"),
             pytest.param(ErrorCode.CATALOG_NOT_FOUND, None, ["missing"], False, id="code-without-session"),
         ],
