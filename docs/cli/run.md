@@ -62,6 +62,25 @@ The `path` of a `cleanup` event (including with `--format json`) is relative to 
 9. **Run result**: Every `dovo run` ends with one run result, printed after every other line (see [Run result](#run-result)), unless a failure stops it outside the run (see [JSON Output](../reference/json-output.md#the-error-event)).
 10. **Exit codes**: see [Exit codes](#exit-codes).
 
+### Step failure codes
+
+With `--format json`, each step that finishes prints a `StepDoneEvent` carrying `idx`, `total`, `step_id`, `ok`, `exit_code`, `duration_seconds`, `error_message` and `error_code`; `dovo resume` prints the same event. `error_code` is `null` for a step that completed. A failed step carries one of the codes below, or, when it failed because something it used failed, that failure's code: `CATALOG_NOT_FOUND` for a `uses:` step that does not exist, an `ARTIFACT_*` code for an artifact that cannot be published, downloaded or inlined, or an `ASK_*` code for an `ask` prompt that cannot be built. A step continued past with `on_failure: continue`, or with `continue` at a failure prompt, keeps its code, and a retried step carries the code of its last attempt. A failed agent step carries no code yet, unless its `assert` checks or a declared artifact failed. [`dovo session show`](session.md#dovo-session-show) reports the same code for each step.
+
+| Code | Cause |
+| --- | --- |
+| `STEP_WORKTREE_MISSING` | The step's working directory does not exist or is not a directory. |
+| `STEP_DEFINITION_INVALID` | The step cannot run as written: an unsupported type, a `command` or `internal` step with no command, a `script` step with no `script_path`, an unknown internal command, or an `ask` step with no interaction. |
+| `STEP_SCRIPT_NOT_FOUND` | The file named by `script_path` does not exist. |
+| `STEP_LAUNCH_FAILED` | The command or script could not be started. |
+| `STEP_OUTPUT_READ_FAILED` | Reading the command's or script's output failed. |
+| `STEP_TIMEOUT` | The step ran longer than its `timeout_seconds`. |
+| `STEP_COMMAND_FAILED` | The command or script exited with a non-zero code. |
+| `STEP_ASSERT_FAILED` | One of the step's `assert` checks failed. |
+| `STEP_SESSION_MISSING` | An `artifacts.upload` or `artifacts.download` step ran with no active session. |
+| `STEP_INPUT_INVALID` | An `artifacts.upload` or `artifacts.download` step is missing `ARTIFACT_NAME`, `ARTIFACT_PATH` or `ARTIFACT_DEST`, or its `ARTIFACT_REVISION` is not a positive integer. |
+| `STEP_ANSWER_FAILED` | An `ask` step was answered with an option marked `fail: true`. |
+| `INTERNAL_ERROR` | An internal command failed with an unexpected error. |
+
 ### Run result
 
 Every `dovo run` that gets past initialization ends with one run result, after every other line, unless a configuration that does not load, a workspace lock timeout or an unexpected error stops it first: when it completes, pauses, fails or is cancelled. In the terminal it prints each warning as a yellow `Warning: <text>` line, then the outcome, then one `Details logged: <path> (event <event_id>)` line per diagnostic log record. The outcome is one of:

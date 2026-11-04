@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
-from dovo.common.models import Remediation
+from dovo.common.models import BaseResult, Remediation
 from dovo.core.config.models import DovoConfig
 from dovo.core.git import GitRunner
 
@@ -81,30 +81,22 @@ class DiagnosticCheckRecord(BaseModel):
         return self.status in (CheckStatus.OK, CheckStatus.SKIPPED)
 
 
-class DiagnosticsReport(BaseModel):
-    """Aggregated report of diagnostic check executions."""
+class DiagnosticsReport(BaseResult):
+    """Aggregated report of diagnostic check executions.
 
-    model_config = ConfigDict(extra="forbid", strict=True)
+    errors and warnings hold the failed and warning checks' messages in check order, remediations the failed checks'
+    then the warning checks', and diagnostics every check's records in check order. error_code is DOCTOR_CHECKS_FAILED
+    exactly when a check failed.
+    """
 
     workspace_root: Path
     checks: list[DiagnosticCheckRecord]
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)  # every check's records, in check order
     duration_seconds: float = 0.0
 
     @property
     def ok(self) -> bool:
-        """Return True when no checks FAILED (OK, WARNING, SKIPPED)."""
-        return all(c.status != CheckStatus.FAILED for c in self.checks)
-
-    @property
-    def error_code(self) -> ErrorCode | None:
-        """Return the error_code of the first FAILED check, or None when no check failed; not part of the payload."""
-        return next((c.error_code for c in self.checks if c.status == CheckStatus.FAILED), None)
-
-    @property
-    def has_warnings(self) -> bool:
-        """Return True when at least one executed check has status WARNING."""
-        return any(c.status == CheckStatus.WARNING for c in self.checks)
+        """True exactly when error_code is None."""
+        return self.error_code is None
 
 
 @runtime_checkable

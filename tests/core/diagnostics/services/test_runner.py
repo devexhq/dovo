@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.common.models import Remediation
@@ -23,10 +24,11 @@ from dovo.core.diagnostics.models import (
 from dovo.core.diagnostics.services.registry import CheckRegistry
 from dovo.core.diagnostics.services.runner import (
     DiagnosticRunner,
+    build_report,
     execute_single_check,
 )
 from dovo.core.git.runner import GitRunner
-from tests.harness.builders import StubCheck
+from tests.harness.builders import StubCheck, diagnostic_result
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
@@ -295,6 +297,8 @@ class DiagnosticRunnerContainmentTests:
         assert crash_check.executed is True
         assert healthy_check.executed is True
         assert report.ok is False
+        assert report.error_code == ErrorCode.DOCTOR_CHECKS_FAILED
+        assert report.errors == ["Unhandled exception during check execution: crash 1"]
         assert [c.check_id for c in report.checks] == ["check.crash", "check.healthy"]
         assert report.checks[0].status == CheckStatus.FAILED
         assert report.checks[0].error_code == "DOCTOR_CHECK_CRASHED"
@@ -385,3 +389,84 @@ class DiagnosticRunnerMetricsTests:
         result = execute_single_check(check, context)
 
         assert result.duration_seconds == expected
+
+
+class BuildReportHeaderTests:
+    """Unit tests for the result header build_report derives from the check records."""
+
+    def test_failed_and_warning_checks_fill_the_header_in_check_order(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """Errors and warnings follow check order; failed checks' remediations precede warning checks'."""
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
+        warn_a = Remediation(message="Fix warning a.")
+        fail_b = Remediation(message="Fix failure b.")
+        warn_c = Remediation(message="Fix warning c.")
+        fail_d = Remediation(message="Fix failure d.")
+        checks = [
+            diagnostic_result(check_id="check.ok"),
+            diagnostic_result(
+                check_id="check.warn_a", status=CheckStatus.WARNING, message="Warning a.", remediations=[warn_a]
+            ),
+            diagnostic_result(
+                check_id="check.fail_b",
+                status=CheckStatus.FAILED,
+                message="Failure b.",
+                error_code=ErrorCode.DOCTOR_FS_UNWRITABLE,
+                errors=["Failure b."],
+                remediations=[fail_b],
+            ),
+            diagnostic_result(check_id="check.skip", status=CheckStatus.SKIPPED, message="Skipped."),
+            diagnostic_result(
+                check_id="check.warn_c", status=CheckStatus.WARNING, message="Warning c.", remediations=[warn_c]
+            ),
+            diagnostic_result(
+                check_id="check.fail_d",
+                status=CheckStatus.FAILED,
+                message="Failure d.",
+                error_code=ErrorCode.DOCTOR_BINARY_MISSING,
+                errors=["Failure d."],
+                remediations=[fail_d],
+            ),
+        ]
+
+        report = build_report(context, checks, 1.5)
+
+        assert report.ok is False
+        assert report.error_code == ErrorCode.DOCTOR_CHECKS_FAILED
+        assert report.errors == ["Failure b.", "Failure d."]
+        assert report.warnings == ["Warning a.", "Warning c."]
+        assert report.remediations == [fail_b, fail_d, warn_a, warn_c]
+        assert [check.error_code for check in report.checks] == [
+            None,
+            None,
+            ErrorCode.DOCTOR_FS_UNWRITABLE,
+            None,
+            None,
+            ErrorCode.DOCTOR_BINARY_MISSING,
+        ]
+        assert report.duration_seconds == 1.5
+
+    def test_warning_checks_alone_leave_the_report_ok(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
+        remediation = Remediation(message="Fix the warning.")
+        checks = [
+            diagnostic_result(check_id="check.ok"),
+            diagnostic_result(
+                check_id="check.warn", status=CheckStatus.WARNING, message="Warned.", remediations=[remediation]
+            ),
+        ]
+
+        report = build_report(context, checks, 0.0)
+
+        assert report.ok is True
+        assert report.error_code is None
+        assert report.errors == []
+        assert report.warnings == ["Warned."]
+        assert report.remediations == [remediation]

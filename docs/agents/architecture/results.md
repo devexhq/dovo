@@ -48,7 +48,7 @@ What a public entrypoint returns and what a caller branches on. These entries ho
 - **Decision:** on every command-result payload, the result a CLI command dispatches, `ok` is true exactly when `error_code` is null.
   - No command result computes `ok` from `status`, `errors` or any other field.
   - Internal results that no command dispatches (interaction, input resolution, agent settings) may define `ok` for their own callers.
-  - A step's outcome inside a run is a `StepRecord`, a record rather than a result: a failed step's text is its `error_message`, and its optional `error_code` is a published one with no `errors`.
+  - A step's outcome inside a run is a `StepRecord`, a record rather than a result: a failed step's text is its `error_message`, and its `error_code` is a published one with no `errors`, set on every failed `command`, `script`, `internal` and `ask` step and `null` on a completed one.
 - **Why:** callers branch on `ok`, so it must agree with the one failure classification.
 - **Since:** #925
 
@@ -66,11 +66,21 @@ What a public entrypoint returns and what a caller branches on. These entries ho
 
 - **Decision:** a command exits `0` when its result's `error_code` is null, and otherwise with the exit that `error_code` declares (`ErrorCode.exit_code`). Every handler in `cli/` calls `exit_for(result)` and picks no exit of its own.
   - A code decided only from the command's own arguments, before the workspace is read or changed, declares `2` and is listed in `ARGUMENT_ERROR_CODES`. `RUN_CANCELLED` declares `130`, and `run_cli` then ends the process by the signal it actually received (`128` plus its number). Every other code declares `1`.
-  - `exit_for` reads `error_code`, never `ok`, so a result whose `ok` means something else, such as `dovo status` health, still exits `0` without a code.
+  - `exit_for` reads `error_code`, never `ok` or a status, so `dovo status` exits `0` whatever health it reports.
   - A failure no command result carries (an uninitialized workspace, a config that does not load, a lock timeout, an unexpected exception) is reported by the one handler in `DovoTyperGroup.invoke`: a panel, or under `--format json` exactly one final `error` event with the failed-result header, and exit `1`. Click usage errors pass through it with Click's exit `2`.
   - Adding an `ErrorCode` decides its exit; `tests/common/test_error_codes.py` pins every member's.
 - **Why:** a script branches on the exit code without knowing the command, and the exit cannot disagree with the JSON result.
 - **Since:** #1312
+
+## A step field appears in every step view
+
+- **Decision:** a step has one surface with three views: the saved `StepRecord`, the `steps[]` row of `dovo session show` (`StepRunSummary`) and the step-done event of `dovo run` and `dovo resume` (`StepDoneEvent`).
+  - A change that adds a step fact adds it to every view where a reader can observe it, in one change, and its PR names any view it skips and why. The `session.log` `STEP_DONE` timeline record carries no failure text, so `error_code` skips it.
+  - A new field goes after the last field it relates to, or at the end, and defaults to `null`, an empty list or an empty map, so a session saved before it loads and every view reports the default. `error_code` follows `error_message`.
+  - A failed step's `error_code` is a `STEP_*` code for a failure the engine detects itself, or the code of the failure it consumed, copied unchanged.
+  - The `dovo session show` page documents the row keys in its Step keys table; `tests/lint/test_session_show_step_doc_parity.py` fails, naming each key, when the documented keys and the emitted ones differ as sets.
+- **Why:** readers of each view branch on the same facts, and a field added to one view drifts from the others.
+- **Since:** #1424
 
 ## A declined confirmation is a success
 

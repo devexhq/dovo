@@ -37,8 +37,11 @@ class DoctorReportView(BaseModel):
     model_config = {"extra": "forbid", "strict": True}
 
     ok: bool
-    has_warnings: bool
+    error_code: str | None
+    errors: list[str]
+    warnings: list[str]
+    remediations: list[Remediation]
+    diagnostics: list[DiagnosticRecord]
     workspace_root: Path
     duration_seconds: float
     checks: list[DoctorCheckView]
-    diagnostics: list[DiagnosticRecord]

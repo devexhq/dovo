@@ -109,19 +109,32 @@ def _check_view(check: DiagnosticCheckRecord) -> DoctorCheckView:
     )
 
 
+FAILED_HEADER: dict[str, object] = {
+    "error_code": ErrorCode.DOCTOR_CHECKS_FAILED,
+    "errors": [FAILED_CHECK.message],
+    "warnings": [WARNING_CHECK.message],
+    "remediations": [*FAILED_CHECK.remediations, *WARNING_CHECK.remediations],
+}
+
 MIXED_STATUS = FormatterCase(
-    data=DiagnosticsReport(
-        workspace_root=ROOT,
-        checks=[OK_CHECK, WARNING_CHECK, FAILED_CHECK, SKIPPED_CHECK],
-        duration_seconds=0.0124,
+    data=DiagnosticsReport.model_validate(
+        {
+            **FAILED_HEADER,
+            "workspace_root": ROOT,
+            "checks": [OK_CHECK, WARNING_CHECK, FAILED_CHECK, SKIPPED_CHECK],
+            "duration_seconds": 0.0124,
+        }
     ),
     view=DoctorReportView(
         ok=False,
-        has_warnings=True,
+        error_code=ErrorCode.DOCTOR_CHECKS_FAILED,
+        errors=[FAILED_CHECK.message],
+        warnings=[WARNING_CHECK.message],
+        remediations=[*FAILED_CHECK.remediations, *WARNING_CHECK.remediations],
+        diagnostics=[],
         workspace_root=ROOT,
         duration_seconds=0.0124,
         checks=[_check_view(c) for c in (OK_CHECK, WARNING_CHECK, FAILED_CHECK, SKIPPED_CHECK)],
-        diagnostics=[],
     ),
     render_expectations=[
         "git.repo",
@@ -142,7 +155,15 @@ MIXED_STATUS = FormatterCase(
 EMPTY_CHECKS = FormatterCase(
     data=DiagnosticsReport(workspace_root=ROOT, checks=[], duration_seconds=0.0),
     view=DoctorReportView(
-        ok=True, has_warnings=False, workspace_root=ROOT, duration_seconds=0.0, checks=[], diagnostics=[]
+        ok=True,
+        error_code=None,
+        errors=[],
+        warnings=[],
+        remediations=[],
+        diagnostics=[],
+        workspace_root=ROOT,
+        duration_seconds=0.0,
+        checks=[],
     ),
     render_expectations=["0 checks: 0 ok, 0 warning, 0 failed (0.000s)"],
 )
@@ -154,10 +175,24 @@ DOCTOR_REPORT_CASES = [
 
 DOCTOR_REPORT_PAYLOAD_CASES = [
     pytest.param(
-        DiagnosticsReport(workspace_root=ROOT, checks=[WARNING_CHECK, FAILED_CHECK], duration_seconds=0.0124),
+        DiagnosticsReport.model_validate(
+            {
+                **FAILED_HEADER,
+                "workspace_root": ROOT,
+                "checks": [WARNING_CHECK, FAILED_CHECK],
+                "duration_seconds": 0.0124,
+            }
+        ),
         {
             "ok": False,
-            "has_warnings": True,
+            "error_code": "DOCTOR_CHECKS_FAILED",
+            "errors": ["Configuration file not found at '/workspace/my-repo/.dovo/config.json'."],
+            "warnings": ["Agent provider 'copilot' has no model configured."],
+            "remediations": [
+                {"message": CONFIG_NOT_FOUND_MESSAGE, "command": "dovo init"},
+                {"message": NO_MODEL_MESSAGE, "command": 'dovo config set agents.copilot.model "<model>"'},
+            ],
+            "diagnostics": [],
             "workspace_root": "/workspace/my-repo",
             "duration_seconds": 0.0124,
             "checks": [
@@ -192,7 +227,6 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                     "diagnostics": [],
                 },
             ],
-            "diagnostics": [],
         },
         id="warning_and_failed",
     ),
@@ -200,11 +234,14 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
         EMPTY_CHECKS.data,
         {
             "ok": True,
-            "has_warnings": False,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "workspace_root": "/workspace/my-repo",
             "duration_seconds": 0.0,
             "checks": [],
-            "diagnostics": [],
         },
         id="empty_checks",
     ),
@@ -223,6 +260,12 @@ class DoctorReportFormatterTests:
         self, report: DiagnosticsReport, expected_payload: dict[str, object]
     ) -> None:
         assert_json_payload_matches_published_shape(DoctorReportFormatter, report, expected_payload)
+
+    def test_json_payload_starts_with_the_result_header(self) -> None:
+        payload = DoctorReportFormatter().to_json_serializable(MIXED_STATUS.data)
+
+        assert list(payload)[:6] == ["ok", "error_code", "errors", "warnings", "remediations", "diagnostics"]
+        assert "status" not in payload
 
     @pytest.mark.parametrize("case", DOCTOR_REPORT_CASES)
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[DiagnosticsReport, DoctorReportView]) -> None:

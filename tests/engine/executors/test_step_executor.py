@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.common.models import FailurePolicy
@@ -39,14 +40,14 @@ class StepExecutionResolutionTests:
             StepExecutionContext(step=step, worktree_path=tmp_path, paths=engine_paths, diagnostics=sink)
         ).run()
 
-        assert result.status == "failed"
+        assert (result.status, result.error_code) == ("failed", ErrorCode.CATALOG_SCHEMA_INVALID)
         assert result.error_message == "Step 's1' must specify one of 'run', 'uses', or 'type'."
         assert sink == []
 
     def test_uses_step_failure_fails_step_with_failure_message(
         self, tmp_path: Path, engine_paths: WorkspacePaths
     ) -> None:
-        """Return a failed StepRecord with error_message == "Catalog item 'missing-step' not found." for uses: missing-step, and add no record to the diagnostics list."""
+        """Return a failed StepRecord with the catalog's CATALOG_NOT_FOUND and error_message == "Catalog item 'missing-step' not found." for uses: missing-step, and add no record to the diagnostics list."""
         step = StepDefinition(id="s1", uses="missing-step")
         sink: list[DiagnosticRecord] = []
         execution = StepExecution(
@@ -55,7 +56,7 @@ class StepExecutionResolutionTests:
 
         result = execution.run()
 
-        assert result.status == "failed"
+        assert (result.status, result.error_code) == ("failed", ErrorCode.CATALOG_NOT_FOUND)
         assert result.error_message == "Catalog item 'missing-step' not found."
         assert sink == []
         assert not resolve_global_paths().logs_dir.exists()
@@ -82,7 +83,7 @@ class StepExecutionResolutionTests:
 
         result = execution.run()
 
-        assert result.status == "failed"
+        assert (result.status, result.error_code) == ("failed", ErrorCode.INTERNAL_ERROR)
         assert result.error_message == "Unexpected error during engine.step: x"
         assert sink == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
@@ -95,7 +96,7 @@ class StepExecutionResolutionTests:
 
         result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
-        assert result.status == "completed"
+        assert (result.status, result.error_code) == ("completed", None)
         assert "ok" in result.stdout
 
 
@@ -207,17 +208,38 @@ class _TimingOutPopen(subprocess.Popen[str]):
         return super().wait(timeout)
 
 
-def _site_step(site: str, monkeypatch: pytest.MonkeyPatch) -> tuple[StepDefinition, OutputCallback | None, str]:
-    """Return the step, output callback and expected error message that induce one failure at site."""
+class _SuccessTimesOutPopen(subprocess.Popen[str]):
+    """Popen whose wait raises TimeoutExpired once for a process that exits 0, and passes other exits through."""
+
+    _timed_out = False
+
+    def wait(self, timeout: float | None = None) -> int:
+        exit_code = super().wait(timeout)
+        if exit_code == 0 and not self._timed_out:
+            self._timed_out = True
+            raise subprocess.TimeoutExpired(self.args, timeout or 0)
+        return exit_code
+
+
+def _site_step(
+    site: str, monkeypatch: pytest.MonkeyPatch
+) -> tuple[StepDefinition, OutputCallback | None, str, ErrorCode]:
+    """Return the step, output callback, expected error message and expected error code of one failure at site."""
     if site == "launch":
         monkeypatch.setattr("dovo.engine.executors.step_executor.subprocess.Popen", _raise_exec_format_error)
-        return StepBuilder.command("true").with_id("s1").build(), None, "Command execution error: exec format error"
+        return (
+            StepBuilder.command("true").with_id("s1").build(),
+            None,
+            "Command execution error: exec format error",
+            ErrorCode.STEP_LAUNCH_FAILED,
+        )
     if site == "stream-read":
         return (
             StepBuilder.command(r"printf '\377'").with_id("s1").build(),
             None,
             "Command pipe error: Failed reading stdout stream: "
             "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte",
+            ErrorCode.STEP_OUTPUT_READ_FAILED,
         )
     if site == "output-callback":
 
@@ -228,6 +250,7 @@ def _site_step(site: str, monkeypatch: pytest.MonkeyPatch) -> tuple[StepDefiniti
             StepBuilder.command("echo one").with_id("s1").build(),
             _crashing,
             "Command pipe error: Output callback error on stdout: observer crashed",
+            ErrorCode.STEP_OUTPUT_READ_FAILED,
         )
 
     def _broken_handler(_context: object) -> object:
@@ -238,6 +261,7 @@ def _site_step(site: str, monkeypatch: pytest.MonkeyPatch) -> tuple[StepDefiniti
         StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.upload"),
         None,
         "Internal command 'artifacts.upload' error: boom",
+        ErrorCode.INTERNAL_ERROR,
     )
 
 
@@ -246,8 +270,8 @@ class StepExecutionDiagnosticLogTests:
     def test_step_failure_records_error_into_diagnostics_only(
         self, tmp_path: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch, site: str
     ) -> None:
-        """Keep the step result free of the line and its warnings empty, and leave the diagnostics list == [the engine.step record]."""
-        step, on_output, expected_error = _site_step(site, monkeypatch)
+        """Fail with the site's error code, keep the step result free of the line and its warnings empty, and leave the diagnostics list == [the engine.step record]."""
+        step, on_output, expected_error, expected_code = _site_step(site, monkeypatch)
         sink: list[DiagnosticRecord] = []
         execution = StepExecution(
             StepExecutionContext(step=step, worktree_path=tmp_path, on_output=on_output, diagnostics=sink)
@@ -256,6 +280,7 @@ class StepExecutionDiagnosticLogTests:
         result = execution.run()
 
         assert (result.status, result.error_message, result.warnings) == ("failed", expected_error, [])
+        assert result.error_code == expected_code
         assert sink == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"], event["context"]) == (
@@ -265,10 +290,22 @@ class StepExecutionDiagnosticLogTests:
         )
 
     @pytest.mark.parametrize(
-        ("command", "popen", "expected_error"),
+        ("command", "popen", "expected_error", "expected_code"),
         [
-            pytest.param("exit 1", subprocess.Popen, "Command failed with exit code 1.", id="nonzero"),
-            pytest.param("true", _TimingOutPopen, "Command step execution timed out after 1 seconds.", id="timeout"),
+            pytest.param(
+                "exit 1",
+                subprocess.Popen,
+                "Command failed with exit code 1.",
+                ErrorCode.STEP_COMMAND_FAILED,
+                id="nonzero",
+            ),
+            pytest.param(
+                "true",
+                _TimingOutPopen,
+                "Command step execution timed out after 1 seconds.",
+                ErrorCode.STEP_TIMEOUT,
+                id="timeout",
+            ),
         ],
     )
     def test_normal_step_outcomes_write_no_record(
@@ -279,8 +316,9 @@ class StepExecutionDiagnosticLogTests:
         command: str,
         popen: type[subprocess.Popen[str]],
         expected_error: str,
+        expected_code: ErrorCode,
     ) -> None:
-        """Return today's failed result and leave <DOVO_HOME>/logs absent for a nonzero exit and a timeout."""
+        """Return today's failed result with its error code and leave <DOVO_HOME>/logs absent for a nonzero exit and a timeout."""
         monkeypatch.setattr("dovo.engine.executors.step_executor.subprocess.Popen", popen)
         step = StepBuilder.command(command).with_id("s1").with_timeout(1).build()
         sink: list[DiagnosticRecord] = []
@@ -289,6 +327,7 @@ class StepExecutionDiagnosticLogTests:
         result = execution.run()
 
         assert (result.status, result.error_message, result.warnings) == ("failed", expected_error, [])
+        assert result.error_code == expected_code
         assert sink == []
         assert not frozen_diagnostic_clock.parent.parent.exists()
 
@@ -358,7 +397,7 @@ class StepExecutionContinueTests:
         ],
     )
     def test_continued_failure_keeps_exit_code(self, tmp_path: Path, builder: StepBuilder, attempts: int) -> None:
-        """Record a continued `exit 3` as ignored with exit code 3, directly and after retries are exhausted."""
+        """Record a continued `exit 3` as ignored with exit code 3 and STEP_COMMAND_FAILED, directly and after retries are exhausted."""
         step = builder.with_id("s1").build()
 
         result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
@@ -368,13 +407,97 @@ class StepExecutionContinueTests:
             3,
             "Command failed with exit code 3.",
         )
-        assert result.attempts == attempts
+        assert (result.error_code, result.attempts) == (ErrorCode.STEP_COMMAND_FAILED, attempts)
 
     def test_timed_out_continued_step_records_124(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Record a continued timeout as ignored with exit code 124, the code a timeout records without continue."""
+        """Record a continued timeout as ignored with exit code 124 and STEP_TIMEOUT, as a timeout records without continue."""
         monkeypatch.setattr("dovo.engine.executors.step_executor.subprocess.Popen", _TimingOutPopen)
         step = StepBuilder.command("true").with_id("s1").with_timeout(1).with_on_failure(FailurePolicy.CONTINUE).build()
 
         result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
-        assert (result.status, result.exit_code) == ("ignored", 124)
+        assert (result.status, result.exit_code, result.error_code) == ("ignored", 124, ErrorCode.STEP_TIMEOUT)
+
+
+def _definition_step(site: str) -> StepDefinition:
+    """Return a step whose definition cannot run at site; model_copy skips the validation that rejects it on load."""
+    if site == "command-without-command":
+        return StepBuilder.command("true").with_id("s1").build().model_copy(update={"command": None})
+    if site == "script-without-path":
+        return StepBuilder.script("run.sh").with_id("s1").build().model_copy(update={"script_path": None})
+    if site == "internal-without-command":
+        return StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.upload").model_copy(
+            update={"command": None}
+        )
+    if site == "unknown-internal":
+        return StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.nonexistent")
+    return StepDefinition.model_validate(
+        {"id": "s1", "type": "ask", "interaction": {"mode": "confirm", "message": "Go?"}}
+    )
+
+
+class StepExecutionErrorCodeTests:
+    @pytest.mark.parametrize(
+        ("site", "expected_error"),
+        [
+            pytest.param("command-without-command", "Command step has no command string defined.", id="command"),
+            pytest.param("script-without-path", "Script step has no script_path defined.", id="script"),
+            pytest.param("internal-without-command", "Internal step has no command string defined.", id="internal"),
+            pytest.param("unknown-internal", "Unknown internal command 'artifacts.nonexistent'.", id="unknown"),
+            pytest.param("unsupported-type", "Unsupported step primitive type 'ask'.", id="unsupported"),
+        ],
+    )
+    def test_step_that_cannot_run_as_defined_records_definition_invalid(
+        self, tmp_path: Path, site: str, expected_error: str
+    ) -> None:
+        """Record STEP_DEFINITION_INVALID with the site's message for each step whose definition cannot run."""
+        step = _definition_step(site)
+
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
+
+        assert (result.status, result.error_code, result.error_message) == (
+            "failed",
+            ErrorCode.STEP_DEFINITION_INVALID,
+            expected_error,
+        )
+
+    def test_missing_script_file_records_script_not_found(self, tmp_path: Path) -> None:
+        step = StepBuilder.script("missing.sh").with_id("s1").build()
+
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
+
+        assert (result.status, result.error_code, result.error_message) == (
+            "failed",
+            ErrorCode.STEP_SCRIPT_NOT_FOUND,
+            "Script file not found at 'missing.sh'.",
+        )
+
+    def test_missing_worktree_records_worktree_missing(self, tmp_path: Path) -> None:
+        step = StepDefinition(id="s1", run="echo ok")
+
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path / "missing", diagnostics=[])
+        ).run()
+
+        assert (result.status, result.error_code, result.error_message) == (
+            "failed",
+            ErrorCode.STEP_WORKTREE_MISSING,
+            f"Worktree path '{tmp_path / 'missing'}' does not exist or is not a directory.",
+        )
+
+    def test_retried_step_records_its_last_attempts_code(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Record STEP_TIMEOUT for a retried step whose first attempt exits 1 and whose last attempt times out."""
+        script = tmp_path / "attempt.sh"
+        script.write_text('if [ "$DOVO_STEP_ATTEMPT" = 1 ]; then exit 1; fi\n', encoding="utf-8")
+        monkeypatch.setattr("dovo.engine.executors.step_executor.subprocess.Popen", _SuccessTimesOutPopen)
+        step = (
+            StepBuilder.script("attempt.sh")
+            .with_id("s1")
+            .with_timeout(1)
+            .with_retry(max_retries=2, backoff_ms=0, on_max_retries=FailurePolicy.CONTINUE)
+            .build()
+        )
+
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
+
+        assert (result.status, result.attempts, result.error_code) == ("ignored", 2, ErrorCode.STEP_TIMEOUT)

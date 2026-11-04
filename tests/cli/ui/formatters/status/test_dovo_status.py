@@ -9,7 +9,6 @@ import pytest
 
 from dovo.cli.ui.formatters.status import (
     DovoStatusFormatter,
-    StatusHealth,
     StatusView,
 )
 from dovo.common.error_codes import ErrorCode
@@ -21,6 +20,7 @@ from dovo.core.status.models import (
     DatabaseStatusInfo,
     DovoStatusResult,
     GitStatusInfo,
+    WorkspaceHealth,
     WorktreeStatusInfo,
 )
 from tests.harness.formatter import (
@@ -28,6 +28,7 @@ from tests.harness.formatter import (
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
     assert_transform_derives_expected_view,
+    render_rich,
 )
 
 ROOT = Path("/workspace/my-repo")
@@ -36,6 +37,7 @@ CONFIG_PATH = ROOT / ".dovo" / "config.json"
 
 def _make_status_result(
     *,
+    status: WorkspaceHealth = WorkspaceHealth.OK,
     root_dir: Path | None = None,
     is_initialized: bool = True,
     git: GitStatusInfo | None = None,
@@ -50,6 +52,7 @@ def _make_status_result(
     """Construct a valid DovoStatusResult with test defaults."""
     base = root_dir or Path("/workspace/my-repo")
     return DovoStatusResult(
+        status=status,
         root_dir=base,
         is_initialized=is_initialized,
         git=git
@@ -102,7 +105,9 @@ def _make_status_result(
 def _make_status_view(**overrides: object) -> StatusView:
     """Construct a StatusView with healthy baseline defaults."""
     defaults: dict[str, object] = {
-        "health": StatusHealth.OK,
+        "ok": True,
+        "error_code": None,
+        "status": WorkspaceHealth.OK,
         "root_dir": ROOT,
         "project_name": "dovo",
         "config_error_code": None,
@@ -132,6 +137,7 @@ HEALTHY = FormatterCase(
 
 UNINITIALIZED_NON_GIT = FormatterCase(
     data=_make_status_result(
+        status=WorkspaceHealth.UNINITIALIZED,
         root_dir=ROOT,
         is_initialized=False,
         git=GitStatusInfo(is_git_repo=False, branch="none", is_dirty=False, uncommitted_files=0),
@@ -148,7 +154,7 @@ UNINITIALIZED_NON_GIT = FormatterCase(
         ],
     ),
     view=_make_status_view(
-        health=StatusHealth.UNINITIALIZED,
+        status=WorkspaceHealth.UNINITIALIZED,
         project_name=None,
         config_error_code="CONFIG_NOT_FOUND",
         git_branch=None,
@@ -178,6 +184,7 @@ def _degraded_config_case(
     """Build a degraded-config case: config-derived fields blank, branch still shown, warning and Fix: block surfaced."""
     return FormatterCase(
         data=_make_status_result(
+            status=WorkspaceHealth.DEGRADED,
             root_dir=ROOT,
             config=ConfigStatusInfo(
                 error_code=error_code, config_path=CONFIG_PATH, is_valid=False, config=None, errors=[warning]
@@ -186,7 +193,7 @@ def _degraded_config_case(
             remediations=remediations,
         ),
         view=_make_status_view(
-            health=StatusHealth.DEGRADED,
+            status=WorkspaceHealth.DEGRADED,
             project_name=None,
             config_error_code=error_code,
             agent_model=None,
@@ -271,12 +278,13 @@ DIRTY_BRANCH = FormatterCase(
 
 NOT_A_GIT_REPO = FormatterCase(
     data=_make_status_result(
+        status=WorkspaceHealth.DEGRADED,
         root_dir=ROOT,
         git=GitStatusInfo(is_git_repo=False, branch="none", is_dirty=False, uncommitted_files=0),
         remediations=[Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")],
     ),
     view=_make_status_view(
-        health=StatusHealth.DEGRADED,
+        status=WorkspaceHealth.DEGRADED,
         git_branch=None,
         remediations=[Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")],
     ),
@@ -353,6 +361,7 @@ EMPTY_CATALOG = FormatterCase(
 
 INVALID_CATALOG_ITEMS = FormatterCase(
     data=_make_status_result(
+        status=WorkspaceHealth.DEGRADED,
         root_dir=ROOT,
         catalog=CatalogStatusInfo(
             exists=True,
@@ -365,7 +374,7 @@ INVALID_CATALOG_ITEMS = FormatterCase(
         ),
     ),
     view=_make_status_view(
-        health=StatusHealth.DEGRADED,
+        status=WorkspaceHealth.DEGRADED,
         valid_catalog_items=3,
         total_catalog_items=5,
     ),
@@ -398,6 +407,7 @@ WITH_WARNINGS_AND_REMEDIATIONS = FormatterCase(
 
 DEGRADED_RAW_CONFIG_PROJECT = FormatterCase(
     data=_make_status_result(
+        status=WorkspaceHealth.DEGRADED,
         root_dir=ROOT,
         config=ConfigStatusInfo(
             error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
@@ -411,7 +421,7 @@ DEGRADED_RAW_CONFIG_PROJECT = FormatterCase(
         remediations=[Remediation(message="Fix schema errors")],
     ),
     view=_make_status_view(
-        health=StatusHealth.DEGRADED,
+        status=WorkspaceHealth.DEGRADED,
         project_name="raw-project",
         config_error_code="CONFIG_SCHEMA_INVALID",
         agent_model=None,
@@ -443,7 +453,13 @@ STATUS_PAYLOAD_CASES = [
     pytest.param(
         HEALTHY,
         {
-            "health": "ok",
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
+            "status": "ok",
             "root_dir": "/workspace/my-repo",
             "project_name": "dovo",
             "config_error_code": None,
@@ -457,17 +473,22 @@ STATUS_PAYLOAD_CASES = [
             "valid_catalog_items": 2,
             "total_catalog_items": 2,
             "total_sessions": 1,
-            "errors": [],
-            "warnings": [],
-            "remediations": [],
-            "diagnostics": [],
         },
         id="healthy_workspace",
     ),
     pytest.param(
         UNINITIALIZED_NON_GIT,
         {
-            "health": "uninitialized",
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": ["Dovo workspace is not initialized. Run 'dovo init' to configure."],
+            "remediations": [
+                {"message": "Run 'dovo init' to initialize Dovo in this repository.", "command": "dovo init"},
+                {"message": "Run 'git init' or navigate to a Git repository.", "command": "git init"},
+            ],
+            "diagnostics": [],
+            "status": "uninitialized",
             "root_dir": "/workspace/my-repo",
             "project_name": None,
             "config_error_code": "CONFIG_NOT_FOUND",
@@ -481,13 +502,6 @@ STATUS_PAYLOAD_CASES = [
             "valid_catalog_items": None,
             "total_catalog_items": None,
             "total_sessions": 1,
-            "errors": [],
-            "warnings": ["Dovo workspace is not initialized. Run 'dovo init' to configure."],
-            "remediations": [
-                {"message": "Run 'dovo init' to initialize Dovo in this repository.", "command": "dovo init"},
-                {"message": "Run 'git init' or navigate to a Git repository.", "command": "git init"},
-            ],
-            "diagnostics": [],
         },
         id="uninitialized_non_git",
     ),
@@ -508,6 +522,26 @@ class DovoStatusFormatterTests:
         expected_payload: dict[str, Any],
     ) -> None:
         assert_json_payload_matches_published_shape(DovoStatusFormatter, case.data, expected_payload)
+
+    def test_json_payload_starts_with_the_result_header(self) -> None:
+        payload = DovoStatusFormatter().to_json_serializable(HEALTHY.data)
+
+        assert list(payload)[:7] == ["ok", "error_code", "errors", "warnings", "remediations", "diagnostics", "status"]
+
+    @pytest.mark.parametrize(
+        ("case", "title"),
+        [
+            pytest.param(HEALTHY, "Dovo Workspace Status", id="ok"),
+            pytest.param(INVALID_CATALOG_ITEMS, "Dovo Workspace Status (Degraded)", id="degraded"),
+            pytest.param(UNINITIALIZED_NON_GIT, "Dovo Workspace Status (Uninitialized)", id="uninitialized"),
+        ],
+    )
+    def test_rich_render_titles_the_table_with_the_result_status(
+        self, case: FormatterCase[DovoStatusResult, StatusView], title: str
+    ) -> None:
+        rendered = render_rich(DovoStatusFormatter().to_rich(case.data))
+
+        assert rendered.splitlines()[0].strip() == title
 
     @pytest.mark.parametrize("case", STATUS_CASES)
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[DovoStatusResult, StatusView]) -> None:

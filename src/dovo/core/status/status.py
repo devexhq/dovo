@@ -17,8 +17,10 @@ from dovo.core.status.git_probe import probe_git
 from dovo.core.status.models import (
     CatalogStatusInfo,
     ConfigStatusInfo,
+    DatabaseStatusInfo,
     DovoStatusResult,
     GitStatusInfo,
+    WorkspaceHealth,
     WorktreeStatusInfo,
 )
 from dovo.core.status.worktree_probe import probe_worktrees
@@ -120,6 +122,32 @@ def _collect_remediations(
     return remediations
 
 
+def _classify_health(
+    *,
+    is_initialized: bool,
+    git: GitStatusInfo,
+    config: ConfigStatusInfo,
+    catalog: CatalogStatusInfo,
+    database: DatabaseStatusInfo,
+) -> WorkspaceHealth:
+    """Classify workspace health: uninitialized without .dovo/ or config.json, degraded when any probe is unhealthy.
+
+    Args:
+        is_initialized: Whether .dovo/ exists and config.json was found.
+        git: Git repository status information.
+        config: Configuration status information.
+        catalog: Catalog status information.
+        database: Database status information.
+
+    Returns:
+        The workspace health classification.
+    """
+    if not is_initialized:
+        return WorkspaceHealth.UNINITIALIZED
+    healthy = git.is_git_repo and config.is_valid and database.is_accessible and catalog.invalid_items == 0
+    return WorkspaceHealth.OK if healthy else WorkspaceHealth.DEGRADED
+
+
 class Status:
     """Unified entrypoint for workspace status and runtime health collection."""
 
@@ -130,7 +158,7 @@ class Status:
         self.sessions_db = sessions_db
 
     def collect(self) -> DovoStatusResult:
-        """Reconcile stale sessions, then probe git, config, catalog, database and worktrees and derive warnings, remediations and initialization.
+        """Reconcile stale sessions, then probe git, config, catalog, database and worktrees and derive warnings, remediations, initialization and health.
 
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
@@ -162,6 +190,13 @@ class Status:
         is_initialized = paths.dovo_dir.is_dir() and config_status.error_code != ErrorCode.CONFIG_NOT_FOUND
 
         return DovoStatusResult(
+            status=_classify_health(
+                is_initialized=is_initialized,
+                git=git_status,
+                config=config_status,
+                catalog=catalog_status,
+                database=database_status,
+            ),
             root_dir=paths.root_dir,
             is_initialized=is_initialized,
             git=git_status,

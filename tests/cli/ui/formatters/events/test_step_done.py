@@ -8,6 +8,7 @@ import pytest
 
 from dovo.cli.ui.events import StepDoneEvent
 from dovo.cli.ui.formatters.events.step_done import StepDoneFormatter
+from dovo.common.error_codes import ErrorCode
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -36,6 +37,7 @@ STEP_FAILURE = FormatterCase.identity(
         exit_code=1,
         duration_seconds=0.8,
         error_message="Process crashed",
+        error_code=ErrorCode.STEP_COMMAND_FAILED,
     ),
     render_expectations=["step-2", "2", "3", "Process crashed"],
 )
@@ -56,6 +58,7 @@ STEP_DONE_PAYLOAD_CASES = [
             "exit_code": 0,
             "duration_seconds": 1.5,
             "error_message": None,
+            "error_code": None,
         },
         id="step_success",
     ),
@@ -69,6 +72,7 @@ STEP_DONE_PAYLOAD_CASES = [
             "exit_code": 1,
             "duration_seconds": 0.8,
             "error_message": "Process crashed",
+            "error_code": "STEP_COMMAND_FAILED",
         },
         id="step_failure",
     ),

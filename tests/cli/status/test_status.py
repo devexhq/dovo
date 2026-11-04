@@ -77,20 +77,24 @@ class StatusCliIntegrationTests:
         assert result.exit_code == 0
         event = json.loads(result.stdout)
         assert event["event_type"] == "DovoStatusResult"
-        assert event["payload"]["health"] == "ok"
+        assert event["payload"]["ok"] is True
+        assert event["payload"]["error_code"] is None
+        assert event["payload"]["status"] == "ok"
         assert event["payload"]["root_dir"] == str(status_workspace)
 
     def test_status_cli_json_broken_config_reports_config_error_code_and_exits_zero(
         self, cli_runner: CliRunner, status_workspace: Path
     ) -> None:
-        """Exit 0 with health degraded, config_error_code CONFIG_JSON_INVALID and no config_status key."""
+        """Exit 0 with ok true, status degraded, config_error_code CONFIG_JSON_INVALID and no config_status key."""
         (status_workspace / ".dovo" / "config.json").write_text("{not valid json", encoding="utf-8")
 
         result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", "json"])
 
         assert result.exit_code == 0
         payload = json.loads(result.stdout)["payload"]
-        assert payload["health"] == "degraded"
+        assert payload["ok"] is True
+        assert payload["error_code"] is None
+        assert payload["status"] == "degraded"
         assert payload["config_error_code"] == "CONFIG_JSON_INVALID"
         assert "config_status" not in payload
 
@@ -111,7 +115,7 @@ class StatusCliIntegrationTests:
         output_format: str,
         arrange: Callable[[Path], None],
     ) -> None:
-        """Exit 0 with no error_code whatever health status reports, read from the dispatched result since error_code is not in the payload."""
+        """Exit 0 with no error_code whatever health status reports, read from the dispatched result."""
         arrange(status_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", output_format])

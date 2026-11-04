@@ -51,19 +51,21 @@ from dovo.engine.executors.postconditions import build_postconditions
 
 
 def _failed_dispatch(
+    error_code: ErrorCode,
     error_message: str,
     *,
     exit_code: int = 1,
     stdout: str = "",
     stderr: str = "",
 ) -> StepDispatchOutcome:
-    """Build a failed StepDispatchOutcome with error message and status."""
+    """Build a failed StepDispatchOutcome with its error code, error message and status."""
     return StepDispatchOutcome(
         status="failed",
         exit_code=exit_code,
         stdout=stdout,
         stderr=stderr,
         error_message=error_message,
+        error_code=error_code,
     )
 
 
@@ -164,12 +166,15 @@ class StepExecution:
     def run(self) -> StepRecord:
         """Execute the step definition within worktree_path and return its StepRecord."""
         if not self.worktree_path.exists() or not self.worktree_path.is_dir():
-            outcome = _failed_dispatch(f"Worktree path '{self.worktree_path}' does not exist or is not a directory.")
+            outcome = _failed_dispatch(
+                ErrorCode.STEP_WORKTREE_MISSING,
+                f"Worktree path '{self.worktree_path}' does not exist or is not a directory.",
+            )
             return _step_result(self.redactor, self.step.id, outcome, 0.0)
 
-        error = self._prepare()
-        if error is not None:
-            return _step_result(self.redactor, self.step.id, _failed_dispatch(error), 0.0)
+        failure = self._prepare()
+        if failure is not None:
+            return _step_result(self.redactor, self.step.id, failure, 0.0)
 
         watch = Stopwatch.start()
         outcome = self._run_attempts()
@@ -192,11 +197,11 @@ class StepExecution:
             )
         return self._finalize_failure(outcome, duration, outputs=outputs, warnings=output_warnings)
 
-    def _prepare(self) -> str | None:
-        """Resolve shorthand aliases and compute retry budget, returning the step error when resolution fails."""
+    def _prepare(self) -> StepDispatchOutcome | None:
+        """Resolve shorthand aliases and compute retry budget, returning the failed outcome when resolution fails."""
         if self.step.uses is not None or self.step.run is not None:
             resolved = self._resolve_shorthand()
-            if isinstance(resolved, str):
+            if isinstance(resolved, StepDispatchOutcome):
                 return resolved
             self.step = resolved
         self._uninterpolated_step = self.step
@@ -207,8 +212,8 @@ class StepExecution:
             self.step_scratch_dir, self.output_file = resolve_step_temp_paths(self.session_tmp_dir, self.step.id)
         return None
 
-    def _resolve_shorthand(self) -> StepDefinition | str:
-        """Resolve a uses/run step, catching a uses step's resolution once, or return its failure message and add its record to the diagnostics list."""
+    def _resolve_shorthand(self) -> StepDefinition | StepDispatchOutcome:
+        """Resolve a uses/run step, catching a uses step's resolution once, or return a failed outcome with its code and message and add its record to the diagnostics list."""
         if self.step.uses is None:
             return resolve_step_definition(self.step, paths=self.paths)
         with catch_failure("engine.step", step=self.step.uses) as caught:
@@ -216,12 +221,12 @@ class StepExecution:
         if caught.failure is None:
             return resolved
         self._diagnostics.extend(error_diagnostics(caught.failure.diagnostic))
-        return caught.failure.message
+        return _failed_dispatch(caught.failure.error_code, caught.failure.message)
 
     def _run_attempts(self) -> StepDispatchOutcome:
         """Run attempts up to max_attempts times, sleeping backoff_ms between failures."""
         backoff_ms = self._uninterpolated_step.on_failure.backoff_ms
-        outcome = _failed_dispatch("Step did not run.")
+        outcome = _failed_dispatch(ErrorCode.INTERNAL_ERROR, "Step did not run.")
         for attempt_offset in range(self.max_attempts):
             outcome = self._run_attempt(self.initial_attempt + attempt_offset)
             if outcome.status == "completed":
@@ -256,7 +261,7 @@ class StepExecution:
         except EngineError as error:
             if error.error_code is not ErrorCode.ARTIFACT_CONTENT_UNAVAILABLE:
                 raise
-            return _failed_dispatch(error.message).model_copy(update={"attempts": attempt})
+            return _failed_dispatch(error.error_code, error.message).model_copy(update={"attempts": attempt})
 
         self._reset_step_output_file()
         outcome = self._dispatch_primitive(metadata).model_copy(update={"attempts": attempt})
@@ -289,17 +294,19 @@ class StepExecution:
             return self._execute_agent(metadata)
         if self.step.type == StepType.INTERNAL:
             return self._execute_internal(metadata)
-        return _failed_dispatch(f"Unsupported step primitive type '{self.step.type}'.")
+        return _failed_dispatch(
+            ErrorCode.STEP_DEFINITION_INVALID, f"Unsupported step primitive type '{self.step.type}'."
+        )
 
     def _execute_internal(self, metadata: ExecutionMetadata) -> StepDispatchOutcome:
         """Dispatch the internal command in-process with step id, attempt and loop iteration in its context."""
         command = self.step.command
         if not command:
-            return _failed_dispatch("Internal step has no command string defined.")
+            return _failed_dispatch(ErrorCode.STEP_DEFINITION_INVALID, "Internal step has no command string defined.")
 
         handler = INTERNAL_COMMAND_HANDLERS.get(command)
         if handler is None:
-            return _failed_dispatch(f"Unknown internal command '{command}'.")
+            return _failed_dispatch(ErrorCode.STEP_DEFINITION_INVALID, f"Unknown internal command '{command}'.")
 
         context = InternalCommandContext(
             worktree_path=self.worktree_path,
@@ -313,12 +320,12 @@ class StepExecution:
             return handler(context)
         except Exception as exc:
             self._record_failure(exc)
-            return _failed_dispatch(f"Internal command '{command}' error: {exc}")
+            return _failed_dispatch(ErrorCode.INTERNAL_ERROR, f"Internal command '{command}' error: {exc}")
 
     def _execute_command(self, metadata: ExecutionMetadata) -> StepDispatchOutcome:
         """Execute a COMMAND step inside worktree_path."""
         if not self.step.command:
-            return _failed_dispatch("Command step has no command string defined.")
+            return _failed_dispatch(ErrorCode.STEP_DEFINITION_INVALID, "Command step has no command string defined.")
         return self._run_process(
             self.step.command,
             shell=True,
@@ -331,11 +338,13 @@ class StepExecution:
     def _execute_script(self, metadata: ExecutionMetadata) -> StepDispatchOutcome:
         """Execute a SCRIPT step inside worktree_path."""
         if not self.step.script_path:
-            return _failed_dispatch("Script step has no script_path defined.")
+            return _failed_dispatch(ErrorCode.STEP_DEFINITION_INVALID, "Script step has no script_path defined.")
 
         script_file = self.worktree_path / self.step.script_path
         if not script_file.exists() or not script_file.is_file():
-            return _failed_dispatch(f"Script file not found at '{self.step.script_path}'.")
+            return _failed_dispatch(
+                ErrorCode.STEP_SCRIPT_NOT_FOUND, f"Script file not found at '{self.step.script_path}'."
+            )
 
         cmd, shell = _resolve_script_invocation(script_file)
         return self._run_process(
@@ -563,7 +572,7 @@ class StepExecution:
             self._close_log_file(stdout_log)
             self._close_log_file(stderr_log)
             self._record_failure(exc)
-            return _failed_dispatch(f"{failure_label} execution error: {exc}")
+            return _failed_dispatch(ErrorCode.STEP_LAUNCH_FAILED, f"{failure_label} execution error: {exc}")
 
         pgid = proc.pid
         process_registry.register(proc, pgid=pgid)
@@ -615,6 +624,7 @@ class StepExecution:
         if pipe_errors:
             error_details = "; ".join(pipe_errors)
             return _failed_dispatch(
+                ErrorCode.STEP_OUTPUT_READ_FAILED,
                 f"{failure_label} pipe error: {error_details}",
                 exit_code=exit_code if exit_code != 0 else 1,
                 stdout=stdout,
@@ -623,6 +633,7 @@ class StepExecution:
 
         if timed_out:
             return _failed_dispatch(
+                ErrorCode.STEP_TIMEOUT,
                 f"{step_kind} step execution timed out after {timeout_seconds} seconds.",
                 exit_code=124,
                 stdout=stdout,
@@ -632,6 +643,7 @@ class StepExecution:
         if exit_code == 0:
             return StepDispatchOutcome(status="completed", exit_code=0, stdout=stdout, stderr=stderr)
         return _failed_dispatch(
+            ErrorCode.STEP_COMMAND_FAILED,
             f"{failure_label} failed with exit code {exit_code}.",
             exit_code=exit_code,
             stdout=stdout,

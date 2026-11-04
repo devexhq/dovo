@@ -69,6 +69,7 @@ class StepDoneEvent(BaseModel):
     exit_code: int
     duration_seconds: float | None = None
     error_message: str | None = None
+    error_code: ErrorCode | None = None
 
 
 class StepSkippedEvent(BaseModel):

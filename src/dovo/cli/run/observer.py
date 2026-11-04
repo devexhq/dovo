@@ -141,6 +141,7 @@ class DispatcherRunObserver(RunObserver):
                 exit_code=result.exit_code,
                 duration_seconds=result.duration_seconds,
                 error_message=result.error_message,
+                error_code=result.error_code,
             )
         )
 

@@ -204,10 +204,11 @@ class StepExecutionArtifactReferencesTests:
 
         result = _run(step, worktree_path, engine_paths, artifacts_repository)
 
-        assert (result.status, result.exit_code, result.error_message) == (
+        assert (result.status, result.exit_code, result.error_message, result.error_code) == (
             "failed",
             1,
             "Artifact 'plan' cannot be inlined: artifact has 2 files, content needs exactly one",
+            ErrorCode.ARTIFACT_CONTENT_UNAVAILABLE,
         )
         assert not (worktree_path / "ran.marker").exists()
 

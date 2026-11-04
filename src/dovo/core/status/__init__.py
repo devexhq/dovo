@@ -6,6 +6,7 @@ from dovo.core.status.models import (
     DatabaseStatusInfo,
     DovoStatusResult,
     GitStatusInfo,
+    WorkspaceHealth,
     WorktreeStatusInfo,
 )
 from dovo.core.status.status import Status
@@ -17,5 +18,6 @@ __all__ = [
     "DovoStatusResult",
     "GitStatusInfo",
     "Status",
+    "WorkspaceHealth",
     "WorktreeStatusInfo",
 ]
