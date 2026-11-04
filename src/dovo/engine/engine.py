@@ -306,7 +306,7 @@ class Engine:
         result = blueprint.resolve_inputs(request.cli_args, overrides=request.inputs)
         if not result.ok:
             raise EngineError(
-                ErrorCode.BLUEPRINT_INPUT_INVALID,
+                ErrorCode(result.error_code),
                 format_input_error_message(name=blueprint.key, result=result, declarations=blueprint.inputs),
             )
         return result

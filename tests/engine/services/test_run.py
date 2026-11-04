@@ -385,6 +385,26 @@ class BlueprintRunServiceLoadTests:
         assert not frozen_diagnostic_clock.parent.parent.exists()
         assert sessions_repo.list() == []
 
+    def test_execute_malformed_input_returns_blueprint_input_invalid(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
+
+        result = BlueprintRunService(
+            name="lint",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            no_worktree=True,
+            cli_args=["-i", "malformed"],
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        ).execute()
+
+        assert result.error_code == ErrorCode.BLUEPRINT_INPUT_INVALID
+        assert result.errors[0].startswith("Invalid input syntax 'malformed'.")
+        assert sessions_repo.list() == []
+
     def test_execute_reconciliation_warning_is_carried_onto_the_result(
         self,
         engine_paths: WorkspacePaths,
@@ -519,7 +539,7 @@ class BlueprintRunServiceCatchTests:
 
 
 class BlueprintRunServiceEnvTests:
-    def test_invalid_passthrough_returns_fail_result_without_constructing_the_engine(
+    def test_invalid_passthrough_returns_env_override_invalid_without_constructing_the_engine(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         constructed: list[object] = []
@@ -537,10 +557,11 @@ class BlueprintRunServiceEnvTests:
         ).execute()
 
         assert not result.ok
-        assert result.errors[0] == (
+        assert result.error_code == ErrorCode.AGENT_ENV_OVERRIDE_INVALID
+        assert result.errors == [
             "Invalid --env-passthrough value 'A*B': use a variable name or a prefix ending in a single '*'. "
             "Fix: for example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'."
-        )
+        ]
         assert constructed == []
         assert sessions_repo.list() == []
 

@@ -7,12 +7,7 @@ import json
 from dovo.common.error_codes import ErrorCode
 from dovo.common.redact import SecretRedactor
 from dovo.core.inputs import build_providers, interpolate_string
-from dovo.core.interaction import (
-    Interaction,
-    InteractionAnswer,
-    InteractionRequest,
-    InteractionResolveStatus,
-)
+from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
 from dovo.engine.executors.artifact_namespace import ArtifactNamespaceProvider
 from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.executors.metadata import build_execution_metadata
@@ -53,7 +48,7 @@ def resolve_ask_request(context: StepExecutionContext) -> AskResolution:
     if not resolved.ok or resolved.request is None:
         return _failed_resolution(step.id, resolved.errors[0])
 
-    if resolved.status is InteractionResolveStatus.NO_OPTIONS:
+    if resolved.request.mode == "multiselect" and not resolved.request.options:
         notice = f"No options to choose from for '{step.id}'; continuing with an empty selection."
         completed = complete_ask_step(context, resolved.request, InteractionAnswer())
         return AskResolution(result=completed.model_copy(update={"warnings": [notice]}))

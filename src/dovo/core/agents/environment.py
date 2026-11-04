@@ -9,8 +9,10 @@ from collections.abc import Mapping, Sequence
 from typing import Final, Protocol
 from urllib.parse import urlsplit
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.redact import suffix_secrets
 from dovo.core.agents.credentials import resolve_credential_entry
+from dovo.core.agents.exceptions import AgentError
 from dovo.core.agents.models import ENV_PASSTHROUGH_PATTERN, AgentRequest
 
 BASE_ENV_NAMES: Final[tuple[str, ...]] = ("PATH", "HOME", "USER", "LANG", "LC_ALL", "TMPDIR", "TERM")
@@ -172,16 +174,19 @@ def forwarded_env_secrets(request: AgentRequest) -> list[tuple[str, str]]:
     return secrets
 
 
-def env_passthrough_flag_error(entries: Sequence[str]) -> str | None:
-    """Return the fixed invalid --env-passthrough message for the first invalid entry, else None."""
+def check_env_passthrough_flag(entries: Sequence[str]) -> None:
+    """Check each --env-passthrough entry is a variable name or a prefix ending in a single '*'.
+
+    Raises:
+        AgentError: AGENT_ENV_OVERRIDE_INVALID with the fixed message for the first invalid entry.
+    """
     for entry in entries:
         if re.fullmatch(ENV_PASSTHROUGH_PATTERN, entry) is None:
-            return (
+            raise AgentError(
+                ErrorCode.AGENT_ENV_OVERRIDE_INVALID,
                 f"Invalid --env-passthrough value '{entry}': use a variable name or a prefix ending in a single '*'. "
-                "Fix: for example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'."
+                "Fix: for example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'.",
             )
-
-    return None
 
 
 def _url_password(value: str) -> str | None:

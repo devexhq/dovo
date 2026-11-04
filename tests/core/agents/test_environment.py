@@ -8,15 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.agents import AgentEnvMode, AgentInvocationContext, ProviderSpec
+from dovo.common.error_codes import ErrorCode
+from dovo.core.agents import AgentEnvMode, AgentError, AgentInvocationContext, ProviderSpec
 from dovo.core.agents.copilot import COPILOT_PROVIDER_SPEC
 from dovo.core.agents.environment import (
     NETWORK_TLS_ENV_NAMES,
     WITHHELD_REPORT_LIMIT,
     build_agent_env,
     build_probe_env,
+    check_env_passthrough_flag,
     env_filtered_prompt_line,
-    env_passthrough_flag_error,
     format_withheld_report,
     forwarded_env_secrets,
     validate_agent_env_request,
@@ -387,12 +388,12 @@ class ValidateAgentEnvRequestTests:
         )
 
 
-class EnvPassthroughFlagErrorTests:
+class CheckEnvPassthroughFlagTests:
     @pytest.mark.parametrize(
         "entry", [pytest.param("DOCKER_HOST", id="literal"), pytest.param("DOCKER_*", id="prefix")]
     )
-    def test_valid_entry_returns_none(self, entry: str) -> None:
-        assert env_passthrough_flag_error([entry]) is None
+    def test_valid_entry_passes(self, entry: str) -> None:
+        check_env_passthrough_flag([entry])
 
     @pytest.mark.parametrize(
         "entry",
@@ -404,8 +405,12 @@ class EnvPassthroughFlagErrorTests:
             pytest.param("A\x00B", id="nul"),
         ],
     )
-    def test_invalid_entry_returns_the_fixed_message(self, entry: str) -> None:
-        assert env_passthrough_flag_error(["OK", entry]) == (
+    def test_invalid_entry_raises_env_override_invalid_with_the_fixed_message(self, entry: str) -> None:
+        with pytest.raises(AgentError) as raised:
+            check_env_passthrough_flag(["OK", entry])
+
+        assert raised.value.error_code is ErrorCode.AGENT_ENV_OVERRIDE_INVALID
+        assert raised.value.message == (
             f"Invalid --env-passthrough value '{entry}': use a variable name or a prefix ending in a single '*'. "
             "Fix: for example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'."
         )

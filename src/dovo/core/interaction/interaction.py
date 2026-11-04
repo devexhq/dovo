@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 
 from dovo.common.redact import SecretRedactor
 from dovo.core.artifacts.store import ArtifactStore
@@ -57,10 +58,13 @@ class Interaction:
 
     @staticmethod
     def parse_arguments(
-        answer: str | None, comment: str | None, answers_file_text: str | None
+        answer: str | None, comment: str | None, comment_file: Path | None, answers_file: Path | None
     ) -> HeadlessArgumentsResult:
-        """Combine the resume answer flags into one headless input, or report a conflict or malformed value."""
-        return parse_answer_arguments(answer, comment, answers_file_text)
+        """Read the comment and answers files and combine the resume answer flags into one headless input.
+
+        A conflict, a malformed value or an unreadable or invalid file is reported as INTERACTION_ARGUMENTS_INVALID.
+        """
+        return parse_answer_arguments(answer, comment, comment_file, answers_file)
 
     @staticmethod
     def request_errors(request: InteractionRequest) -> list[str]:

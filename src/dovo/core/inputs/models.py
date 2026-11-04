@@ -70,8 +70,8 @@ class InputResolveResult(BaseResult):
 
     @property
     def ok(self) -> bool:
-        """Return True when all required inputs resolved without parse errors."""
-        return not self.errors and not self.missing
+        """Return True when no error code was reported."""
+        return self.error_code is None
 
 
 @dataclass(frozen=True, slots=True)

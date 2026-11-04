@@ -25,7 +25,7 @@ from dovo.engine.models import (
     RunRequest,
 )
 from dovo.engine.notify import safe_notify
-from dovo.engine.services._shared import fail, failed_result, finalize, resolve_env_overrides
+from dovo.engine.services._shared import caught_result, failed_result, finalize, resolve_env_overrides
 
 
 @dataclass
@@ -64,10 +64,6 @@ class BlueprintRunService:
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
         """
-        env_overrides, env_error = resolve_env_overrides(self.env_mode, self.env_passthrough)
-        if env_error is not None:
-            return fail(self.warnings, self.diagnostics, env_error)
-
         reconciliation = reconcile_stale_sessions(self.sessions_db, path=self.paths.root_dir)
         if reconciliation.warning:
             self.warnings.append(reconciliation.warning)
@@ -76,6 +72,7 @@ class BlueprintRunService:
         catalog = Catalog(self.paths)
         blueprint: Blueprint | None = None
         with catch_failure("engine.run", blueprint=self.name) as caught:
+            env_overrides = resolve_env_overrides(self.env_mode, self.env_passthrough)
             blueprint = Blueprint.load(self.name, catalog=catalog)
             safe_notify(self.observer, "on_validation_warnings", blueprint.warnings)
             run_outcome = self._run(catalog, blueprint, env_overrides)
@@ -84,11 +81,7 @@ class BlueprintRunService:
                 caught.failure, self.warnings, self.diagnostics, blueprint_name=self.name, observer=self.observer
             )
         if caught.failure is not None:
-            return BlueprintRunResult(
-                session_record=None,
-                warnings=self.warnings,
-                **caught.failure.result_fields(prior_diagnostics=self.diagnostics),
-            )
+            return caught_result(caught.failure, self.warnings, self.diagnostics)
 
         return finalize(self.sessions_db, self.warnings, self.diagnostics, run_outcome, run_outcome.session_id or "")
 

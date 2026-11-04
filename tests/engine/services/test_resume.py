@@ -259,7 +259,7 @@ class BlueprintResumeServiceExecuteTests:
         assert result.session_record is not None
         assert result.session_record.session_id == latest.session_id
 
-    def test_execute_without_session_and_no_paused_run_returns_failed_result(
+    def test_execute_without_session_and_no_paused_run_returns_session_not_found(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         result = BlueprintResumeService(
@@ -268,7 +268,7 @@ class BlueprintResumeServiceExecuteTests:
 
         assert not result.ok
         assert result.session_record is None
-        assert result.error_code is None
+        assert result.error_code == ErrorCode.SESSION_NOT_FOUND
         assert result.errors == ["No paused session found to resume."]
 
     def test_execute_unknown_session_returns_session_not_found(
@@ -463,7 +463,7 @@ class BlueprintResumeServiceCatchTests:
 
 
 class BlueprintResumeServiceEnvTests:
-    def test_invalid_passthrough_returns_fail_result_without_resuming(
+    def test_invalid_passthrough_returns_env_override_invalid_without_resuming(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         resumed: list[object] = []
@@ -481,10 +481,11 @@ class BlueprintResumeServiceEnvTests:
         ).execute()
 
         assert not result.ok
-        assert result.errors[0] == (
+        assert result.error_code == ErrorCode.AGENT_ENV_OVERRIDE_INVALID
+        assert result.errors == [
             "Invalid --env-passthrough value '*': use a variable name or a prefix ending in a single '*'. "
             "Fix: for example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'."
-        )
+        ]
         assert resumed == []
         paused = sessions_repo.get("paused-1")
         assert paused is not None
@@ -583,6 +584,7 @@ class BlueprintResumeAnswerTests:
             new_id=fixed_new_id,
         ).execute()
 
+        assert result.error_code == ErrorCode.INTERACTION_ANSWER_INVALID
         assert result.errors == [
             "'maybe' is not a valid answer for prompt 'approve'.\nFix: use one of: approve, revise, deny"
         ]
@@ -606,6 +608,7 @@ class BlueprintResumeAnswerTests:
             new_id=fixed_new_id,
         ).execute()
 
+        assert result.error_code == ErrorCode.SESSION_PROMPT_NOT_PENDING
         assert result.errors == ["No prompt is pending for session 'paused-1'."]
         row = sessions_repo.get("paused-1")
         assert row is not None

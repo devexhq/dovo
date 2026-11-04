@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.exceptions import Failure
-from dovo.core.agents.environment import env_passthrough_flag_error
+from dovo.core.agents.environment import check_env_passthrough_flag
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.catalog.exceptions import CatalogValidateFindings
 from dovo.core.db import SessionRecord, SessionsRepository
@@ -12,13 +12,10 @@ from dovo.engine.models import BlueprintRunResult, RunObserver, RunOutcome
 from dovo.engine.notify import safe_notify
 
 
-def fail(warnings: list[str], diagnostics: list[DiagnosticRecord], message: str) -> BlueprintRunResult:
-    """Construct a failed BlueprintRunResult carrying the caller's accumulated warnings and diagnostics."""
+def caught_result(failure: Failure, warnings: list[str], diagnostics: list[DiagnosticRecord]) -> BlueprintRunResult:
+    """Build the failed result for a failure caught before any session ran, after the caller's warnings and records."""
     return BlueprintRunResult(
-        session_record=None,
-        errors=[message],
-        warnings=warnings,
-        diagnostics=diagnostics,
+        session_record=None, warnings=warnings, **failure.result_fields(prior_diagnostics=diagnostics)
     )
 
 
@@ -90,15 +87,14 @@ def finalize(
     )
 
 
-def resolve_env_overrides(
-    env_mode: AgentEnvMode | None, env_passthrough: list[str]
-) -> tuple[AgentEnvOverrides | None, str | None]:
-    """Validate the --env-passthrough entries and build the per-invocation overrides, or return the fixed invalid-value message."""
-    message = env_passthrough_flag_error(env_passthrough)
-    if message is not None:
-        return None, message
+def resolve_env_overrides(env_mode: AgentEnvMode | None, env_passthrough: list[str]) -> AgentEnvOverrides | None:
+    """Validate the --env-passthrough entries and build the per-invocation overrides, or None when no flag is set.
 
+    Raises:
+        AgentError: AGENT_ENV_OVERRIDE_INVALID for an invalid --env-passthrough entry.
+    """
+    check_env_passthrough_flag(env_passthrough)
     if env_mode is None and not env_passthrough:
-        return None, None
+        return None
 
-    return AgentEnvOverrides(env_mode=env_mode, env_passthrough=env_passthrough), None
+    return AgentEnvOverrides(env_mode=env_mode, env_passthrough=env_passthrough)

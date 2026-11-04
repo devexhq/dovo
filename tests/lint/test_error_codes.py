@@ -45,9 +45,10 @@ OWNERS: Final[dict[str, frozenset[str]]] = {
     "PROJECT": frozenset({"core/project"}),
     "ARTIFACT": frozenset({"core/artifacts"}),
     "SESSION": frozenset({"engine", "core/sessions"}),
-    "BLUEPRINT": frozenset({"engine"}),
+    "BLUEPRINT": frozenset({"core/inputs"}),
     "RUN": frozenset({"engine"}),
-    "INTERACTION": frozenset({"engine"}),
+    "INTERACTION": frozenset({"core/interaction"}),
+    "ASK": frozenset({"core/interaction"}),
     "DOCTOR": frozenset({"core/diagnostics"}),
 }
 

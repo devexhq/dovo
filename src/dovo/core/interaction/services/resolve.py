@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.redact import SecretRedactor
 from dovo.core.artifacts.models import ArtifactManifest
 from dovo.core.artifacts.store import ArtifactStore
@@ -15,7 +16,6 @@ from dovo.core.interaction.models import (
     PREVIEW_MAX_LINES,
     InteractionRequest,
     InteractionResolveResult,
-    InteractionResolveStatus,
     RequestArtifact,
     RequestComment,
     RequestOption,
@@ -41,8 +41,7 @@ def resolve_request(
         located = _locate_artifact(store, spec.artifact)
         if located is None:
             return _failed(
-                InteractionResolveStatus.ARTIFACT_NOT_FOUND,
-                "ASK_ARTIFACT_NOT_FOUND",
+                ErrorCode.ASK_ARTIFACT_NOT_FOUND,
                 f"Artifact '{spec.artifact}' was not found.",
             )
         artifact = RequestArtifact(
@@ -72,21 +71,18 @@ def resolve_request(
 
 
 def _classify(request: InteractionRequest, spec: InteractionSpec) -> InteractionResolveResult:
-    """Return OK, NO_OPTIONS for an empty multiselect source, or OPTIONS_EMPTY for a short select source."""
-    if spec.options_from is not None and not request.options and request.mode == "multiselect":
-        return InteractionResolveResult(status=InteractionResolveStatus.NO_OPTIONS, request=request)
+    """Return the request, or ASK_OPTIONS_EMPTY when an options_from select source yields fewer than 2 options."""
     if spec.options_from is not None and request.mode == "select" and len(request.options) < 2:
         return _failed(
-            InteractionResolveStatus.OPTIONS_EMPTY,
-            "ASK_OPTIONS_EMPTY",
+            ErrorCode.ASK_OPTIONS_EMPTY,
             f"Prompt '{request.step_id}' needs at least 2 options but options_from produced {len(request.options)}.",
         )
-    return InteractionResolveResult(status=InteractionResolveStatus.OK, request=request)
+    return InteractionResolveResult(request=request)
 
 
-def _failed(status: InteractionResolveStatus, code: str, message: str) -> InteractionResolveResult:
+def _failed(code: ErrorCode, message: str) -> InteractionResolveResult:
     """Return a failed resolve result carrying the ASK_* code."""
-    return InteractionResolveResult(status=status, errors=[message], error_code=code)
+    return InteractionResolveResult(error_code=code, errors=[message])
 
 
 def _locate_artifact(store: ArtifactStore | None, name: str) -> _LocatedArtifact | None:
@@ -154,16 +150,14 @@ def _options_from_artifact(
     located = _locate_artifact(store, options_from.artifact)
     if located is None:
         return [], _failed(
-            InteractionResolveStatus.OPTIONS_ARTIFACT_NOT_FOUND,
-            "ASK_OPTIONS_ARTIFACT_NOT_FOUND",
+            ErrorCode.ASK_OPTIONS_ARTIFACT_NOT_FOUND,
             f"Artifact '{options_from.artifact}' for options_from was not found.",
         )
 
     items_or_reason = _load_items(options_from, located)
     if isinstance(items_or_reason, str):
         return [], _failed(
-            InteractionResolveStatus.OPTIONS_INVALID,
-            "ASK_OPTIONS_INVALID",
+            ErrorCode.ASK_OPTIONS_INVALID,
             f"Cannot read options from '{options_from.file}' in artifact '{options_from.artifact}': {items_or_reason}.",
         )
 
@@ -172,8 +166,7 @@ def _options_from_artifact(
     for option in options:
         if option.value in seen:
             return [], _failed(
-                InteractionResolveStatus.OPTIONS_DUPLICATE,
-                "ASK_OPTIONS_DUPLICATE",
+                ErrorCode.ASK_OPTIONS_CONFLICT,
                 f"Option value '{option.value}' appears more than once.",
             )
         seen.add(option.value)
