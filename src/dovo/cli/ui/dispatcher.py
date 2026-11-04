@@ -25,6 +25,12 @@ T = TypeVar("T")
 F = TypeVar("F", bound=ComponentFormatter[Any] | type[ComponentFormatter[Any]])
 
 
+def _event_type(data_type: type[object]) -> str:
+    """Return the name an event is written under: its declared `event_type` class attribute, else its class name."""
+    declared = getattr(data_type, "event_type", None)
+    return declared if isinstance(declared, str) else data_type.__name__
+
+
 class UiDispatcher:
     """Central UI dispatcher routing domain data to appropriate formatters."""
 
@@ -135,7 +141,7 @@ class UiDispatcher:
 
         if effective_format == OutputFormatOptions.JSON:
             envelope = {
-                "event_type": data_type.__name__,
+                "event_type": _event_type(data_type),
                 "payload": formatter.to_json_serializable(data),
             }
             sys.stdout.write(json.dumps(envelope) + "\n")

@@ -71,7 +71,15 @@ The global-home refusal applies to a directory whose `.dovo` is `DOVO_HOME` (by 
 
 When `dovo init` fails with an unexpected error in any of its steps (setting up the `.dovo/` directory, the project identity, the database, the configuration or the starter blueprints), or the operating system refuses (for example, with a permission error) to create a `.dovo/` directory, write its bootstrap metadata, read or write `.dovo/project.json`, write `.dovo/config.json` or write a seeded catalog file, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record. The error message is unchanged, a `Details logged: <path> (event <event_id>)` line naming that file follows it, and `--format json` lists the record in `diagnostics`; if the record cannot be written, there is no line and `diagnostics` is empty. These failures exit with code `1`. An unexpected error reports `error_code` `INTERNAL_ERROR`; an operating-system error reports the `error_code` of the step that failed.
 
-If another `dovo` process holds the workspace lock and the wait times out, `dovo init` prints a Workspace Lock Timeout panel and exits with code `1`, with or without `--format json`; no JSON event is printed. Wait for the other process to finish, then rerun `dovo init`.
+If another `dovo` process holds the workspace lock and the wait times out, `dovo init` prints a Workspace Lock Timeout panel, or with `--format json` an `error` event with `error_code` `WORKSPACE_LOCK_TIMEOUT` (see [JSON Output](../reference/json-output.md#the-error-event)), and exits with code `1`. Wait for the other process to finish, then rerun `dovo init`.
+
+## Exit codes
+
+- `0`: the workspace is initialized, including a rerun that finds it already initialized.
+- `2`: an invalid `--id` (`PROJECT_ID_INVALID`), or a usage error such as an unknown option.
+- `1`: every other failure, including a workspace lock timeout and an unexpected error.
+
+See [JSON Output](../reference/json-output.md#exit-codes) for the rule every command follows.
 
 ## Examples
 

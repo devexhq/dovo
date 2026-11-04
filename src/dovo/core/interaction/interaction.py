@@ -62,7 +62,8 @@ class Interaction:
     ) -> HeadlessArgumentsResult:
         """Read the comment and answers files and combine the resume answer flags into one headless input.
 
-        A conflict, a malformed value or an unreadable or invalid file is reported as INTERACTION_ARGUMENTS_INVALID.
+        A conflict, a malformed value or an invalid answers file is reported as INTERACTION_ARGUMENTS_INVALID, and a file
+        that cannot be read as INTERACTION_ARGUMENT_FILE_UNREADABLE.
         """
         return parse_answer_arguments(answer, comment, comment_file, answers_file)
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.exceptions import DomainError, FailureData
 
 
@@ -25,10 +24,3 @@ class ConfigRawObject(FailureData):
     """The parsed JSON object of a config.json that failed schema validation."""
 
     raw: dict[str, object]
-
-
-@dataclass(frozen=True, slots=True)
-class ConfigLoadDiagnostics(FailureData):
-    """The diagnostic records the failed config load wrote, carried to the caller that reports it."""
-
-    records: tuple[DiagnosticRecord, ...]

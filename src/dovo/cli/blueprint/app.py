@@ -8,6 +8,7 @@ import typer
 
 from dovo.cli.context import CliContext
 from dovo.cli.options import FormatOption
+from dovo.cli.outcome import exit_for
 from dovo.common.models import OutputFormatOptions
 
 from .commands.blueprint_create import blueprint_create_command
@@ -31,8 +32,7 @@ def blueprint_list(
     """List blueprint catalog items across all tiers."""
     context: CliContext = ctx.obj["context"]
     result = blueprint_list_command(context, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @blueprint_app.command("show")
@@ -44,8 +44,7 @@ def blueprint_show(
     """Show metadata and definition content of a blueprint."""
     context: CliContext = ctx.obj["context"]
     result = blueprint_show_command(context, name, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @blueprint_app.command("create")
@@ -63,8 +62,7 @@ def blueprint_create(
     """Create a new blueprint at the REPO tier by default, or at USER/GLOBAL tier with --user/--global."""
     context: CliContext = ctx.obj["context"]
     result = blueprint_create_command(context, name, user=user, global_=global_, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @blueprint_app.command("delete")
@@ -81,8 +79,7 @@ def blueprint_delete(
     """Delete a repo-tier blueprint file and reindex."""
     context: CliContext = ctx.obj["context"]
     result = blueprint_delete_command(context, name, force=force, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @blueprint_app.command("validate")
@@ -94,5 +91,4 @@ def blueprint_validate(
     """Validate a blueprint definition without executing it."""
     context: CliContext = ctx.obj["context"]
     result = blueprint_validate_command(context, target, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)

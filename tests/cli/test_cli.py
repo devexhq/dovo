@@ -7,7 +7,7 @@ import signal
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import click
 import pytest
@@ -18,14 +18,11 @@ from typer.testing import CliRunner
 import dovo.cli.cli as cli_module
 from dovo.cli import app
 from dovo.cli.context import CliContext
-from dovo.cli.ui import ErrorPanelEvent
+from dovo.cli.ui import ErrorEvent
 from dovo.common.clock import utc_now
-from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
-from dovo.common.lock import LockTimeoutError, WorkspaceLock
-from dovo.common.models import Remediation
+from dovo.common.lock import WorkspaceLock
 from dovo.common.session_id import new_session_id
-from dovo.core.config import ConfigError, ConfigLoadDiagnostics
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.loader import ConfigLoadResult
 from dovo.core.config.models import DovoConfig
@@ -34,13 +31,10 @@ from dovo.core.config.validate import ConfigValidationResult
 from dovo.core.diagnostics.models import DiagnosticsReport
 from dovo.core.git.runner import GitRunner
 from dovo.core.status.models import DovoStatusResult
-from tests.harness.builders import WorkspaceBuilder
-from tests.harness.diagnostic_log import FROZEN_EVENT_ID, diagnostic_hint, read_single_event
+from tests.harness.builders import WorkspaceBuilder, init_git_repository
+from tests.harness.diagnostic_log import FROZEN_EVENT_ID, read_single_event
 from tests.harness.lock import raise_lock_timeout
-
-_CONFIG_ERROR = ConfigError(
-    ErrorCode.CONFIG_NOT_FOUND, "Failed to load config at '/r': missing", [Remediation(message="Run 'dovo init'")]
-)
+from tests.harness.run_result import json_events
 
 
 class CliSmokeTests:
@@ -153,8 +147,230 @@ class CliNonStrictConfigCommandsCliIntegrationTests:
         assert all(set(type(context.paths).model_fields) == expected_fields for context in captured)
 
 
-class RunCliCrashProtectionTests:
-    """Direct tests for run_cli()'s top-level exception-to-panel mapping."""
+_INIT_REMEDIATION = {"message": "Run 'dovo init' to initialize the workspace.", "command": "dovo init"}
+_LOCK_REMEDIATION = {
+    "message": "Wait for the other dovo process to release the workspace lock, then retry.",
+    "command": None,
+}
+
+
+def _uninitialized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Return argv for a strict command in a git repository with no project identity."""
+    repository = WorkspaceBuilder(tmp_path / "workspace").without_identity().build()
+    return ["-p", str(repository), "worktree", "list"]
+
+
+def _invalid_identity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Return argv for a command in a workspace whose .dovo/project.json is not JSON."""
+    workspace = WorkspaceBuilder(tmp_path / "workspace").build()
+    (workspace / ".dovo" / "project.json").write_text("not json", encoding="utf-8")
+    return ["-p", str(workspace), "status"]
+
+
+def _broken_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Return argv for a strict command in a workspace whose config.json is not JSON."""
+    workspace = WorkspaceBuilder(tmp_path / "workspace").build()
+    (workspace / ".dovo" / "config.json").write_text("{broken", encoding="utf-8")
+    return ["-p", str(workspace), "worktree", "list"]
+
+
+def _lock_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Return argv for `init` while another process holds the workspace lock."""
+    repository = tmp_path / "repository"
+    init_git_repository(repository)
+    monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+    return ["-p", str(repository), "init"]
+
+
+def _unexpected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Return argv for a command whose context build raises an unexpected exception."""
+
+    def _raise(cls: type[CliContext], **kwargs: object) -> CliContext:
+        raise RuntimeError("missing record.id")
+
+    monkeypatch.setattr(CliContext, "build", classmethod(_raise))
+    return ["-p", str(tmp_path), "worktree", "list"]
+
+
+_FAILURES: dict[str, tuple[Callable[[Path, pytest.MonkeyPatch], list[str]], str, str]] = {
+    "uninitialized": (_uninitialized, "WORKSPACE_NOT_INITIALIZED", "Workspace Not Initialized"),
+    "invalid_identity": (_invalid_identity, "WORKSPACE_NOT_INITIALIZED", "Workspace Not Initialized"),
+    "broken_config": (_broken_config, "CONFIG_JSON_INVALID", "Invalid Configuration"),
+    "lock_timeout": (_lock_timeout, "WORKSPACE_LOCK_TIMEOUT", "Workspace Lock Timeout"),
+    "unexpected": (_unexpected, "INTERNAL_ERROR", "Fatal Error"),
+}
+
+
+class TopLevelFailureCliTests:
+    """A failure no command result carries is reported once, as a panel or the JSON `error` event, and exits 1."""
+
+    @pytest.mark.parametrize("spelling", [["--format", "json"], ["--format=json"]], ids=["separate", "joined"])
+    @pytest.mark.parametrize("failure", list(_FAILURES))
+    def test_failure_outside_a_result_reports_one_error_event(
+        self,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+        failure: str,
+        spelling: list[str],
+    ) -> None:
+        build_argv, error_code = _FAILURES[failure][:2]
+
+        result = cli_runner.invoke(app, [*build_argv(tmp_path, monkeypatch), *spelling])
+
+        events = json_events(result.stdout)
+        assert result.exit_code == 1
+        assert result.stdout.splitlines()[-1].startswith('{"event_type": "error"')
+        assert [event["event_type"] for event in events] == ["error"]
+        payload = cast(dict[str, object], events[0]["payload"])
+        assert (payload["ok"], payload["error_code"], payload["warnings"]) == (False, error_code, [])
+
+    @pytest.mark.parametrize("failure", list(_FAILURES))
+    def test_failure_outside_a_result_renders_panel_in_terminal(
+        self,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+        failure: str,
+    ) -> None:
+        build_argv, title = _FAILURES[failure][0], _FAILURES[failure][2]
+
+        result = cli_runner.invoke(app, build_argv(tmp_path, monkeypatch))
+
+        assert result.exit_code == 1
+        assert title in result.stdout
+        assert json_events(result.stdout) == []
+
+    def test_uninitialized_workspace_payload_is_the_failed_header(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`dovo worktree list --format json`, failing before its options parse, writes the full header."""
+        argv = _uninitialized(tmp_path, monkeypatch)
+
+        result = cli_runner.invoke(app, [*argv, "--format", "json"])
+
+        identity_path = (tmp_path / "workspace").resolve() / ".dovo" / "project.json"
+        assert json_events(result.stdout) == [
+            {
+                "event_type": "error",
+                "payload": {
+                    "ok": False,
+                    "error_code": "WORKSPACE_NOT_INITIALIZED",
+                    "errors": [f"Workspace is not initialized: no valid project identity at '{identity_path}'."],
+                    "warnings": [],
+                    "remediations": [_INIT_REMEDIATION],
+                    "diagnostics": [],
+                },
+            }
+        ]
+
+    def test_lock_timeout_payload_carries_the_wait_remediation_and_no_init_result(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        argv = _lock_timeout(tmp_path, monkeypatch)
+
+        result = cli_runner.invoke(app, [*argv, "--format", "json"])
+
+        assert json_events(result.stdout) == [
+            {
+                "event_type": "error",
+                "payload": {
+                    "ok": False,
+                    "error_code": "WORKSPACE_LOCK_TIMEOUT",
+                    "errors": ["lock held"],
+                    "warnings": [],
+                    "remediations": [_LOCK_REMEDIATION],
+                    "diagnostics": [],
+                },
+            }
+        ]
+
+    def test_config_error_payload_lists_its_load_record(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """A required config load that cannot read config.json carries its read record into the error event."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").build()
+        config_path = workspace / ".dovo" / "config.json"
+        real_read_text = Path.read_text
+
+        def _denied_read(
+            self: Path, encoding: str | None = None, errors: str | None = None, newline: str | None = None
+        ) -> str:
+            if self.name == "config.json":
+                raise PermissionError("denied")
+            return real_read_text(self, encoding=encoding, errors=errors, newline=newline)
+
+        monkeypatch.setattr(Path, "read_text", _denied_read)
+
+        result = cli_runner.invoke(app, ["-p", str(workspace), "worktree", "list", "--format", "json"])
+
+        payload = cast(dict[str, object], json_events(result.stdout)[-1]["payload"])
+        assert result.exit_code == 1
+        assert payload["error_code"] == "CONFIG_UNREADABLE"
+        assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]
+        assert config_path.exists()
+
+    def test_notes_are_separate_errors(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Each note added to the exception follows its message as its own errors entry, and in the panel."""
+
+        def _raise(cls: type[CliContext], **kwargs: object) -> CliContext:
+            exc = PermissionError("unwritable data dir")
+            exc.add_note("Remove it, then rerun dovo run.")
+            raise exc
+
+        monkeypatch.setattr(CliContext, "build", classmethod(_raise))
+        argv = ["-p", str(tmp_path), "worktree", "list"]
+
+        json_result = cli_runner.invoke(app, [*argv, "--format", "json"])
+        terminal_result = cli_runner.invoke(app, argv)
+
+        payload = cast(dict[str, object], json_events(json_result.stdout)[-1]["payload"])
+        assert payload["errors"] == [
+            "A fatal unexpected error occurred. Details: unwritable data dir",
+            "Remove it, then rerun dovo run.",
+        ]
+        assert "Remove it, then rerun dovo run." in terminal_result.stdout
+
+    def test_fatal_error_records_cli_run_event(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Write one error-level cli.run event naming the subcommand, and list it in the event's diagnostics."""
+        argv = _unexpected(tmp_path, monkeypatch)
+
+        result = cli_runner.invoke(app, [*argv, "--format", "json"])
+
+        event = read_single_event(frozen_diagnostic_clock)
+        assert (event["event_id"], event["level"], event["operation"], event["command"]) == (
+            FROZEN_EVENT_ID,
+            "error",
+            "cli.run",
+            "worktree",
+        )
+        assert (event["exception_type"], event["exception_message"]) == ("RuntimeError", "missing record.id")
+        payload = cast(dict[str, object], json_events(result.stdout)[-1]["payload"])
+        assert payload["errors"] == ["A fatal unexpected error occurred. Details: missing record.id"]
+        assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]
+
+    def test_keyboard_interrupt_is_not_reported_as_an_error_event(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _interrupt(cls: type[CliContext], **kwargs: object) -> CliContext:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(CliContext, "build", classmethod(_interrupt))
+
+        result = cli_runner.invoke(app, ["-p", str(tmp_path), "worktree", "list", "--format", "json"])
+
+        assert result.exit_code != 0
+        assert json_events(result.stdout) == []
+
+
+class RunCliTests:
+    """Direct tests for run_cli(), the process entrypoint."""
 
     @pytest.fixture(autouse=True)
     def _restore_signal_handlers(self) -> Iterator[None]:
@@ -164,39 +380,11 @@ class RunCliCrashProtectionTests:
         for signum, handler in saved.items():
             signal.signal(signum, handler)
 
-    def test_run_cli_lock_timeout_renders_error_panel_and_exits_one(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    def test_run_cli_reports_a_lock_timeout_as_the_panel_and_exits_one(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-
-        def _raise_lock_timeout() -> None:
-            raise LockTimeoutError("lock held by another process")
-
-        monkeypatch.setattr(cli_module, "app", _raise_lock_timeout)
-
-        with pytest.raises(SystemExit) as exc_info:
-            cli_module.run_cli()
-
-        assert exc_info.value.code == 1
-        assert "Workspace Lock Timeout" in capsys.readouterr().out
-
-    @pytest.mark.parametrize(
-        "command",
-        [
-            pytest.param(["init"], id="init"),
-            pytest.param(["init", "--format", "json"], id="init-json"),
-            pytest.param(["run", "tests"], id="run-auto-init"),
-        ],
-    )
-    def test_run_cli_identity_lock_timeout_renders_lock_timeout_panel_and_exits_one(
-        self,
-        git_repo: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-        command: list[str],
-    ) -> None:
-        """Print the Workspace Lock Timeout panel with the lock message and no init result, and exit 1."""
         monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
-        monkeypatch.setattr(sys, "argv", ["dovo", "--path", str(git_repo), *command])
+        monkeypatch.setattr(sys, "argv", ["dovo", "--path", str(git_repo), "init"])
 
         with pytest.raises(SystemExit) as exc_info:
             cli_module.run_cli()
@@ -204,129 +392,7 @@ class RunCliCrashProtectionTests:
         stdout = capsys.readouterr().out
         assert exc_info.value.code == 1
         assert "Workspace Lock Timeout" in stdout
-        assert "lock held" in stdout
-        assert "WorkspaceInitResult" not in stdout
         assert "Initialization Failed!" not in stdout
-
-    def test_run_cli_unexpected_exception_renders_fatal_panel_and_exits_one(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-
-        def _raise_unexpected() -> None:
-            raise RuntimeError("missing record.id")
-
-        monkeypatch.setattr(cli_module, "app", _raise_unexpected)
-
-        with pytest.raises(SystemExit) as exc_info:
-            cli_module.run_cli()
-
-        assert exc_info.value.code == 1
-        assert "Fatal Error" in capsys.readouterr().out
-
-    def test_run_cli_unexpected_exception_panel_lists_exception_notes(
-        self, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object], frozen_diagnostic_clock: Path
-    ) -> None:
-        """Append each note added to the exception to the Fatal Error panel's details, one per line."""
-
-        def _raise_with_note() -> None:
-            exc = PermissionError("unwritable data dir")
-            exc.add_note("Remove it, then rerun dovo run.")
-            raise exc
-
-        monkeypatch.setattr(cli_module, "app", _raise_with_note)
-
-        with pytest.raises(SystemExit) as exc_info:
-            cli_module.run_cli()
-
-        assert exc_info.value.code == 1
-        assert dispatch_spy == [
-            ErrorPanelEvent(
-                title="Fatal Error",
-                message=(
-                    "A fatal unexpected error occurred.\nDetails: unwritable data dir\nRemove it, then rerun dovo run."
-                    + diagnostic_hint(frozen_diagnostic_clock)
-                ),
-                border_style="red",
-            )
-        ]
-
-    def test_run_cli_unexpected_exception_records_cli_run_event(
-        self, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
-    ) -> None:
-        """Write one error-level cli.run event with a null command and the exception's type, message and traceback, and exit 1."""
-
-        def _raise_unexpected() -> None:
-            raise RuntimeError("missing record.id")
-
-        monkeypatch.setattr(cli_module, "app", _raise_unexpected)
-
-        with pytest.raises(SystemExit) as exc_info:
-            cli_module.run_cli()
-
-        assert exc_info.value.code == 1
-        event = read_single_event(frozen_diagnostic_clock)
-        assert event["event_id"] == FROZEN_EVENT_ID
-        assert event["level"] == "error"
-        assert event["operation"] == "cli.run"
-        assert event["command"] is None
-        assert event["exception_type"] == "RuntimeError"
-        assert event["exception_message"] == "missing record.id"
-        assert "RuntimeError: missing record.id" in str(event["formatted_traceback"])
-
-    def test_run_cli_config_error_renders_invalid_configuration_panel_and_exits_one(
-        self, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
-    ) -> None:
-        """Dispatch an Invalid Configuration panel with the error's message and Fix: block, and exit 1."""
-
-        def _raise_config_error() -> None:
-            raise _CONFIG_ERROR
-
-        monkeypatch.setattr(cli_module, "app", _raise_config_error)
-
-        with pytest.raises(SystemExit) as exc_info:
-            cli_module.run_cli()
-
-        assert exc_info.value.code == 1
-        assert dispatch_spy == [
-            ErrorPanelEvent(
-                title="Invalid Configuration",
-                message="Failed to load config at '/r': missing\nFix:\n- Run 'dovo init'",
-                border_style="red",
-            )
-        ]
-
-    def test_run_cli_config_error_lists_carried_diagnostic_records(
-        self, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
-    ) -> None:
-        """Append a Details logged: line for the record the ConfigError carries."""
-        record = DiagnosticRecord(
-            event_id=FROZEN_EVENT_ID, log_path=Path("/logs/2026-10-19/event.json"), level=DiagnosticLevel.ERROR
-        )
-
-        def _raise_config_error() -> None:
-            raise ConfigError(
-                _CONFIG_ERROR.error_code,
-                _CONFIG_ERROR.message,
-                _CONFIG_ERROR.remediations,
-                data=ConfigLoadDiagnostics((record,)),
-            )
-
-        monkeypatch.setattr(cli_module, "app", _raise_config_error)
-
-        with pytest.raises(SystemExit) as exc_info:
-            cli_module.run_cli()
-
-        assert exc_info.value.code == 1
-        assert dispatch_spy == [
-            ErrorPanelEvent(
-                title="Invalid Configuration",
-                message=(
-                    "Failed to load config at '/r': missing\nFix:\n- Run 'dovo init'"
-                    f"\nDetails logged: /logs/2026-10-19/event.json (event {FROZEN_EVENT_ID})"
-                ),
-                border_style="red",
-            )
-        ]
 
     @pytest.mark.parametrize(
         ("case", "expected"),
@@ -335,24 +401,27 @@ class RunCliCrashProtectionTests:
             pytest.param("help", 0, id="help"),
             pytest.param("version", 0, id="version"),
             pytest.param("usage-error", 2, id="usage-error"),
-            pytest.param("typer-exit", 1, id="typer-exit"),
+            pytest.param("usage-error-json", 2, id="usage-error-json"),
+            pytest.param("workspace-failure", 1, id="workspace-failure"),
         ],
     )
     def test_run_cli_passes_through_click_and_typer_exit_codes(
         self,
         monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
         cli_workspace: Path,
         git_repo: Path,
         case: str,
         expected: int,
     ) -> None:
-        """Exit with Click's or the command's own exit code when the argv never reaches a run_cli handler."""
+        """Exit with Click's exit code for usage errors, writing no error event even under --format json."""
         argv_for: dict[str, Callable[[], list[str]]] = {
             "bare": lambda: [],
             "help": lambda: ["--help"],
             "version": lambda: ["--version"],
             "usage-error": lambda: ["-p", str(cli_workspace), "worktree", "list", "--format", "nope"],
-            "typer-exit": lambda: ["-p", str(git_repo), "worktree", "list"],
+            "usage-error-json": lambda: ["-p", str(cli_workspace), "worktree", "list", "--format", "json", "--bogus"],
+            "workspace-failure": lambda: ["-p", str(git_repo), "worktree", "list"],
         }
         monkeypatch.setattr(sys, "argv", ["dovo", *argv_for[case]()])
 
@@ -360,10 +429,11 @@ class RunCliCrashProtectionTests:
             cli_module.run_cli()
 
         assert exc_info.value.code == expected
+        assert '"event_type": "error"' not in capsys.readouterr().out or case == "workspace-failure"
 
 
 GUARD_MESSAGE_HEAD = "Workspace is not initialized: no valid project identity at"
-GUARD_FIX = "Run `dovo init` to initialize this workspace."
+GUARD_FIX = "Run 'dovo init' to initialize the workspace."
 
 
 class IdentityGuardCliTests:
@@ -412,7 +482,7 @@ class IdentityGuardCliTests:
         result = cli_runner.invoke(app, ["-p", str(workspace), "status"])
 
         assert result.exit_code == 1
-        assert "dovo init --id <project-id> --force" in result.stdout
+        assert "Run 'dovo init --id <project-id> --force' to replace the unusable identity." in result.stdout
 
     def test_status_at_global_home_parent_ignores_stray_global_identity_and_config(
         self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
@@ -425,9 +495,9 @@ class IdentityGuardCliTests:
         result = cli_runner.invoke(app, ["-p", str(home), "status"])
 
         assert result.exit_code == 1
-        panels = [event for event in dispatch_spy if isinstance(event, ErrorPanelEvent)]
+        panels = [event for event in dispatch_spy if isinstance(event, ErrorEvent)]
         assert len(panels) == 1
-        assert f"'{global_home.resolve() / 'project.json'}'" in panels[0].message
+        assert f"'{global_home.resolve() / 'project.json'}'" in panels[0].errors[0]
         assert not any(isinstance(event, DovoStatusResult) for event in dispatch_spy)
 
     def test_status_under_global_home_names_start_directory_identity(
@@ -444,10 +514,10 @@ class IdentityGuardCliTests:
         result = cli_runner.invoke(app, ["-p", str(start), "status"])
 
         assert result.exit_code == 1
-        panels = [event for event in dispatch_spy if isinstance(event, ErrorPanelEvent)]
+        panels = [event for event in dispatch_spy if isinstance(event, ErrorEvent)]
         assert len(panels) == 1
-        assert f"'{start.resolve() / '.dovo' / 'project.json'}'" in panels[0].message
-        assert f"'{home.resolve() / '.dovo' / 'project.json'}'" not in panels[0].message
+        assert f"'{start.resolve() / '.dovo' / 'project.json'}'" in panels[0].errors[0]
+        assert f"'{home.resolve() / '.dovo' / 'project.json'}'" not in panels[0].errors[0]
 
     def test_help_does_not_trip_the_guard_in_an_uninitialized_repo(self, cli_runner: CliRunner, git_repo: Path) -> None:
         result = cli_runner.invoke(app, ["-p", str(git_repo), "worktree", "list", "--help"])

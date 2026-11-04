@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.core.db import DovoDb
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -30,6 +32,44 @@ def _publish_artifact(workspace: Path, *, session_id: str, name: str, content: b
 
 class ArtifactsDownloadCliIntegrationTests:
     """Typer runner integration tests for dovo artifacts download."""
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("name", "exit_code", "error_code"),
+        [
+            pytest.param("dist-packages", 0, None, id="published_artifact"),
+            pytest.param("missing", 1, "ARTIFACT_NOT_FOUND", id="unknown_artifact"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        tmp_path: Path,
+        output_format: str,
+        name: str,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        _publish_artifact(cli_workspace, session_id="wf_one", name="dist-packages")
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "-p",
+                str(cli_workspace),
+                "artifacts",
+                "download",
+                "wf_one",
+                name,
+                "--dest",
+                str(tmp_path / "out"),
+                "--format",
+                output_format,
+            ],
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
 
     def test_artifacts_download_cli_happy_path_extracts_files_and_exits_zero(
         self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path

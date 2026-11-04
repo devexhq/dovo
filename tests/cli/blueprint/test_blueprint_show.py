@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogItemType
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
@@ -18,6 +19,31 @@ pytestmark = pytest.mark.usefixtures("workspace_config")
 
 class BlueprintShowCliIntegrationTests:
     """Typer runner integration tests for dovo blueprint show."""
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("name", "exit_code", "error_code"),
+        [
+            pytest.param("known-blueprint", 0, None, id="known_blueprint"),
+            pytest.param("missing-blueprint", 1, "CATALOG_NOT_FOUND", id="unknown_blueprint"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        isolated_workspace: Path,
+        output_format: str,
+        name: str,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "known-blueprint")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "blueprint", "show", name, "--format", output_format]
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
 
     def test_blueprint_show_cli_renders_terminal_metadata(
         self, cli_runner: CliRunner, isolated_workspace: Path
@@ -52,12 +78,6 @@ class BlueprintShowCliIntegrationTests:
 
         assert result.exit_code == 1
         assert "not found" in result.stdout
-
-    def test_blueprint_show_cli_missing_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "show", "missing-blueprint"])
-
-        assert result.exit_code == 1
-        assert "Catalog item 'missing-blueprint' not found." in result.stdout
 
     def test_show_missing_json_has_catalog_not_found(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         result = cli_runner.invoke(

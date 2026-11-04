@@ -25,7 +25,15 @@ It shows:
 - **Catalog Items**: Total valid blueprints and inventory breakdown (`valid / total`).
 - **Warnings**: Configuration warnings and remediation steps. When the config fails to load, its remediations are the ones `dovo config show` reports for the same failure, followed by `git init` outside a Git repository.
 
-Before it reports, `dovo status` settles sessions left `running` by a `dovo` process that no longer exists: it marks one `paused` when it saved its progress, its worktree still exists if it used one, and none of its processes is still running, and marks every other one `failed`. It adds `Paused 1 interrupted session; continue it with 'dovo resume <session_id>'.`, `Marked 1 interrupted session failed (session_id: <id>).`, or both sentences, paused first, to its warnings. If another `dovo` process holds the workspace lock until the wait times out, `dovo status` stops with a workspace lock timeout error and exits 1.
+Before it reports, `dovo status` settles sessions left `running` by a `dovo` process that no longer exists: it marks one `paused` when it saved its progress, its worktree still exists if it used one, and none of its processes is still running, and marks every other one `failed`. It adds `Paused 1 interrupted session; continue it with 'dovo resume <session_id>'.`, `Marked 1 interrupted session failed (session_id: <id>).`, or both sentences, paused first, to its warnings. If another `dovo` process holds the workspace lock until the wait times out, `dovo status` stops with a Workspace Lock Timeout panel, or with `--format json` an `error` event with `error_code` `WORKSPACE_LOCK_TIMEOUT` (see [JSON Output](../reference/json-output.md#the-error-event)), and exits `1`.
+
+## Exit codes
+
+- `0`: the report printed, whatever its health (`ok`, `degraded` or `uninitialized`) and whatever the config error code.
+- `2`: a usage error, such as an unknown option.
+- `1`: a failure reported as an `error` event: a workspace without a valid `.dovo/project.json`, a workspace lock timeout or an unexpected error.
+
+See [JSON Output](../reference/json-output.md#exit-codes) for the rule every command follows.
 
 ## Examples
 
@@ -54,7 +62,7 @@ Dovo Workspace Status
 
 ### Uninitialized workspace output
 
-`dovo status` requires `dovo init` first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. When the identity exists but `.dovo/config.json` is missing, the report is:
+`dovo status` requires `dovo init` first: without a valid `.dovo/project.json` it prints a Workspace Not Initialized panel, or with `--format json` an `error` event with `error_code` `WORKSPACE_NOT_INITIALIZED`, whose fix is `dovo init` (see [Workspace not initialized](../reference/json-output.md#workspace-not-initialized)), and exits `1`. When the identity exists but `.dovo/config.json` is missing, the report is:
 
 ```text
 Dovo Workspace Status (Uninitialized)

@@ -13,6 +13,7 @@ from dovo.cli import app
 from dovo.common.redact import SecretRedactor
 from dovo.core.db import DovoDb, SessionStatus
 from dovo.engine.writer import get_session_dir, write_session_diff
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 _PATCH_TEXT = (
@@ -42,6 +43,31 @@ def _write_session_diff(cli_workspace: Path, session_id: str, patch_text: str = 
 
 class SessionDiffCliIntegrationTests:
     """Typer runner integration tests for dovo session diff."""
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("session_id", "exit_code", "error_code"),
+        [
+            pytest.param("sess-diff-1", 0, None, id="known_session"),
+            pytest.param("unknown-session", 1, "SESSION_NOT_FOUND", id="unknown_session"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        output_format: str,
+        session_id: str,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        _write_session_diff(cli_workspace, "sess-diff-1")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "session", "diff", session_id, "--format", output_format]
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
 
     def test_diff_cli_known_session_renders_patch_exits_zero(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         _write_session_diff(cli_workspace, "sess-diff-1")

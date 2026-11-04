@@ -349,10 +349,10 @@ class WorkspaceCleanupTests:
         event = read_single_event(frozen_diagnostic_clock)
         assert (event["level"], event["operation"]) == ("error", "worktree.cleanup")
 
-    def test_removal_lock_timeout_appends_warning_without_record(
+    def test_removal_lock_timeout_propagates(
         self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Append "Failed to remove worktree '<path>': <lock timeout>", add nothing to diagnostics, and write no record, when Worktree.cleanup raises LockTimeoutError."""
+        """Raise the LockTimeoutError from Worktree.cleanup, adding no warning, no diagnostic and no record."""
         workspace, target_dir, manager, session = worktree_setup()
         assert session is not None
 
@@ -363,11 +363,10 @@ class WorkspaceCleanupTests:
         warnings: list[str] = []
         diagnostics: list[DiagnosticRecord] = []
 
-        kept = workspace.cleanup(manager, session, target_dir, SessionStatus.COMPLETED, warnings, diagnostics)
+        with pytest.raises(LockTimeoutError, match="worktree removal failed"):
+            workspace.cleanup(manager, session, target_dir, SessionStatus.COMPLETED, warnings, diagnostics)
 
-        assert kept is False
-        assert warnings == [f"Failed to remove worktree '{session.worktree_path}': worktree removal failed"]
-        assert diagnostics == []
+        assert (warnings, diagnostics) == ([], [])
         assert not frozen_diagnostic_clock.parent.parent.exists()
 
     def test_every_failed_removal_step_gets_a_warning(

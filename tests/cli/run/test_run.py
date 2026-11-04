@@ -35,7 +35,7 @@ from tests.harness.builders import init_git_repository
 from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.diagnostic_log import details_line, unwrapped
 from tests.harness.fakes import fixed_clock, fixed_new_id
-from tests.harness.lock import raise_lock_timeout
+from tests.harness.lock import lock_timeout_reported, raise_lock_timeout
 from tests.harness.run_result import REPLACED_EVENTS, RUN_RESULT, RunResultPayload, json_events, run_result_payload
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -289,7 +289,7 @@ class RunCliIntegrationTests:
     ) -> None:
         """Persist PAUSED when the interactive prompter raises KeyboardInterrupt after the paused state is saved.
 
-        `--no-tty` aborts before any prompter call, so PAUSED is reachable only this way; the run still exits 1.
+        `--no-tty` aborts before any prompter call, so PAUSED is reachable only this way; the cancelled run exits 130.
         """
         _force_interactive(monkeypatch)
         monkeypatch.setattr("builtins.input", _raise_keyboard_interrupt)
@@ -304,7 +304,7 @@ class RunCliIntegrationTests:
             ["-p", str(cli_workspace), "run", "pause-task", "--no-worktree", "--session-id", "paused-session-1"],
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 130
         assert "Run Cancelled" in result.stdout
         run_paths = initialized_workspace_paths(cli_workspace)
         record = DovoDb(database_file=run_paths.database_file, project_id=run_paths.project_id).sessions.get(
@@ -313,10 +313,10 @@ class RunCliIntegrationTests:
         assert record is not None
         assert record.status == SessionStatus.PAUSED
 
-    def test_run_cli_ask_keyboard_interrupt_pauses_and_exits_1(
+    def test_run_cli_ask_keyboard_interrupt_pauses_and_exits_130(
         self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
-        """Exit 1 and leave the session paused when the interactive terminal raises KeyboardInterrupt at an ask prompt."""
+        """Exit 130 and leave the session paused when the interactive terminal raises KeyboardInterrupt at an ask prompt."""
         _force_interactive(monkeypatch)
         monkeypatch.setattr("builtins.input", _raise_keyboard_interrupt)
         interaction = {
@@ -332,7 +332,7 @@ class RunCliIntegrationTests:
             app, ["-p", str(cli_workspace), "run", "ask-task", "--no-worktree", "--session-id", "ask-session-1"]
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 130
         assert "Run Cancelled" in result.stdout
         assert "Execution cancelled by user." in result.stdout
         run_paths = initialized_workspace_paths(cli_workspace)
@@ -670,18 +670,18 @@ class RunCliAutoInitTests:
         assert init_result.errors == ["boom"]
         assert not (git_repo / ".dovo").exists()
 
-    def test_run_cli_identity_lock_timeout_during_auto_init_raises_and_rolls_back(
+    def test_run_cli_identity_lock_timeout_during_auto_init_reports_it_and_rolls_back(
         self, cli_runner: CliRunner, git_repo: Path, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
     ) -> None:
-        """Exit 1 with result.exception the LockTimeoutError, nothing dispatched, and the new .dovo/ removed."""
+        """Exit 1 with the lock timeout as the only dispatched event, no init result, and the new .dovo/ removed."""
         monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
         result = cli_runner.invoke(app, ["-p", str(git_repo), "run", "tests"])
 
         assert result.exit_code == 1
-        assert isinstance(result.exception, LockTimeoutError)
-        assert str(result.exception) == "lock held"
-        assert dispatch_spy == []
+        assert [(type(event).__name__, getattr(event, "error_code", None)) for event in dispatch_spy] == [
+            ("ErrorEvent", ErrorCode.WORKSPACE_LOCK_TIMEOUT)
+        ]
         assert not (git_repo / ".dovo").exists()
 
     def test_run_cli_initialized_workspace_does_not_attempt_initialization(
@@ -901,7 +901,7 @@ class RunEnvFlagsCliIntegrationTests:
         ("flags", "exit_code", "expected_text"),
         [
             pytest.param(
-                ["--env-passthrough", "A*B"], 1, "Invalid --env-passthrough value 'A*B':", id="invalid-passthrough"
+                ["--env-passthrough", "A*B"], 2, "Invalid --env-passthrough value 'A*B':", id="invalid-passthrough"
             ),
             pytest.param(["--env-mode", "bogus"], 2, "'bogus' is not one of", id="invalid-mode"),
         ],
@@ -1310,7 +1310,7 @@ class RunResultCliTests:
 
         exit_code, payload = _run_json(cli_runner, cli_workspace, "long-task")
 
-        assert exit_code == 1
+        assert exit_code == 130
         assert _outcome(payload) == (
             False,
             "RUN_CANCELLED",
@@ -1332,7 +1332,7 @@ class RunResultCliTests:
 
         exit_code, payload = _run_json(cli_runner, cli_workspace, "pause-task")
 
-        assert exit_code == 1
+        assert exit_code == 130
         assert (payload["ok"], payload["error_code"], payload["session_status"]) == (False, "RUN_CANCELLED", "paused")
         assert len(payload["errors"]) == 1
         assert payload["errors"][0].startswith("Step 's1' failed")
@@ -1348,7 +1348,7 @@ class RunResultCliTests:
 
         exit_code, payload = _run_json(cli_runner, cli_workspace, "ask-task")
 
-        assert exit_code == 1
+        assert exit_code == 130
         assert _outcome(payload) == (
             False,
             "RUN_CANCELLED",
@@ -1421,6 +1421,40 @@ class RunResultCliTests:
             app, ["-p", str(cli_workspace), "run", "json-task", "--no-worktree", "--format", "json"]
         )
 
-        assert result.exit_code != 0
-        assert isinstance(result.exception, LockTimeoutError)
-        assert RUN_RESULT not in {event["event_type"] for event in json_events(result.stdout)}
+        events = json_events(result.stdout)
+        assert result.exit_code == 1
+        assert RUN_RESULT not in {event["event_type"] for event in events}
+        assert lock_timeout_reported(result.stdout)
+
+    def test_discard_lock_timeout_ends_with_error_event_only(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A lock timeout while a completed run's worktree is discarded ends the invocation with the error event only."""
+
+        def _lock_timeout(*_args: object, **_kwargs: object) -> None:
+            raise LockTimeoutError("lock held")
+
+        monkeypatch.setattr(Worktree, "cleanup", _lock_timeout)
+        write_runnable_blueprint(cli_workspace, key="json-task", steps=[{"id": "s1", "run": "true"}])
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "json-task", "--format", "json"])
+
+        events = json_events(result.stdout)
+        assert result.exit_code == 1
+        assert RUN_RESULT not in {event["event_type"] for event in events}
+        assert events[-1] == {
+            "event_type": "error",
+            "payload": {
+                "ok": False,
+                "error_code": "WORKSPACE_LOCK_TIMEOUT",
+                "errors": ["lock held"],
+                "warnings": [],
+                "remediations": [
+                    {
+                        "message": "Wait for the other dovo process to release the workspace lock, then retry.",
+                        "command": None,
+                    }
+                ],
+                "diagnostics": [],
+            },
+        }

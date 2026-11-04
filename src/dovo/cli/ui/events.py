@@ -2,21 +2,28 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.agents import AgentProgressKind
 
 
-class ErrorPanelEvent(BaseModel):
-    """UI event representing an error panel."""
+class ErrorEvent(BaseModel):
+    """A failure no command result carries, rendered as a titled panel or written as the `error` event."""
 
     model_config = {"extra": "forbid", "strict": True}
 
+    event_type: ClassVar[str] = "error"
+
     title: str
-    message: str
-    border_style: str = "red"
+    error_code: ErrorCode
+    errors: list[str]
+    remediations: list[Remediation] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
 class LockWaitEvent(BaseModel):

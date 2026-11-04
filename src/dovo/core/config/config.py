@@ -6,9 +6,9 @@ from pathlib import Path
 
 from pydantic import JsonValue
 
-from dovo.common.exceptions import Failure, catch_failure
+from dovo.common.exceptions import Failure, RecordedDiagnostics, catch_failure
 from dovo.common.filesystem import WorkspacePaths
-from dovo.core.config.exceptions import ConfigError, ConfigLoadDiagnostics, ConfigRawObject, ConfigTierSource
+from dovo.core.config.exceptions import ConfigError, ConfigRawObject, ConfigTierSource
 from dovo.core.config.loader import ConfigLoadResult, load_config, load_config_at, read_config_object
 from dovo.core.config.models import (
     ConcurrencyConfig,
@@ -49,7 +49,7 @@ def _require_config(result: ConfigLoadResult, root_dir: Path) -> DovoConfig:
         result.error_code,
         f"Failed to load config at '{root_dir}': {'; '.join(result.errors)}",
         result.remediations,
-        data=ConfigLoadDiagnostics(tuple(result.diagnostics)),
+        data=RecordedDiagnostics(tuple(result.diagnostics)),
     )
 
 
@@ -66,7 +66,7 @@ class Config:
         """Load and validate the effective config for paths.
 
         Raises:
-            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+            ConfigError: If the configuration fails to load; data is RecordedDiagnostics.
         """
         return _require_config(cls(paths).load(), paths.root_dir)
 
@@ -158,7 +158,7 @@ class Config:
         """Load and cache the DovoConfig.
 
         Raises:
-            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+            ConfigError: If the configuration fails to load; data is RecordedDiagnostics.
         """
         if self._cached_config is None:
             self._cached_config = _require_config(self.load(), self._paths.root_dir)
@@ -169,7 +169,7 @@ class Config:
         """Return the config schema version.
 
         Raises:
-            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+            ConfigError: If the configuration fails to load; data is RecordedDiagnostics.
         """
         return self._loaded_config.version
 
@@ -178,7 +178,7 @@ class Config:
         """Return the project identity section of the loaded config.
 
         Raises:
-            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+            ConfigError: If the configuration fails to load; data is RecordedDiagnostics.
         """
         return self._loaded_config.project
 
@@ -187,7 +187,7 @@ class Config:
         """Return the worktree lifecycle section of the loaded config.
 
         Raises:
-            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+            ConfigError: If the configuration fails to load; data is RecordedDiagnostics.
         """
         return self._loaded_config.worktree
 
@@ -196,7 +196,7 @@ class Config:
         """Return the session history retention section of the loaded config.
 
         Raises:
-            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+            ConfigError: If the configuration fails to load; data is RecordedDiagnostics.
         """
         return self._loaded_config.history
 
@@ -205,7 +205,7 @@ class Config:
         """Return the doctor check toggles section of the loaded config.
 
         Raises:
-            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+            ConfigError: If the configuration fails to load; data is RecordedDiagnostics.
         """
         return self._loaded_config.doctor
 
@@ -214,7 +214,7 @@ class Config:
         """Return the prune cleanup toggles section of the loaded config.
 
         Raises:
-            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+            ConfigError: If the configuration fails to load; data is RecordedDiagnostics.
         """
         return self._loaded_config.prune
 
@@ -223,7 +223,7 @@ class Config:
         """Return the optional telemetry section of the loaded config.
 
         Raises:
-            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+            ConfigError: If the configuration fails to load; data is RecordedDiagnostics.
         """
         return self._loaded_config.telemetry
 
@@ -232,7 +232,7 @@ class Config:
         """Return the concurrency and locking section of the loaded config.
 
         Raises:
-            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+            ConfigError: If the configuration fails to load; data is RecordedDiagnostics.
         """
         return self._loaded_config.concurrency
 
@@ -241,6 +241,6 @@ class Config:
         """Return the environment section of the loaded config.
 
         Raises:
-            ConfigError: If the configuration fails to load; data is ConfigLoadDiagnostics.
+            ConfigError: If the configuration fails to load; data is RecordedDiagnostics.
         """
         return self._loaded_config.environment

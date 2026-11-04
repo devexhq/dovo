@@ -82,6 +82,17 @@ class DiagnosticsModelsTests:
         with pytest.raises(ValidationError):
             diagnostic_result(status=CheckStatus.FAILED, error_code=error_code, errors=["boom"])
 
+    def test_failed_record_requires_error_code(self) -> None:
+        """Raise ValidationError when a FAILED DiagnosticCheckRecord carries no error_code."""
+        with pytest.raises(ValidationError, match="a failed check must carry an error_code"):
+            DiagnosticCheckRecord(
+                check_id="test.check",
+                name="Test Check",
+                category=CheckCategory.GIT,
+                status=CheckStatus.FAILED,
+                message="Check failed.",
+            )
+
     def test_doctor_context_extra_fields_forbidden(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:

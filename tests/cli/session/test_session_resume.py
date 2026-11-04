@@ -324,7 +324,7 @@ class SessionResumeEnvFlagsCliIntegrationTests:
         assert ["NAME_HOST" in call.env for call in runner.calls] == [True, False]
         assert config_path.read_bytes() == before
 
-    def test_resume_cli_invalid_passthrough_exits_one_and_leaves_session_paused(
+    def test_resume_cli_invalid_passthrough_exits_two_and_leaves_session_paused(
         self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         runner = _fake_copilot(monkeypatch)
@@ -336,7 +336,7 @@ class SessionResumeEnvFlagsCliIntegrationTests:
 
         paths = initialized_workspace_paths(cli_workspace)
         record = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.get("paused-bad")
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "Invalid --env-passthrough value '=X':" in result.stdout
         assert record is not None
         assert record.status == SessionStatus.PAUSED
@@ -411,18 +411,36 @@ class SessionResumeAskCliIntegrationTests:
         assert (cli_workspace / "done.marker").exists()
         assert _session_status(cli_workspace, session_id) == SessionStatus.COMPLETED
 
+    @pytest.mark.parametrize("output_format", ["terminal", "json"])
     @pytest.mark.parametrize(
-        "case",
+        ("case", "exit_code", "error_code"),
         [
-            pytest.param("answers_file_with_answer", id="answers_file_with_answer"),
-            pytest.param("comment_with_comment_file", id="comment_with_comment_file"),
-            pytest.param("comment_alone", id="comment_alone"),
-            pytest.param("unreadable_answers_file", id="unreadable_answers_file"),
-            pytest.param("invalid_json_answers_file", id="invalid_json_answers_file"),
+            pytest.param("answers_file_with_answer", 2, "INTERACTION_ARGUMENTS_INVALID", id="answers_file_with_answer"),
+            pytest.param(
+                "comment_with_comment_file", 2, "INTERACTION_ARGUMENTS_INVALID", id="comment_with_comment_file"
+            ),
+            pytest.param("comment_alone", 2, "INTERACTION_ARGUMENTS_INVALID", id="comment_alone"),
+            pytest.param(
+                "invalid_json_answers_file", 2, "INTERACTION_ARGUMENTS_INVALID", id="invalid_json_answers_file"
+            ),
+            pytest.param(
+                "unreadable_answers_file", 1, "INTERACTION_ARGUMENT_FILE_UNREADABLE", id="unreadable_answers_file"
+            ),
+            pytest.param(
+                "unreadable_comment_file", 1, "INTERACTION_ARGUMENT_FILE_UNREADABLE", id="unreadable_comment_file"
+            ),
+            pytest.param("answer_rejected_by_prompt", 1, "INTERACTION_ANSWER_INVALID", id="answer_rejected_by_prompt"),
         ],
     )
-    def test_argument_errors_exit_one_before_any_resume(
-        self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path, case: str
+    def test_invalid_answer_arguments_exit_by_their_code(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        tmp_path: Path,
+        case: str,
+        exit_code: int,
+        error_code: str,
+        output_format: str,
     ) -> None:
         session_id = _seed_paused_ask(cli_workspace)
         valid_file = tmp_path / "valid.json"
@@ -443,12 +461,18 @@ class SessionResumeAskCliIntegrationTests:
             ],
             "comment_alone": ["--comment", "c"],
             "unreadable_answers_file": ["--answers-file", str(tmp_path / "missing.json")],
+            "unreadable_comment_file": ["--answer", "approve=revise", "--comment-file", str(tmp_path / "missing.txt")],
             "invalid_json_answers_file": ["--answers-file", str(broken_file)],
+            "answer_rejected_by_prompt": ["--answer", "approve=not-an-option"],
         }[case]
 
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "resume", session_id, *flags])
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "resume", session_id, *flags, "--format", output_format]
+        )
 
-        assert result.exit_code == 1
+        assert result.exit_code == exit_code
+        if output_format == "json":
+            assert run_result_payload(result.stdout)["error_code"] == error_code
         assert _session_status(cli_workspace, session_id) == SessionStatus.PAUSED
         assert not (cli_workspace / "done.marker").exists()
 
@@ -705,7 +729,7 @@ class SessionResumeResultCliTests:
             app, ["-p", str(cli_workspace), "resume", session_id, "--comment", "c", "--format", "json"]
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert [event["event_type"] for event in json_events(result.stdout)] == [RUN_RESULT]
         payload = run_result_payload(result.stdout)
         assert (payload["ok"], payload["error_code"]) == (False, "INTERACTION_ARGUMENTS_INVALID")
@@ -714,12 +738,17 @@ class SessionResumeResultCliTests:
         assert _session_status(cli_workspace, session_id) == SessionStatus.PAUSED
 
     @pytest.mark.parametrize(
-        "flags",
-        [pytest.param(["does-not-exist"], id="failed_resume"), pytest.param(["--comment", "c"], id="argument_error")],
+        ("flags", "exit_code"),
+        [
+            pytest.param(["does-not-exist"], 1, id="failed_resume"),
+            pytest.param(["--comment", "c"], 2, id="argument_error"),
+        ],
     )
-    def test_terminal_titles_match_run(self, cli_runner: CliRunner, cli_workspace: Path, flags: list[str]) -> None:
+    def test_terminal_titles_match_run(
+        self, cli_runner: CliRunner, cli_workspace: Path, flags: list[str], exit_code: int
+    ) -> None:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "resume", *flags])
 
-        assert result.exit_code == 1
+        assert result.exit_code == exit_code
         assert "Run Failed" in result.stdout
         assert "Resume Failed" not in result.stdout

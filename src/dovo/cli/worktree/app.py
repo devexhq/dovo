@@ -4,6 +4,7 @@ import typer
 
 from dovo.cli.context import CliContext
 from dovo.cli.options import FormatOption
+from dovo.cli.outcome import exit_for
 from dovo.common.models import OutputFormatOptions
 from dovo.core.db import WorktreeStatus
 from dovo.core.worktree.models import WorktreeApplyStrategy
@@ -45,8 +46,7 @@ def worktree_create(
     """Create an isolated git worktree."""
     context: CliContext = ctx.obj["context"]
     result = worktree_create_command(context, name=name, base_ref=base_ref, wip=wip, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @worktree_app.command("list")
@@ -69,8 +69,7 @@ def worktree_list(
         status=status.value if status is not None else None,
         output_format=format,
     )
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @worktree_app.command("show")
@@ -82,8 +81,7 @@ def worktree_show(
     """Show full detail for one tracked worktree."""
     context: CliContext = ctx.obj["context"]
     result = worktree_show_command(context, worktree_id, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @worktree_app.command("prune")
@@ -104,8 +102,7 @@ def worktree_prune(
     """Safely prune stale worktrees, orphaned directories, and temporary branches."""
     context: CliContext = ctx.obj["context"]
     result = worktree_prune_command(context, dry_run=dry_run, force=force, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @worktree_app.command("delete")
@@ -122,8 +119,7 @@ def worktree_delete(
     """Delete a worktree and branch after confirmation."""
     context: CliContext = ctx.obj["context"]
     result = worktree_delete_command(context, worktree_id, force=force, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @worktree_app.command("apply")
@@ -174,8 +170,7 @@ def worktree_apply(
         message=message,
         output_format=format,
     )
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @worktree_app.command("diff")
@@ -192,5 +187,4 @@ def worktree_diff(
     """Inspect differences between worktree and base commit."""
     context: CliContext = ctx.obj["context"]
     result = worktree_diff_command(context, worktree_id, stat=stat, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)

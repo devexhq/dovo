@@ -46,7 +46,7 @@ dovo worktree prune [--dry-run] [--force] [--format terminal|json]
 
 With `--format json`, `status` is `ok`, or `partial_failure` when at least one item could not be pruned; that run reports `error_code` `WORKTREE_PRUNE_FAILED` and lists one error per failed item. A failure that stops the scan reports `status` `null` and its `error_code`, for example `GIT_FAILED` when `git worktree list` fails, or `INTERNAL_ERROR` for an unexpected error. Either exits with code 1.
 
-When an unexpected error stops prune, or an item cannot be pruned, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record and prints a `Details logged: <path> (event <event_id>)` line after the output; with `--format json` the record is listed in `diagnostics`. Without `--dry-run`, prune waits for the workspace lock and exits with code 1 if another `dovo` process holds it too long.
+When an unexpected error stops prune, or an item cannot be pruned, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record and prints a `Details logged: <path> (event <event_id>)` line after the output; with `--format json` the record is listed in `diagnostics`. Without `--dry-run`, prune waits for the workspace lock; if another `dovo` process holds it until the wait times out, prune prints a Workspace Lock Timeout panel, or with `--format json` an `error` event with `error_code` `WORKSPACE_LOCK_TIMEOUT` (see [JSON Output](../reference/json-output.md#the-error-event)), and exits with code 1.
 
 ### `dovo worktree delete`
 
@@ -125,3 +125,13 @@ View diffstat summary:
 ```bash
 dovo worktree diff dovo_8f2a1b9c --stat
 ```
+
+## Exit codes
+
+Every `dovo worktree` subcommand exits by its result's `error_code`:
+
+- `0`: the command succeeded, including a `delete` whose confirmation you decline, a `delete` of a worktree that is already cleaned, and a `diff` of a worktree with no changes.
+- `2`: a usage error, such as an unknown option or a missing argument.
+- `1`: every other failure, such as `WORKTREE_NOT_FOUND` or `WORKTREE_PRUNE_FAILED`, and every failure reported as an `error` event: a workspace without a valid `.dovo/project.json`, a configuration that does not load, a workspace lock timeout or an unexpected error.
+
+See [JSON Output](../reference/json-output.md#exit-codes) for the rule every command follows.

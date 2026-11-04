@@ -10,10 +10,11 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.common.lock import WorkspaceLock
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogItemType
-from tests.harness.lock import raise_lock_timeout
+from tests.harness.exit_codes import assert_exit_follows_result
+from tests.harness.lock import lock_timeout_reported, raise_lock_timeout
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
@@ -58,6 +59,39 @@ def _assert_cancelled_keeping(payload: dict[str, object], key: str) -> None:
 class BlueprintDeleteCliIntegrationTests:
     """Typer runner integration tests for dovo blueprint delete."""
 
+    @pytest.mark.parametrize(
+        ("output_format", "name", "extra_args", "invoke_input", "exit_code", "error_code"),
+        [
+            pytest.param("terminal", "del-blueprint", ["--force"], None, 0, None, id="terminal-forced_delete"),
+            pytest.param("json", "del-blueprint", ["--force"], None, 0, None, id="json-forced_delete"),
+            pytest.param("terminal", "del-blueprint", [], "n\n", 0, None, id="terminal-declined_confirmation"),
+            pytest.param(
+                "terminal", "ghost", ["--force"], None, 1, "CATALOG_NOT_FOUND", id="terminal-unknown_blueprint"
+            ),
+            pytest.param("json", "ghost", ["--force"], None, 1, "CATALOG_NOT_FOUND", id="json-unknown_blueprint"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        isolated_workspace: Path,
+        output_format: str,
+        name: str,
+        extra_args: list[str],
+        invoke_input: str | None,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "del-blueprint")
+
+        result = cli_runner.invoke(
+            app,
+            ["-p", str(isolated_workspace), "blueprint", "delete", name, *extra_args, "--format", output_format],
+            input=invoke_input,
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)
+
     def test_blueprint_delete_cli_with_force_exits_zero(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "del-blueprint")
 
@@ -67,18 +101,6 @@ class BlueprintDeleteCliIntegrationTests:
 
         assert result.exit_code == 0
         assert not (isolated_workspace / ".dovo" / "catalog" / "blueprints" / "del-blueprint.yml").exists()
-
-    def test_blueprint_delete_cli_confirmation_declined_exits_zero(
-        self, cli_runner: CliRunner, isolated_workspace: Path
-    ) -> None:
-        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "declined-blueprint")
-
-        result = cli_runner.invoke(
-            app, ["-p", str(isolated_workspace), "blueprint", "delete", "declined-blueprint"], input="n\n"
-        )
-
-        assert result.exit_code == 0
-        assert "Deletion cancelled" in result.stdout
 
     def test_blueprint_delete_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "json-del-blueprint")
@@ -103,38 +125,30 @@ class BlueprintDeleteCliIntegrationTests:
         assert payload["payload"]["deleted"] is True
         assert payload["payload"]["item_type"] == "blueprint"
 
-    def test_blueprint_delete_cli_missing_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        result = cli_runner.invoke(
-            app, ["-p", str(isolated_workspace), "blueprint", "delete", "missing-blueprint", "--force"]
-        )
-
-        assert result.exit_code == 1
-        assert "not found" in result.stdout
-
     def test_blueprint_delete_cli_lock_timeout_propagates(
         self, cli_runner: CliRunner, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Exit 1 with result.exception a LockTimeoutError for `delete demo --force` and no 'Catalog Delete Failed' in stdout."""
+        """Exit 1 with the lock timeout reported for `delete demo --force` and no 'Catalog Delete Failed' in stdout."""
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "demo")
         monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "delete", "demo", "--force"])
 
         assert result.exit_code == 1
-        assert isinstance(result.exception, LockTimeoutError)
+        assert lock_timeout_reported(result.stdout)
         assert "Catalog Delete Failed" not in result.stdout
 
     def test_blueprint_delete_cli_resync_lock_timeout_propagates_before_prompt(
         self, cli_runner: CliRunner, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Exit 1 with result.exception a LockTimeoutError and no prompt for `delete demo` answered 'y' when the re-sync's lock times out."""
+        """Exit 1 with the lock timeout reported and no prompt for `delete demo` answered 'y' when the re-sync's lock times out."""
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "demo")
         monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "delete", "demo"], input="y\n")
 
         assert result.exit_code == 1
-        assert isinstance(result.exception, LockTimeoutError)
+        assert lock_timeout_reported(result.stdout)
         assert _PROMPT.format(name="demo") not in result.stdout
         assert (isolated_workspace / ".dovo" / "catalog" / "blueprints" / "demo.yml").is_file()
 

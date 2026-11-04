@@ -141,9 +141,7 @@ def _check_lock_timeout(
     if elapsed + POLL_INTERVAL_SECONDS >= timeout_seconds:
         pid_desc = f"process {holder_pid}" if holder_pid else "unknown process"
         raise LockTimeoutError(
-            f"Timed out waiting for workspace lock on '{lock_path}' after "
-            f"{timeout_seconds:.1f}s (held by {pid_desc}).\n"
-            f"Fix:\n- check if another `dovo` command is running, or remove '{lock_path}' if the process terminated."
+            f"Timed out waiting for workspace lock on '{lock_path}' after {timeout_seconds:.1f}s (held by {pid_desc})."
         )
 
 

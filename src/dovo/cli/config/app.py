@@ -2,6 +2,7 @@ import typer
 
 from dovo.cli.context import CliContext
 from dovo.cli.options import FormatOption
+from dovo.cli.outcome import exit_for
 from dovo.common.models import OutputFormatOptions
 
 from .commands.config_set import config_set_command
@@ -23,8 +24,7 @@ def config_show(
     """Display the full normalized effective configuration as JSON."""
     context: CliContext = ctx.obj["context"]
     result = config_show_command(context, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @config_app.command("set")
@@ -43,8 +43,7 @@ def config_set(
     """Set a configuration value by key or nested dot-path."""
     context: CliContext = ctx.obj["context"]
     result = config_set_command(context, key, value, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @config_app.command("unset")
@@ -59,8 +58,7 @@ def config_unset(
     """Remove a configuration value by key or nested dot-path, falling back to its schema default."""
     context: CliContext = ctx.obj["context"]
     result = config_unset_command(context, key, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @config_app.command("validate")
@@ -71,5 +69,4 @@ def config_validate(
     """Validate .dovo/config.json against the V1 schema and semantic rules."""
     context: CliContext = ctx.obj["context"]
     result = config_validate_command(context, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)

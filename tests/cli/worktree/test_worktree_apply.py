@@ -17,6 +17,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeApplyResult, WorktreeApplyStrategy, WorktreeSession
 from dovo.core.worktree.worktree import Worktree
 from tests.harness.diagnostic_log import read_single_event
+from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id, use_fake_git
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -272,3 +273,37 @@ class WorktreeApplyCliIntegrationTests:
 
         assert result.exit_code == 0
         assert GitRunner().run(["log", "-1", "--format=%s"], path=cli_workspace) == "feat: custom squash"
+
+    @pytest.mark.parametrize("output_format", OUTPUT_FORMATS)
+    @pytest.mark.parametrize(
+        ("missing_id", "exit_code", "error_code"),
+        [
+            pytest.param(None, 0, None, id="known_worktree"),
+            pytest.param("missing-id", 1, "WORKTREE_NOT_FOUND", id="unknown_worktree"),
+        ],
+    )
+    def test_exit_code_follows_result(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        output_format: str,
+        missing_id: str | None,
+        exit_code: int,
+        error_code: str | None,
+    ) -> None:
+        session = _create_worktree_with_committed_change(cli_workspace)
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "-p",
+                str(cli_workspace),
+                "worktree",
+                "apply",
+                missing_id or session.session_id,
+                "--format",
+                output_format,
+            ],
+        )
+
+        assert_exit_follows_result(result, output_format, exit_code, error_code)

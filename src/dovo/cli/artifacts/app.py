@@ -6,6 +6,7 @@ import typer
 
 from dovo.cli.context import CliContext
 from dovo.cli.options import FormatOption
+from dovo.cli.outcome import exit_for
 from dovo.common.models import OutputFormatOptions
 
 from .commands.artifacts_download import artifacts_download_command
@@ -27,8 +28,7 @@ def artifacts_list(
     """List published artifacts for the current project."""
     context: CliContext = ctx.obj["context"]
     result = artifacts_list_command(context, session_id=session, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @artifacts_app.command("download")
@@ -45,8 +45,7 @@ def artifacts_download(
     """Download and checksum-verify a published artifact revision (latest by default)."""
     context: CliContext = ctx.obj["context"]
     result = artifacts_download_command(context, session_id, name, dest=dest, revision=revision, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
 
 
 @artifacts_app.command("prune")
@@ -67,5 +66,4 @@ def artifacts_prune(
     """Delete expired artifact bundles per prune.remove_expired_artifacts, or preview with --dry-run."""
     context: CliContext = ctx.obj["context"]
     result = artifacts_prune_command(context, dry_run=dry_run, force=force, output_format=format)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)

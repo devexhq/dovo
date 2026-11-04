@@ -1,13 +1,18 @@
 """Canonical machine-readable error codes for Dovo operations."""
 
 from enum import StrEnum
+from typing import Final
 
 
 class ErrorCode(StrEnum):
-    """Canonical machine-readable error codes for Dovo operations."""
+    """Canonical machine-readable error codes for Dovo operations; each declares the exit a command ends with."""
 
     # Internal
     INTERNAL_ERROR = "INTERNAL_ERROR"
+
+    # Workspace
+    WORKSPACE_NOT_INITIALIZED = "WORKSPACE_NOT_INITIALIZED"
+    WORKSPACE_LOCK_TIMEOUT = "WORKSPACE_LOCK_TIMEOUT"
 
     # Git
     GIT_BINARY_MISSING = "GIT_BINARY_MISSING"
@@ -151,6 +156,7 @@ class ErrorCode(StrEnum):
 
     # Interaction
     INTERACTION_ARGUMENTS_INVALID = "INTERACTION_ARGUMENTS_INVALID"
+    INTERACTION_ARGUMENT_FILE_UNREADABLE = "INTERACTION_ARGUMENT_FILE_UNREADABLE"
     INTERACTION_ANSWER_INVALID = "INTERACTION_ANSWER_INVALID"
 
     # Ask
@@ -159,3 +165,27 @@ class ErrorCode(StrEnum):
     ASK_OPTIONS_CONFLICT = "ASK_OPTIONS_CONFLICT"
     ASK_OPTIONS_EMPTY = "ASK_OPTIONS_EMPTY"
     ASK_OPTIONS_INVALID = "ASK_OPTIONS_INVALID"
+
+    @property
+    def exit_code(self) -> int:
+        """Return the exit a command ends with when its result carries this code.
+
+        2 when the failure is decided from the command's own arguments, 130 (128 + SIGINT) for RUN_CANCELLED, and 1 for
+        every other code.
+        """
+        if self in ARGUMENT_ERROR_CODES:
+            return 2
+        if self is ErrorCode.RUN_CANCELLED:
+            return 130
+        return 1
+
+
+# Codes decided from the command's own arguments before Dovo reads or changes anything in the workspace.
+ARGUMENT_ERROR_CODES: Final[frozenset[ErrorCode]] = frozenset(
+    {
+        ErrorCode.PROJECT_ID_INVALID,
+        ErrorCode.CONFIG_KEY_PATH_INVALID,
+        ErrorCode.AGENT_ENV_OVERRIDE_INVALID,
+        ErrorCode.INTERACTION_ARGUMENTS_INVALID,
+    }
+)

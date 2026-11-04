@@ -3,7 +3,7 @@ from typing import Annotated
 import typer
 
 from dovo.cli.options import FormatOption
-from dovo.common.error_codes import ErrorCode
+from dovo.cli.outcome import exit_for
 from dovo.common.filesystem import Filesystem
 from dovo.common.models import OutputFormatOptions
 from dovo.common.version import get_version
@@ -52,7 +52,4 @@ def init_callback(
         display_name=display_name,
         force=force,
     )
-    if result.error_code == ErrorCode.PROJECT_ID_INVALID:
-        raise typer.Exit(code=2)
-    if not result.ok:
-        raise typer.Exit(code=1)
+    exit_for(result)
