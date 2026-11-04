@@ -120,7 +120,10 @@ class SessionShowCliIntegrationTests:
 
         assert result.exit_code == 0
         steps = json.loads(result.stdout)["payload"]["steps"]
-        assert [(step["step_id"], step["state"]) for step in steps] == [("format", "completed"), ("tests", "failed")]
+        assert [(step["step_id"], step["state"], step["error_code"]) for step in steps] == [
+            ("format", "completed", None),
+            ("tests", "failed", "STEP_COMMAND_FAILED"),
+        ]
 
     def test_session_show_cli_json_without_step_data_warns_and_exits_zero(
         self, cli_runner: CliRunner, cli_workspace: Path

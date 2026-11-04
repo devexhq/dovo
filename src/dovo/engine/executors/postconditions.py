@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.engine.executors.artifact_publish import publish_declared_artifacts
@@ -45,6 +46,7 @@ class AssertionPostcondition:
             update={
                 "status": "failed",
                 "error_message": _format_assertion_failure(self._step, result.failed_conditions),
+                "error_code": ErrorCode.STEP_ASSERT_FAILED,
             }
         )
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.catalog.definitions import StepAssert, StepDefinition, StepType
 from dovo.engine.executors.models import StepExecutionContext
 from dovo.engine.executors.step_executor import StepExecution
@@ -22,7 +23,7 @@ class StepRunnerAssertionContractTests:
 
         result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
-        assert (result.status, result.error_message) == ("completed", None)
+        assert (result.status, result.error_message, result.error_code) == ("completed", None, None)
 
     def test_assertion_failure_marks_step_failed_preserving_exit_code_zero(self, tmp_path: Path) -> None:
         step = StepDefinition(
@@ -33,7 +34,7 @@ class StepRunnerAssertionContractTests:
         )
         result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, diagnostics=[])).run()
 
-        assert (result.status, result.exit_code) == ("failed", 0)
+        assert (result.status, result.exit_code, result.error_code) == ("failed", 0, ErrorCode.STEP_ASSERT_FAILED)
         assert result.error_message == (
             "Step 'test-assert-fail' failed assertion checks:\n  [FAIL] file_exists: path 'missing.bin' does not exist"
         )

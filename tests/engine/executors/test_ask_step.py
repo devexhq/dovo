@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import replace
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
@@ -101,7 +103,11 @@ class AskStepExecutorTests:
 
         assert resolution.request is None
         assert resolution.result is not None
-        assert (resolution.result.status, resolution.result.exit_code) == ("failed", 1)
+        assert (resolution.result.status, resolution.result.exit_code, resolution.result.error_code) == (
+            "failed",
+            1,
+            ErrorCode.ASK_OPTIONS_ARTIFACT_NOT_FOUND,
+        )
         assert "for options_from was not found." in (resolution.result.error_message or "")
 
     def test_message_with_uninlinable_content_becomes_failed_step_result(
@@ -118,6 +124,20 @@ class AskStepExecutorTests:
             "failed",
             1,
             "Artifact 'plan' cannot be inlined: artifact has 2 files, content needs exactly one",
+        )
+        assert resolution.result.error_code == ErrorCode.ARTIFACT_CONTENT_UNAVAILABLE
+
+    def test_step_without_interaction_becomes_failed_step_result(self, ask_context: StepExecutionContext) -> None:
+        """Fail an ask step with no interaction with STEP_DEFINITION_INVALID; model_copy skips the load validation."""
+        context = replace(ask_context, step=ask_context.step.model_copy(update={"interaction": None}))
+
+        resolution = resolve_ask_request(context)
+
+        assert resolution.result is not None
+        assert (resolution.result.status, resolution.result.error_code, resolution.result.error_message) == (
+            "failed",
+            ErrorCode.STEP_DEFINITION_INVALID,
+            "Step 'approve' has no interaction to ask.",
         )
 
     def test_empty_multiselect_settles_completed_without_a_request(
@@ -149,7 +169,7 @@ class AskStepExecutorTests:
             ask_context, request, InteractionAnswer(selected=["revise"], comment="use s3cr3t-value")
         )
 
-        assert (result.status, result.exit_code) == ("completed", 0)
+        assert (result.status, result.exit_code, result.error_code) == ("completed", 0, None)
         assert result.outputs["comment"] == "use [REDACTED:ASK_TEST_SECRET]"
         assert json.loads(result.stdout) == {
             "selected": "revise",
@@ -166,7 +186,7 @@ class AskStepExecutorTests:
 
         result = complete_ask_step(ask_context, request, InteractionAnswer(selected=["deny"]))
 
-        assert (result.status, result.exit_code) == ("failed", 1)
+        assert (result.status, result.exit_code, result.error_code) == ("failed", 1, ErrorCode.STEP_ANSWER_FAILED)
         assert result.error_message == "Prompt 'approve' answered 'deny'."
         assert result.outputs["selected"] == "deny"
 

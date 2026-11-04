@@ -73,7 +73,28 @@ Use 'dovo logs <session_id> --step <step_id>' for step output.
 
 A failed agent step whose edit tripped a patch limit, or whose agent reported the task `unfixable` after editing files, lists `Discarded edit saved to <path>.`; with `--format json` the step carries `rejected_patch_path` (`null` for every other step). The saved patch is stored exactly as the agent wrote it and may contain secrets from the agent's output, so no command prints its content; treat the file like any other session artifact.
 
-When a session has no recorded execution state, the command prints `No step data recorded for this session.` instead of the table; when the state cannot be parsed, it prints `Step data could not be read: <reason>`. An unexpected error reading the steps prints `Unexpected error during engine.session_show: <error>` in the same place and is recorded; see [Diagnostic logs](doctor.md#diagnostic-logs). None of these changes the exit code. With `--format json`, the payload carries a `steps` list of objects with the keys `kind`, `step_id`, `name`, `state`, `attempts`, `exit_code`, `duration_seconds`, `error_message`, `rejected_patch_path`, `loop_id`, `iteration`, `iterations`, `skip_cause` (`null` on a row that was not skipped), `branch` and `if_id`; `kind` is `step`, `loop` or `if`, `branch` is `then`, `else` or `none` on an `if` row that started, and `if_id` names the block on each of its steps. In each of these cases `steps` is `[]` and the reason is added to `warnings`.
+When a session has no recorded execution state, the command prints `No step data recorded for this session.` instead of the table; when the state cannot be parsed, it prints `Step data could not be read: <reason>`. An unexpected error reading the steps prints `Unexpected error during engine.session_show: <error>` in the same place and is recorded; see [Diagnostic logs](doctor.md#diagnostic-logs). None of these changes the exit code. With `--format json`, the payload carries a `steps` list of objects with the keys under [Step keys](#step-keys); when the state is missing, cannot be parsed or cannot be read, `steps` is `[]` and the reason is added to `warnings`.
+
+### Step keys
+
+| Key | Description |
+| --- | --- |
+| `kind` | `step`, `loop` or `if`. |
+| `step_id` | The step, loop or `if` block id. |
+| `name` | The name it sets, or `null`. |
+| `state` | Its state, such as `completed`, `failed` or `skipped`. |
+| `attempts` | How many attempts the step made; `null` on a loop or `if` row. |
+| `exit_code` | The exit code of the step's last attempt, or `null`. |
+| `duration_seconds` | The total duration of the step's attempts, or `null`. |
+| `error_message` | Why the step's last attempt failed, with secrets redacted, or `null`. |
+| `error_code` | The code of that failure, such as `STEP_COMMAND_FAILED` or `STEP_TIMEOUT` (see [Step failure codes](run.md#step-failure-codes)); `null` on a completed step, a loop or `if` row, or a step with no result. |
+| `rejected_patch_path` | The saved discarded edit of the step's last attempt, or `null`. |
+| `loop_id` | The loop a body step belongs to, or `null`. |
+| `iteration` | The loop iteration a body step ran in, or `null`. |
+| `iterations` | How many iterations a loop ran, on a loop row; otherwise `null`. |
+| `skip_cause` | `when_false` or `when_unresolved` on a row a `when` list skipped; `null` on a row that was not skipped. |
+| `branch` | `then`, `else` or `none` on an `if` row that started; otherwise `null`. |
+| `if_id` | The `if` block each step of its chosen branch belongs to, or `null`. |
 
 ### Arguments
 

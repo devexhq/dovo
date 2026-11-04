@@ -2,21 +2,35 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
+from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.engine.executors.models import InternalCommandContext, StepDispatchOutcome
 
 
-def _no_active_session_outcome(command: str) -> StepDispatchOutcome:
-    """Build the failed outcome for an internal command with no active session to publish/download against."""
+def _failed_outcome(
+    error_code: ErrorCode, message: str, *, diagnostics: Sequence[DiagnosticRecord] = ()
+) -> StepDispatchOutcome:
+    """Build a failed internal command outcome with exit code 1, its error code, message and diagnostics."""
     return StepDispatchOutcome(
         status="failed",
         exit_code=1,
         stdout="",
         stderr="",
-        error_message=f"Internal command '{command}' requires an active session, but none is set.",
+        error_message=message,
+        error_code=error_code,
+        diagnostics=list(diagnostics),
+    )
+
+
+def _no_active_session_outcome(command: str) -> StepDispatchOutcome:
+    """Build the failed outcome for an internal command with no active session to publish/download against."""
+    return _failed_outcome(
+        ErrorCode.STEP_SESSION_MISSING,
+        f"Internal command '{command}' requires an active session, but none is set.",
     )
 
 
@@ -28,12 +42,9 @@ def handle_artifacts_upload(ctx: InternalCommandContext) -> StepDispatchOutcome:
     name = ctx.env.get("ARTIFACT_NAME", "")
     path_glob = ctx.env.get("ARTIFACT_PATH", "")
     if not name or not path_glob:
-        return StepDispatchOutcome(
-            status="failed",
-            exit_code=1,
-            stdout="",
-            stderr="",
-            error_message="Internal command 'artifacts.upload' requires ARTIFACT_NAME and ARTIFACT_PATH.",
+        return _failed_outcome(
+            ErrorCode.STEP_INPUT_INVALID,
+            "Internal command 'artifacts.upload' requires ARTIFACT_NAME and ARTIFACT_PATH.",
         )
 
     retention_raw = ctx.env.get("ARTIFACT_RETENTION_DAYS")
@@ -46,15 +57,12 @@ def handle_artifacts_upload(ctx: InternalCommandContext) -> StepDispatchOutcome:
         retention_days=retention_days,
         provenance=ArtifactProvenance(step_id=ctx.step_id, attempt=ctx.attempt, loop_iteration=ctx.loop_iteration),
     )
-    if result.ok:
+    if result.error_code is None:
         return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
-    return StepDispatchOutcome(
-        status="failed",
-        exit_code=1,
-        stdout="",
-        stderr="",
-        error_message="; ".join(result.errors) or f"Publishing artifact '{name}' failed.",
-        diagnostics=list(result.diagnostics),
+    return _failed_outcome(
+        result.error_code,
+        "; ".join(result.errors) or f"Publishing artifact '{name}' failed.",
+        diagnostics=result.diagnostics,
     )
 
 
@@ -80,17 +88,14 @@ def handle_artifacts_download(ctx: InternalCommandContext) -> StepDispatchOutcom
     name = ctx.env.get("ARTIFACT_NAME", "")
     dest_raw = ctx.env.get("ARTIFACT_DEST", "")
     if not name or not dest_raw:
-        return StepDispatchOutcome(
-            status="failed",
-            exit_code=1,
-            stdout="",
-            stderr="",
-            error_message="Internal command 'artifacts.download' requires ARTIFACT_NAME and ARTIFACT_DEST.",
+        return _failed_outcome(
+            ErrorCode.STEP_INPUT_INVALID,
+            "Internal command 'artifacts.download' requires ARTIFACT_NAME and ARTIFACT_DEST.",
         )
 
     revision, revision_error = _revision_from_env(ctx.env)
     if revision_error is not None:
-        return StepDispatchOutcome(status="failed", exit_code=1, stdout="", stderr="", error_message=revision_error)
+        return _failed_outcome(ErrorCode.STEP_INPUT_INVALID, revision_error)
 
     dest_path = Path(dest_raw)
     dest = dest_path if dest_path.is_absolute() else ctx.worktree_path / dest_path
@@ -101,14 +106,11 @@ def handle_artifacts_download(ctx: InternalCommandContext) -> StepDispatchOutcom
         revision=revision,
         session_id=ctx.env.get("ARTIFACT_SESSION_ID"),
     )
-    if result.ok:
+    if result.error_code is None:
         return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
-    return StepDispatchOutcome(
-        status="failed",
-        exit_code=1,
-        stdout="",
-        stderr="",
-        error_message="; ".join(result.errors) or f"Downloading artifact '{name}' failed.",
+    return _failed_outcome(
+        result.error_code,
+        "; ".join(result.errors) or f"Downloading artifact '{name}' failed.",
     )
 
 

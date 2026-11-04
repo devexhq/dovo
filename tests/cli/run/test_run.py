@@ -792,6 +792,24 @@ class RunCliRetentionIntegrationTests:
         assert "Worktree: Kept at " in output
         assert f"Remove it with 'dovo worktree delete {session_id}'" in output
 
+    def test_run_cli_json_step_done_event_carries_the_step_error_code(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        write_runnable_blueprint(cli_workspace, key="failing-task", steps=[{"id": "s1", "run": "exit 1"}])
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "run", "failing-task", "--no-worktree", "--format", "json"]
+        )
+
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+        step_done = next(event["payload"] for event in events if event["event_type"] == "StepDoneEvent")
+        assert result.exit_code == 1
+        assert (step_done["step_id"], step_done["ok"], step_done["exit_code"]) == ("s1", False, 1)
+        assert (step_done["error_message"], step_done["error_code"]) == (
+            "Command failed with exit code 1.",
+            "STEP_COMMAND_FAILED",
+        )
+
 
 class RunCliUnfixableAgentIntegrationTests:
     """Typer runner integration tests for an agent step whose agent reports the task unfixable."""
