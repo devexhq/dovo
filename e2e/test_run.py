@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.process import is_process_group_alive
-from e2e.conftest import DOVO_HOME, DovoProcessStarter, DovoRunner, find_event, parse_json, write_blueprint
+from e2e.conftest import DOVO_HOME, DovoProcessStarter, DovoRunner, parse_json, run_result, write_blueprint
 from tests.harness.poll import wait_until
 
 
@@ -69,10 +69,8 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = find_event(result.stdout, "RunSuccessEvent")
-        payload = envelope.get("payload")
-        assert isinstance(payload, dict)
-        assert payload.get("status") == "completed"
+        payload = run_result(result.stdout)
+        assert (payload.get("ok"), payload.get("session_status")) == (True, "completed")
 
         assert (initialized_project / "det_out.txt").read_text().strip() == "deterministic result"
 
@@ -118,8 +116,8 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = find_event(result.stdout, "RunSuccessEvent")
-        assert envelope.get("event_type") == "RunSuccessEvent"
+        payload = run_result(result.stdout)
+        assert (payload.get("ok"), payload.get("session_status")) == (True, "completed")
 
         worktree_dir = initialized_project / ".dovo" / "worktrees" / session_id
         assert worktree_dir.is_dir()
@@ -164,8 +162,8 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = find_event(result.stdout, "RunSuccessEvent")
-        assert envelope.get("event_type") == "RunSuccessEvent"
+        payload = run_result(result.stdout)
+        assert (payload.get("ok"), payload.get("session_status")) == (True, "completed")
 
         applied_file = initialized_project / "applied_file.txt"
         assert applied_file.is_file()
@@ -241,10 +239,8 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = find_event(result.stdout, "RunSuccessEvent")
-        payload = envelope.get("payload")
-        assert isinstance(payload, dict)
-        assert payload.get("session_id") == explicit_id
+        payload = run_result(result.stdout)
+        assert (payload.get("ok"), payload.get("session_id")) == (True, explicit_id)
 
         hist_res = run_dovo(["session", "list", "--format", "json"], cwd=initialized_project)
         assert hist_res.exit_code == 0

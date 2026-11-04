@@ -108,10 +108,9 @@ class BlueprintResumeServiceExecuteTests:
         result = _resume_service(engine_paths, sessions_repo, session_id).execute()
 
         assert (result.ok, result.error_code, result.errors) == (True, None, [])
-        assert result.session_record is not None
-        assert result.session_record.session_id == "crashed"
-        assert result.session_record.status == SessionStatus.COMPLETED
-        assert result.session_record.error_message is None
+        assert result.session_id is not None
+        assert result.session_id == "crashed"
+        assert result.session_status == SessionStatus.COMPLETED
         assert result.warnings == [PAUSED_SENTENCE, RERUN_WARNING]
 
     def test_execute_resumed_run_whose_step_aborts_carries_run_step_failed(
@@ -130,8 +129,8 @@ class BlueprintResumeServiceExecuteTests:
 
         assert (result.ok, result.error_code) == (False, ErrorCode.RUN_STEP_FAILED)
         assert result.errors[0].startswith("Step 'a' failed:")
-        assert result.session_record is not None
-        assert result.session_record.status == SessionStatus.FAILED
+        assert result.session_id is not None
+        assert result.session_status == SessionStatus.FAILED
 
     def test_execute_crashed_run_with_a_failed_step_and_no_step_left_is_finalized(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
@@ -218,7 +217,7 @@ class BlueprintResumeServiceExecuteTests:
         assert seen[1] is fixed_clock
         assert seen[2] is fixed_new_id
 
-    def test_execute_with_explicit_session_resumes_it_and_returns_its_record(
+    def test_execute_with_explicit_session_resumes_it_and_returns_its_session_fields(
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
@@ -237,8 +236,11 @@ class BlueprintResumeServiceExecuteTests:
         ).execute()
 
         assert result.ok
-        assert result.session_record is not None
-        assert result.session_record.session_id == "paused-1"
+        assert (result.session_id, result.blueprint_name, result.session_status) == (
+            "paused-1",
+            "paused-1",
+            SessionStatus.COMPLETED,
+        )
 
     def test_execute_without_session_resumes_the_latest_paused_run(
         self,
@@ -256,8 +258,8 @@ class BlueprintResumeServiceExecuteTests:
             paths=engine_paths, db=sessions_repo, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
         ).execute()
 
-        assert result.session_record is not None
-        assert result.session_record.session_id == latest.session_id
+        assert result.session_id is not None
+        assert result.session_id == latest.session_id
 
     def test_execute_without_session_and_no_paused_run_returns_session_not_found(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
@@ -267,7 +269,7 @@ class BlueprintResumeServiceExecuteTests:
         ).execute()
 
         assert not result.ok
-        assert result.session_record is None
+        assert (result.session_id, result.blueprint_name, result.session_status) == (None, None, None)
         assert result.error_code == ErrorCode.SESSION_NOT_FOUND
         assert result.errors == ["No paused session found to resume."]
 
@@ -284,7 +286,7 @@ class BlueprintResumeServiceExecuteTests:
         ).execute()
 
         assert not result.ok
-        assert result.session_record is None
+        assert (result.session_id, result.blueprint_name, result.session_status) == (None, None, None)
         assert result.error_code == ErrorCode.SESSION_NOT_FOUND
         assert result.errors == ["Session 'ghost' not found."]
 
@@ -313,15 +315,18 @@ class BlueprintResumeServiceValidationTests:
             observer=observer,
         ).execute()
 
-        assert (result.invalid_blueprint, result.error_code) == ("paused-1", ErrorCode.CATALOG_SCHEMA_INVALID)
+        assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
+        assert (result.session_id, result.blueprint_name, result.session_status) == (
+            "paused-1",
+            "paused-1",
+            SessionStatus.PAUSED,
+        )
         assert result.errors == ["Step id 'a' is used by more than one step."]
         assert result.remediations == [Remediation(message="Resolve: Step id 'a' is used by more than one step.")]
-        assert observer.calls == [
-            (
-                "validation_warnings",
-                ["Step 'a' script_path 'missing.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
-            )
+        assert result.warnings == [
+            "Step 'a' script_path 'missing.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."
         ]
+        assert observer.calls == []
         after = sessions_repo.get("paused-1")
         assert after is not None
         assert (after.status, after.execution_state_revision) == (SessionStatus.PAUSED, before.execution_state_revision)
@@ -561,8 +566,8 @@ class BlueprintResumeAnswerTests:
 
         assert result.ok
         assert result.paused_prompt_id is None
-        assert result.session_record is not None
-        assert result.session_record.status == SessionStatus.COMPLETED
+        assert result.session_id is not None
+        assert result.session_status == SessionStatus.COMPLETED
         assert (engine_paths.root_dir / "after.txt").exists()
 
     def test_invalid_answer_leaves_session_paused_and_runs_nothing(
@@ -635,8 +640,8 @@ class BlueprintResumeAnswerTests:
 
         assert result.ok
         assert result.paused_prompt_id == "second"
-        assert result.session_record is not None
-        assert result.session_record.status == SessionStatus.PAUSED
+        assert result.session_id is not None
+        assert result.session_status == SessionStatus.PAUSED
         assert (engine_paths.root_dir / "between.txt").exists()
 
 
@@ -691,8 +696,8 @@ def ask_workspace(
 
 def _session_id(result: BlueprintRunResult) -> str:
     """Return the session id of a run result."""
-    assert result.session_record is not None
-    return result.session_record.session_id
+    assert result.session_id is not None
+    return result.session_id
 
 
 def _loop_steps() -> list[dict[str, object]]:
@@ -761,8 +766,8 @@ class AskLoopEndToEndTests:
 
         assert final.ok
         assert final.paused_prompt_id is None
-        assert final.session_record is not None
-        assert final.session_record.status == SessionStatus.COMPLETED
+        assert final.session_id is not None
+        assert final.session_status == SessionStatus.COMPLETED
         assert ask_workspace.lines("feedback.txt") == ["feedback: ", "feedback: Keep config compatible"]
         record = ask_workspace.artifacts.get(session_id, "plan")
         assert record is not None
@@ -797,7 +802,7 @@ class AskLoopEndToEndTests:
             result = ask_workspace.resume(session_id, HeadlessAnswerInput(step_id="triage", selected=selected))
 
         assert result.ok
-        assert result.session_record is not None
-        assert result.session_record.status == SessionStatus.COMPLETED
+        assert result.session_id is not None
+        assert result.session_status == SessionStatus.COMPLETED
         assert ask_workspace.lines("fixed.txt") == expected_fixed
         assert len(ask_workspace.lines("review-runs.txt")) == expected_reviews

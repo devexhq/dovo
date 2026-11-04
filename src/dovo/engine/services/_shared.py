@@ -2,20 +2,31 @@
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.exceptions import Failure
 from dovo.core.agents.environment import check_env_passthrough_flag
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.catalog.exceptions import CatalogValidateFindings
-from dovo.core.db import SessionRecord, SessionsRepository
-from dovo.engine.models import BlueprintRunResult, RunObserver, RunOutcome
-from dovo.engine.notify import safe_notify
+from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
+from dovo.engine.models import BlueprintRunResult, RunOutcome
 
 
-def caught_result(failure: Failure, warnings: list[str], diagnostics: list[DiagnosticRecord]) -> BlueprintRunResult:
-    """Build the failed result for a failure caught before any session ran, after the caller's warnings and records."""
-    return BlueprintRunResult(
-        session_record=None, warnings=warnings, **failure.result_fields(prior_diagnostics=diagnostics)
+class SessionFields(TypedDict):
+    """The run result's session fields, spread into its constructor."""
+
+    session_id: str | None
+    blueprint_name: str | None
+    session_status: SessionStatus | None
+
+
+def session_fields(record: SessionRecord | None) -> SessionFields:
+    """Return the run result's session_id, blueprint_name and session_status from record, each None without one."""
+    if record is None:
+        return SessionFields(session_id=None, blueprint_name=None, session_status=None)
+    return SessionFields(
+        session_id=record.session_id, blueprint_name=record.blueprint_name, session_status=record.status
     )
 
 
@@ -24,23 +35,20 @@ def failed_result(
     warnings: list[str],
     diagnostics: list[DiagnosticRecord],
     *,
-    blueprint_name: str,
-    observer: RunObserver | None,
+    record: SessionRecord | None = None,
 ) -> BlueprintRunResult:
-    """Build the failed result for a failure caught before any step ran.
+    """Build the failed result for a failure caught before any step ran, after the caller's warnings and records.
 
-    A validation failure, whose data is ``CatalogValidateFindings``, names blueprint_name as the invalid blueprint,
-    lists every validation error, and hands its warnings to the observer as validation warnings; any other failure
-    carries its own message alone.
+    The session fields come from record, the session the failure stopped, or are None without one. A validation
+    failure, whose data is ``CatalogValidateFindings``, lists every validation error and appends its warnings to
+    warnings; any other failure carries its own message alone.
     """
     fields = failure.result_fields(prior_diagnostics=diagnostics)
     findings = failure.data
-    if not isinstance(findings, CatalogValidateFindings):
-        return BlueprintRunResult(session_record=None, warnings=warnings, **fields)
-
-    safe_notify(observer, "on_validation_warnings", findings.warnings)
-    fields["errors"] = list(findings.errors)
-    return BlueprintRunResult(session_record=None, warnings=warnings, invalid_blueprint=blueprint_name, **fields)
+    if isinstance(findings, CatalogValidateFindings):
+        warnings.extend(findings.warnings)
+        fields["errors"] = list(findings.errors)
+    return BlueprintRunResult(warnings=warnings, **fields, **session_fields(record))
 
 
 def load_record(
@@ -70,15 +78,15 @@ def finalize(
 ) -> BlueprintRunResult:
     """Merge outcome warnings and diagnostics, load the session record, and build the terminal BlueprintRunResult.
 
-    ``session_record`` is None whenever the record can't be found — no synthetic
-    fallback record is ever substituted, for either caller.
+    The session fields are read back from the session record and are None whenever it can't be loaded, with no
+    synthetic fallback; error_code, and so ok, is the outcome's whether or not the record loads.
     """
     warnings.extend(run_outcome.warnings)
     diagnostics.extend(run_outcome.diagnostics)
     record = load_record(sessions_db, warnings, diagnostics, session_id) if session_id else None
 
     return BlueprintRunResult(
-        session_record=record,
+        **session_fields(record),
         error_code=run_outcome.error_code,
         errors=list(run_outcome.errors),
         warnings=warnings,

@@ -19,7 +19,7 @@ from dovo.core.sessions import reconcile_stale_sessions
 from dovo.engine.engine import Engine
 from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.models import BlueprintRunResult, FailurePrompter, InteractionPrompter, RunObserver, RunOutcome
-from dovo.engine.services._shared import caught_result, failed_result, finalize, load_record, resolve_env_overrides
+from dovo.engine.services._shared import failed_result, finalize, load_record, resolve_env_overrides
 
 
 @dataclass
@@ -59,19 +59,13 @@ class BlueprintResumeService:
         with catch_failure("engine.resume_target", session_id=self.session_id) as caught:
             target = self._target()
         if caught.failure is not None:
-            return caught_result(caught.failure, self.warnings, self.diagnostics)
+            return failed_result(caught.failure, self.warnings, self.diagnostics)
 
         target_session_id, record = target
         with catch_failure("engine.resume", session_id=target_session_id) as caught:
             run_outcome = self._resume(Catalog(self.paths), target_session_id)
         if caught.failure is not None:
-            return failed_result(
-                caught.failure,
-                self.warnings,
-                self.diagnostics,
-                blueprint_name=record.blueprint_name if record is not None else target_session_id,
-                observer=self.observer,
-            )
+            return failed_result(caught.failure, self.warnings, self.diagnostics, record=record)
 
         return finalize(self.db, self.warnings, self.diagnostics, run_outcome, target_session_id)
 

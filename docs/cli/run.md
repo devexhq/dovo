@@ -52,18 +52,48 @@ The `path` of a `cleanup` event (including with `--format json`) is relative to 
 ### Behavior
 
 1. **Initialization**: When the workspace has no `.dovo/project.json`, `dovo run` initializes it first, as `dovo init` would, and prints nothing when that succeeds. When it fails (for example outside a Git repository, or in a directory whose `.dovo` is `DOVO_HOME`), it prints the same error and fix as `dovo init` and exits `1` without running the blueprint. It first undoes what the failed attempt wrote, leaving `.dovo/` as it was before, so the next `dovo run` tries again. Unlike `dovo run`, `dovo init` leaves a failed attempt's files in place.
-2. **Resolution and validation**: Looks up `<name>` in the blueprint catalog and checks the blueprint it finds exactly as [`dovo blueprint validate <name>`](blueprint.md#dovo-blueprint-validate) does: the same checks, `error_code`, messages, order, warnings and remediations. A file in the repository named like the blueprint is never what gets checked. When validation reports errors, `dovo run` prints a `Blueprint Invalid` panel and exits `1` before it creates a session or a worktree, so no step runs (see [Validation failures](#validation-failures)). Each validation warning prints once, as `Warning: <text>`, before the first step, and the run continues.
+2. **Resolution and validation**: Looks up `<name>` in the blueprint catalog and checks the blueprint it finds exactly as [`dovo blueprint validate <name>`](blueprint.md#dovo-blueprint-validate) does: the same checks, `error_code`, messages, order, warnings and remediations. A file in the repository named like the blueprint is never what gets checked. When validation reports errors, `dovo run` prints a `Run Failed` panel listing every error and exits `1` before it creates a session or a worktree, so no step runs (see [Validation failures](#validation-failures)). Each validation warning is one of the run's warnings: it prints once, as `Warning: <text>`, before the outcome, and the run continues.
 3. **Guards and branches**: A step or loop whose `when` list fails is skipped and prints `[<n>/<total>] <name> — skipped (when: <expression> → FALSE)`, or `→ UNRESOLVED` when the expression referenced a value that does not exist. A step inside a loop's `do` counts its position in `do`. With `--format json` the line is a `StepSkippedEvent` carrying `idx`, `total`, `step_id`, `name`, `cause` and `expression`. An `if` block prints `[<n>/<total>] <name> — <branch> (if: <expression> → TRUE|FALSE|UNRESOLVED; ...)` once, when it chooses its branch, every expression in the order written; with `--format json` that is an `IfBranchEvent` carrying `idx`, `total`, `block_id`, `name`, `branch` and `conditions`. A step inside a branch shows its block's position. A loop that sets `name` shows it instead of its id on its progress lines. See [`when` Guards](../reference/step-schema.md#when-guards) and [`if` Block](../reference/step-schema.md#if-block).
 4. **Execution**: Runs the blueprint. Before it runs, `dovo run` settles sessions left `running` by a `dovo` process that no longer exists: it marks one `paused` when it saved its progress, its worktree still exists if it used one, and none of its processes is still running, and marks every other one `failed`. It adds `Paused 1 interrupted session; continue it with 'dovo resume <session_id>'.`, `Marked 1 interrupted session failed (session_id: <id>).`, or both sentences, paused first, to its warnings. If another `dovo` process holds the workspace lock until the wait times out, `dovo run` stops with a workspace lock timeout error and exits 1.
 5. **Agent steps**: An agent step sends its `prompt` to the provider and applies any change inside the worktree. Under `--no-worktree`, or a resumed in-place run, it fails with `Agent steps require an active git worktree.` Its stdout is one JSON object (`status`, `summary`, `unfixable_reason`, `touched_files`); see [Agent Providers](../guides/agent-providers.md).
 6. **Secret masking**: Streamed step output, the per-step capture, and failure messages mask secret values: environment variables whose names end in `_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD`, or `_AUTH` (values of 6+ characters), matching keys in the repository `.env`, the step's own `env:` entries under those same name suffixes and 6+ character rule, and common credential formats (GitHub tokens, Anthropic keys, AWS access key IDs). Names listed under `environment.sensitive_variables` in `.dovo/config.json` are also masked with no length floor, including when set only in a step's `env:`; see [`dovo config`](config.md). A masked value prints as `[REDACTED:<NAME>]` or `[REDACTED]`. Assertions still evaluate the raw output.
 7. **Environment flags**: `--env-mode` and `--env-passthrough` apply only to this invocation, are never written to config or run state, and are validated before any step starts; an invalid value exits `1`. See [Agent Providers](../guides/agent-providers.md#subprocess-environment).
-8. **Diagnostic logs**: When a run hits an unexpected error, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record and, in terminal output, prints one `Details logged: <path> (event <event_id>)` line per record after the run's warnings and outcome. This covers loading the session record, saving the run's state or status, saving its diff, creating, applying (with `--auto-apply`) or removing its worktree, reconciling interrupted sessions, loading the blueprint (including snapshotting its definitions), and a step launching its process, reading its output, calling its agent provider, publishing its artifacts, resolving its `uses:` step, checking an agent's edit or preparing its private scratch, including when the operating system refuses to create that scratch. The run's errors and warnings, each step's error and the saved session hold the message alone, and a recorded step failure adds no `Details logged:` warning; the step's own warnings, such as a failed optional artifact publish, still appear. When loading the blueprint or the run itself hits any other unexpected error, the run fails with `Unexpected error during engine.run: <error>`. `--format json` output carries no reference to the record. When checking an agent's edit fails, the rejected edit is saved and discarded, or left in the worktree when it cannot be saved.
-9. **Exit Codes**:
+8. **Diagnostic logs**: When a run hits an unexpected error, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record and, in terminal output, prints one `Details logged: <path> (event <event_id>)` line per record after the run's warnings and outcome. This covers loading the session record, saving the run's state or status, saving its diff, creating, applying (with `--auto-apply`) or removing its worktree, reconciling interrupted sessions, loading the blueprint (including snapshotting its definitions), and a step launching its process, reading its output, calling its agent provider, publishing its artifacts, resolving its `uses:` step, checking an agent's edit or preparing its private scratch, including when the operating system refuses to create that scratch. The run's errors and warnings, each step's error and the saved session hold the message alone, and a recorded step failure adds no `Details logged:` warning; the step's own warnings, such as a failed optional artifact publish, still appear. When loading the blueprint or the run itself hits any other unexpected error, the run fails with `Unexpected error during engine.run: <error>`. With `--format json` the records are the run result's `diagnostics`, each with its `event_id` and `log_path`, and no error or warning contains `Details logged:` text. When checking an agent's edit fails, the rejected edit is saved and discarded, or left in the worktree when it cannot be saved.
+9. **Run result**: Every `dovo run` ends with one run result, printed after every other line (see [Run result](#run-result)).
+10. **Exit Codes**:
    - `0`: Successful run or paused run (with run state saved).
    - `1`: Failed run, a blueprint that fails validation, or a failed automatic initialization.
-   - Interrupted with `SIGINT` (Ctrl-C): `dovo run` finishes its cleanup, then ends by the same signal, so shells report `130` and a shell loop stops. A run interrupted while a step runs stops the step, is recorded `cancelled` and prints its outcome first; its worktree is removed unless `--keep` was given. A run interrupted at a `prompt_user` failure prompt, an `ask` prompt or a loop `max_iterations` prompt stays paused.
+   - Interrupted with `SIGINT` (Ctrl-C): `dovo run` finishes its cleanup, then ends by the same signal, so shells report `130` and a shell loop stops. A run interrupted while a step runs stops the step, is recorded `cancelled` and prints its `Run Cancelled` outcome first; its worktree is removed unless `--keep` was given. A run interrupted at a `prompt_user` failure prompt, an `ask` prompt or a loop `max_iterations` prompt stays paused and prints `Run Cancelled`.
    - Interrupted with `SIGTERM`: the same, ending by `SIGTERM` (shells report `143`).
+
+### Run result
+
+Every `dovo run` that gets past initialization ends with one run result, after every other line: when it completes, pauses, fails or is cancelled. In the terminal it prints each warning as a yellow `Warning: <text>` line, then the outcome, then one `Details logged: <path> (event <event_id>)` line per diagnostic log record. The outcome is one of:
+
+- `Blueprint Run Completed: <blueprint_name> (session: <session_id>, status: completed)` for a completed run.
+- `Blueprint paused; checkpoint saved.` for a run that paused without failing, such as a `--no-tty` run at an `ask` prompt. The answer hint, `Run paused at prompt '<id>'. Answer with 'dovo resume <session_id> --answer <id>=<value>'.` (or `Resume with 'dovo resume <session_id>'.` in an interactive terminal), prints just before it, and also before the `Run Cancelled` panel of a run interrupted at an `ask` prompt.
+- A `Run Cancelled` panel for a run you interrupted, holding `Execution cancelled by user.`, or the failed step's message when you interrupted its failure prompt.
+- A `Run Failed` panel for any other failure, with its errors separated by a blank line and a `Fix:` block when the failure has remediations.
+
+With `--format json` the run result is the last line, a `BlueprintRunResult` event. Its payload holds:
+
+| Key | Value |
+| --- | --- |
+| `ok` | `true` exactly when `error_code` is `null`. A paused run is `ok`. |
+| `error_code` | Why the run failed, or `null`. An interrupted run is `RUN_CANCELLED`. |
+| `errors` | The failure's messages. |
+| `warnings` | Every warning of the run, including validation warnings. |
+| `remediations` | The failure's fixes, each with a `message` and a `command` or `null`. |
+| `diagnostics` | The run's diagnostic log records, each with an `event_id` and a `log_path`. |
+| `session_id`, `blueprint_name` | The session the run created, or `null` when it created none. |
+| `session_status` | The session's own status (`completed`, `paused`, `failed` or `cancelled`), or `null` when it created none. A failure is reported by `error_code`, never by this status. |
+| `paused_prompt_id` | The `ask` step the run paused at, or `null`. |
+
+```json
+{"event_type": "BlueprintRunResult", "payload": {"ok": true, "error_code": null, "errors": [], "warnings": [], "remediations": [], "diagnostics": [], "session_id": "blueprint_a3cb925b", "blueprint_name": "deploy", "session_status": "completed", "paused_prompt_id": null}}
+```
+
+When a workspace lock timeout stops the run while it removes its worktree, only the lock timeout error prints, with no run result; [`dovo session show`](session.md) still reports how the run ended.
 
 ### Validation failures
 
@@ -71,20 +101,19 @@ A blueprint with two steps that share the id `a` stops before any step:
 
 ```text
 Running blueprint 'deploy'...
-╭──────────────────────────── Blueprint Invalid ─────────────────────────────╮
-│ Blueprint 'deploy' failed validation; no steps ran.                         │
-│ - Step id 'a' is used by more than one step.                                │
+╭──────────────────────────────── Run Failed ─────────────────────────────────╮
+│ Step id 'a' is used by more than one step.                                  │
 │ Fix:                                                                        │
 │ - Resolve: Step id 'a' is used by more than one step.                       │
 ╰─────────────────────────────────────────────────────────────────────────────╯
 ```
 
-A schema error names the step by its position in `steps`, as in `- steps.0: Value error, Agent steps must specify a non-empty 'prompt' string.`
+A schema error names the step by its position in `steps`, as in `steps.0: Value error, Agent steps must specify a non-empty 'prompt' string.`
 
-With `--format json`, each validation warning is a `WarningEvent` before the first step, and a failed validation is one `BlueprintInvalidEvent` whose payload holds `blueprint`, `error_code`, `errors` (one entry per error) and `remediations`, the same ones `dovo blueprint validate` reports:
+With `--format json`, the run result carries the `error_code`, `errors` (one entry per error), `warnings` and `remediations` that `dovo blueprint validate` reports, and every session field is `null`:
 
 ```json
-{"event_type": "BlueprintInvalidEvent", "payload": {"blueprint": "deploy", "error_code": "CATALOG_SCHEMA_INVALID", "errors": ["Step id 'a' is used by more than one step."], "remediations": [{"message": "Resolve: Step id 'a' is used by more than one step.", "command": null}]}}
+{"event_type": "BlueprintRunResult", "payload": {"ok": false, "error_code": "CATALOG_SCHEMA_INVALID", "errors": ["Step id 'a' is used by more than one step."], "warnings": [], "remediations": [{"message": "Resolve: Step id 'a' is used by more than one step.", "command": null}], "diagnostics": [], "session_id": null, "blueprint_name": null, "session_status": null, "paused_prompt_id": null}}
 ```
 
 ## Examples

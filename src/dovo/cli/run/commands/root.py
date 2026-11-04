@@ -4,80 +4,12 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.run.observer import resolve_cli_observer
-from dovo.cli.run.prompter import DispatcherFailurePrompter, DispatcherInteractionPrompter, paused_prompt_message
-from dovo.cli.ui import (
-    BlueprintInvalidEvent,
-    DiagnosticsEvent,
-    ErrorPanelEvent,
-    MessageEvent,
-    RunSuccessEvent,
-    WarningEvent,
-    ui_dispatcher,
-)
+from dovo.cli.run.prompter import DispatcherFailurePrompter, DispatcherInteractionPrompter
+from dovo.cli.run.result import dispatch_run_result
+from dovo.cli.ui import MessageEvent, ui_dispatcher
 from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
-from dovo.core.db import SessionRecord, SessionStatus
 from dovo.engine import BlueprintRunService
 from dovo.engine.models import BlueprintRunResult
-
-
-def _first_error(result: BlueprintRunResult, fallback: str) -> str:
-    """Return the first error message or a fallback string."""
-    return result.errors[0] if result.errors else fallback
-
-
-def dispatch_blueprint_invalid(result: BlueprintRunResult) -> bool:
-    """Dispatch the Blueprint Invalid event and return True when validation stopped the run before any step."""
-    if result.invalid_blueprint is None or result.error_code is None:
-        return False
-
-    ui_dispatcher.dispatch(
-        BlueprintInvalidEvent(
-            blueprint=result.invalid_blueprint,
-            error_code=result.error_code,
-            errors=list(result.errors),
-            remediations=list(result.remediations),
-        )
-    )
-    return True
-
-
-def _dispatch_paused_prompt(result: BlueprintRunResult, record: SessionRecord | None, *, non_interactive: bool) -> bool:
-    """Dispatch the paused-prompt hint and return True when the run stopped at an unanswered ask."""
-    if result.paused_prompt_id is None or record is None:
-        return False
-
-    message = paused_prompt_message(result.paused_prompt_id, record.session_id, non_interactive=non_interactive)
-    ui_dispatcher.dispatch(MessageEvent(message=message))
-    return True
-
-
-def _dispatch_run_outcome(
-    result: BlueprintRunResult,
-    record: SessionRecord | None,
-) -> None:
-    """Dispatch the appropriate UI event for a completed blueprint run."""
-    if dispatch_blueprint_invalid(result):
-        return
-    if result.ok and record is not None:
-        ui_dispatcher.dispatch(
-            RunSuccessEvent(
-                session_id=record.session_id,
-                blueprint_name=record.blueprint_name,
-                status=record.status,
-            )
-        )
-    elif record is not None and record.status == SessionStatus.PAUSED:
-        ui_dispatcher.dispatch(MessageEvent(message=_first_error(result, "Blueprint paused; checkpoint saved.")))
-    elif record is not None and record.status == SessionStatus.CANCELLED:
-        ui_dispatcher.dispatch(
-            ErrorPanelEvent(
-                title="Blueprint Run Cancelled",
-                message=_first_error(result, "Cancelled by user."),
-            )
-        )
-    else:
-        msg = "\n\n".join(result.errors) if result.errors else "Blueprint execution failed."
-        ui_dispatcher.dispatch(ErrorPanelEvent(title="Run Failed", message=msg))
 
 
 def run_command(
@@ -97,7 +29,7 @@ def run_command(
     output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
     display_format: DisplayFormatOptions = DisplayFormatOptions.ANSI,
 ) -> BlueprintRunResult:
-    """Execute a blueprint."""
+    """Execute a blueprint and end with its run result, after every other event."""
     ui_dispatcher.set_output_format(output_format)
     ui_dispatcher.dispatch(MessageEvent(message=f"Running blueprint '{name}'..."))
 
@@ -131,12 +63,5 @@ def run_command(
             interaction_prompter=interaction_prompter,
         ).execute()
 
-    for warning in result.warnings:
-        ui_dispatcher.dispatch(WarningEvent(message=warning))
-
-    record = result.session_record
-    if not _dispatch_paused_prompt(result, record, non_interactive=not interaction_prompter.is_interactive):
-        _dispatch_run_outcome(result, record)
-    if output_format is OutputFormatOptions.TERMINAL and result.diagnostics:
-        ui_dispatcher.dispatch(DiagnosticsEvent(diagnostics=list(result.diagnostics)))
+    dispatch_run_result(result, non_interactive=not interaction_prompter.is_interactive)
     return result

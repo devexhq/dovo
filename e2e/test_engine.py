@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from e2e.conftest import DovoPtyRunner, DovoRunner, find_event, write_blueprint
+from e2e.conftest import DovoPtyRunner, DovoRunner, run_result, write_blueprint
 
 
 @pytest.mark.e2e
@@ -68,10 +68,8 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = find_event(result.stdout, "RunSuccessEvent")
-        payload = envelope.get("payload")
-        assert isinstance(payload, dict)
-        assert payload.get("status") == "completed"
+        payload = run_result(result.stdout)
+        assert (payload.get("ok"), payload.get("session_status")) == (True, "completed")
 
         downstream_file = initialized_project / "downstream.txt"
         assert downstream_file.is_file()
@@ -107,10 +105,8 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = find_event(result.stdout, "RunSuccessEvent")
-        payload = envelope.get("payload")
-        assert isinstance(payload, dict)
-        assert payload.get("status") == "completed"
+        payload = run_result(result.stdout)
+        assert (payload.get("ok"), payload.get("session_status")) == (True, "completed")
 
         success_file = initialized_project / "success.txt"
         assert success_file.is_file()
@@ -265,10 +261,8 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = find_event(result.stdout, "RunSuccessEvent")
-        payload = envelope.get("payload")
-        assert isinstance(payload, dict)
-        assert payload.get("status") == "completed"
+        payload = run_result(result.stdout)
+        assert (payload.get("ok"), payload.get("session_status")) == (True, "completed")
 
         count_file = initialized_project / "count.txt"
         assert count_file.is_file()

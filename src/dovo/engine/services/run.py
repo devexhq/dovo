@@ -24,8 +24,7 @@ from dovo.engine.models import (
     RunOutcome,
     RunRequest,
 )
-from dovo.engine.notify import safe_notify
-from dovo.engine.services._shared import caught_result, failed_result, finalize, resolve_env_overrides
+from dovo.engine.services._shared import failed_result, finalize, resolve_env_overrides
 
 
 @dataclass
@@ -58,8 +57,8 @@ class BlueprintRunService:
         """Run the full execution pipeline and return the outcome, reporting any failure behind the engine.run catch.
 
         The blueprint record the name resolves to is checked as `dovo blueprint validate` checks it before any
-        session, worktree or step exists: a failure returns with invalid_blueprint set, and the warnings go to the
-        observer's on_validation_warnings before the first step.
+        session, worktree or step exists: a failure returns every validation error, and the validation warnings
+        are in the result's warnings, after any reconciliation warning.
 
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
@@ -74,14 +73,10 @@ class BlueprintRunService:
         with catch_failure("engine.run", blueprint=self.name) as caught:
             env_overrides = resolve_env_overrides(self.env_mode, self.env_passthrough)
             blueprint = Blueprint.load(self.name, catalog=catalog)
-            safe_notify(self.observer, "on_validation_warnings", blueprint.warnings)
+            self.warnings.extend(blueprint.warnings)
             run_outcome = self._run(catalog, blueprint, env_overrides)
-        if caught.failure is not None and blueprint is None:
-            return failed_result(
-                caught.failure, self.warnings, self.diagnostics, blueprint_name=self.name, observer=self.observer
-            )
         if caught.failure is not None:
-            return caught_result(caught.failure, self.warnings, self.diagnostics)
+            return failed_result(caught.failure, self.warnings, self.diagnostics)
 
         return finalize(self.sessions_db, self.warnings, self.diagnostics, run_outcome, run_outcome.session_id or "")
 
