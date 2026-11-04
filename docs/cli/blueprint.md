@@ -8,7 +8,7 @@ With `--format json`, every `dovo blueprint` payload carries `item_type: "bluepr
 
 When `list`, `show`, `create`, `delete` or `validate` fails with an unexpected error, or with an operating-system error writing or deleting a catalog file, and Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record for it, the error message is unchanged and a `Details logged: <path> (event <event_id>)` line naming that file follows it. With `--format json`, the record is listed in `diagnostics` as `{"event_id": …, "log_path": …}`. If the record cannot be written, there is no line and `diagnostics` is empty.
 
-If another Dovo process holds the workspace lock, `create` and `delete` exit with code 1 and print a Workspace Lock Timeout panel; wait for that process to finish and retry.
+If another Dovo process holds the workspace lock and the wait times out, `create` and `delete` print a Workspace Lock Timeout panel, or with `--format json` an `error` event with `error_code` `WORKSPACE_LOCK_TIMEOUT` (see [JSON Output](../reference/json-output.md#the-error-event)), and exit with code 1; wait for that process to finish and retry.
 
 ## Tier precedence
 
@@ -60,3 +60,13 @@ dovo blueprint validate <target> [--format terminal|json]
 `target` is a catalog name or namespaced identifier (e.g. `commit-plan`, `dovo/fix-tests`), or a relative/absolute file path. A catalog name matches blueprints only. There is no `--type` option.
 
 Exits `0` when the definition is valid and `1` on any failure, including a target that names no catalog item.
+
+## Exit codes
+
+Every `dovo blueprint` subcommand exits by its result's `error_code`:
+
+- `0`: the command succeeded, including a `delete` whose confirmation you decline.
+- `2`: a usage error, such as a missing required option or an unknown option.
+- `1`: every other failure, such as `CATALOG_NOT_FOUND` or a definition that fails `validate`, and every failure reported as an `error` event: a workspace without a valid `.dovo/project.json`, a configuration that does not load, a workspace lock timeout or an unexpected error.
+
+See [JSON Output](../reference/json-output.md#exit-codes) for the rule every command follows.

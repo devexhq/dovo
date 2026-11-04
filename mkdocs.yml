@@ -66,6 +66,7 @@ nav:
           - Inputs & Placeholders: reference/inputs-schema.md
           - Assertions & Verification: reference/assertions-schema.md
           - Project Config (.dovo/config.json): reference/config-schema.md
+      - JSON Output: reference/json-output.md
       - CLI:
           - Workspace Init (dovo init): cli/init.md
           - Status (dovo status): cli/status.md

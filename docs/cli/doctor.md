@@ -2,7 +2,7 @@
 
 The `dovo doctor` command runs the registered diagnostic checks and prints a scannable workspace health report covering Git, configuration, filesystem permissions, worktree references, environment binaries, agent setup, and artifact revision integrity.
 
-`dovo doctor` requires `dovo init` first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. Once initialized, it still runs and reports when `config.json` is missing or broken.
+`dovo doctor` requires `dovo init` first: without a valid `.dovo/project.json` it prints a Workspace Not Initialized panel, or with `--format json` an `error` event with `error_code` `WORKSPACE_NOT_INITIALIZED`, whose fix is `dovo init` (see [Workspace not initialized](../reference/json-output.md#workspace-not-initialized)), and exits `1`. Once initialized, it still runs and reports when `config.json` is missing or broken.
 
 ## Usage
 
@@ -41,7 +41,15 @@ Each check in the JSON output reports an `error_code`: `null` for a check that p
 
 The `config.schema` check reports the configuration load's own codes, described above.
 
-The command exits `1` when at least one check has status `FAILED`, and `0` otherwise (including when checks have `WARNING` or `SKIPPED` status). Passing an unrecognized `--category` value exits `2` before any check runs.
+The command exits `1` when at least one check has status `FAILED`, and `0` otherwise (including when checks have `WARNING` or `SKIPPED` status). Passing an unrecognized `--category` value exits `2` before any check runs. See [Exit codes](#exit-codes).
+
+## Exit codes
+
+- `0`: no check failed, including a report whose checks only warn or skip.
+- `1`: at least one check has status `FAILED`, or a failure reported as an `error` event: a workspace without a valid `.dovo/project.json`, a workspace lock timeout or an unexpected error.
+- `2`: a usage error, such as an unrecognized `--category` value or an unknown option.
+
+See [JSON Output](../reference/json-output.md#exit-codes) for the rule every command follows.
 
 ## Diagnostic logs
 

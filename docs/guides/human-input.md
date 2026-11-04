@@ -121,12 +121,14 @@ dovo run feature -f "Add --json to export" --no-tty
 dovo resume --no-tty --answer approve=revise --comment "Keep config compatible"
 ```
 
-The answer is validated before any step runs and the run then continues in that process; a later `ask` pauses again. Use `--comment-file` for long comments, or `--answers-file` with a JSON object `{"step_id": "triage", "selected": ["B1", "B3"], "comment": "..."}` (it cannot be combined with `--answer`, `--comment` or `--comment-file`). An invalid answer exits `1` with the valid choices and leaves the session paused:
+The answer is validated before any step runs and the run then continues in that process; a later `ask` pauses again. Use `--comment-file` for long comments, or `--answers-file` with a JSON object `{"step_id": "triage", "selected": ["B1", "B3"], "comment": "..."}` (it cannot be combined with `--answer`, `--comment` or `--comment-file`). An answer the prompt rejects exits `1` with the valid choices (`error_code` `INTERACTION_ANSWER_INVALID`) and leaves the session paused:
 
 ```text
 Error: 'maybe' is not a valid answer for prompt 'approve'.
 Fix: use one of: approve, revise, deny
 ```
+
+Answer flags that conflict, such as `--comment` together with `--comment-file`, an `--answer` that is not `<step_id>=<value>`, or an `--answers-file` that does not hold a valid answers JSON object exit `2` instead, with `error_code` `INTERACTION_ARGUMENTS_INVALID`. A `--comment-file` or `--answers-file` that cannot be read exits `1` with `error_code` `INTERACTION_ARGUMENT_FILE_UNREADABLE`. Both leave the session paused.
 
 A comment supplied for an option whose policy is `disabled` is discarded with a warning. The flags are listed in [`dovo session resume`](../cli/session.md#dovo-session-resume).
 

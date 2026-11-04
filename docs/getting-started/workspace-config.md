@@ -25,7 +25,7 @@ This creates:
     └── steps/
 ```
 
-Every command except `dovo init` requires this step first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. `dovo run` initializes the workspace automatically. If that initialization fails, for example outside a Git repository or in a directory whose `.dovo` is `DOVO_HOME` (by default your home directory), it prints the same error and fix as `dovo init` and exits `1`, after removing what the failed attempt wrote under `.dovo/`.
+Every command except `dovo init` requires this step first: without a valid `.dovo/project.json` it prints a Workspace Not Initialized panel whose fix is `Initialize the workspace.`, and exits `1`. When `.dovo/project.json` exists but cannot be used, the panel adds a second fix, `Run 'dovo init --id <project-id> --force' to replace the unusable identity.` With `--format json` the same failure is an `error` event with `error_code` `WORKSPACE_NOT_INITIALIZED`; see [JSON Output](../reference/json-output.md#workspace-not-initialized). `dovo run` initializes the workspace automatically. If that initialization fails, for example outside a Git repository or in a directory whose `.dovo` is `DOVO_HOME` (by default your home directory), it prints the same error and fix as `dovo init` and exits `1`, after removing what the failed attempt wrote under `.dovo/`.
 
 ### How the workspace root is found
 

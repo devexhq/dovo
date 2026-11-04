@@ -2,7 +2,7 @@
 
 `dovo config` shows, changes and validates configuration.
 
-Every `dovo config` subcommand requires `dovo init` first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. Once initialized, the subcommands still run when `config.json` is missing or broken so they can report on it. Other commands, except `dovo doctor`, `dovo init` and `dovo status`, stop when the configuration fails to load: they exit `1` with an `Invalid Configuration` panel showing the failure and its `Fix:` lines, plus a `Details logged:` line when a file could not be read.
+Every `dovo config` subcommand requires `dovo init` first: without a valid `.dovo/project.json` it prints a Workspace Not Initialized panel, or with `--format json` an `error` event with `error_code` `WORKSPACE_NOT_INITIALIZED`, whose fix is `dovo init` (see [Workspace not initialized](../reference/json-output.md#workspace-not-initialized)), and exits `1`. Once initialized, the subcommands still run when `config.json` is missing or broken so they can report on it. Other commands, except `dovo doctor`, `dovo init` and `dovo status`, stop when the configuration fails to load: they exit `1` with an `Invalid Configuration` panel showing the failure and its `Fix:` lines, plus a `Details logged:` line when a file could not be read. With `--format json` they print an `error` event instead, carrying the configuration failure's own `error_code`, such as `CONFIG_NOT_FOUND` or `CONFIG_JSON_INVALID` (see [JSON Output](../reference/json-output.md#the-error-event)).
 
 ## Subcommands
 
@@ -67,7 +67,7 @@ dovo config set worktree.base_ref main
 dovo config set worktree.base_ref '"12345"'
 ```
 
-On failure, `dovo config set` exits with code 1, leaves `.dovo/config.json` unchanged and reports an `error_code` with `--format json`: the code [`dovo config show`](#dovo-config-show) reports when `.dovo/config.json` is missing or broken, `CONFIG_SCHEMA_INVALID` when the new value fails schema validation, `CONFIG_TYPE_CONFLICT` when the key crosses a value that is not an object, `CONFIG_KEY_PATH_INVALID` when the key is empty or has an empty segment, and `CONFIG_WRITE_FAILED` when the file cannot be written. When the file cannot be read or written, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record, prints a `Details logged: <path> (event <event_id>)` line after the panel, and lists the record in `diagnostics` with `--format json`. A successful run reports `error_code` `null` and empty `errors`. The JSON payload has no `status` key: a failure is reported only by its `error_code`, `errors`, remediations and `diagnostics`.
+On failure, `dovo config set` leaves `.dovo/config.json` unchanged and reports an `error_code` with `--format json`. It exits with code `2` for `CONFIG_KEY_PATH_INVALID` and with code `1` for every other code: the code [`dovo config show`](#dovo-config-show) reports when `.dovo/config.json` is missing or broken, `CONFIG_SCHEMA_INVALID` when the new value fails schema validation, `CONFIG_TYPE_CONFLICT` when the key crosses a value that is not an object, `CONFIG_KEY_PATH_INVALID` when the key is empty or has an empty segment, and `CONFIG_WRITE_FAILED` when the file cannot be written. When the file cannot be read or written, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record, prints a `Details logged: <path> (event <event_id>)` line after the panel, and lists the record in `diagnostics` with `--format json`. A successful run reports `error_code` `null` and empty `errors`. The JSON payload has no `status` key: a failure is reported only by its `error_code`, `errors`, remediations and `diagnostics`.
 
 #### `environment.sensitive_variables`
 
@@ -103,7 +103,7 @@ dovo config unset agents
 
 On a `.dovo/config.json` that loads, removing a key that is already absent is a no-op and exits successfully without writing to disk. Removing the last key of a provider block leaves an empty block (`"copilot": {}`) under `agents`.
 
-On failure, `dovo config unset` exits with code 1, leaves `.dovo/config.json` unchanged and reports the same `error_code`, `Details logged:` line and `diagnostics` entry as [`dovo config set`](#dovo-config-set), with `CONFIG_SCHEMA_INVALID` when the file would fail schema validation without the key. When `.dovo/config.json` cannot be loaded, including when it already fails schema validation, `dovo config unset` fails with the failure [`dovo config show`](#dovo-config-show) reports for that file, whether or not the key is present. Its JSON payload has no `status` key; `existed` reports whether the key was present and `previous_value` holds the value it removed. A successful run reports `error_code` `null` and empty `errors`.
+On failure, `dovo config unset` leaves `.dovo/config.json` unchanged, exits with the same code as `dovo config set` (`2` for `CONFIG_KEY_PATH_INVALID`, `1` otherwise) and reports the same `error_code`, `Details logged:` line and `diagnostics` entry as [`dovo config set`](#dovo-config-set), with `CONFIG_SCHEMA_INVALID` when the file would fail schema validation without the key. When `.dovo/config.json` cannot be loaded, including when it already fails schema validation, `dovo config unset` fails with the failure [`dovo config show`](#dovo-config-show) reports for that file, whether or not the key is present. Its JSON payload has no `status` key; `existed` reports whether the key was present and `previous_value` holds the value it removed. A successful run reports `error_code` `null` and empty `errors`.
 
 ### `dovo config validate`
 
@@ -116,3 +116,13 @@ dovo config validate
 On failure it lists the missing fields or invalid values. A `default_agent` value or `agents` key other than `copilot` or `claude`, and the legacy top-level `agent` key, are reported as schema validation errors, and the command exits with code 1; with `--format json`, `error_code` is `CONFIG_SCHEMA_INVALID` and `errors` lists them. A `default_agent` that passes schema validation but names no supported provider is reported as `default_agent: Unsupported agent provider '<name>'. Supported: <providers>.`, with `error_code` `AGENT_PROVIDER_UNSUPPORTED`. The file is never modified.
 
 When `.dovo/config.json` cannot be loaded, `dovo config validate` exits with code 1 and reports the same `error_code`, `errors` and remediations as [`dovo config show`](#dovo-config-show), including the `Details logged:` line and `diagnostics` entry when the file cannot be read; a missing file reports `error_code` `CONFIG_NOT_FOUND`, and a file that fails schema validation reports `error_code` `CONFIG_SCHEMA_INVALID`. A valid file reports `error_code` `null` and empty `errors`. The JSON payload has no `status` or `status_label` key.
+
+## Exit codes
+
+Every `dovo config` subcommand exits by its result's `error_code`:
+
+- `0`: the command succeeded, including `dovo config unset` of a key that is already absent.
+- `2`: `dovo config set` or `dovo config unset` with an empty key or a key with an empty segment (`CONFIG_KEY_PATH_INVALID`), or a usage error such as an unknown option.
+- `1`: every other failure, such as `CONFIG_NOT_FOUND` or `CONFIG_SCHEMA_INVALID`, and every failure reported as an `error` event: a workspace without a valid `.dovo/project.json`, a workspace lock timeout or an unexpected error.
+
+See [JSON Output](../reference/json-output.md#exit-codes) for the rule every command follows.

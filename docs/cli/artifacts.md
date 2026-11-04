@@ -64,7 +64,17 @@ Pruning deletes artifact revisions whose `expires_at` (set from a step's `retent
 
 A failure to read Dovo's own artifact storage writes a [diagnostic log](doctor.md#diagnostic-logs) record, listed in `diagnostics` with `--format json`.
 
-`dovo artifacts prune` without `--force` while `prune.remove_expired_artifacts` is `false` prints `Artifact pruning is disabled; pass --force to override.` and exits `0`; with `--format json` it reports `disabled: true` and `items: []`. Every other pass reports `disabled: false`. A revision that cannot be deleted is listed with `pruned: false` and its `error`, and the command still exits `0`. When the workspace lock cannot be acquired in time, `dovo artifacts prune` prints the Workspace Lock Timeout panel and exits `1`, as every other command does.
+`dovo artifacts prune` without `--force` while `prune.remove_expired_artifacts` is `false` prints `Artifact pruning is disabled; pass --force to override.` and exits `0`; with `--format json` it reports `disabled: true` and `items: []`. Every other pass reports `disabled: false`. A revision that cannot be deleted is listed with `pruned: false` and its `error`, and the command still exits `0`. When the workspace lock cannot be acquired in time, `dovo artifacts prune` prints the Workspace Lock Timeout panel, or with `--format json` an `error` event with `error_code` `WORKSPACE_LOCK_TIMEOUT` (see [JSON Output](../reference/json-output.md#the-error-event)), and exits `1`, as every other command does.
+
+## Exit codes
+
+Every `dovo artifacts` subcommand exits by its result's `error_code`:
+
+- `0`: the command succeeded, including a `prune` that is disabled or that lists revisions it could not delete.
+- `2`: a usage error, such as a missing `--dest` or an unknown option.
+- `1`: every other failure, such as the `download` failures above, and every failure reported as an `error` event: a workspace without a valid `.dovo/project.json`, a configuration that does not load, a workspace lock timeout or an unexpected error.
+
+See [JSON Output](../reference/json-output.md#exit-codes) for the rule every command follows.
 
 ## Examples
 
