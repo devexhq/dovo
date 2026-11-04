@@ -8,20 +8,11 @@ from rich.text import Text
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import with_diagnostics
 from dovo.cli.ui.formatters.status.common import build_status_table
-from dovo.cli.ui.formatters.status.status_view import StatusHealth, StatusView
+from dovo.cli.ui.formatters.status.status_view import StatusView
 from dovo.common.formatters import format_remediations
 from dovo.common.utils import display_path
 from dovo.core.config import agent_settings
 from dovo.core.status.models import DovoStatusResult
-
-
-def _derive_health(data: DovoStatusResult) -> StatusHealth:
-    """Classify overall workspace health: uninitialized without .dovo/ or config.json, degraded when not ok."""
-    if not data.is_initialized:
-        return StatusHealth.UNINITIALIZED
-    if not data.ok:
-        return StatusHealth.DEGRADED
-    return StatusHealth.OK
 
 
 def _derive_project_name(data: DovoStatusResult) -> str | None:
@@ -61,7 +52,13 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
         git_branch = data.git.branch if data.git.is_git_repo else None
 
         return StatusView(
-            health=_derive_health(data),
+            ok=data.ok,
+            error_code=data.error_code,
+            errors=list(data.errors),
+            warnings=list(data.warnings),
+            remediations=list(data.remediations),
+            diagnostics=list(data.diagnostics),
+            status=data.status,
             root_dir=data.root_dir,
             project_name=_derive_project_name(data),
             config_error_code=data.config.error_code,
@@ -75,10 +72,6 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
             valid_catalog_items=valid_items,
             total_catalog_items=total_items,
             total_sessions=data.database.total_sessions,
-            errors=list(data.errors),
-            warnings=list(data.warnings),
-            remediations=list(data.remediations),
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: DovoStatusResult) -> RenderableType:

@@ -12,7 +12,6 @@ from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import with_diagnostics
 from dovo.cli.ui.formatters.doctor.doctor_views import DoctorCheckView, DoctorReportView
 from dovo.common.formatters import format_remediations
-from dovo.common.models import Remediation
 from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
 
 _STATUS_STYLE: Final[dict[CheckStatus, str]] = {
@@ -53,19 +52,18 @@ def _summary_line(view: DoctorReportView) -> str:
     )
 
 
-def _all_remediations(view: DoctorReportView) -> list[Remediation]:
-    """Return every remediation across view.checks, in check order."""
-    return [remediation for check in view.checks for remediation in check.remediations]
-
-
 class DoctorReportFormatter(ComponentFormatter[DiagnosticsReport, DoctorReportView]):
     """Formatter for aggregated diagnostic doctor reports."""
 
     def transform(self, data: DiagnosticsReport) -> DoctorReportView:
-        """Reshape DiagnosticsReport and its DiagnosticCheckRecord entries into DoctorReportView/DoctorCheckView, field for field."""
+        """Reshape DiagnosticsReport, header first, and its DiagnosticCheckRecord entries into DoctorReportView/DoctorCheckView, field for field."""
         return DoctorReportView(
             ok=data.ok,
-            has_warnings=data.has_warnings,
+            error_code=data.error_code,
+            errors=list(data.errors),
+            warnings=list(data.warnings),
+            remediations=list(data.remediations),
+            diagnostics=list(data.diagnostics),
             workspace_root=data.workspace_root,
             duration_seconds=data.duration_seconds,
             checks=[
@@ -85,15 +83,14 @@ class DoctorReportFormatter(ComponentFormatter[DiagnosticsReport, DoctorReportVi
                 )
                 for check in data.checks
             ],
-            diagnostics=data.diagnostics,
         )
 
     def to_rich(self, data: DiagnosticsReport) -> RenderableType:
-        """Render the checks table, summary line, and (when any check has remediations) one Fix: block with every remediation in check order, then diagnostic_lines(view.diagnostics), from transform(data)."""
+        """Render the checks table, summary line, and (when the report has remediations) one Fix: block with view.remediations, then diagnostic_lines(view.diagnostics), from transform(data)."""
         view = self.transform(data)
         renderables: list[RenderableType] = [_build_checks_table(view), Text(_summary_line(view))]
 
-        remediation_summary = format_remediations(_all_remediations(view))
+        remediation_summary = format_remediations(view.remediations)
         if remediation_summary:
             renderables.append(Text(remediation_summary))
 

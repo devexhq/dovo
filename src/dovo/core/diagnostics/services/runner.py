@@ -83,6 +83,33 @@ def _crash_result(check: DiagnosticCheck, exc: Exception, record: DiagnosticReco
     )
 
 
+def build_report(
+    context: DiagnosticsContext, checks: list[DiagnosticCheckRecord], duration_seconds: float
+) -> DiagnosticsReport:
+    """Build the DiagnosticsReport for checks, failing with DOCTOR_CHECKS_FAILED exactly when a check failed.
+
+    Args:
+        context: The context the checks ran against.
+        checks: Every check record, in check order.
+        duration_seconds: The measured duration of the whole run.
+
+    Returns:
+        The report, with the failed and warning checks' messages and remediations in its header.
+    """
+    failed = [check for check in checks if check.status == CheckStatus.FAILED]
+    warned = [check for check in checks if check.status == CheckStatus.WARNING]
+    return DiagnosticsReport(
+        error_code=ErrorCode.DOCTOR_CHECKS_FAILED if failed else None,
+        errors=[check.message for check in failed],
+        warnings=[check.message for check in warned],
+        remediations=[remediation for check in (*failed, *warned) for remediation in check.remediations],
+        diagnostics=[record for check in checks for record in check.diagnostics],
+        workspace_root=context.cwd,
+        checks=checks,
+        duration_seconds=duration_seconds,
+    )
+
+
 def _with_remediations(result: DiagnosticCheckRecord) -> DiagnosticCheckRecord:
     """Return result with remediations populated via resolve_remediations."""
     return result.model_copy(update={"remediations": resolve_remediations(result)})
@@ -124,9 +151,4 @@ class DiagnosticRunner:
                 results.append(execute_single_check(check, context))
 
         watch.stop()
-        return DiagnosticsReport(
-            workspace_root=context.cwd,
-            checks=results,
-            diagnostics=[record for result in results for record in result.diagnostics],
-            duration_seconds=watch.elapsed_seconds,
-        )
+        return build_report(context, results, watch.elapsed_seconds)

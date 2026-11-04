@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from rich.table import Table
 
-from dovo.cli.ui.formatters.status.status_view import StatusHealth, StatusView
+from dovo.cli.ui.formatters.status.status_view import StatusView
+from dovo.core.status import WorkspaceHealth
 
 
 def get_table_title(view: StatusView) -> str:
     """Determine the status table title based on workspace health."""
-    if view.health == StatusHealth.UNINITIALIZED:
+    if view.status == WorkspaceHealth.UNINITIALIZED:
         return "Dovo Workspace Status (Uninitialized)"
-    if view.health == StatusHealth.DEGRADED:
+    if view.status == WorkspaceHealth.DEGRADED:
         return "Dovo Workspace Status (Degraded)"
     return "Dovo Workspace Status"
 
@@ -22,7 +23,7 @@ def format_project_name(view: StatusView) -> str:
         return view.project_name
     if view.config_error_code is None:
         return "[dim]unnamed_project[/dim]"
-    if view.health != StatusHealth.UNINITIALIZED:
+    if view.status != WorkspaceHealth.UNINITIALIZED:
         return "[dim]unknown (invalid config)[/dim]"
     return "[dim]Uninitialized[/dim]"
 
@@ -31,7 +32,7 @@ def format_config_status(view: StatusView) -> str:
     """Format the config cell: ok with the relative path, or the load's error code, yellow when uninitialized."""
     if view.config_error_code is None:
         return f"ok ({view.config_path_relative})"
-    colour = "yellow" if view.health == StatusHealth.UNINITIALIZED else "red"
+    colour = "yellow" if view.status == WorkspaceHealth.UNINITIALIZED else "red"
     return f"[{colour}]{view.config_error_code}[/{colour}]"
 
 
