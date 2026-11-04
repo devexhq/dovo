@@ -6,10 +6,10 @@ import json
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.redact import SecretRedactor
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import InteractionSpec
-from dovo.core.interaction import InteractionResolveStatus
 from dovo.core.interaction.services.resolve import resolve_request
 from tests.conftest import PublishArtifact
 
@@ -65,7 +65,8 @@ class ResolveRequestTests:
     def test_text_mode_resolves_without_options(self) -> None:
         result = resolve_request("ask", _spec(mode="text"), "Why?", None, _NO_SECRETS)
 
-        assert result.status == InteractionResolveStatus.OK
+        assert result.ok is True
+        assert result.error_code is None
         assert result.request is not None
         assert result.request.options == []
 
@@ -94,7 +95,7 @@ class ResolveRequestTests:
         assert result.request.artifact.preview == ["v2"]
         assert result.request.artifact.digest != ""
 
-    def test_multiselect_empty_array_returns_no_options_request(
+    def test_multiselect_empty_array_succeeds_with_no_options(
         self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
     ) -> None:
         publish_artifact("review", _findings([]))
@@ -102,66 +103,59 @@ class ResolveRequestTests:
 
         result = resolve_request("triage", spec, "Fix?", artifact_store, _NO_SECRETS)
 
-        assert result.status == InteractionResolveStatus.NO_OPTIONS
         assert result.ok is True
+        assert result.error_code is None
         assert result.request is not None
         assert result.request.options == []
 
     @pytest.mark.parametrize(
-        ("files", "options_from", "status", "code"),
+        ("files", "options_from", "code"),
         [
             pytest.param(
                 None,
                 _FINDINGS_FROM,
-                InteractionResolveStatus.OPTIONS_ARTIFACT_NOT_FOUND,
-                "ASK_OPTIONS_ARTIFACT_NOT_FOUND",
+                ErrorCode.ASK_OPTIONS_ARTIFACT_NOT_FOUND,
                 id="missing_artifact",
             ),
             pytest.param(
                 _findings([]),
                 {**_FINDINGS_FROM, "file": "other.json"},
-                InteractionResolveStatus.OPTIONS_INVALID,
-                "ASK_OPTIONS_INVALID",
+                ErrorCode.ASK_OPTIONS_INVALID,
                 id="file_not_in_artifact",
             ),
             pytest.param(
                 {"review.json": "{not json"},
                 _FINDINGS_FROM,
-                InteractionResolveStatus.OPTIONS_INVALID,
-                "ASK_OPTIONS_INVALID",
+                ErrorCode.ASK_OPTIONS_INVALID,
                 id="invalid_json",
             ),
             pytest.param(
                 {"review.json": json.dumps({"findings": {"id": 1}})},
                 _FINDINGS_FROM,
-                InteractionResolveStatus.OPTIONS_INVALID,
-                "ASK_OPTIONS_INVALID",
+                ErrorCode.ASK_OPTIONS_INVALID,
                 id="path_not_array",
             ),
             pytest.param(
                 _findings([{"id": "B1"}]),
                 _FINDINGS_FROM,
-                InteractionResolveStatus.OPTIONS_INVALID,
-                "ASK_OPTIONS_INVALID",
+                ErrorCode.ASK_OPTIONS_INVALID,
                 id="missing_label_field",
             ),
             pytest.param(
                 _findings([{"id": "bad value", "summary": "s"}]),
                 _FINDINGS_FROM,
-                InteractionResolveStatus.OPTIONS_INVALID,
-                "ASK_OPTIONS_INVALID",
+                ErrorCode.ASK_OPTIONS_INVALID,
                 id="value_breaks_pattern",
             ),
         ],
     )
-    def test_options_failures_report_their_status_and_code(
+    def test_options_failures_report_their_code(
         self,
         artifact_store: ArtifactStore,
         publish_artifact: PublishArtifact,
         files: dict[str, str] | None,
         options_from: dict[str, str],
-        status: InteractionResolveStatus,
-        code: str,
+        code: ErrorCode,
     ) -> None:
         if files is not None:
             publish_artifact("review", files)
@@ -169,7 +163,7 @@ class ResolveRequestTests:
 
         result = resolve_request("triage", spec, "Fix?", artifact_store, _NO_SECRETS)
 
-        assert result.status == status
+        assert result.ok is False
         assert result.error_code == code
         assert len(result.errors) == 1
         assert result.request is None
@@ -182,8 +176,7 @@ class ResolveRequestTests:
 
         result = resolve_request("triage", spec, "Fix?", artifact_store, _NO_SECRETS)
 
-        assert result.status == InteractionResolveStatus.OPTIONS_DUPLICATE
-        assert result.error_code == "ASK_OPTIONS_DUPLICATE"
+        assert result.error_code == ErrorCode.ASK_OPTIONS_CONFLICT
         assert "'B1'" in result.errors[0]
 
     def test_select_with_fewer_than_two_items_reports_options_empty(
@@ -194,14 +187,12 @@ class ResolveRequestTests:
 
         result = resolve_request("triage", spec, "Fix?", artifact_store, _NO_SECRETS)
 
-        assert result.status == InteractionResolveStatus.OPTIONS_EMPTY
-        assert result.error_code == "ASK_OPTIONS_EMPTY"
+        assert result.error_code == ErrorCode.ASK_OPTIONS_EMPTY
 
     def test_unknown_display_artifact_reports_artifact_not_found(self, artifact_store: ArtifactStore) -> None:
         result = resolve_request("approve", _spec(artifact="missing"), "Go?", artifact_store, _NO_SECRETS)
 
-        assert result.status == InteractionResolveStatus.ARTIFACT_NOT_FOUND
-        assert result.error_code == "ASK_ARTIFACT_NOT_FOUND"
+        assert result.error_code == ErrorCode.ASK_ARTIFACT_NOT_FOUND
         assert result.errors == ["Artifact 'missing' was not found."]
 
     @pytest.mark.parametrize(

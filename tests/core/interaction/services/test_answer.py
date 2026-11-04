@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.catalog.definitions import CommentPolicy
 from dovo.core.interaction import (
     HeadlessAnswerInput,
     InteractionAnswer,
-    InteractionAnswerStatus,
     InteractionRequest,
     RequestArtifact,
     RequestComment,
@@ -110,7 +111,7 @@ class ValidateAnswerTests:
     ) -> None:
         result = validate_answer(_request(mode), answer)
 
-        assert result.status == InteractionAnswerStatus.INVALID
+        assert result.error_code == ErrorCode.INTERACTION_ANSWER_INVALID
         assert result.errors == [expected_error]
 
     def test_text_mode_trims_text(self) -> None:
@@ -235,7 +236,7 @@ class ParseHeadlessAnswerTests:
     ) -> None:
         result = parse_headless_answer(_request(), supplied)
 
-        assert result.status == InteractionAnswerStatus.INVALID
+        assert result.error_code == ErrorCode.INTERACTION_ANSWER_INVALID
         assert result.errors == [expected_error]
 
     def test_comment_on_disabled_policy_is_discarded_with_warning(self) -> None:
@@ -253,21 +254,33 @@ class ParseAnswerArgumentsTests:
     """Contract tests for parse_answer_arguments."""
 
     def test_answer_flag_splits_on_first_equals(self) -> None:
-        result = parse_answer_arguments("approve=revise=x", "x", None)
+        result = parse_answer_arguments("approve=revise=x", "x", None, None)
 
         assert result.supplied == HeadlessAnswerInput(step_id="approve", value="revise=x", comment="x")
 
-    def test_answers_file_decodes_object(self) -> None:
-        document = json.dumps({"step_id": "triage", "selected": ["B1"], "comment": "c", "text": "t"})
+    def test_answers_file_decodes_object(self, tmp_path: Path) -> None:
+        answers_file = tmp_path / "answers.json"
+        answers_file.write_text(
+            json.dumps({"step_id": "triage", "selected": ["B1"], "comment": "c", "text": "t"}), encoding="utf-8"
+        )
 
-        result = parse_answer_arguments(None, None, document)
+        result = parse_answer_arguments(None, None, None, answers_file)
 
         assert result.supplied == HeadlessAnswerInput(step_id="triage", selected=["B1"], comment="c", text="t")
 
+    def test_comment_file_text_becomes_the_comment(self, tmp_path: Path) -> None:
+        comment_file = tmp_path / "comment.txt"
+        comment_file.write_text("from file", encoding="utf-8")
+
+        result = parse_answer_arguments("approve=revise", None, comment_file, None)
+
+        assert result.supplied == HeadlessAnswerInput(step_id="approve", value="revise", comment="from file")
+
     def test_no_flags_return_ok_without_input(self) -> None:
-        result = parse_answer_arguments(None, None, None)
+        result = parse_answer_arguments(None, None, None, None)
 
         assert result.ok is True
+        assert result.error_code is None
         assert result.supplied is None
 
     @pytest.mark.parametrize(
@@ -283,19 +296,42 @@ class ParseAnswerArgumentsTests:
             pytest.param(None, None, '{"selected": ["a"]}', id="missing_step_id"),
         ],
     )
-    def test_invalid_argument_combinations_are_rejected(
-        self, answer: str | None, comment: str | None, answers_file_text: str | None
+    def test_invalid_argument_combinations_report_arguments_invalid(
+        self, tmp_path: Path, answer: str | None, comment: str | None, answers_file_text: str | None
     ) -> None:
-        result = parse_answer_arguments(answer, comment, answers_file_text)
+        answers_file = None
+        if answers_file_text is not None:
+            answers_file = tmp_path / "answers.json"
+            answers_file.write_text(answers_file_text, encoding="utf-8")
 
-        assert result.status == InteractionAnswerStatus.INVALID
+        result = parse_answer_arguments(answer, comment, None, answers_file)
+
+        assert result.ok is False
+        assert result.error_code == ErrorCode.INTERACTION_ARGUMENTS_INVALID
         assert result.supplied is None
         assert len(result.errors) == 1
 
     def test_comment_without_answer_names_the_flag_rule(self) -> None:
-        result = parse_answer_arguments(None, "c", None)
+        result = parse_answer_arguments(None, "c", None, None)
 
         assert result.errors == ["--comment and --comment-file need --answer."]
+
+    def test_comment_with_comment_file_reports_arguments_invalid(self, tmp_path: Path) -> None:
+        comment_file = tmp_path / "comment.txt"
+        comment_file.write_text("c", encoding="utf-8")
+
+        result = parse_answer_arguments("approve=revise", "c", comment_file, None)
+
+        assert result.error_code == ErrorCode.INTERACTION_ARGUMENTS_INVALID
+        assert result.errors == ["Use --comment or --comment-file together with --answer, not both."]
+
+    def test_unreadable_answers_file_reports_arguments_invalid(self, tmp_path: Path) -> None:
+        missing = tmp_path / "missing.json"
+
+        result = parse_answer_arguments(None, None, None, missing)
+
+        assert result.error_code == ErrorCode.INTERACTION_ARGUMENTS_INVALID
+        assert result.errors[0].startswith(f"Cannot read '{missing}': ")
 
 
 class BuildOutputsTests:

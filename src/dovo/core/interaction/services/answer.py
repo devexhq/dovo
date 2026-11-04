@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from pathlib import Path
 
 from pydantic import ValidationError
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.catalog.definitions import CommentPolicy
 from dovo.core.interaction.models import (
     COMMENT_MAX_CHARACTERS,
@@ -14,7 +16,6 @@ from dovo.core.interaction.models import (
     HeadlessArgumentsResult,
     InteractionAnswer,
     InteractionAnswerResult,
-    InteractionAnswerStatus,
     InteractionRequest,
     RequestOption,
 )
@@ -50,15 +51,12 @@ def validate_answer(request: InteractionRequest, answer: InteractionAnswer) -> I
     if comment_error is not None:
         return _invalid(comment_error)
 
-    return InteractionAnswerResult(
-        status=InteractionAnswerStatus.OK,
-        answer=InteractionAnswer(selected=selected, comment=comment, text=text or None),
-    )
+    return InteractionAnswerResult(answer=InteractionAnswer(selected=selected, comment=comment, text=text or None))
 
 
 def _invalid(message: str) -> InteractionAnswerResult:
-    """Return an INVALID answer result carrying message."""
-    return InteractionAnswerResult(status=InteractionAnswerStatus.INVALID, errors=[message])
+    """Return a failed answer result carrying INTERACTION_ANSWER_INVALID and message."""
+    return InteractionAnswerResult(error_code=ErrorCode.INTERACTION_ANSWER_INVALID, errors=[message])
 
 
 def _text_error(request: InteractionRequest, answer: InteractionAnswer) -> str | None:
@@ -156,6 +154,35 @@ def _multiselect_values(raw: str) -> list[str] | str:
 
 
 def parse_answer_arguments(
+    answer: str | None, comment: str | None, comment_file: Path | None, answers_file: Path | None
+) -> HeadlessArgumentsResult:
+    """Read the comment and answers files, then combine the answer flags into one headless input.
+
+    `<step_id>=<value>` is split on the first `=`, and the answers file is decoded as a JSON object; conflicting
+    flags and unreadable files are rejected.
+    """
+    if comment is not None and comment_file is not None:
+        return _invalid_arguments("Use --comment or --comment-file together with --answer, not both.")
+    texts = _read_argument_files(comment_file, answers_file)
+    if isinstance(texts, str):
+        return _invalid_arguments(texts)
+    return _combine_arguments(answer, texts.get("comment", comment), texts.get("answers"))
+
+
+def _read_argument_files(comment_file: Path | None, answers_file: Path | None) -> dict[str, str] | str:
+    """Return the text of each given file keyed `comment` or `answers`, or the reason one cannot be read."""
+    texts: dict[str, str] = {}
+    for key, path in (("comment", comment_file), ("answers", answers_file)):
+        if path is None:
+            continue
+        try:
+            texts[key] = path.read_text(encoding="utf-8")
+        except OSError as error:
+            return f"Cannot read '{path}': {error}"
+    return texts
+
+
+def _combine_arguments(
     answer: str | None, comment: str | None, answers_file_text: str | None
 ) -> HeadlessArgumentsResult:
     """Split `<step_id>=<value>` on the first `=`, or decode the answers-file JSON object; reject conflicting flags."""
@@ -166,20 +193,17 @@ def parse_answer_arguments(
     if answer is None:
         if comment is not None:
             return _invalid_arguments("--comment and --comment-file need --answer.")
-        return HeadlessArgumentsResult(status=InteractionAnswerStatus.OK)
+        return HeadlessArgumentsResult()
 
     step_id, separator, value = answer.partition("=")
     if not separator or not step_id:
         return _invalid_arguments(f"'{answer}' is not valid.\nFix: use --answer <step_id>=<value>.")
-    return HeadlessArgumentsResult(
-        status=InteractionAnswerStatus.OK,
-        supplied=HeadlessAnswerInput(step_id=step_id, value=value, comment=comment),
-    )
+    return HeadlessArgumentsResult(supplied=HeadlessAnswerInput(step_id=step_id, value=value, comment=comment))
 
 
 def _invalid_arguments(message: str) -> HeadlessArgumentsResult:
-    """Return an INVALID arguments result carrying message."""
-    return HeadlessArgumentsResult(status=InteractionAnswerStatus.INVALID, errors=[message])
+    """Return a failed arguments result carrying INTERACTION_ARGUMENTS_INVALID and message."""
+    return HeadlessArgumentsResult(error_code=ErrorCode.INTERACTION_ARGUMENTS_INVALID, errors=[message])
 
 
 def _from_answers_file(text: str) -> HeadlessArgumentsResult:
@@ -194,7 +218,7 @@ def _from_answers_file(text: str) -> HeadlessArgumentsResult:
         supplied = HeadlessAnswerInput.model_validate(document)
     except ValidationError as error:
         return _invalid_arguments(f"The answers file is invalid: {error.errors()[0]['msg']}")
-    return HeadlessArgumentsResult(status=InteractionAnswerStatus.OK, supplied=supplied)
+    return HeadlessArgumentsResult(supplied=supplied)
 
 
 def request_errors(request: InteractionRequest) -> list[str]:

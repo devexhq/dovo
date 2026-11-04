@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 import dovo.core.inputs
+from dovo.common.error_codes import ErrorCode
 from dovo.core.inputs import InputType, ParameterInput, resolve_inputs
 
 
@@ -41,6 +42,7 @@ class InputSyntaxValidationTests:
 
         assert result.values == {}
         assert result.missing == []
+        assert result.error_code == ErrorCode.BLUEPRINT_INPUT_INVALID
         assert result.errors == ["Invalid input syntax 'malformed_token'. Expected key=value (e.g. -i message=value)."]
         assert result.warnings == []
 
@@ -161,6 +163,7 @@ class InputResolutionOutcomeTests:
 
         assert result.values == {}
         assert result.missing == []
+        assert result.error_code == ErrorCode.BLUEPRINT_INPUT_INVALID
         assert result.errors == errors
         assert result.warnings == warnings
 
@@ -181,6 +184,8 @@ class InputResolutionOutcomeTests:
 
         assert result.values == {"message": "from-override", "allow_empty": False}
         assert result.missing == []
+        assert result.ok is True
+        assert result.error_code is None
         assert result.errors == []
         assert result.warnings == []
 
@@ -190,6 +195,7 @@ class InputResolutionOutcomeTests:
         assert result.missing == ["message"]
         assert result.values == {"allow_empty": False}
         assert result.ok is False
+        assert result.error_code == ErrorCode.BLUEPRINT_INPUT_INVALID
 
 
 class InputsPackageTests:

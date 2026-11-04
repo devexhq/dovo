@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
-
 from pydantic import BaseModel, Field
 
 from dovo.common.models import BaseResult
@@ -80,56 +78,34 @@ class HeadlessAnswerInput(BaseModel):
     text: str | None = None
 
 
-class InteractionResolveStatus(StrEnum):
-    """Classified outcomes for resolving an interaction block into a request."""
-
-    OK = "ok"
-    NO_OPTIONS = "no_options"
-    ARTIFACT_NOT_FOUND = "artifact_not_found"
-    OPTIONS_ARTIFACT_NOT_FOUND = "options_artifact_not_found"
-    OPTIONS_INVALID = "options_invalid"
-    OPTIONS_DUPLICATE = "options_duplicate"
-    OPTIONS_EMPTY = "options_empty"
-
-
 class InteractionResolveResult(BaseResult):
-    """Result of resolving an interaction block; `request` is set for OK and NO_OPTIONS."""
+    """Result of resolving an interaction block; `request` is set on success, possibly with no options."""
 
-    status: InteractionResolveStatus
     request: InteractionRequest | None = None
 
     @property
     def ok(self) -> bool:
-        """Return True when a request (possibly with no options) was resolved."""
-        return self.status in (InteractionResolveStatus.OK, InteractionResolveStatus.NO_OPTIONS)
-
-
-class InteractionAnswerStatus(StrEnum):
-    """Classified outcomes for validating or parsing an answer."""
-
-    OK = "ok"
-    INVALID = "invalid"
+        """Return True when no error code was reported."""
+        return self.error_code is None
 
 
 class InteractionAnswerResult(BaseResult):
-    """Result of validating or parsing an answer; `answer` is the normalized answer when OK."""
+    """Result of validating or parsing an answer; `answer` is the normalized answer on success."""
 
-    status: InteractionAnswerStatus
     answer: InteractionAnswer | None = None
 
     @property
     def ok(self) -> bool:
-        """Return True when the answer is valid."""
-        return self.status == InteractionAnswerStatus.OK
+        """Return True when no error code was reported."""
+        return self.error_code is None
 
 
 class HeadlessArgumentsResult(BaseResult):
-    """Result of combining `--answer`, `--comment` and `--answers-file` into one HeadlessAnswerInput."""
+    """Result of combining the resume answer flags and files into one HeadlessAnswerInput."""
 
-    status: InteractionAnswerStatus
     supplied: HeadlessAnswerInput | None = None
 
     @property
     def ok(self) -> bool:
-        """Return True when the arguments form one answer."""
-        return self.status == InteractionAnswerStatus.OK
+        """Return True when no error code was reported."""
+        return self.error_code is None

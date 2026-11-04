@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.inputs.models import InputResolveResult, InputType, ParameterInput
 
 _INPUT_OVERRIDE_RE = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>.*)$", re.DOTALL)
@@ -200,4 +201,9 @@ def parse_cli_input_args(
     aliases = _alias_map(declarations)
     while state.index < len(args) and _consume_one_token(args, state, declarations, aliases):
         pass
-    return InputResolveResult(values=state.values, errors=state.errors, warnings=state.warnings)
+    return InputResolveResult(
+        values=state.values,
+        error_code=ErrorCode.BLUEPRINT_INPUT_INVALID if state.errors else None,
+        errors=state.errors,
+        warnings=state.warnings,
+    )

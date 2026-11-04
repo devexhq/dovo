@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.inputs.models import InputResolveResult, ParameterInput
 from dovo.core.inputs.parser import parse_cli_input_args
 
@@ -37,15 +38,19 @@ def resolve_inputs(
     cli_args: list[str] | None = None,
     overrides: dict[str, str | int | bool] | None = None,
 ) -> InputResolveResult:
-    """Parse CLI args, apply overrides/defaults, and collect missing required inputs."""
+    """Parse CLI args, apply overrides/defaults, and collect missing required inputs.
+
+    A syntax or type error, or a missing required input, is reported as BLUEPRINT_INPUT_INVALID.
+    """
     parsed = parse_cli_input_args(cli_args or [], declarations)
-    if parsed.errors:
+    if not parsed.ok:
         return parsed
 
     values = _apply_defaults_and_overrides(declarations, parsed.values, overrides)
+    missing = _missing_required(declarations, values)
     return InputResolveResult(
         values=values,
-        missing=_missing_required(declarations, values),
-        errors=list(parsed.errors),
+        missing=missing,
+        error_code=ErrorCode.BLUEPRINT_INPUT_INVALID if missing else None,
         warnings=list(parsed.warnings),
     )
