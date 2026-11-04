@@ -127,7 +127,9 @@ class WorkspaceError(DomainError):
     """Business failure resolving the workspace a command runs in."""
 
 
-INIT_REMEDIATION: Final[Remediation] = Remediation(message="Initialize the workspace.", command="dovo init")
+INIT_REMEDIATION: Final[Remediation] = Remediation(
+    message="Run 'dovo init' to initialize the workspace.", command="dovo init"
+)
 REPLACE_IDENTITY_REMEDIATION: Final[Remediation] = Remediation(
     message="Run 'dovo init --id <project-id> --force' to replace the unusable identity.",
     command="dovo init --id <project-id> --force",

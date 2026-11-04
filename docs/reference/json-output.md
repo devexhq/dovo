@@ -39,7 +39,7 @@ Some failures stop a command before it produces a result. Dovo then writes one `
 The `error` event is the last line of the output and the only line written for that failure. It is written whenever `--format json` or `--format=json` appears on the command line, even when the failure happens before the subcommand's own options are read. For example, `dovo worktree list --format json` in a repository without `.dovo/project.json` prints:
 
 ```json
-{"event_type": "error", "payload": {"ok": false, "error_code": "WORKSPACE_NOT_INITIALIZED", "errors": ["Workspace is not initialized: no valid project identity at '/path/to/repo/.dovo/project.json'."], "warnings": [], "remediations": [{"message": "Initialize the workspace.", "command": "dovo init"}], "diagnostics": []}}
+{"event_type": "error", "payload": {"ok": false, "error_code": "WORKSPACE_NOT_INITIALIZED", "errors": ["Workspace is not initialized: no valid project identity at '/path/to/repo/.dovo/project.json'."], "warnings": [], "remediations": [{"message": "Run 'dovo init' to initialize the workspace.", "command": "dovo init"}], "diagnostics": []}}
 ```
 
 Its payload keys always come in this order:
@@ -66,7 +66,7 @@ Every `error` event, and every one of these panels, exits `1`.
 
 ### Workspace not initialized
 
-Every command except `dovo init` and `dovo run` needs a valid `.dovo/project.json`. When it is missing, unreadable or invalid, the command fails with `Workspace is not initialized: no valid project identity at '<path>'.` and the remediation `Initialize the workspace.` (command `dovo init`). When `.dovo/project.json` exists but cannot be used, a second remediation follows: `Run 'dovo init --id <project-id> --force' to replace the unusable identity.` (command `dovo init --id <project-id> --force`).
+Every command except `dovo init` and `dovo run` needs a valid `.dovo/project.json`. When it is missing, unreadable or invalid, the command fails with `Workspace is not initialized: no valid project identity at '<path>'.` and the remediation `Run 'dovo init' to initialize the workspace.` (command `dovo init`). When `.dovo/project.json` exists but cannot be used, a second remediation follows: `Run 'dovo init --id <project-id> --force' to replace the unusable identity.` (command `dovo init --id <project-id> --force`).
 
 `dovo run` initializes a workspace that has no `.dovo/project.json` itself; see [`dovo run`](../cli/run.md).
 

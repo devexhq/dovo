@@ -16,7 +16,7 @@ from dovo.core.project.services.identity import save_project_identity
 from dovo.core.project.services.storage import build_workspace_paths, resolve_workspace_paths
 from tests.harness.diagnostic_log import read_single_event
 
-INIT = Remediation(message="Initialize the workspace.", command="dovo init")
+INIT = Remediation(message="Run 'dovo init' to initialize the workspace.", command="dovo init")
 REPLACE = Remediation(
     message="Run 'dovo init --id <project-id> --force' to replace the unusable identity.",
     command="dovo init --id <project-id> --force",

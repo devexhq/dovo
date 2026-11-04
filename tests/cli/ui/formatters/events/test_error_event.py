@@ -19,7 +19,7 @@ from tests.harness.formatter import (
 _RECORD = DiagnosticRecord(
     event_id="exc_3f9a1c07b2de", log_path=Path("/logs/2026-10-19/exc_3f9a1c07b2de.json"), level=DiagnosticLevel.ERROR
 )
-_REMEDIATION = Remediation(message="Initialize the workspace.", command="dovo init")
+_REMEDIATION = Remediation(message="Run 'dovo init' to initialize the workspace.", command="dovo init")
 
 ERROR_EVENT = FormatterCase(
     data=ErrorEvent(
@@ -40,7 +40,7 @@ ERROR_EVENT = FormatterCase(
         "Fatal Error",
         "A fatal unexpected error occurred. Details: boom",
         "Rollback failed.",
-        "Initialize the workspace.",
+        "Run 'dovo init' to initialize the workspace.",
         "Details logged: /logs/2026-10-19/exc_3f9a1c07b2de.json (event exc_3f9a1c07b2de)",
     ],
 )
@@ -59,7 +59,7 @@ class ErrorEventFormatterTests:
                 "error_code": "INTERNAL_ERROR",
                 "errors": ["A fatal unexpected error occurred. Details: boom", "Rollback failed."],
                 "warnings": [],
-                "remediations": [{"message": "Initialize the workspace.", "command": "dovo init"}],
+                "remediations": [{"message": "Run 'dovo init' to initialize the workspace.", "command": "dovo init"}],
                 "diagnostics": [{"event_id": "exc_3f9a1c07b2de", "log_path": "/logs/2026-10-19/exc_3f9a1c07b2de.json"}],
             },
         )

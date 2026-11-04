@@ -147,7 +147,7 @@ class CliNonStrictConfigCommandsCliIntegrationTests:
         assert all(set(type(context.paths).model_fields) == expected_fields for context in captured)
 
 
-_INIT_REMEDIATION = {"message": "Initialize the workspace.", "command": "dovo init"}
+_INIT_REMEDIATION = {"message": "Run 'dovo init' to initialize the workspace.", "command": "dovo init"}
 _LOCK_REMEDIATION = {
     "message": "Wait for the other dovo process to release the workspace lock, then retry.",
     "command": None,
@@ -433,7 +433,7 @@ class RunCliTests:
 
 
 GUARD_MESSAGE_HEAD = "Workspace is not initialized: no valid project identity at"
-GUARD_FIX = "Initialize the workspace."
+GUARD_FIX = "Run 'dovo init' to initialize the workspace."
 
 
 class IdentityGuardCliTests:

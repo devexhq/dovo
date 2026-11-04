@@ -312,11 +312,15 @@ class WorkspaceNotInitializedErrorTests:
     @pytest.mark.parametrize(
         ("identity_present", "expected"),
         [
-            pytest.param(False, (Remediation(message="Initialize the workspace.", command="dovo init"),), id="absent"),
+            pytest.param(
+                False,
+                (Remediation(message="Run 'dovo init' to initialize the workspace.", command="dovo init"),),
+                id="absent",
+            ),
             pytest.param(
                 True,
                 (
-                    Remediation(message="Initialize the workspace.", command="dovo init"),
+                    Remediation(message="Run 'dovo init' to initialize the workspace.", command="dovo init"),
                     Remediation(
                         message="Run 'dovo init --id <project-id> --force' to replace the unusable identity.",
                         command="dovo init --id <project-id> --force",
