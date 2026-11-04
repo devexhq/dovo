@@ -8,7 +8,7 @@ from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
 
-from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter, result_header
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.cli.ui.formatters.session.common import (
     build_metadata_table,
@@ -105,6 +105,7 @@ class SessionShowFormatter(ComponentFormatter[HistoryShowResult, SessionShowView
         """
         session_summary = build_session_summary(data.session) if data.session is not None else None
         return SessionShowView(
+            **result_header(data),
             session_id=data.session_id,
             session=session_summary,
             log_files=list(data.log_files),
@@ -112,11 +113,6 @@ class SessionShowFormatter(ComponentFormatter[HistoryShowResult, SessionShowView
             steps=list(data.steps),
             worktree_kept=data.worktree_kept,
             worktree_path=display_path(data.worktree_path, Path.cwd()) if data.worktree_path is not None else None,
-            errors=list(data.errors),
-            warnings=list(data.warnings),
-            remediations=list(data.remediations),
-            error_code=data.error_code,
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: HistoryShowResult) -> RenderableType:

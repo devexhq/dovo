@@ -2,24 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field
-
-from dovo.common.diagnostic_log import DiagnosticRecord
-from dovo.common.models import Remediation
+from dovo.cli.ui.formatters.base import ResultView
 from dovo.core.status import WorkspaceHealth
 
 
-class StatusView(BaseModel):
+class StatusView(ResultView):
     """Semantic view of a status result: no Rich markup, no composed sentences."""
 
-    model_config = {"extra": "forbid", "strict": True}
-
-    ok: bool
-    error_code: str | None
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    remediations: list[Remediation] = Field(default_factory=list)
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
     status: WorkspaceHealth
     root_dir: Path
     project_name: str | None

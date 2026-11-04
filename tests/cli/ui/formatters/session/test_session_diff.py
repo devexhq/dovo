@@ -46,7 +46,8 @@ def make_diff_view(**overrides: object) -> SessionDiffView:
         "error_code": None,
         "diagnostics": [],
     }
-    return SessionDiffView.model_validate({**defaults, **overrides})
+    merged = {**defaults, **overrides}
+    return SessionDiffView.model_validate({**merged, "ok": merged["error_code"] is None})
 
 
 OK_POPULATED_DATA = DiffResult(
@@ -226,6 +227,7 @@ DIFF_PAYLOAD_CASES = [
     pytest.param(
         OK_POPULATED,
         {
+            "ok": True,
             "session_id": "dovo_fmt_1",
             "artifact_path": "/repo/.dovo/sessions/dovo_fmt_1/diff.patch",
             "relative_path": "/repo/.dovo/sessions/dovo_fmt_1/diff.patch",
@@ -246,6 +248,7 @@ DIFF_PAYLOAD_CASES = [
     pytest.param(
         EMPTY_DIFF,
         {
+            "ok": True,
             "session_id": "dovo_fmt_empty",
             "artifact_path": "/repo/.dovo/sessions/dovo_fmt_empty/diff.patch",
             "relative_path": "/repo/.dovo/sessions/dovo_fmt_empty/diff.patch",
@@ -266,6 +269,7 @@ DIFF_PAYLOAD_CASES = [
     pytest.param(
         SESSION_NOT_FOUND,
         {
+            "ok": False,
             "session_id": "dovo_missing_99",
             "artifact_path": None,
             "relative_path": "<sessions_dir>/dovo_missing_99/diff.patch",

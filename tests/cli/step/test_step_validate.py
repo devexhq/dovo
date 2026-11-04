@@ -125,6 +125,7 @@ class StepValidateCliTests:
         assert payload["error_code"] == "CATALOG_SCHEMA_INVALID"
         assert payload["valid"] is False
         assert set(payload) == {
+            "ok",
             "valid",
             "status_label",
             "target",
@@ -192,6 +193,7 @@ class StepValidateAskCliIntegrationTests:
 
         assert result.exit_code == 1
         assert json.loads(result.stdout)["payload"] == {
+            "ok": False,
             "error_code": "CATALOG_SCHEMA_INVALID",
             "errors": ["<root>: Value error, Step 'approve': 'type: ask' cannot be combined with run."],
             "warnings": [],

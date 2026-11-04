@@ -6,8 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from dovo.common.diagnostic_log import DiagnosticRecord
-from dovo.common.models import Remediation
+from dovo.cli.ui.formatters.base import ResultView
 from dovo.core.worktree.models import (
     PruneAction,
     StaleWorktreeCategory,
@@ -32,20 +31,13 @@ class PrunedItemView(BaseModel):
     error: str | None = None
 
 
-class WorktreePruneView(BaseModel):
+class WorktreePruneView(ResultView):
     """Semantic view of worktree pruning execution."""
 
-    model_config = {"extra": "forbid", "strict": True}
-
-    status: WorktreePruneStatus | None
+    status: WorktreePruneStatus
     dry_run: bool
     force: bool
     items: list[PrunedItemView] = Field(default_factory=list)
     pruned_count: int = 0
     skipped_count: int = 0
     failed_count: int = 0
-    error_code: str | None = None
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    remediations: list[Remediation] = Field(default_factory=list)
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)

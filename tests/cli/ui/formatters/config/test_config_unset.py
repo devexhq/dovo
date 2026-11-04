@@ -57,6 +57,7 @@ CONFIG_UNSET_PAYLOAD_CASES = [
     pytest.param(
         OK_EXISTED,
         {
+            "ok": True,
             "config_path": "/workspace/.dovo/config.json",
             "key": "agents.copilot.model",
             "existed": True,
@@ -72,6 +73,7 @@ CONFIG_UNSET_PAYLOAD_CASES = [
     pytest.param(
         SCHEMA_INVALID,
         {
+            "ok": False,
             "config_path": "/workspace/.dovo/config.json",
             "key": "project",
             "existed": True,

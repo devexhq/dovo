@@ -8,7 +8,7 @@ from typing import NamedTuple
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter, result_header
 from dovo.cli.ui.formatters.common import with_diagnostics
 from dovo.cli.ui.formatters.init.common import (
     render_bootstrap_lines,
@@ -125,7 +125,7 @@ class WorkspaceInitFormatter(ComponentFormatter[WorkspaceInitResult, WorkspaceIn
         seeded_files, skipped_seed_files, overwritten_seed_files = _extract_seed_fields(data.seed, cwd)
 
         return WorkspaceInitView(
-            ok=data.ok,
+            **result_header(data),
             root_path=root_path,
             root_path_relative=root_path_relative,
             bootstrap_outcome=bootstrap_outcome,
@@ -144,11 +144,6 @@ class WorkspaceInitFormatter(ComponentFormatter[WorkspaceInitResult, WorkspaceIn
             seeded_files=seeded_files,
             skipped_seed_files=skipped_seed_files,
             overwritten_seed_files=overwritten_seed_files,
-            error_code=data.error_code,
-            errors=list(data.errors),
-            warnings=list(data.warnings),
-            remediations=list(data.remediations),
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: WorkspaceInitResult) -> RenderableType:

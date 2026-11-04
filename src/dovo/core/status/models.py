@@ -91,8 +91,3 @@ class DovoStatusResult(BaseResult):
     catalog: CatalogStatusInfo
     database: DatabaseStatusInfo
     worktrees: WorktreeStatusInfo
-
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is None."""
-        return self.error_code is None

@@ -28,13 +28,13 @@ _CREATE_SESSION_FIX = Remediation(
 
 EVENTS_MODE = FormatterCase(
     data=LogsShowResult(session_id="sess-1", events=[_STEP_EVENT]),
-    view=SessionLogsView(session_id="sess-1", events=[_STEP_EVENT]),
+    view=SessionLogsView(ok=True, session_id="sess-1", events=[_STEP_EVENT]),
     render_expectations=["2026-09-26T10:00:00+00:00", "step_start", "build"],
 )
 
 LINES_MODE = FormatterCase(
     data=LogsShowResult(session_id="sess-1", lines=["pytest tests/", "3 passed"]),
-    view=SessionLogsView(session_id="sess-1", lines=["pytest tests/", "3 passed"]),
+    view=SessionLogsView(ok=True, session_id="sess-1", lines=["pytest tests/", "3 passed"]),
     render_expectations=["pytest tests/", "3 passed"],
 )
 
@@ -43,7 +43,10 @@ NO_SESSIONS = FormatterCase(
         error_code=ErrorCode.SESSION_NOT_FOUND, errors=["No sessions found."], remediations=[_CREATE_SESSION_FIX]
     ),
     view=SessionLogsView(
-        error_code=ErrorCode.SESSION_NOT_FOUND, errors=["No sessions found."], remediations=[_CREATE_SESSION_FIX]
+        ok=False,
+        error_code=ErrorCode.SESSION_NOT_FOUND,
+        errors=["No sessions found."],
+        remediations=[_CREATE_SESSION_FIX],
     ),
     render_expectations=["Session Not Found", "No sessions found.", "- Run 'dovo run <blueprint>' to create a session"],
 )
@@ -56,6 +59,7 @@ SESSION_NOT_FOUND = FormatterCase(
         remediations=[_SESSION_LIST_FIX],
     ),
     view=SessionLogsView(
+        ok=False,
         session_id="ghost",
         error_code=ErrorCode.SESSION_NOT_FOUND,
         errors=["No logs found for session 'ghost'."],
@@ -76,6 +80,7 @@ STEP_NOT_FOUND = FormatterCase(
         available_steps=["build", "lint"],
     ),
     view=SessionLogsView(
+        ok=False,
         session_id="sess-1",
         error_code=ErrorCode.SESSION_STEP_NOT_FOUND,
         errors=["Step 'test' not found in session 'sess-1'. Available steps: build, lint."],
@@ -92,6 +97,7 @@ ATTEMPT_NOT_FOUND = FormatterCase(
         available_attempts=[1, 2],
     ),
     view=SessionLogsView(
+        ok=False,
         session_id="sess-1",
         error_code=ErrorCode.SESSION_ATTEMPT_NOT_FOUND,
         errors=["Attempt 3 not found for step 'build' in session 'sess-1'. Available attempts: 1, 2."],
@@ -110,6 +116,7 @@ LOGS_UNREADABLE = FormatterCase(
         errors=["Failed reading session logs in '/logs/sess-1': denied"],
     ),
     view=SessionLogsView(
+        ok=False,
         session_id="sess-1",
         error_code=ErrorCode.SESSION_LOGS_UNREADABLE,
         errors=["Failed reading session logs in '/logs/sess-1': denied"],
@@ -122,7 +129,10 @@ INTERNAL_ERROR = FormatterCase(
         session_id="sess-1", error_code=ErrorCode.INTERNAL_ERROR, errors=["Unexpected error during sessions.logs: boom"]
     ),
     view=SessionLogsView(
-        session_id="sess-1", error_code=ErrorCode.INTERNAL_ERROR, errors=["Unexpected error during sessions.logs: boom"]
+        ok=False,
+        session_id="sess-1",
+        error_code=ErrorCode.INTERNAL_ERROR,
+        errors=["Unexpected error during sessions.logs: boom"],
     ),
     render_expectations=["Logs Show Failed", "Unexpected error during sessions.logs: boom"],
 )
@@ -139,6 +149,7 @@ LOGS_SHOW_CASES = [
 ]
 
 _EMPTY_ENVELOPE: dict[str, Any] = {
+    "ok": True,
     "lines": [],
     "events": [],
     "available_steps": [],
@@ -193,6 +204,7 @@ LOGS_SHOW_PAYLOAD_CASES = [
         {
             **_EMPTY_ENVELOPE,
             "session_id": "ghost",
+            "ok": False,
             "error_code": "SESSION_NOT_FOUND",
             "errors": ["No logs found for session 'ghost'."],
             "remediations": [
@@ -206,6 +218,7 @@ LOGS_SHOW_PAYLOAD_CASES = [
         {
             **_EMPTY_ENVELOPE,
             "session_id": "sess-1",
+            "ok": False,
             "error_code": "SESSION_STEP_NOT_FOUND",
             "errors": ["Step 'test' not found in session 'sess-1'. Available steps: build, lint."],
             "available_steps": ["build", "lint"],

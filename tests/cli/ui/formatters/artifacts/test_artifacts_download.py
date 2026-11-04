@@ -45,6 +45,7 @@ ARTIFACT_DOWNLOAD_PAYLOAD_CASES = [
     pytest.param(
         OK,
         {
+            "ok": True,
             "session_id": "wf_abc123",
             "name": "dist-packages",
             "dest": "/tmp/out",
@@ -61,6 +62,7 @@ ARTIFACT_DOWNLOAD_PAYLOAD_CASES = [
     pytest.param(
         NOT_FOUND,
         {
+            "ok": False,
             "session_id": "wf_abc123",
             "name": "missing",
             "dest": "",

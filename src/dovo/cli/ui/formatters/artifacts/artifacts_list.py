@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from pydantic import JsonValue
 from rich.console import RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.artifacts.artifacts_views import ArtifactRowView, ArtifactsListView
 from dovo.cli.ui.formatters.artifacts.common import build_artifacts_table, format_size_bytes
-from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter, result_header
 from dovo.core.artifacts.models import ArtifactsListResult
 from dovo.core.db.models import ArtifactRecord
 
@@ -38,18 +37,7 @@ class ArtifactsListFormatter(ComponentFormatter[ArtifactsListResult, ArtifactsLi
 
     def transform(self, data: ArtifactsListResult) -> ArtifactsListView:
         """Derive the presentation-ready view listing every artifact row."""
-        return ArtifactsListView(artifacts=[_to_row(record) for record in data.artifacts])
-
-    def to_json_serializable(self, data: ArtifactsListResult) -> dict[str, JsonValue]:
-        """Emit every artifact row as its ArtifactRowView wire payload, plus the result's errors, warnings, remediations and diagnostics."""
-        view = self.transform(data)
-        return {
-            "artifacts": [row.model_dump(mode="json") for row in view.artifacts],
-            "errors": list(data.errors),
-            "warnings": list(data.warnings),
-            "remediations": [remediation.model_dump(mode="json") for remediation in data.remediations],
-            "diagnostics": [record.model_dump(mode="json") for record in data.diagnostics],
-        }
+        return ArtifactsListView(**result_header(data), artifacts=[_to_row(record) for record in data.artifacts])
 
     def to_rich(self, data: ArtifactsListResult) -> RenderableType:
         """Render the full artifacts table or empty state."""

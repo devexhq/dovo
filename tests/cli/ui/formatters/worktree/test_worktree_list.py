@@ -68,6 +68,7 @@ WORKTREE_LIST_PAYLOAD_CASES = [
     pytest.param(
         WITH_WORKTREES,
         {
+            "ok": True,
             "worktrees": [
                 {
                     "id": "dovo_list1234",
@@ -92,6 +93,7 @@ WORKTREE_LIST_PAYLOAD_CASES = [
     pytest.param(
         EMPTY_WORKTREES,
         {
+            "ok": True,
             "worktrees": [],
             "warnings": [],
             "errors": [],

@@ -21,6 +21,7 @@ pytestmark = pytest.mark.usefixtures("workspace_config")
 
 _PROMPT = "Are you sure you want to delete step '{name}'?"
 _CANCELLED_PAYLOAD = {
+    "ok": True,
     "errors": [],
     "warnings": [],
     "remediations": [],
@@ -31,6 +32,7 @@ _CANCELLED_PAYLOAD = {
     "cancelled": True,
 }
 _NOT_FOUND_PAYLOAD = {
+    "ok": False,
     "errors": ["Catalog step 'ghost' not found."],
     "warnings": [],
     "remediations": [],
@@ -201,6 +203,7 @@ class StepDeleteCliTests:
         assert isinstance(item, dict)
         assert item["key"] == "gone-step"
         assert {key: value for key, value in payload.items() if key != "item"} == {
+            "ok": True,
             "errors": [],
             "warnings": [],
             "remediations": [],

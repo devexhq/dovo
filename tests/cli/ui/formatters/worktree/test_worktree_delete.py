@@ -101,6 +101,7 @@ WORKTREE_DELETE_PAYLOAD_CASES = [
     pytest.param(
         DELETED,
         {
+            "ok": True,
             "worktree_id": "dovo_del",
             "worktree": None,
             "deleted": True,
@@ -117,6 +118,7 @@ WORKTREE_DELETE_PAYLOAD_CASES = [
     pytest.param(
         DELETED_WITH_WARNINGS,
         {
+            "ok": True,
             "worktree_id": "dovo_del",
             "worktree": None,
             "deleted": True,
@@ -133,6 +135,7 @@ WORKTREE_DELETE_PAYLOAD_CASES = [
     pytest.param(
         NOT_FOUND,
         {
+            "ok": False,
             "worktree_id": "dovo_missing",
             "worktree": None,
             "deleted": False,
@@ -151,6 +154,7 @@ WORKTREE_DELETE_PAYLOAD_CASES = [
     pytest.param(
         ALREADY_CLEANED,
         {
+            "ok": True,
             "worktree_id": "dovo_del",
             "worktree": None,
             "deleted": False,
@@ -167,6 +171,7 @@ WORKTREE_DELETE_PAYLOAD_CASES = [
     pytest.param(
         CANCELLED,
         {
+            "ok": True,
             "worktree_id": "dovo_del",
             "worktree": None,
             "deleted": False,

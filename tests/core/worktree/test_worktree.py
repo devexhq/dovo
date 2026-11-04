@@ -19,7 +19,7 @@ from dovo.common.models import Remediation
 from dovo.core.db import WorktreeRecord, WorktreesRepository
 from dovo.core.git.exceptions import git_command_error
 from dovo.core.git.runner import GitRunner
-from dovo.core.worktree.models import WorktreeCleanupResult
+from dovo.core.worktree.models import WorktreeCleanupResult, WorktreePruneStatus
 from dovo.core.worktree.services.detector import WorktreeDetector
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.core.worktree.worktree import Worktree
@@ -458,7 +458,7 @@ class WorktreePruneEntrypointTests:
         monkeypatch: pytest.MonkeyPatch,
         trigger: str,
     ) -> None:
-        """Return status None, error_code INTERNAL_ERROR, errors == ["Unexpected error during worktree.prune: boom"], items == [], ok False, diagnostics == [diagnostic_record(frozen_diagnostic_clock)], and one error event with operation worktree.prune when detection raises TypeError("boom")."""
+        """Return status PARTIAL_FAILURE, error_code INTERNAL_ERROR, errors == ["Unexpected error during worktree.prune: boom"], items == [], ok False, diagnostics == [diagnostic_record(frozen_diagnostic_clock)], and one error event with operation worktree.prune when detection raises TypeError("boom")."""
         if trigger == "detect":
             monkeypatch.setattr(WorktreeDetector, "detect", _raise_type_error)
         else:
@@ -467,7 +467,7 @@ class WorktreePruneEntrypointTests:
 
         result = worktree.prune()
 
-        assert result.status is None
+        assert result.status == WorktreePruneStatus.PARTIAL_FAILURE
         assert result.error_code == ErrorCode.INTERNAL_ERROR
         assert result.errors == ["Unexpected error during worktree.prune: boom"]
         assert result.items == []
@@ -481,14 +481,14 @@ class WorktreePruneEntrypointTests:
     def test_prune_reports_detection_git_error_by_its_code(
         self, worktree_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return status None, error_code GIT_FAILED, errors == ["Git execution failed ('git worktree list'): fatal error"], items == [], diagnostics == [] and ok False, and leave <DOVO_HOME>/logs absent, when git worktree list raises git_command_error(["worktree", "list"], 1, "", "fatal error")."""
+        """Return status PARTIAL_FAILURE, error_code GIT_FAILED, errors == ["Git execution failed ('git worktree list'): fatal error"], items == [], diagnostics == [] and ok False, and leave <DOVO_HOME>/logs absent, when git worktree list raises git_command_error(["worktree", "list"], 1, "", "fatal error")."""
         failure = git_command_error(["worktree", "list"], 1, "", "fatal error")
         git = FakeGitRunner({("worktree", "list"): failure})
         worktree = Worktree(worktree_workspace_paths, git=git, clock=fixed_clock, new_id=fixed_new_id)
 
         result = worktree.prune()
 
-        assert result.status is None
+        assert result.status == WorktreePruneStatus.PARTIAL_FAILURE
         assert result.error_code == ErrorCode.GIT_FAILED
         assert result.errors == ["Git execution failed ('git worktree list'): fatal error"]
         assert result.items == []

@@ -72,6 +72,7 @@ WORKTREE_CREATE_PAYLOAD_CASES = [
     pytest.param(
         CREATED_OK,
         {
+            "ok": True,
             "session": {
                 "session_id": "dovo_create123",
                 "target_branch": "dovo/create123",
@@ -94,6 +95,7 @@ WORKTREE_CREATE_PAYLOAD_CASES = [
     pytest.param(
         FAILED_GIT,
         {
+            "ok": False,
             "session": None,
             "warnings": [],
             "errors": ["Git checkout failed."],

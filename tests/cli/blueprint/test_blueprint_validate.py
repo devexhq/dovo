@@ -211,6 +211,7 @@ class BlueprintValidateCliTests:
         assert payload["error_code"] == "CATALOG_SCHEMA_INVALID"
         assert payload["valid"] is False
         assert set(payload) == {
+            "ok",
             "valid",
             "status_label",
             "target",
@@ -234,6 +235,7 @@ class BlueprintValidateCliTests:
 
         assert result.exit_code == 1
         assert json.loads(result.stdout)["payload"] == {
+            "ok": False,
             "error_code": "CATALOG_SCHEMA_INVALID",
             "errors": list(_SEMANTIC_ERRORS),
             "warnings": list(_SEMANTIC_WARNINGS),

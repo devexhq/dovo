@@ -89,6 +89,7 @@ CATALOG_DELETE_PAYLOAD_CASES = [
     pytest.param(
         DELETED,
         {
+            "ok": True,
             "errors": [],
             "warnings": [],
             "remediations": [],
@@ -113,6 +114,7 @@ CATALOG_DELETE_PAYLOAD_CASES = [
     pytest.param(
         DELETE_ERROR,
         {
+            "ok": False,
             "errors": ["Catalog blueprint 'missing' not found."],
             "warnings": [],
             "remediations": [
@@ -130,6 +132,7 @@ CATALOG_DELETE_PAYLOAD_CASES = [
     pytest.param(
         CANCELLED,
         {
+            "ok": True,
             "errors": [],
             "warnings": [],
             "remediations": [],

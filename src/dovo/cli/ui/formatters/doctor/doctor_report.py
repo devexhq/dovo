@@ -8,7 +8,7 @@ from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter, result_header
 from dovo.cli.ui.formatters.common import with_diagnostics
 from dovo.cli.ui.formatters.doctor.doctor_views import DoctorCheckView, DoctorReportView
 from dovo.common.formatters import format_remediations
@@ -58,12 +58,7 @@ class DoctorReportFormatter(ComponentFormatter[DiagnosticsReport, DoctorReportVi
     def transform(self, data: DiagnosticsReport) -> DoctorReportView:
         """Reshape DiagnosticsReport, header first, and its DiagnosticCheckRecord entries into DoctorReportView/DoctorCheckView, field for field."""
         return DoctorReportView(
-            ok=data.ok,
-            error_code=data.error_code,
-            errors=list(data.errors),
-            warnings=list(data.warnings),
-            remediations=list(data.remediations),
-            diagnostics=list(data.diagnostics),
+            **result_header(data),
             workspace_root=data.workspace_root,
             duration_seconds=data.duration_seconds,
             checks=[

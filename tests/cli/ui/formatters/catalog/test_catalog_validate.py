@@ -30,6 +30,7 @@ VALID_CASE = FormatterCase(
         remediations=[],
     ),
     view=CatalogValidateView(
+        ok=True,
         valid=True,
         status_label="PASSED",
         target="my-flow",
@@ -54,9 +55,10 @@ INVALID_CASE = FormatterCase(
         remediations=[Remediation(message="Resolve: Step id 'run-tests' is used by more than one step.")],
     ),
     view=CatalogValidateView(
+        ok=False,
         valid=False,
         status_label="FAILED",
-        error_code="CATALOG_SCHEMA_INVALID",
+        error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
         target="dup.yml",
         resolved_path="/workspace/dup.yml",
         item_type="blueprint",
@@ -87,9 +89,10 @@ MORE_ERRORS_THAN_REMEDIATIONS_CASE = FormatterCase(
         remediations=[Remediation(message="Rename one of the 'build' steps")],
     ),
     view=CatalogValidateView(
+        ok=False,
         valid=False,
         status_label="FAILED",
-        error_code="CATALOG_SCHEMA_INVALID",
+        error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
         target="two.yml",
         resolved_path="/workspace/two.yml",
         item_type="blueprint",
@@ -118,6 +121,7 @@ PAYLOAD_CASES = [
     pytest.param(
         VALID_CASE,
         {
+            "ok": True,
             "valid": True,
             "status_label": "PASSED",
             "target": "my-flow",
@@ -134,6 +138,7 @@ PAYLOAD_CASES = [
     pytest.param(
         INVALID_CASE,
         {
+            "ok": False,
             "valid": False,
             "status_label": "FAILED",
             "target": "dup.yml",

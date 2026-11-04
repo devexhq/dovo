@@ -25,15 +25,16 @@ class WorktreePruneResultOkTests:
     @pytest.mark.parametrize(
         ("status", "error_code", "ok"),
         [
-            pytest.param(WorktreePruneStatus.OK, None, True, id="ok"),
+            pytest.param(WorktreePruneStatus.PRUNED, None, True, id="pruned"),
+            pytest.param(WorktreePruneStatus.NOTHING_TO_PRUNE, None, True, id="nothing_to_prune"),
             pytest.param(
                 WorktreePruneStatus.PARTIAL_FAILURE, ErrorCode.WORKTREE_PRUNE_FAILED, False, id="partial_failure"
             ),
-            pytest.param(None, ErrorCode.GIT_FAILED, False, id="stopped"),
+            pytest.param(WorktreePruneStatus.PARTIAL_FAILURE, ErrorCode.GIT_FAILED, False, id="stopped"),
         ],
     )
     def test_ok_is_true_exactly_when_error_code_is_none(
-        self, status: WorktreePruneStatus | None, error_code: ErrorCode | None, ok: bool
+        self, status: WorktreePruneStatus, error_code: ErrorCode | None, ok: bool
     ) -> None:
         """Return ok == (error_code is None) for WorktreePruneResult."""
         result = WorktreePruneResult(

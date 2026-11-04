@@ -51,7 +51,8 @@ def _make_pruned_item_view(**overrides: object) -> PrunedItemView:
 def _make_prune_view(**overrides: object) -> WorktreePruneView:
     """Construct a WorktreePruneView with all fields explicitly specified."""
     defaults: dict[str, object] = {
-        "status": WorktreePruneStatus.OK,
+        "ok": True,
+        "status": WorktreePruneStatus.NOTHING_TO_PRUNE,
         "dry_run": False,
         "force": False,
         "items": [],
@@ -69,7 +70,7 @@ def _make_prune_view(**overrides: object) -> WorktreePruneView:
 
 EMPTY_PRUNE = FormatterCase(
     data=WorktreePruneResult(
-        status=WorktreePruneStatus.OK,
+        status=WorktreePruneStatus.NOTHING_TO_PRUNE,
         dry_run=False,
         force=False,
         items=[],
@@ -107,6 +108,7 @@ PRUNED_MULTIPLE_ITEMS = FormatterCase(
         errors=["Ref lock failure"],
     ),
     view=_make_prune_view(
+        ok=False,
         status=WorktreePruneStatus.PARTIAL_FAILURE,
         force=True,
         items=[
@@ -143,7 +145,7 @@ PRUNED_MULTIPLE_ITEMS = FormatterCase(
 
 DRY_RUN_PRUNE = FormatterCase(
     data=WorktreePruneResult(
-        status=WorktreePruneStatus.OK,
+        status=WorktreePruneStatus.PRUNED,
         dry_run=True,
         force=False,
         items=[
@@ -156,6 +158,7 @@ DRY_RUN_PRUNE = FormatterCase(
         ],
     ),
     view=_make_prune_view(
+        status=WorktreePruneStatus.PRUNED,
         dry_run=True,
         items=[
             _make_pruned_item_view(
@@ -174,7 +177,7 @@ DRY_RUN_PRUNE = FormatterCase(
 
 WITH_WARNINGS_AND_REMEDIATIONS = FormatterCase(
     data=WorktreePruneResult(
-        status=WorktreePruneStatus.OK,
+        status=WorktreePruneStatus.NOTHING_TO_PRUNE,
         dry_run=False,
         force=False,
         warnings=["Warning message"],
@@ -195,7 +198,7 @@ DIAGNOSTIC_RECORD: Final[DiagnosticRecord] = DiagnosticRecord(
 
 WITH_DIAGNOSTICS = FormatterCase(
     data=WorktreePruneResult(
-        status=WorktreePruneStatus.OK,
+        status=WorktreePruneStatus.NOTHING_TO_PRUNE,
         dry_run=False,
         force=False,
         diagnostics=[DIAGNOSTIC_RECORD],
@@ -206,14 +209,15 @@ WITH_DIAGNOSTICS = FormatterCase(
 
 STOPPED = FormatterCase(
     data=WorktreePruneResult(
-        status=None,
+        status=WorktreePruneStatus.PARTIAL_FAILURE,
         dry_run=False,
         force=False,
         error_code=ErrorCode.GIT_FAILED,
         errors=["Git execution failed ('git worktree list'): fatal error"],
     ),
     view=_make_prune_view(
-        status=None,
+        ok=False,
+        status=WorktreePruneStatus.PARTIAL_FAILURE,
         error_code=ErrorCode.GIT_FAILED,
         errors=["Git execution failed ('git worktree list'): fatal error"],
     ),
@@ -233,7 +237,8 @@ PRUNE_PAYLOAD_CASES = [
     pytest.param(
         EMPTY_PRUNE,
         {
-            "status": "ok",
+            "ok": True,
+            "status": "nothing_to_prune",
             "dry_run": False,
             "force": False,
             "items": [],
@@ -251,6 +256,7 @@ PRUNE_PAYLOAD_CASES = [
     pytest.param(
         PRUNED_MULTIPLE_ITEMS,
         {
+            "ok": False,
             "status": "partial_failure",
             "dry_run": False,
             "force": True,
@@ -306,7 +312,8 @@ PRUNE_PAYLOAD_CASES = [
     pytest.param(
         WITH_DIAGNOSTICS,
         {
-            "status": "ok",
+            "ok": True,
+            "status": "nothing_to_prune",
             "dry_run": False,
             "force": False,
             "items": [],
@@ -329,7 +336,8 @@ PRUNE_PAYLOAD_CASES = [
     pytest.param(
         STOPPED,
         {
-            "status": None,
+            "ok": False,
+            "status": "partial_failure",
             "dry_run": False,
             "force": False,
             "items": [],

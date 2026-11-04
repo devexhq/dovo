@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from dovo.common.diagnostic_log import DiagnosticRecord
-from dovo.common.models import Remediation
+from dovo.cli.ui.formatters.base import ResultView
 
 
 class CatalogItemView(BaseModel):
@@ -28,51 +27,31 @@ class CatalogTemplateView(BaseModel):
     path: str
 
 
-class CatalogListView(BaseModel):
+class CatalogListView(ResultView):
     """Semantic view of catalog blueprint and template listings."""
-
-    model_config = {"extra": "forbid", "strict": True}
 
     item_type: str
     items: list[CatalogItemView] = Field(default_factory=list)
     type_filter: str | None = None
     templates: list[CatalogTemplateView] = Field(default_factory=list)
     total_items: int = 0
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    remediations: list[Remediation] = Field(default_factory=list)
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
-class CatalogShowView(BaseModel):
+class CatalogShowView(ResultView):
     """Semantic view of catalog show results."""
-
-    model_config = {"extra": "forbid", "strict": True}
 
     item_type: str
     item: CatalogItemView | None = None
     content: str | None = None
     template_matches: list[CatalogTemplateView] = Field(default_factory=list)
     catalog_path_relative: str | None = None
-    error_code: str | None = None
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    remediations: list[Remediation] = Field(default_factory=list)
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
-class CatalogValidateView(BaseModel):
+class CatalogValidateView(ResultView):
     """Semantic view of catalog validate results."""
-
-    model_config = {"extra": "forbid", "strict": True}
 
     valid: bool
     status_label: str
     target: str
     resolved_path: str | None = None
     item_type: str
-    error_code: str | None = None
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    remediations: list[Remediation] = Field(default_factory=list)
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)

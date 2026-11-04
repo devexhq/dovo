@@ -121,6 +121,7 @@ class ConfigUnsetCliIntegrationTests:
         assert json.loads(res.stdout) == {
             "event_type": "ConfigUnsetResult",
             "payload": {
+                "ok": True,
                 "config_path": str(config_path),
                 "key": "agents.copilot.model",
                 "existed": True,

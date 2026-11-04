@@ -92,6 +92,7 @@ WORKTREE_SHOW_PAYLOAD_CASES = [
     pytest.param(
         FOUND_ACTIVE,
         {
+            "ok": True,
             "worktree": {
                 "id": "dovo_test1234",
                 "project_id": "proj-a",
@@ -116,6 +117,7 @@ WORKTREE_SHOW_PAYLOAD_CASES = [
     pytest.param(
         NOT_FOUND,
         {
+            "ok": False,
             "worktree": None,
             "disk_present": False,
             "reconciled": False,

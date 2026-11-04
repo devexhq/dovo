@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.console import RenderableType
 from rich.text import Text
 
-from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter, result_header
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.cli.ui.formatters.config.common import format_config_value
 from dovo.cli.ui.formatters.config.config_views import ConfigSetView
@@ -25,16 +25,12 @@ class ConfigSetFormatter(ComponentFormatter[ConfigSetResult, ConfigSetView]):
             ConfigSetView with formatted value string and type name.
         """
         return ConfigSetView(
+            **result_header(data),
             config_path=data.config_path,
             key=data.key,
             value=data.value,
             value_str=format_config_value(data.value),
             value_type=type(data.value).__name__,
-            error_code=data.error_code,
-            errors=list(data.errors),
-            warnings=list(data.warnings),
-            remediations=list(data.remediations),
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: ConfigSetResult) -> RenderableType:

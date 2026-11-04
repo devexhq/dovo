@@ -77,6 +77,7 @@ CATALOG_CREATE_PAYLOAD_CASES = [
     pytest.param(
         CREATED_BLUEPRINT,
         {
+            "ok": True,
             "errors": [],
             "warnings": [],
             "remediations": [],
@@ -100,6 +101,7 @@ CATALOG_CREATE_PAYLOAD_CASES = [
     pytest.param(
         CREATION_ERROR,
         {
+            "ok": False,
             "errors": ["Naming collision on blueprint."],
             "warnings": [],
             "remediations": [{"message": "Choose a different name", "command": None}],

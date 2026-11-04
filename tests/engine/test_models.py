@@ -54,7 +54,7 @@ class RunOutcomeTests:
 
 
 class AgentSettingsResolutionTests:
-    def test_ok_is_false_without_settings_and_true_with_them(self) -> None:
+    def test_ok_follows_error_code_not_settings(self) -> None:
         settings = ResolvedAgentSettings(
             provider="copilot",
             model="m",
@@ -64,8 +64,9 @@ class AgentSettingsResolutionTests:
             tools=default_tool_policy(),
         )
 
-        assert AgentSettingsResolution().ok is False
+        assert AgentSettingsResolution().ok is True
         assert AgentSettingsResolution(settings=settings).ok is True
+        assert AgentSettingsResolution(error_code=ErrorCode.INTERNAL_ERROR, errors=["boom"]).ok is False
 
 
 class DefinitionRefTests:

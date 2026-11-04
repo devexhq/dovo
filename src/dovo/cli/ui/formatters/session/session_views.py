@@ -6,8 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from dovo.common.diagnostic_log import DiagnosticRecord
-from dovo.common.models import Remediation
+from dovo.cli.ui.formatters.base import ResultView
 from dovo.core.sessions import SessionLogEvent, StepRunSummary
 
 
@@ -26,24 +25,15 @@ class SessionSummaryView(BaseModel):
     error_message: str | None = None
 
 
-class SessionListView(BaseModel):
+class SessionListView(ResultView):
     """Semantic view of the session listing."""
-
-    model_config = {"extra": "forbid", "strict": True}
 
     sessions: list[SessionSummaryView] = Field(default_factory=list)
     total_sessions: int = 0
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    remediations: list[Remediation] = Field(default_factory=list)
-    error_code: str | None = None
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
-class SessionShowView(BaseModel):
+class SessionShowView(ResultView):
     """Semantic view of one session's detail."""
-
-    model_config = {"extra": "forbid", "strict": True}
 
     session_id: str | None = None
     session: SessionSummaryView | None = None
@@ -52,34 +42,20 @@ class SessionShowView(BaseModel):
     steps: list[StepRunSummary] = Field(default_factory=list)
     worktree_kept: bool | None = None
     worktree_path: str | None = None
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    remediations: list[Remediation] = Field(default_factory=list)
-    error_code: str | None = None
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
-class SessionLogsView(BaseModel):
+class SessionLogsView(ResultView):
     """Semantic view of a session's session.log events or step log lines."""
-
-    model_config = {"extra": "forbid", "strict": True}
 
     session_id: str | None = None
     lines: list[str] = Field(default_factory=list)
     events: list[SessionLogEvent] = Field(default_factory=list)
     available_steps: list[str] = Field(default_factory=list)
     available_attempts: list[int] = Field(default_factory=list)
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    remediations: list[Remediation] = Field(default_factory=list)
-    error_code: str | None = None
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
-class SessionDiffView(BaseModel):
+class SessionDiffView(ResultView):
     """Semantic view of session diff output."""
-
-    model_config = {"extra": "forbid", "strict": True}
 
     session_id: str | None = None
     artifact_path: Path | None = None
@@ -92,8 +68,3 @@ class SessionDiffView(BaseModel):
     total_lines: int = 0
     truncated: bool = False
     truncated_lines: int = 0
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    remediations: list[Remediation] = Field(default_factory=list)
-    error_code: str | None = None
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)

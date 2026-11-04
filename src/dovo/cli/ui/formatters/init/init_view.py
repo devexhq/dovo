@@ -4,19 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from dovo.common.diagnostic_log import DiagnosticRecord
-from dovo.common.models import Remediation
+from dovo.cli.ui.formatters.base import ResultView
 from dovo.core.bootstrap.models import BootstrapOutcome
 
 
-class WorkspaceInitView(BaseModel):
+class WorkspaceInitView(ResultView):
     """Semantic view of workspace initialization results."""
 
-    model_config = {"extra": "forbid", "strict": True}
-
-    ok: bool
     root_path: Path | None = None
     root_path_relative: str | None = None
     bootstrap_outcome: BootstrapOutcome | None = None
@@ -35,8 +31,3 @@ class WorkspaceInitView(BaseModel):
     seeded_files: list[str] = Field(default_factory=list)
     skipped_seed_files: list[str] = Field(default_factory=list)
     overwritten_seed_files: list[str] = Field(default_factory=list)
-    error_code: str | None = None
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    remediations: list[Remediation] = Field(default_factory=list)
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)

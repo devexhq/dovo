@@ -79,6 +79,7 @@ WORKTREE_DIFF_PAYLOAD_CASES = [
     pytest.param(
         OK_WITH_DIFF,
         {
+            "ok": True,
             "worktree_id": "dovo_diff",
             "diff_text": "+new_line",
             "stat_text": "",
@@ -94,6 +95,7 @@ WORKTREE_DIFF_PAYLOAD_CASES = [
     pytest.param(
         EMPTY_SUCCESS,
         {
+            "ok": True,
             "worktree_id": "dovo_empty",
             "diff_text": "",
             "stat_text": "",
@@ -109,6 +111,7 @@ WORKTREE_DIFF_PAYLOAD_CASES = [
     pytest.param(
         NOT_FOUND,
         {
+            "ok": False,
             "worktree_id": "dovo_missing",
             "diff_text": "",
             "stat_text": "",
@@ -126,6 +129,7 @@ WORKTREE_DIFF_PAYLOAD_CASES = [
     pytest.param(
         FAILED_WITH_DIAGNOSTICS,
         {
+            "ok": False,
             "worktree_id": "dovo_boom",
             "diff_text": "",
             "stat_text": "",

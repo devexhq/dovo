@@ -48,6 +48,7 @@ class ConfigShowCliIntegrationTests:
         assert json.loads(res.stdout) == {
             "event_type": "ConfigLoadResult",
             "payload": {
+                "ok": True,
                 "config_path": str(config_path),
                 "raw": raw_payload,
                 "config": raw_payload,

@@ -1,8 +1,48 @@
 from abc import ABC, abstractmethod
-from typing import ClassVar, cast
+from typing import ClassVar, TypedDict, cast
 
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, Field, JsonValue
 from rich.console import RenderableType
+
+from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
+from dovo.common.models import BaseResult, Remediation
+
+
+class ResultHeader(TypedDict):
+    """The six header fields every command result's payload starts with."""
+
+    ok: bool
+    error_code: ErrorCode | None
+    errors: list[str]
+    warnings: list[str]
+    remediations: list[Remediation]
+    diagnostics: list[DiagnosticRecord]
+
+
+class ResultView(BaseModel):
+    """Base of every view of a command result: its payload starts with the shared header, then the view's own fields."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    ok: bool
+    error_code: ErrorCode | None = None
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
+
+
+def result_header(result: BaseResult) -> ResultHeader:
+    """Copy the six header fields of a result, ready to splat into its ResultView."""
+    return ResultHeader(
+        ok=result.ok,
+        error_code=result.error_code,
+        errors=list(result.errors),
+        warnings=list(result.warnings),
+        remediations=list(result.remediations),
+        diagnostics=list(result.diagnostics),
+    )
 
 
 class ComponentFormatter[T, V: BaseModel = BaseModel](ABC):

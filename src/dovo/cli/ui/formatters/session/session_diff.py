@@ -7,7 +7,7 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.text import Text
 
-from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter, result_header
 from dovo.cli.ui.formatters.common import build_error_panel
 from dovo.cli.ui.formatters.session.common import (
     format_truncation_notice,
@@ -83,6 +83,7 @@ class SessionDiffFormatter(ComponentFormatter[DiffResult, SessionDiffView]):
         should_truncate = is_terminal and not effective_full and total_lines > limit
 
         return SessionDiffView(
+            **result_header(data),
             session_id=data.session_id,
             artifact_path=data.artifact_path,
             relative_path=relative_path,
@@ -93,11 +94,6 @@ class SessionDiffFormatter(ComponentFormatter[DiffResult, SessionDiffView]):
             total_lines=total_lines,
             truncated=should_truncate,
             truncated_lines=limit if should_truncate else 0,
-            errors=list(data.errors),
-            warnings=list(data.warnings),
-            remediations=list(data.remediations),
-            error_code=data.error_code,
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: DiffResult) -> RenderableType:

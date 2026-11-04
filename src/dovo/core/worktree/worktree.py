@@ -23,6 +23,7 @@ from dovo.core.worktree.models import (
     WorktreeDiffResult,
     WorktreeListResult,
     WorktreePruneResult,
+    WorktreePruneStatus,
     WorktreeSession,
     WorktreeShowResult,
 )
@@ -191,7 +192,7 @@ class Worktree:
             pruned = pruner.prune(dry_run=dry_run, force=force)
         if caught.failure is not None:
             return WorktreePruneResult(
-                status=None,
+                status=WorktreePruneStatus.PARTIAL_FAILURE,
                 dry_run=dry_run,
                 force=force,
                 **caught.failure.result_fields(),

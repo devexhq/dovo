@@ -155,11 +155,6 @@ class CatalogListResult(CatalogResult):
     type_filter: CatalogItemType | None = None
     templates: list[tuple[str, str]] = Field(default_factory=list)
 
-    @property
-    def ok(self) -> bool:
-        """Return True if list operation completed without errors."""
-        return not self.errors
-
 
 class CatalogShowResult(CatalogResult):
     """Result of showing a catalog blueprint or packaged template."""
@@ -167,11 +162,6 @@ class CatalogShowResult(CatalogResult):
     item: CatalogRecord | None = None
     content: str | None = None
     template_matches: list[tuple[str, str]] = Field(default_factory=list)
-
-    @property
-    def ok(self) -> bool:
-        """Return True if a blueprint or template was found without errors."""
-        return not self.errors and (self.item is not None or self.content is not None or bool(self.template_matches))
 
 
 class CatalogDeleteResult(CatalogResult):
@@ -181,22 +171,12 @@ class CatalogDeleteResult(CatalogResult):
     deleted: bool = False
     cancelled: bool = False
 
-    @property
-    def ok(self) -> bool:
-        """Return True unless the delete failed; a declined confirmation is ok."""
-        return self.error_code is None
-
 
 class CatalogCreateResult(CatalogResult):
     """Result of creating a catalog blueprint or step."""
 
     item: CatalogRecord | None = None
     resolved_path: Path | None = None
-
-    @property
-    def ok(self) -> bool:
-        """Return True unless the create failed."""
-        return self.error_code is None
 
 
 class CatalogValidateResult(CatalogResult):
@@ -205,8 +185,3 @@ class CatalogValidateResult(CatalogResult):
     valid: bool
     target: str
     resolved_path: Path | None = None
-
-    @property
-    def ok(self) -> bool:
-        """Return True when validation found no failure; equals valid."""
-        return self.error_code is None

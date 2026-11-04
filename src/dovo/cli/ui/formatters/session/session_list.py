@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter, result_header
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.cli.ui.formatters.session.common import (
     build_session_summary,
@@ -44,13 +44,9 @@ class SessionListFormatter(ComponentFormatter[HistoryListResult, SessionListView
         """
         sessions = [build_session_summary(session) for session in data.sessions]
         return SessionListView(
+            **result_header(data),
             sessions=sessions,
             total_sessions=len(sessions),
-            errors=list(data.errors),
-            warnings=list(data.warnings),
-            remediations=list(data.remediations),
-            error_code=data.error_code,
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: HistoryListResult) -> RenderableType:

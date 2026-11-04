@@ -8,7 +8,7 @@ from rich.console import Group, RenderableType
 from rich.syntax import Syntax
 from rich.text import Text
 
-from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter, result_header
 from dovo.cli.ui.formatters.catalog.catalog_views import (
     CatalogItemView,
     CatalogShowView,
@@ -99,16 +99,12 @@ class CatalogShowFormatter(ComponentFormatter[CatalogShowResult, CatalogShowView
         ]
 
         return CatalogShowView(
+            **result_header(data),
             item_type=enum_value(data.item_type),
             item=item_view,
             content=data.content,
             template_matches=template_matches,
             catalog_path_relative=catalog_path_relative,
-            error_code=data.error_code,
-            errors=data.errors,
-            warnings=data.warnings,
-            remediations=data.remediations,
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: CatalogShowResult) -> RenderableType:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter, result_header
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.cli.ui.formatters.config.config_views import ConfigValidationView
 from dovo.common.formatters import format_remediations, format_warning_bullets
@@ -57,14 +57,10 @@ class ConfigValidateFormatter(ComponentFormatter[ConfigValidationResult, ConfigV
             ConfigValidationView carrying the result's fields.
         """
         return ConfigValidationView(
+            **result_header(data),
             config_path=data.config_path,
             raw=data.raw,
             config=data.config,
-            error_code=data.error_code,
-            errors=list(data.errors),
-            warnings=list(data.warnings),
-            remediations=list(data.remediations),
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: ConfigValidationResult) -> RenderableType:

@@ -67,6 +67,7 @@ class ConfigValidateCliIntegrationTests:
         assert json.loads(res.stdout) == {
             "event_type": "ConfigValidationResult",
             "payload": {
+                "ok": True,
                 "config_path": str(config_path),
                 "raw": raw_payload,
                 "config": raw_payload,
@@ -93,6 +94,7 @@ class ConfigValidateCliIntegrationTests:
         assert json.loads(res.stdout) == {
             "event_type": "ConfigValidationResult",
             "payload": {
+                "ok": False,
                 "config_path": str(config_path),
                 "raw": None,
                 "config": None,

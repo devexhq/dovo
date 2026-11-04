@@ -59,9 +59,8 @@ class WorktreePrunerBaselineTests:
 
         result = pruner.prune()
 
-        assert result.status == WorktreePruneStatus.OK
+        assert result.status == WorktreePruneStatus.NOTHING_TO_PRUNE
         assert result.dry_run is False
-        assert result.force is False
         assert len(result.items) == 0
         assert len(result.errors) == 0
         assert result.error_code is None
@@ -106,7 +105,7 @@ class WorktreePrunerBaselineTests:
 
         result = pruner.prune(dry_run=True, force=False)
 
-        assert result.status == WorktreePruneStatus.OK
+        assert result.status == WorktreePruneStatus.PRUNED
         assert result.dry_run is True
         assert result.force is False
         assert len(result.items) == 4
@@ -174,7 +173,7 @@ class WorktreePrunerSafetyTests:
 
         result = pruner.prune(force=False)
 
-        assert result.status == WorktreePruneStatus.OK
+        assert result.status == WorktreePruneStatus.PRUNED
         assert len(result.items) == 1
 
         item = result.items[0]
@@ -207,7 +206,7 @@ class WorktreePrunerSafetyTests:
 
         result = pruner.prune(force=True)
 
-        assert result.status == WorktreePruneStatus.OK
+        assert result.status == WorktreePruneStatus.PRUNED
         assert result.force is True
         assert len(result.items) == 1
 
@@ -233,7 +232,7 @@ class WorktreePrunerSafetyTests:
 
         result = pruner.prune(force=False)
 
-        assert result.status == WorktreePruneStatus.OK
+        assert result.status == WorktreePruneStatus.PRUNED
         assert len(result.items) == 1
 
         item = result.items[0]
@@ -263,7 +262,7 @@ class WorktreePrunerCategoryTests:
 
         result = pruner.prune()
 
-        assert result.status == WorktreePruneStatus.OK
+        assert result.status == WorktreePruneStatus.PRUNED
         assert len(result.items) == 2
 
         worktree_item = next(i for i in result.items if i.category == StaleWorktreeCategory.STALE_WORKTREE_REF)
@@ -295,7 +294,7 @@ class WorktreePrunerCategoryTests:
 
         result = pruner.prune()
 
-        assert result.status == WorktreePruneStatus.OK
+        assert result.status == WorktreePruneStatus.PRUNED
         assert len(result.items) == 1
 
         item = result.items[0]
@@ -330,7 +329,7 @@ class WorktreePrunerCategoryTests:
 
         result = pruner.prune()
 
-        assert result.status == WorktreePruneStatus.OK
+        assert result.status == WorktreePruneStatus.PRUNED
         assert len(result.items) == 1
 
         item = result.items[0]
@@ -377,7 +376,7 @@ class WorktreePrunerIdempotencyTests:
 
         result1 = manager.prune()
 
-        assert result1.status == WorktreePruneStatus.OK
+        assert result1.status == WorktreePruneStatus.PRUNED
         assert len(result1.items) == 2
 
         dir_item = next(i for i in result1.items if i.identifier == "dovo_c1")
@@ -399,7 +398,7 @@ class WorktreePrunerIdempotencyTests:
 
         result2 = manager.prune()
 
-        assert result2.status == WorktreePruneStatus.OK
+        assert result2.status == WorktreePruneStatus.NOTHING_TO_PRUNE
         assert len(result2.items) == 0
         assert len(result2.errors) == 0
 
@@ -560,7 +559,7 @@ class WorktreePrunerDiagnosticLogTests:
 
         result = WorktreePruner(pruner_workspace_paths, _repo(pruner_workspace_paths), git=fake).prune()
 
-        assert result.status == WorktreePruneStatus.OK
+        assert result.status == WorktreePruneStatus.PRUNED
         assert [(item.identifier, item.action) for item in result.items] == [("dovo_orphan", PruneAction.PRUNED)]
         assert result.diagnostics == []
         assert not orphan_dir.exists()
@@ -574,7 +573,7 @@ class WorktreePrunerDiagnosticLogTests:
 
         result = WorktreePruner(pruner_workspace_paths, _repo(pruner_workspace_paths), git=GitRunner()).prune()
 
-        assert result.status == WorktreePruneStatus.OK
+        assert result.status == WorktreePruneStatus.PRUNED
         assert [(item.identifier, item.action, item.error) for item in result.items] == [
             ("dovo_orphan", PruneAction.PRUNED, None)
         ]
@@ -623,7 +622,7 @@ class WorktreePrunerDiagnosticLogTests:
 
         result = WorktreePruner(pruner_workspace_paths, _repo(pruner_workspace_paths), git=fake).prune()
 
-        assert result.status == WorktreePruneStatus.OK
+        assert result.status == WorktreePruneStatus.PRUNED
         assert [(item.identifier, item.action) for item in result.items] == [("dovo_orphan", PruneAction.PRUNED)]
         assert result.diagnostics == []
         assert not orphan_dir.exists()
@@ -647,7 +646,7 @@ class WorktreePrunerWorkspacePathsTests:
 
         result = WorktreePruner(paths, _repo(paths), git=GitRunner()).prune()
 
-        assert result.status == WorktreePruneStatus.OK
+        assert result.status == WorktreePruneStatus.PRUNED
         assert [(item.category, item.action, item.path) for item in result.items] == [
             (StaleWorktreeCategory.ORPHANED_DIRECTORY, PruneAction.PRUNED, paths.worktrees_dir / "orphan_1")
         ]

@@ -629,11 +629,12 @@ class CatalogDeleteConfirmTests:
         result = catalog.delete(CatalogItemType.BLUEPRINT, "demo", confirm=lambda item: False)
 
         assert result.model_dump(mode="json") == {
+            "ok": True,
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],
             "diagnostics": [],
-            "error_code": None,
             "item_type": "blueprint",
             "item": {
                 "key": "demo",
@@ -828,11 +829,12 @@ class CatalogResultItemTypeTests:
         result = Catalog(workspace_paths).create(CatalogItemType.STEP, "demo", user=True, global_=True)
 
         assert result.model_dump(mode="json") == {
+            "ok": False,
+            "error_code": "CATALOG_TIER_CONFLICT",
             "errors": ["--user and --global are mutually exclusive."],
             "warnings": [],
             "remediations": [{"message": "Pass at most one of --user and --global.", "command": None}],
             "diagnostics": [],
-            "error_code": "CATALOG_TIER_CONFLICT",
             "item_type": "step",
             "item": None,
             "resolved_path": None,

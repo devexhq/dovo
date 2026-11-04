@@ -96,6 +96,7 @@ WORKTREE_APPLY_PAYLOAD_CASES = [
     pytest.param(
         APPLIED_SQUASH,
         {
+            "ok": True,
             "worktree_id": "dovo_1",
             "strategy": "squash",
             "touched_files": [],
@@ -113,6 +114,7 @@ WORKTREE_APPLY_PAYLOAD_CASES = [
     pytest.param(
         FAILED_CONFLICT,
         {
+            "ok": False,
             "worktree_id": "dovo_3",
             "strategy": "squash",
             "touched_files": [],
@@ -130,6 +132,7 @@ WORKTREE_APPLY_PAYLOAD_CASES = [
     pytest.param(
         ALREADY_MERGED,
         {
+            "ok": False,
             "worktree_id": "dovo_5",
             "strategy": "patch",
             "touched_files": [],

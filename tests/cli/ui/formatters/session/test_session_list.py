@@ -30,7 +30,8 @@ def _make_session_list_view(**overrides: object) -> SessionListView:
         "error_code": None,
         "diagnostics": [],
     }
-    return SessionListView.model_validate({**defaults, **overrides})
+    merged = {**defaults, **overrides}
+    return SessionListView.model_validate({**merged, "ok": merged["error_code"] is None})
 
 
 POPULATED_RUNS = FormatterCase(
@@ -78,6 +79,7 @@ HISTORY_LIST_PAYLOAD_CASES = [
     pytest.param(
         EMPTY_RUNS,
         {
+            "ok": True,
             "sessions": [],
             "total_sessions": 0,
             "errors": [],
@@ -91,6 +93,7 @@ HISTORY_LIST_PAYLOAD_CASES = [
     pytest.param(
         ERRORS_RUNS,
         {
+            "ok": False,
             "sessions": [],
             "total_sessions": 0,
             "errors": ["Database query failed."],
@@ -104,6 +107,7 @@ HISTORY_LIST_PAYLOAD_CASES = [
     pytest.param(
         WARNINGS_RUNS,
         {
+            "ok": True,
             "sessions": [
                 {
                     "session_id": "sess-12345678",

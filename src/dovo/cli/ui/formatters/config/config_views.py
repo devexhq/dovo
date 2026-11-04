@@ -3,40 +3,23 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
-
-from dovo.common.diagnostic_log import DiagnosticRecord
-from dovo.common.models import Remediation
+from dovo.cli.ui.formatters.base import ResultView
 from dovo.core.config.models import DovoConfig
 
 
-class ConfigValidationView(BaseModel):
+class ConfigValidationView(ResultView):
     """Semantic view of configuration validation results."""
-
-    model_config = {"extra": "forbid", "strict": True}
 
     config_path: Path
     raw: dict[str, Any] | None = None
     config: DovoConfig | None = None
-    error_code: str | None = None
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    remediations: list[Remediation] = Field(default_factory=list)
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
-class ConfigSetView(BaseModel):
+class ConfigSetView(ResultView):
     """Semantic view of configuration mutation results."""
-
-    model_config = {"extra": "forbid", "strict": True}
 
     config_path: Path
     key: str
     value: Any
     value_str: str
     value_type: str
-    error_code: str | None = None
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    remediations: list[Remediation] = Field(default_factory=list)
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)

@@ -465,6 +465,7 @@ class CatalogValidateFailurePathTests:
         result = _validate("bad.yml", path=isolated_workspace)
 
         assert result.model_dump(exclude={"errors"}) == {
+            "ok": False,
             "error_code": ErrorCode.CATALOG_SYNTAX_INVALID,
             "warnings": [],
             "remediations": [
@@ -505,6 +506,7 @@ class CatalogValidateFailurePathTests:
         result = _validate("semantic.yml", path=isolated_workspace)
 
         assert result.model_dump() == {
+            "ok": False,
             "error_code": ErrorCode.CATALOG_SCHEMA_INVALID,
             "errors": list(_SEMANTIC_ERRORS),
             "warnings": list(_SEMANTIC_WARNINGS),

@@ -152,6 +152,7 @@ class ConfigSetCliIntegrationTests:
         assert json.loads(res.stdout) == {
             "event_type": "ConfigSetResult",
             "payload": {
+                "ok": True,
                 "config_path": str(config_path),
                 "key": "agents.copilot.model",
                 "value": "qwen2.5-coder",

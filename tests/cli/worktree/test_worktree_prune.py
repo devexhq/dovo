@@ -55,7 +55,7 @@ class WorktreePruneCliIntegrationTests:
         assert len(dispatch_spy) == 1
 
         payload = dispatch_spy[0]
-        assert payload.status == WorktreePruneStatus.OK
+        assert payload.status == WorktreePruneStatus.NOTHING_TO_PRUNE
         assert payload.dry_run == dry_run
         assert payload.force == force
         assert len(payload.items) == 0
@@ -70,18 +70,19 @@ class WorktreePruneCliIntegrationTests:
         assert json.loads(result.stdout) == {
             "event_type": "WorktreePruneResult",
             "payload": {
-                "status": "ok",
+                "ok": True,
+                "error_code": None,
+                "errors": [],
+                "warnings": [],
+                "remediations": [],
+                "diagnostics": [],
+                "status": "nothing_to_prune",
                 "dry_run": True,
                 "force": False,
                 "items": [],
                 "pruned_count": 0,
                 "skipped_count": 0,
                 "failed_count": 0,
-                "error_code": None,
-                "errors": [],
-                "warnings": [],
-                "remediations": [],
-                "diagnostics": [],
             },
         }
 
@@ -101,7 +102,7 @@ class WorktreePruneCliIntegrationTests:
         monkeypatch: pytest.MonkeyPatch,
         case: str,
     ) -> None:
-        """Exit 1 for --format json. partial_failure (git branch -D raising RuntimeError("boom") via use_fake_git on a stale dovo/dovo_x branch) emits status "partial_failure", error_code "WORKTREE_PRUNE_FAILED", errors ["Failed to delete branch 'dovo/dovo_x': boom"] with no hint and one diagnostics entry. unexpected (WorktreeDetector.detect raising TypeError("boom")) emits status null, error_code "INTERNAL_ERROR", errors ["Unexpected error during worktree.prune: boom"] and diagnostics [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]. git_failed (git worktree list raising a GIT_FAILED GitError) emits status null, error_code "GIT_FAILED", its message as the one error, no items and no diagnostics."""
+        """Exit 1 for --format json. partial_failure (git branch -D raising RuntimeError("boom") via use_fake_git on a stale dovo/dovo_x branch) emits status "partial_failure", error_code "WORKTREE_PRUNE_FAILED", errors ["Failed to delete branch 'dovo/dovo_x': boom"] with no hint and one diagnostics entry. unexpected (WorktreeDetector.detect raising TypeError("boom")) emits status "partial_failure", error_code "INTERNAL_ERROR", errors ["Unexpected error during worktree.prune: boom"] and diagnostics [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]. git_failed (git worktree list raising a GIT_FAILED GitError) emits status "partial_failure", error_code "GIT_FAILED", its message as the one error, no items and no diagnostics."""
         if case == "partial_failure":
             subprocess.run(["git", "branch", "dovo/dovo_x"], cwd=cli_workspace, check=True, capture_output=True)
             use_fake_git(monkeypatch, FakeGitRunner({("branch", "-D"): RuntimeError("boom")}))
@@ -123,13 +124,13 @@ class WorktreePruneCliIntegrationTests:
                 {"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}
             ]
         elif case == "git_failed":
-            assert payload["status"] is None
+            assert payload["status"] == "partial_failure"
             assert payload["error_code"] == "GIT_FAILED"
             assert payload["errors"] == ["Git execution failed ('git worktree list'): fatal error"]
             assert payload["items"] == []
             assert payload["diagnostics"] == []
         else:
-            assert payload["status"] is None
+            assert payload["status"] == "partial_failure"
             assert payload["error_code"] == "INTERNAL_ERROR"
             assert payload["errors"] == ["Unexpected error during worktree.prune: boom"]
             assert payload["items"] == []

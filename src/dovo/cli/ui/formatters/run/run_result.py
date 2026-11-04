@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter, result_header
 from dovo.cli.ui.formatters.common import SUCCESS_STYLE, WARNING_STYLE, build_error_panel, diagnostic_lines
 from dovo.cli.ui.formatters.run.run_views import RunResultView
 from dovo.common.error_codes import ErrorCode
@@ -34,12 +34,7 @@ class RunResultFormatter(ComponentFormatter[BlueprintRunResult, RunResultView]):
     def transform(self, data: BlueprintRunResult) -> RunResultView:
         """Derive the view: the shared header, with ok from error_code, then the session fields."""
         return RunResultView(
-            ok=data.ok,
-            error_code=data.error_code,
-            errors=list(data.errors),
-            warnings=list(data.warnings),
-            remediations=list(data.remediations),
-            diagnostics=list(data.diagnostics),
+            **result_header(data),
             session_id=data.session_id,
             blueprint_name=data.blueprint_name,
             session_status=data.session_status,

@@ -30,6 +30,7 @@ SUCCESS_STR_CASE = FormatterCase(
         remediations=[],
     ),
     view=ConfigSetView(
+        ok=True,
         config_path=CONFIG_PATH,
         key="agents.copilot.model",
         value="qwen2.5-coder",
@@ -52,6 +53,7 @@ SUCCESS_BOOL_CASE = FormatterCase(
         remediations=[],
     ),
     view=ConfigSetView(
+        ok=True,
         config_path=CONFIG_PATH,
         key="telemetry.enabled",
         value=True,
@@ -74,6 +76,7 @@ SUCCESS_INT_CASE = FormatterCase(
         remediations=[],
     ),
     view=ConfigSetView(
+        ok=True,
         config_path=CONFIG_PATH,
         key="worktree.max_active_worktrees",
         value=5,
@@ -96,6 +99,7 @@ SUCCESS_DICT_CASE = FormatterCase(
         remediations=[],
     ),
     view=ConfigSetView(
+        ok=True,
         config_path=CONFIG_PATH,
         key="project",
         value={"name": "my-app"},
@@ -119,6 +123,7 @@ ERROR_SCHEMA_INVALID_CASE = FormatterCase(
         remediations=[Remediation(message="Run 'dovo config validate' for details", command="dovo config validate")],
     ),
     view=ConfigSetView(
+        ok=False,
         error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
         config_path=CONFIG_PATH,
         key="agent.invalid_key",
@@ -147,6 +152,7 @@ ERROR_TYPE_COLLISION_CASE = FormatterCase(
         errors=[TYPE_COLLISION_ERROR],
     ),
     view=ConfigSetView(
+        ok=False,
         config_path=CONFIG_PATH,
         key="project.name.first",
         value="demo",
@@ -171,6 +177,7 @@ SET_PAYLOAD_CASES = [
     pytest.param(
         SUCCESS_STR_CASE,
         {
+            "ok": True,
             "config_path": "/workspace/.dovo/config.json",
             "key": "agents.copilot.model",
             "value": "qwen2.5-coder",
@@ -187,6 +194,7 @@ SET_PAYLOAD_CASES = [
     pytest.param(
         ERROR_SCHEMA_INVALID_CASE,
         {
+            "ok": False,
             "config_path": "/workspace/.dovo/config.json",
             "key": "agent.invalid_key",
             "value": None,
@@ -203,6 +211,7 @@ SET_PAYLOAD_CASES = [
     pytest.param(
         ERROR_TYPE_COLLISION_CASE,
         {
+            "ok": False,
             "config_path": "/workspace/.dovo/config.json",
             "key": "project.name.first",
             "value": "demo",

@@ -198,11 +198,6 @@ class AgentSettingsResolution(BaseResult):
 
     settings: ResolvedAgentSettings | None = None
 
-    @property
-    def ok(self) -> bool:
-        """Return True when settings resolved."""
-        return self.settings is not None
-
 
 @dataclass(frozen=True, slots=True)
 class StepInvocation:
@@ -382,8 +377,3 @@ class BlueprintRunResult(BaseResult):
     blueprint_name: str | None = None
     session_status: SessionStatus | None = None
     paused_prompt_id: str | None = None
-
-    @property
-    def ok(self) -> bool:
-        """Return True exactly when error_code is None."""
-        return self.error_code is None

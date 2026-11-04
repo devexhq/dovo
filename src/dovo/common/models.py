@@ -1,7 +1,8 @@
+from collections.abc import Callable
 from enum import StrEnum
 from typing import Self
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_serializer, model_validator
 
 from dovo.common.constants import (
     ON_FAILURE_BACKOFF_MS_DEFAULT,
@@ -39,6 +40,8 @@ class Remediation(BaseModel):
     command: str | None = Field(default=None, min_length=1)
 
 
+RESULT_HEADER_FIELDS = ("ok", "error_code", "errors", "warnings", "remediations", "diagnostics")
+
 ERROR_CODE_MISMATCH_MESSAGE = "error_code must be set exactly when errors is non-empty"
 
 
@@ -46,7 +49,7 @@ class BaseResult(BaseModel):
     """Base DTO for operation results.
 
     error_code is a published ErrorCode, set exactly when errors is non-empty; a result where they disagree is refused
-    when it is built.
+    when it is built. ok is true exactly when error_code is None, and a dump starts with RESULT_HEADER_FIELDS.
     """
 
     model_config = {"extra": "forbid", "strict": True}
@@ -63,6 +66,19 @@ class BaseResult(BaseModel):
         if bool(self.errors) != (self.error_code is not None):
             raise ValueError(ERROR_CODE_MISMATCH_MESSAGE)
         return self
+
+    @computed_field
+    @property
+    def ok(self) -> bool:
+        """True exactly when error_code is None."""
+        return self.error_code is None
+
+    @model_serializer(mode="wrap")
+    def serialize_header_first(self, handler: Callable[[Self], dict[str, object]]) -> dict[str, object]:
+        """Dump the header fields first, then the result's own fields."""
+        data = handler(self)
+        header = {name: data[name] for name in RESULT_HEADER_FIELDS if name in data}
+        return {**header, **{name: value for name, value in data.items() if name not in header}}
 
 
 class FailurePolicy(StrEnum):

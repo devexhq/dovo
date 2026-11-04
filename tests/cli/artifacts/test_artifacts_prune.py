@@ -105,13 +105,18 @@ class ArtifactsPruneCliIntegrationTests:
         assert json.loads(result.stdout) == {
             "event_type": "ArtifactsPruneResult",
             "payload": {
+                "ok": True,
+                "error_code": None,
+                "errors": [],
+                "warnings": [],
+                "remediations": [],
+                "diagnostics": [],
                 "disabled": True,
                 "dry_run": False,
                 "force": False,
                 "items": [],
                 "pruned_count": 0,
                 "failed_count": 0,
-                "diagnostics": [],
             },
         }
 

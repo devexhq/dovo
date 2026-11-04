@@ -126,6 +126,7 @@ class StepCreateCliTests:
 
         assert result.exit_code == 1
         assert json.loads(result.stdout)["payload"] == {
+            "ok": False,
             "errors": ["--user and --global are mutually exclusive."],
             "warnings": [],
             "remediations": [{"message": "Pass at most one of --user and --global.", "command": None}],

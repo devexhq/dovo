@@ -36,6 +36,7 @@ VALID_CASE = FormatterCase(
         remediations=[],
     ),
     view=ConfigValidationView(
+        ok=True,
         config_path=CONFIG_PATH,
         raw=None,
         config=VALID_CONFIG,
@@ -57,6 +58,7 @@ VALID_WITH_WARNINGS_CASE = FormatterCase(
         remediations=[Remediation(message="Set agents.copilot.model in .dovo/config.json")],
     ),
     view=ConfigValidationView(
+        ok=True,
         config_path=CONFIG_PATH,
         raw=None,
         config=VALID_CONFIG,
@@ -83,10 +85,11 @@ INVALID_CASE = FormatterCase(
         remediations=[Remediation(message="Fix the reported configuration error")],
     ),
     view=ConfigValidationView(
+        ok=False,
         config_path=CONFIG_PATH,
         raw=None,
         config=None,
-        error_code="CONFIG_SCHEMA_INVALID",
+        error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
         errors=["semantic failure (CONFIG_ERROR)."],
         warnings=["warning message (CONFIG_WARN)."],
         remediations=[Remediation(message="Fix the reported configuration error")],
@@ -115,8 +118,9 @@ NOT_FOUND_CASE = FormatterCase(
         remediations=[NOT_FOUND_REMEDIATION],
     ),
     view=ConfigValidationView(
+        ok=False,
         config_path=CONFIG_PATH,
-        error_code="CONFIG_NOT_FOUND",
+        error_code=ErrorCode.CONFIG_NOT_FOUND,
         errors=[NOT_FOUND_ERROR],
         remediations=[NOT_FOUND_REMEDIATION],
     ),
@@ -135,6 +139,7 @@ VALIDATION_PAYLOAD_CASES = [
     pytest.param(
         VALID_CASE,
         {
+            "ok": True,
             "config_path": "/workspace/.dovo/config.json",
             "raw": None,
             "config": {
@@ -178,6 +183,7 @@ VALIDATION_PAYLOAD_CASES = [
     pytest.param(
         INVALID_CASE,
         {
+            "ok": False,
             "config_path": "/workspace/.dovo/config.json",
             "raw": None,
             "config": None,
@@ -192,6 +198,7 @@ VALIDATION_PAYLOAD_CASES = [
     pytest.param(
         NOT_FOUND_CASE,
         {
+            "ok": False,
             "config_path": "/workspace/.dovo/config.json",
             "raw": None,
             "config": None,

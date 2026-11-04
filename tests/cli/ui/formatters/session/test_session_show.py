@@ -37,7 +37,8 @@ def _make_session_show_view(**overrides: object) -> SessionShowView:
         "error_code": None,
         "diagnostics": [],
     }
-    return SessionShowView.model_validate({**defaults, **overrides})
+    merged = {**defaults, **overrides}
+    return SessionShowView.model_validate({**merged, "ok": merged["error_code"] is None})
 
 
 COMPLETED_RUN = FormatterCase(
@@ -271,6 +272,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
     pytest.param(
         RUN_WITH_STEPS,
         {
+            "ok": True,
             "session_id": "sess-12345678",
             "session": {
                 "session_id": "sess-12345678",
@@ -389,6 +391,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
     pytest.param(
         RUN_WITH_GUARDED_STEPS,
         {
+            "ok": True,
             "session_id": "sess-12345678",
             "session": {
                 "session_id": "sess-12345678",
@@ -471,6 +474,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
     pytest.param(
         RUN_WITH_STEP_READ_FAILURE,
         {
+            "ok": True,
             "session_id": "sess-12345678",
             "session": {
                 "session_id": "sess-12345678",
@@ -503,6 +507,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
     pytest.param(
         NOT_FOUND,
         {
+            "ok": False,
             "session_id": "nonexistent-sess",
             "session": None,
             "log_files": [],

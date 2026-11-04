@@ -93,11 +93,6 @@ class DiagnosticsReport(BaseResult):
     checks: list[DiagnosticCheckRecord]
     duration_seconds: float = 0.0
 
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is None."""
-        return self.error_code is None
-
 
 @runtime_checkable
 class DiagnosticCheck(Protocol):

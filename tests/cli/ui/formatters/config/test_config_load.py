@@ -51,6 +51,7 @@ CONFIG_LOAD_PAYLOAD_CASES = [
     pytest.param(
         VALID_CONFIG,
         {
+            "ok": True,
             "config_path": "/workspace/.dovo/config.json",
             "raw": None,
             "config": {
@@ -107,6 +108,7 @@ CONFIG_LOAD_PAYLOAD_CASES = [
     pytest.param(
         NOT_FOUND,
         {
+            "ok": False,
             "config_path": "/workspace/.dovo/config.json",
             "raw": None,
             "config": None,

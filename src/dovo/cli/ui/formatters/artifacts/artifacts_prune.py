@@ -6,7 +6,7 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.artifacts.artifacts_views import ArtifactsPruneView
-from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter, result_header
 from dovo.core.artifacts.models import ArtifactsPruneResult, PrunedArtifact
 
 
@@ -23,13 +23,13 @@ class ArtifactsPruneFormatter(ComponentFormatter[ArtifactsPruneResult, Artifacts
     def transform(self, data: ArtifactsPruneResult) -> ArtifactsPruneView:
         """Derive the presentation-ready view from ArtifactsPruneResult, including pruned/failed counts."""
         return ArtifactsPruneView(
+            **result_header(data),
             disabled=data.disabled,
             dry_run=data.dry_run,
             force=data.force,
             items=list(data.items),
             pruned_count=sum(1 for item in data.items if item.pruned),
             failed_count=sum(1 for item in data.items if not item.pruned),
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: ArtifactsPruneResult) -> RenderableType:
