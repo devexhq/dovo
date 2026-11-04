@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dovo.core.inputs.models import InputResolveResult, ParameterInput
+from dovo.core.inputs.models import ParameterInput
 
 
 def format_missing_inputs_error(
@@ -26,19 +26,3 @@ def format_missing_inputs_error(
             lines.append(f"  dovo run {name} {alias} <value>")
         lines.append(f"  dovo run {name} -i {input_name}=<value>")
     return "\n".join(lines)
-
-
-def format_input_error_message(
-    *,
-    name: str,
-    result: InputResolveResult,
-    declarations: dict[str, ParameterInput],
-) -> str:
-    """Return the first parse error, or the structured missing-input body."""
-    if result.errors:
-        return result.errors[0]
-    return format_missing_inputs_error(
-        name=name,
-        missing=result.missing,
-        declarations=declarations,
-    )

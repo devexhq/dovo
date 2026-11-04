@@ -33,7 +33,7 @@ from dovo.engine.executors.models import (
     StepDispatchOutcome,
     StepExecutionContext,
     StepMetadata,
-    StepResult,
+    StepRecord,
 )
 from dovo.engine.executors.step_executor import StepExecution
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider
@@ -61,7 +61,7 @@ def _runner(worktree: Path) -> AgentStepRunner:
     )
 
 
-def _run_agent_step(worktree: Path, step_builder: StepBuilder) -> StepResult:
+def _run_agent_step(worktree: Path, step_builder: StepBuilder) -> StepRecord:
     context = StepExecutionContext(
         step=step_builder.build(), worktree_path=worktree, agent_runner=_runner(worktree), diagnostics=[]
     )

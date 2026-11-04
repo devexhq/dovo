@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.agents import AgentResponseStatus
 from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.engine.executors.models import (
@@ -18,6 +19,7 @@ from dovo.engine.executors.models import (
     OutputCallback,
     StepDispatchOutcome,
     StepExecutionContext,
+    StepRecord,
 )
 from tests.harness.builders import StepBuilder
 
@@ -139,3 +141,36 @@ class FrozenExecutionModelsTests:
 
         with pytest.raises(dataclasses.FrozenInstanceError):
             identity.blueprint_name = "other"  # ty: ignore[invalid-assignment]  # intentional ill-typed test input: frozen-model write
+
+
+_FAILED_STEP: dict[str, object] = {
+    "step_id": "publish",
+    "status": "failed",
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "",
+    "duration_seconds": 0.1,
+    "error_message": "Failed to publish artifact 'plan': boom",
+}
+
+
+class StepRecordTests:
+    def test_failed_record_carries_a_published_code_without_errors(self) -> None:
+        """Build a failed record holding a code and its error_message, with no errors field."""
+        record = StepRecord.model_validate({**_FAILED_STEP, "error_code": ErrorCode.INTERNAL_ERROR})
+
+        assert (record.ok, record.error_code) == (False, ErrorCode.INTERNAL_ERROR)
+        assert "errors" not in record.model_dump()
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            pytest.param({"error_code": "INTERNAL_ERROR"}, id="plain-string-code"),
+            pytest.param({"error_code": "CUSTOM_CODE"}, id="unknown-code"),
+            pytest.param({"errors": [], "unexpected": 1}, id="non-legacy-extra-key"),
+        ],
+    )
+    def test_unpublished_code_or_unknown_key_is_refused(self, fields: dict[str, object]) -> None:
+        """Refuse a code outside the published set, and any extra key besides the legacy result keys."""
+        with pytest.raises(ValidationError):
+            StepRecord.model_validate({**_FAILED_STEP, **fields})

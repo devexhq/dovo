@@ -9,6 +9,7 @@ import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_create import WorktreeCreateFormatter
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.worktree.models import (
     WorktreeCreateResult,
@@ -35,7 +36,7 @@ CREATED_OK = FormatterCase.identity(
 
 FAILED_GIT = FormatterCase.identity(
     data=WorktreeCreateResult(
-        error_code="GIT_FAILED",
+        error_code=ErrorCode.GIT_FAILED,
         errors=["Git checkout failed."],
         remediations=[Remediation(message="Check git status and branch name")],
     ),

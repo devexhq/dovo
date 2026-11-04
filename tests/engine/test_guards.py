@@ -6,12 +6,12 @@ import json
 
 import pytest
 
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import StepRecord
 from dovo.engine.guards import evaluate_guard, guard_skip
 from dovo.engine.models import SkipCause
 from dovo.engine.state_models import StepSkip
 
-_CHECK = StepResult(
+_CHECK = StepRecord(
     step_id="check",
     status="completed",
     exit_code=0,

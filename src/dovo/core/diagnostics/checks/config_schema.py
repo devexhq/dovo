@@ -41,7 +41,7 @@ def _failure_result(
         status=CheckStatus.FAILED,
         message=loaded.errors[0],
         details=details,
-        error_code=ErrorCode(loaded.error_code) if loaded.error_code else None,
+        error_code=loaded.error_code,
         errors=loaded.errors,
         warnings=[],
         remediations=loaded.remediations,

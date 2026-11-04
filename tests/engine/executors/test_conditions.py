@@ -18,7 +18,7 @@ from dovo.engine.executors.models import (
     ExecutionMetadata,
     PreviousStepMetadata,
     StepMetadata,
-    StepResult,
+    StepRecord,
 )
 from tests.conftest import PublishArtifact
 
@@ -41,7 +41,7 @@ class ConditionExpressionEvaluatorTests:
     def test_evaluate_condition_reports_whether_its_step_operands_resolved(
         self, expression: str, resolved: bool, passed: bool
     ) -> None:
-        build = StepResult(
+        build = StepRecord(
             step_id="build",
             status="completed",
             exit_code=0,
@@ -55,7 +55,7 @@ class ConditionExpressionEvaluatorTests:
         assert (result.resolved, result.passed) == (resolved, passed)
 
     def test_evaluate_condition_resolves_nested_json_subpath_in_step_outputs(self) -> None:
-        step_res = StepResult(
+        step_res = StepRecord(
             step_id="build",
             status="completed",
             exit_code=0,
@@ -89,7 +89,7 @@ class ConditionExpressionEvaluatorTests:
     def test_evaluate_condition_parses_boolean_literals_case_insensitively(
         self, literal: str, passed: bool, detail: str
     ) -> None:
-        step_res = StepResult(
+        step_res = StepRecord(
             step_id="check",
             status="completed",
             exit_code=0,
@@ -132,7 +132,7 @@ class ConditionExpressionEvaluatorTests:
         assert (rendered, result.passed) == ("85", True)
 
     def test_outputs_without_a_key_is_not_found(self) -> None:
-        build = StepResult(
+        build = StepRecord(
             step_id="build",
             status="completed",
             exit_code=0,
@@ -312,9 +312,9 @@ class ConditionExpressionEvaluatorTests:
 
 def _build_result(
     *, step_id: str = "build", exit_code: int = 0, stdout: str = "", outputs: dict[str, str] | None = None
-) -> StepResult:
+) -> StepRecord:
     """Build a completed command result with the given exit code, stdout and recorded outputs."""
-    return StepResult(
+    return StepRecord(
         step_id=step_id,
         status="completed",
         exit_code=exit_code,
@@ -325,10 +325,10 @@ def _build_result(
     )
 
 
-def _gate_result(**outputs: str) -> StepResult:
+def _gate_result(**outputs: str) -> StepRecord:
     """Build a `gate` command result with recorded outputs and plain stdout."""
     recorded = {"verdict": "needs_edits", "count": "3", "report": '{"score": 85}', **outputs}
-    return StepResult(
+    return StepRecord(
         step_id="gate",
         status="completed",
         exit_code=0,
@@ -339,11 +339,11 @@ def _gate_result(**outputs: str) -> StepResult:
     )
 
 
-def _agent_result(status: AgentResponseStatus) -> StepResult:
-    """Build the StepResult an agent step stores for the given status: mapped exit code and the summary line."""
+def _agent_result(status: AgentResponseStatus) -> StepRecord:
+    """Build the StepRecord an agent step stores for the given status: mapped exit code and the summary line."""
     code = AGENT_OUTCOME_EXIT_CODES[status]
     summary = AgentStepSummary(status=status, summary=None, unfixable_reason=None, touched_files=[])
-    return StepResult(
+    return StepRecord(
         step_id="agent",
         status="completed" if code == 0 else "failed",
         exit_code=code,

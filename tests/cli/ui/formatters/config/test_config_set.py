@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.config import ConfigSetFormatter, ConfigSetView
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.config.mutate import ConfigSetResult
 from tests.harness.formatter import (
@@ -109,7 +110,7 @@ SUCCESS_DICT_CASE = FormatterCase(
 
 ERROR_SCHEMA_INVALID_CASE = FormatterCase(
     data=ConfigSetResult(
-        error_code="CONFIG_SCHEMA_INVALID",
+        error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
         config_path=CONFIG_PATH,
         key="agent.invalid_key",
         value=None,
@@ -118,7 +119,7 @@ ERROR_SCHEMA_INVALID_CASE = FormatterCase(
         remediations=[Remediation(message="Run 'dovo config validate' for details", command="dovo config validate")],
     ),
     view=ConfigSetView(
-        error_code="CONFIG_SCHEMA_INVALID",
+        error_code=ErrorCode.CONFIG_SCHEMA_INVALID,
         config_path=CONFIG_PATH,
         key="agent.invalid_key",
         value=None,
@@ -142,7 +143,7 @@ ERROR_TYPE_COLLISION_CASE = FormatterCase(
         config_path=CONFIG_PATH,
         key="project.name.first",
         value="demo",
-        error_code="CONFIG_TYPE_CONFLICT",
+        error_code=ErrorCode.CONFIG_TYPE_CONFLICT,
         errors=[TYPE_COLLISION_ERROR],
     ),
     view=ConfigSetView(
@@ -151,7 +152,7 @@ ERROR_TYPE_COLLISION_CASE = FormatterCase(
         value="demo",
         value_str="demo",
         value_type="str",
-        error_code="CONFIG_TYPE_CONFLICT",
+        error_code=ErrorCode.CONFIG_TYPE_CONFLICT,
         errors=[TYPE_COLLISION_ERROR],
     ),
     render_expectations=[TYPE_COLLISION_ERROR],

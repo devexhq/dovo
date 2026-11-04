@@ -103,7 +103,8 @@ def _resolve_agent_settings(
     result = Config(paths).load()
     if not result.ok or result.config is None:
         return AgentSettingsResolution(
-            error_code=result.error_code, errors=list(result.errors) or ["Failed to resolve agent settings."]
+            error_code=result.error_code or ErrorCode.INTERNAL_ERROR,
+            errors=list(result.errors) or ["Failed to resolve agent settings."],
         )
 
     provider = override or result.config.default_agent
@@ -331,7 +332,7 @@ class SessionRunner:
         }
         if not result.ok:
             update["errors"] = [*outcome.errors, *result.errors]
-            update["error_code"] = result.error_code
+            update["error_code"] = outcome.error_code or result.error_code
             update["status"] = SessionStatus.FAILED
         return outcome.model_copy(update=update)
 

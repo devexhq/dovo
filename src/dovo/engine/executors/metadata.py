@@ -14,7 +14,7 @@ from dovo.engine.executors.models import (
     IterationMetadata,
     PreviousStepMetadata,
     StepMetadata,
-    StepResult,
+    StepRecord,
     TempMetadata,
 )
 
@@ -112,12 +112,12 @@ def metadata_to_env(metadata: ExecutionMetadata) -> dict[str, str]:
 
 
 def previous_step_metadata_from_result(
-    result: StepResult,
+    result: StepRecord,
     *,
     step_index: int,
     step_name: str = "",
 ) -> PreviousStepMetadata:
-    """Construct PreviousStepMetadata from a completed StepResult."""
+    """Construct PreviousStepMetadata from a completed StepRecord."""
     return PreviousStepMetadata(
         id=result.step_id,
         name=step_name,

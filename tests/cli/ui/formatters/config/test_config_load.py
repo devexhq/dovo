@@ -42,15 +42,9 @@ NOT_FOUND = FormatterCase.identity(
     ],
 )
 
-NO_MESSAGE = FormatterCase.identity(
-    data=ConfigLoadResult(config_path=_CONFIG_PATH, error_code=ErrorCode.CONFIG_UNREADABLE),
-    render_expectations=["Configuration failed to load (CONFIG_UNREADABLE)."],
-)
-
 CONFIG_LOAD_CASES = [
     pytest.param(VALID_CONFIG, id="valid_config"),
     pytest.param(NOT_FOUND, id="not_found"),
-    pytest.param(NO_MESSAGE, id="no_message_fallback"),
 ]
 
 CONFIG_LOAD_PAYLOAD_CASES = [

@@ -19,6 +19,7 @@ class ArtifactPublishOutcome(BaseModel):
     model_config = {"extra": "forbid", "strict": True}
 
     error_message: str | None = None
+    error_code: ErrorCode | None = None  # the failed publish's code, set with error_message
     warnings: list[str] = Field(default_factory=list)
     diagnostics: list[DiagnosticRecord] = Field(default_factory=list)  # Records for the run's diagnostics only.
 
@@ -63,17 +64,20 @@ def _failed_publish(
     warnings: list[str],
     diagnostics: list[DiagnosticRecord],
 ) -> ArtifactPublishOutcome | None:
-    """Append an optional spec's warning to warnings and return None; return the step-failing outcome for a required spec."""
+    """Append an optional spec's warning to warnings and return None; return the step-failing outcome, carrying the publish's code, for a required spec."""
     detail = "; ".join(result.errors)
     if not spec.required:
         warnings.append(f"Failed to publish artifact '{spec.name}': {detail}")
         return None
 
     if result.error_code == ErrorCode.ARTIFACT_FILE_NOT_FOUND:
-        return ArtifactPublishOutcome(error_message=detail, warnings=warnings, diagnostics=diagnostics)
+        return ArtifactPublishOutcome(
+            error_message=detail, error_code=result.error_code, warnings=warnings, diagnostics=diagnostics
+        )
 
     return ArtifactPublishOutcome(
         error_message=f"Failed to publish artifact '{spec.name}': {detail}",
+        error_code=result.error_code,
         warnings=warnings,
         diagnostics=diagnostics,
     )

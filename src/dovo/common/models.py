@@ -10,6 +10,7 @@ from dovo.common.constants import (
     ON_FAILURE_MAX_RETRIES_MINIMUM,
 )
 from dovo.common.diagnostic_log.models import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 
 
 class DisplayFormatOptions(StrEnum):
@@ -38,20 +39,29 @@ class Remediation(BaseModel):
     command: str | None = Field(default=None, min_length=1)
 
 
+ERROR_CODE_MISMATCH_MESSAGE = "error_code must be set exactly when errors is non-empty"
+
+
 class BaseResult(BaseModel):
-    """Base DTO for operation results."""
+    """Base DTO for operation results.
+
+    error_code is a published ErrorCode, set exactly when errors is non-empty; a result where they disagree is refused
+    when it is built.
+    """
 
     model_config = {"extra": "forbid", "strict": True}
 
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
-    error_code: str | None = None
+    error_code: ErrorCode | None = None
     diagnostics: list[DiagnosticRecord] = Field(default_factory=list)  # error-level records only
 
     @model_validator(mode="after")
     def validate_error_code_presence(self) -> Self:
-        """Require error_code when errors or remediations are present; enforcement is not enabled yet."""
+        """Refuse a result whose error_code is set without errors, or whose errors carry no error_code."""
+        if bool(self.errors) != (self.error_code is not None):
+            raise ValueError(ERROR_CODE_MISMATCH_MESSAGE)
         return self
 
 

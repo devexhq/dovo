@@ -44,7 +44,7 @@ from dovo.engine.executors.models import (
     PreviousStepMetadata,
     StepDispatchOutcome,
     StepExecutionContext,
-    StepResult,
+    StepRecord,
     require_agent_runner,
 )
 from dovo.engine.executors.postconditions import build_postconditions
@@ -154,15 +154,15 @@ class StepExecution:
         self.agent_runner = metadata.agent_runner
         self.log_warnings: list[str] = []
         # The caller's list for the run's diagnostics, extended as each record is written; kept off the
-        # StepResult, which session state persists.
+        # StepRecord, which session state persists.
         self._diagnostics: list[DiagnosticRecord] = metadata.diagnostics
         self.step_scratch_dir: Path | None = None
         self.output_file: Path | None = None
         self.max_attempts = 1
         self._uninterpolated_step: StepDefinition = metadata.step
 
-    def run(self) -> StepResult:
-        """Execute the step definition within worktree_path and return its StepResult."""
+    def run(self) -> StepRecord:
+        """Execute the step definition within worktree_path and return its StepRecord."""
         if not self.worktree_path.exists() or not self.worktree_path.is_dir():
             outcome = _failed_dispatch(f"Worktree path '{self.worktree_path}' does not exist or is not a directory.")
             return _step_result(self.redactor, self.step.id, outcome, 0.0)
@@ -677,7 +677,7 @@ class StepExecution:
         *,
         outputs: dict[str, str],
         warnings: list[str],
-    ) -> StepResult:
+    ) -> StepRecord:
         """Apply the on_failure escalation once retries (if any) are exhausted."""
         on_failure = self._uninterpolated_step.on_failure
         escalation = on_failure.on_max_retries if on_failure.action == FailurePolicy.RETRY else on_failure.action
@@ -718,9 +718,9 @@ def _step_result(
     exit_code: int | None = None,
     outputs: dict[str, str] | None = None,
     warnings: list[str] | None = None,
-) -> StepResult:
-    """Convert a StepDispatchOutcome into a StepResult whose stdout, stderr, and error_message are masked."""
-    return StepResult(
+) -> StepRecord:
+    """Convert a StepDispatchOutcome into a StepRecord whose stdout, stderr, and error_message are masked."""
+    return StepRecord(
         step_id=step_id,
         status=status if status is not None else outcome.status,
         exit_code=exit_code if exit_code is not None else outcome.exit_code,
@@ -729,6 +729,7 @@ def _step_result(
         duration_seconds=duration,
         attempts=outcome.attempts,
         error_message=None if outcome.error_message is None else redactor.redact_text(outcome.error_message),
+        error_code=outcome.error_code,
         outputs=outputs or {},
         rejected_patch_path=outcome.rejected_patch_path,
         warnings=warnings or [],

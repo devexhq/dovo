@@ -27,7 +27,7 @@ from dovo.common.models import DisplayFormatOptions, OutputFormatOptions, Remedi
 from dovo.common.utils import display_path
 from dovo.core.catalog.definitions import BlueprintStep, LoopStepBlock, StepDefinition, StepType
 from dovo.engine import RunObserver, RunOutcome
-from dovo.engine.executors.models import AgentProgressUpdate, AgentStepSummary, ConditionEvaluationResult, StepResult
+from dovo.engine.executors.models import AgentProgressUpdate, AgentStepSummary, ConditionEvaluationResult, StepRecord
 from dovo.engine.models import IfBranchNotice, StepSkipNotice
 
 if TYPE_CHECKING:
@@ -136,7 +136,7 @@ class DispatcherRunObserver(RunObserver):
             )
         )
 
-    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
+    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepRecord) -> None:
         """Dispatch step completion or failure event."""
         self._dispatcher.dispatch(
             StepDoneEvent(

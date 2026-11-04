@@ -21,10 +21,12 @@ from dovo.core.agents.models import (
     ResolvedAgentSettings,
 )
 from dovo.core.catalog.definitions import BlueprintStep
+from dovo.core.config import Config, ConfigLoadResult
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions.services.read_logs import read_session_log_events
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeCleanupResult
+from dovo.engine.coordinator import RunCoordinator
 from dovo.engine.executors.agent_step import WORKTREE_REQUIRED_MESSAGE
 from dovo.engine.executors.models import (
     StepExecutionContext,
@@ -273,7 +275,7 @@ class SessionRunnerWorktreeDiagnosticsTests:
         """Mark the run FAILED with the apply's errors appended to outcome.errors, its warnings to outcome.warnings, and diagnostics ending with the apply's record, with no 'Details logged:' text, when Worktree.apply returns a failed result carrying one record."""
         failed = WorktreeApplyResult(
             worktree_id="apply-record",
-            error_code="INTERNAL_ERROR",
+            error_code=ErrorCode.INTERNAL_ERROR,
             errors=["Unexpected error during worktree.apply: boom"],
             warnings=["apply warning"],
             diagnostics=[diagnostic_record(frozen_diagnostic_clock)],
@@ -295,6 +297,40 @@ class SessionRunnerWorktreeDiagnosticsTests:
         assert outcome.warnings[-1] == "apply warning"
         assert not any("Details logged:" in message for message in [*outcome.errors, *outcome.warnings])
         assert outcome.diagnostics[-1] == diagnostic_record(frozen_diagnostic_clock)
+
+    def test_auto_apply_failure_keeps_the_first_errors_code(
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Keep a completed run's first error and its code, appending the apply's error after it, when auto-apply then fails."""
+        failed = WorktreeApplyResult(
+            worktree_id="first-code",
+            error_code=ErrorCode.WORKTREE_APPLY_CONFLICT,
+            errors=["Patch merge conflict in worktree apply"],
+        )
+        monkeypatch.setattr(Worktree, "apply", lambda *args, **kwargs: failed)
+        seed_new_session(
+            git_paths,
+            git_runs,
+            session_id="first-code",
+            steps=[_step("a", "echo change")],
+            use_worktree=True,
+            auto_apply=True,
+        )
+        completed_with_error = RunOutcome(
+            status=SessionStatus.COMPLETED,
+            errors=["Failed to persist run state at run end: boom"],
+            error_code=ErrorCode.INTERNAL_ERROR,
+            worktree_path=git_paths.root_dir,
+        )
+        monkeypatch.setattr(RunCoordinator, "execute", lambda self: completed_with_error)
+
+        outcome = _drive(git_paths, git_runs, "first-code")
+
+        assert (outcome.status, outcome.error_code, outcome.errors) == (
+            SessionStatus.FAILED,
+            ErrorCode.INTERNAL_ERROR,
+            ["Failed to persist run state at run end: boom", "Patch merge conflict in worktree apply"],
+        )
 
     def test_auto_apply_unexpected_failure_record_in_outcome_diagnostics(
         self, git_paths: WorkspacePaths, git_runs: SessionsRepository, frozen_diagnostic_clock: Path
@@ -410,7 +446,7 @@ class DriveRunCleanupTests:
     ) -> None:
         conflict = WorktreeApplyResult(
             worktree_id="test-session",
-            error_code="WORKTREE_APPLY_CONFLICT",
+            error_code=ErrorCode.WORKTREE_APPLY_CONFLICT,
             errors=["Patch merge conflict in worktree apply"],
             warnings=["Patch hunk rejected"],
         )
@@ -440,7 +476,7 @@ class DriveRunCleanupTests:
 
         def exploding_cleanup(self: Worktree, session: object, **kwargs: object) -> WorktreeCleanupResult:
             return WorktreeCleanupResult(
-                error_code="INTERNAL_ERROR",
+                error_code=ErrorCode.INTERNAL_ERROR,
                 errors=["Unexpected error during worktree.cleanup: Cleanup filesystem removal failed"],
             )
 
@@ -833,6 +869,22 @@ class ResolveAgentSettingsEnvTests:
             "allowlist",
         ]
         assert paths.config_file.read_bytes() == before
+
+    def test_ok_load_without_config_fails_with_internal_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, noop_agent_provider: FakeAgentProvider
+    ) -> None:
+        """Fail the run with INTERNAL_ERROR and 'Failed to resolve agent settings.' when the config load is ok but holds no config."""
+        paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG})
+        seed_new_session(paths, sessions, session_id="no-config", steps=[_agent_step("a")], use_worktree=True)
+        monkeypatch.setattr(Config, "load", lambda self: ConfigLoadResult(config_path=paths.config_file))
+
+        outcome = _drive(paths, sessions, "no-config")
+
+        assert (outcome.status, outcome.error_code, outcome.errors) == (
+            SessionStatus.FAILED,
+            ErrorCode.INTERNAL_ERROR,
+            ["Failed to resolve agent settings."],
+        )
 
 
 _COPILOT_SETTINGS = ResolvedAgentSettings(

@@ -7,6 +7,7 @@ from functools import partial
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
     WorktreeCleanupResult,
@@ -25,15 +26,19 @@ class WorktreePruneResultOkTests:
         ("status", "error_code", "ok"),
         [
             pytest.param(WorktreePruneStatus.OK, None, True, id="ok"),
-            pytest.param(WorktreePruneStatus.PARTIAL_FAILURE, "WORKTREE_PRUNE_FAILED", False, id="partial_failure"),
-            pytest.param(None, "GIT_FAILED", False, id="stopped"),
+            pytest.param(
+                WorktreePruneStatus.PARTIAL_FAILURE, ErrorCode.WORKTREE_PRUNE_FAILED, False, id="partial_failure"
+            ),
+            pytest.param(None, ErrorCode.GIT_FAILED, False, id="stopped"),
         ],
     )
     def test_ok_is_true_exactly_when_error_code_is_none(
-        self, status: WorktreePruneStatus | None, error_code: str | None, ok: bool
+        self, status: WorktreePruneStatus | None, error_code: ErrorCode | None, ok: bool
     ) -> None:
         """Return ok == (error_code is None) for WorktreePruneResult."""
-        result = WorktreePruneResult(status=status, error_code=error_code)
+        result = WorktreePruneResult(
+            status=status, error_code=error_code, errors=[] if error_code is None else ["boom"]
+        )
 
         assert result.ok is ok
 
@@ -62,11 +67,11 @@ class WorktreeResultOkTests:
             pytest.param(partial(WorktreeApplyResult, worktree_id="wt"), id="apply"),
         ],
     )
-    @pytest.mark.parametrize("error_code", [None, "INTERNAL_ERROR"])
+    @pytest.mark.parametrize("error_code", [None, ErrorCode.INTERNAL_ERROR])
     def test_ok_is_true_exactly_when_error_code_is_none(
-        self, model_factory: Callable[..., _OkModel], error_code: str | None
+        self, model_factory: Callable[..., _OkModel], error_code: ErrorCode | None
     ) -> None:
         """Return ok == (error_code is None) for each converted worktree result."""
-        result = model_factory(error_code=error_code)
+        result = model_factory(error_code=error_code, errors=[] if error_code is None else ["boom"])
 
         assert result.ok is (error_code is None)

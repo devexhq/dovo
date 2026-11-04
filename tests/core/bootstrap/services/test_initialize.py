@@ -555,7 +555,7 @@ class AutoInitializeWorkspaceTests:
     def test_auto_initialize_workspace_reports_rollback_failure_in_errors(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Append the rollback error to the seed error when removing the new .dovo/ fails."""
+        """Append the rollback error to the seed error, keeping the seed failure's code, when removing the new .dovo/ fails."""
         _fail_seeding(monkeypatch)
 
         def _denied(_path: object) -> None:
@@ -566,6 +566,7 @@ class AutoInitializeWorkspaceTests:
         result = auto_initialize_workspace(git_repo)
 
         dovo_dir = (git_repo / ".dovo").resolve()
+        assert result.error_code == ErrorCode.CATALOG_SEED_FAILED
         assert result.errors == [
             "boom",
             f"Could not roll back the partial workspace at {dovo_dir.as_posix()}: denied. Remove it, then rerun dovo run.",

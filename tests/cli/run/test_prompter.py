@@ -26,7 +26,7 @@ from dovo.core.interaction import (
     RequestOption,
 )
 from dovo.engine import FailurePromptDecision, LoopPromptDecision
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import StepRecord
 
 
 def _buffered_dispatcher(
@@ -42,8 +42,8 @@ def _failing_step() -> StepDefinition:
     return StepDefinition(id="s1", name="Build", run="true")
 
 
-def _failing_result() -> StepResult:
-    return StepResult(step_id="s1", status="failed", exit_code=1, stdout="", stderr="boom", duration_seconds=0.1)
+def _failing_result() -> StepRecord:
+    return StepRecord(step_id="s1", status="failed", exit_code=1, stdout="", stderr="boom", duration_seconds=0.1)
 
 
 def _loop_block() -> LoopStepBlock:

@@ -13,7 +13,7 @@ from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.engine import EngineError, EngineLoader, SessionStateStore
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import StepRecord
 from dovo.engine.models import LifecycleUpdate
 from dovo.engine.projection import build_session_json_payload
 from dovo.engine.state_models import (
@@ -124,7 +124,7 @@ def _seed_paused_loop(paths: WorkspacePaths, sessions: SessionsRepository) -> Se
     assert isinstance(loop, ExecutionLoopNode)
 
     def attempt(step_id: str, status: str) -> StepAttemptRecord:
-        result = StepResult(
+        result = StepRecord(
             step_id=step_id,
             status=status,
             exit_code=0 if status == "completed" else 1,
