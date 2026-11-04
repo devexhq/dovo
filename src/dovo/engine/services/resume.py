@@ -12,7 +12,7 @@ from dovo.common.filesystem import WorkspacePaths
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvMode
 from dovo.core.catalog import Catalog
-from dovo.core.db import SessionRecord, SessionsRepository
+from dovo.core.db import SessionsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.core.sessions import reconcile_stale_sessions
@@ -61,26 +61,27 @@ class BlueprintResumeService:
         if caught.failure is not None:
             return failed_result(caught.failure, self.warnings, self.diagnostics)
 
-        target_session_id, record = target
+        target_session_id = target
         with catch_failure("engine.resume", session_id=target_session_id) as caught:
             run_outcome = self._resume(Catalog(self.paths), target_session_id)
         if caught.failure is not None:
+            record = load_record(self.db, self.warnings, self.diagnostics, target_session_id)
             return failed_result(caught.failure, self.warnings, self.diagnostics, record=record)
 
         return finalize(self.db, self.warnings, self.diagnostics, run_outcome, target_session_id)
 
-    def _target(self) -> tuple[str, SessionRecord | None]:
-        """Return session_id with its record (None when it cannot be loaded), or the latest paused session and its record.
+    def _target(self) -> str:
+        """Return session_id, or the latest paused session's id.
 
         Raises:
             EngineError: SESSION_NOT_FOUND when no session id is given and no session is paused.
         """
         if self.session_id:
-            return self.session_id, load_record(self.db, self.warnings, self.diagnostics, self.session_id)
+            return self.session_id
         record = self.db.get_latest_paused()
         if record is None:
             raise EngineError(ErrorCode.SESSION_NOT_FOUND, "No paused session found to resume.")
-        return record.session_id, record
+        return record.session_id
 
     def _resume(self, catalog: Catalog, session_id: str) -> RunOutcome:
         """Validate the env flags, then resume session_id through Engine and return its outcome."""
