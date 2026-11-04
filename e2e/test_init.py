@@ -175,7 +175,8 @@ class InitCliTests:
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
         payload = envelope.get("payload", {})
-        assert payload.get("health") == "ok"
+        assert payload.get("ok") is True
+        assert payload.get("status") == "ok"
         assert payload.get("config_error_code") is None
         assert "config_status" not in payload
 

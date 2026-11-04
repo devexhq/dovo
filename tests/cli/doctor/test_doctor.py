@@ -111,7 +111,11 @@ class DoctorCliIntegrationTests:
 
         assert payload == {
             "ok": True,
-            "has_warnings": False,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "workspace_root": str(cli_workspace),
             "checks": [
                 {
@@ -128,7 +132,6 @@ class DoctorCliIntegrationTests:
                     "diagnostics": [],
                 }
             ],
-            "diagnostics": [],
         }
 
     def test_doctor_cli_json_reports_not_repo_from_injected_git(
@@ -143,7 +146,12 @@ class DoctorCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "doctor", "--category", "git", "--format", "json"])
 
         assert result.exit_code == 1
-        check_payload = json.loads(result.stdout)["payload"]["checks"][0]
+        payload = json.loads(result.stdout)["payload"]
+        check_payload = payload["checks"][0]
+        assert payload["ok"] is False
+        assert payload["error_code"] == "DOCTOR_CHECKS_FAILED"
+        assert payload["errors"] == [check_payload["message"]]
+        assert payload["remediations"] == check_payload["remediations"]
         assert check_payload["check_id"] == "git.repo"
         assert check_payload["error_code"] == "DOCTOR_GIT_REPO_NOT_FOUND"
 

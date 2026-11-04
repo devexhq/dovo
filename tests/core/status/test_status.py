@@ -13,7 +13,7 @@ from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.models import Remediation
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
-from dovo.core.status import Status
+from dovo.core.status import Status, WorkspaceHealth
 from tests.harness.diagnostic_log import diagnostic_record
 from tests.harness.lock import raise_lock_timeout
 from tests.harness.sessions import fail_reconciliation_list
@@ -55,6 +55,9 @@ class StatusCollectTests:
 
         result = Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
 
+        assert result.ok is True
+        assert result.error_code is None
+        assert result.status is WorkspaceHealth.OK
         assert result.root_dir == workspace
         assert result.is_initialized is True
         assert result.git.is_git_repo is True
@@ -221,6 +224,9 @@ class StatusFixesRemediationTests:
         assert result.remediations == [
             Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")
         ]
+        assert result.status is WorkspaceHealth.UNINITIALIZED
+        assert result.ok is True
+        assert result.error_code is None
 
     def test_collect_remediations_for_non_git_repo(self, tmp_path: Path) -> None:
         non_git_dir = tmp_path / "non_git_repo"
@@ -236,6 +242,9 @@ class StatusFixesRemediationTests:
         assert result.remediations == [
             Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")
         ]
+        assert result.status is WorkspaceHealth.DEGRADED
+        assert result.ok is True
+        assert result.error_code is None
 
     def test_collect_puts_config_load_remediations_ahead_of_git(self, tmp_path: Path) -> None:
         """List the config load's remediations in load order, then the git remediation."""

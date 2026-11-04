@@ -45,6 +45,7 @@ from dovo.core.status import (
     DatabaseStatusInfo,
     DovoStatusResult,
     GitStatusInfo,
+    WorkspaceHealth,
     WorktreeStatusInfo,
 )
 from dovo.core.worktree import (
@@ -79,6 +80,7 @@ CONFIG_PATH: Final[Path] = ROOT / ".dovo" / "config.json"
 def _status_sample() -> DovoStatusResult:
     """Build a DovoStatusResult for an initialized workspace carrying [RECORD]."""
     return DovoStatusResult(
+        status=WorkspaceHealth.OK,
         root_dir=ROOT,
         is_initialized=True,
         git=GitStatusInfo(is_git_repo=True, branch="main", is_dirty=False, uncommitted_files=0),
@@ -160,6 +162,7 @@ SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
         error_code=ErrorCode.WORKTREE_NOT_FOUND, errors=["boom"], worktree_id="wt-1", diagnostics=[RECORD]
     ),
     DovoStatusResult: _status_sample,
+    DiagnosticsReport: lambda: DiagnosticsReport(workspace_root=ROOT, checks=[], diagnostics=[RECORD]),
     BlueprintRunResult: lambda: BlueprintRunResult(
         error_code=ErrorCode.RUN_STEP_FAILED, errors=["Step 'a' failed."], diagnostics=[RECORD]
     ),
@@ -179,6 +182,7 @@ RENDERED: Final[list[type[BaseResult]]] = [
     ConfigUnsetResult,
     WorkspaceInitResult,
     DovoStatusResult,
+    DiagnosticsReport,
     HistoryListResult,
     WorktreePruneResult,
     WorktreeShowResult,
@@ -258,7 +262,14 @@ class ResultRenderDiagnosticsTests:
             remediations=[Remediation(message="Rerun 'dovo doctor' after fixing the check.")],
             diagnostics=[RECORD],
         )
-        report = DiagnosticsReport(workspace_root=ROOT, checks=[crashed], diagnostics=[RECORD])
+        report = DiagnosticsReport(
+            workspace_root=ROOT,
+            checks=[crashed],
+            error_code=ErrorCode.DOCTOR_CHECKS_FAILED,
+            errors=[crashed.message],
+            remediations=crashed.remediations,
+            diagnostics=[RECORD],
+        )
 
         rendered = render_rich(formatters_for(DiagnosticsReport)[DiagnosticsReport].to_rich(report))
 

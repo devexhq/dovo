@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,14 @@ from pydantic import BaseModel, Field
 
 from dovo.common.models import BaseResult, Remediation
 from dovo.core.config.models import DovoConfig
+
+
+class WorkspaceHealth(StrEnum):
+    """Overall workspace health: an outcome, never a failure cause."""
+
+    OK = "ok"
+    DEGRADED = "degraded"
+    UNINITIALIZED = "uninitialized"
 
 
 class GitStatusInfo(BaseModel):
@@ -72,8 +81,9 @@ class WorktreeStatusInfo(BaseModel):
 
 
 class DovoStatusResult(BaseResult):
-    """Unified workspace status collection result."""
+    """Unified workspace status collection result; health is reported in status, never as a failure."""
 
+    status: WorkspaceHealth
     root_dir: Path
     is_initialized: bool
     git: GitStatusInfo
@@ -84,10 +94,5 @@ class DovoStatusResult(BaseResult):
 
     @property
     def ok(self) -> bool:
-        """True when workspace is a valid git repo, valid config, accessible DB, and zero invalid catalog items."""
-        return (
-            self.git.is_git_repo
-            and self.config.is_valid
-            and self.database.is_accessible
-            and self.catalog.invalid_items == 0
-        )
+        """True exactly when error_code is None."""
+        return self.error_code is None
