@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from itertools import takewhile
 from pathlib import Path
 
 import pytest
@@ -13,6 +12,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.core.db import DovoDb
 from dovo.engine.writer import snapshot_blueprint_path
+from tests.harness.run_result import run_result_payload
 from tests.harness.sessions import seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -101,19 +101,21 @@ def _validate_report(cli_runner: CliRunner, workspace: Path) -> dict[str, object
     return {key: payload[key] for key in ("error_code", "errors", "warnings", "remediations")}
 
 
+# The codes a failed validation reports; any other failure happens after validation passed.
+_VALIDATION_CODES = frozenset({"CATALOG_FILE_UNREADABLE", "CATALOG_SYNTAX_INVALID", "CATALOG_SCHEMA_INVALID"})
+
+
 def _command_report(cli_runner: CliRunner, workspace: Path, args: list[str]) -> dict[str, object]:
-    """Return the validation a run or resume reports: the warnings before any step, and its Blueprint Invalid event."""
+    """Return the validation a run or resume reports: its run result's warnings and, when validation failed, its failure."""
     result = cli_runner.invoke(app, ["-p", str(workspace), *args, "--no-tty", "--format", "json"])
-    events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-    before_steps = list(takewhile(lambda event: event["event_type"] != "StepStartEvent", events))
-    warnings = [event["payload"]["message"] for event in before_steps if event["event_type"] == "WarningEvent"]
-    invalid = [event["payload"] for event in before_steps if event["event_type"] == "BlueprintInvalidEvent"]
-    report = invalid[0] if invalid else {"error_code": None, "errors": [], "remediations": []}
+    payload = run_result_payload(result.stdout)
+    if payload["error_code"] not in _VALIDATION_CODES:
+        return {"error_code": None, "errors": [], "warnings": payload["warnings"], "remediations": []}
     return {
-        "error_code": report["error_code"],
-        "errors": report["errors"],
-        "remediations": report["remediations"],
-        "warnings": warnings,
+        "error_code": payload["error_code"],
+        "errors": payload["errors"],
+        "warnings": payload["warnings"],
+        "remediations": payload["remediations"],
     }
 
 

@@ -61,7 +61,7 @@ class BlueprintRunServiceExecuteTests:
         assert seen[1] is fixed_clock
         assert seen[2] is fixed_new_id
 
-    def test_execute_completed_run_returns_ok_result_with_run_record(
+    def test_execute_completed_run_returns_ok_result_with_session_fields(
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
@@ -82,9 +82,42 @@ class BlueprintRunServiceExecuteTests:
         ).execute()
 
         assert result.ok
-        assert result.session_record is not None
-        assert result.session_record.session_id == "run-1"
-        assert result.session_record.status == SessionStatus.COMPLETED
+        assert (result.session_id, result.blueprint_name, result.session_status) == (
+            "run-1",
+            "lint",
+            SessionStatus.COMPLETED,
+        )
+
+    def test_execute_unreadable_session_record_keeps_ok_and_nulls_session_fields(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        stub_drive_run: StubDriveRun,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With every session read of a completed run raising, stay ok with null session fields and end with the read-back warning."""
+        write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
+        stub_drive_run(None)
+
+        def _unreadable(session_id: str) -> None:
+            raise RuntimeError("db unavailable")
+
+        monkeypatch.setattr(sessions_repo, "get", _unreadable)
+
+        result = BlueprintRunService(
+            name="lint",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            no_worktree=True,
+            session_id="run-1",
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        ).execute()
+
+        assert (result.ok, result.error_code) == (True, None)
+        assert (result.session_id, result.blueprint_name, result.session_status) == (None, None, None)
+        assert result.warnings[-1] == "Failed to load session record for 'run-1': db unavailable"
 
     def test_execute_run_outcome_errors_are_returned_on_the_result(
         self,
@@ -119,7 +152,7 @@ class BlueprintRunServiceExecuteTests:
         assert (result.error_code, result.errors) == (ErrorCode.RUN_STEP_FAILED, ["step 'a' failed"])
         assert result.warnings == ["cleanup skipped"]
 
-    def test_execute_unknown_blueprint_returns_failed_result_without_run_record(
+    def test_execute_unknown_blueprint_returns_failed_result_without_session(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         result = BlueprintRunService(
@@ -132,7 +165,12 @@ class BlueprintRunServiceExecuteTests:
         ).execute()
 
         assert not result.ok
-        assert result.session_record is None
+        assert (result.session_id, result.blueprint_name, result.session_status, result.paused_prompt_id) == (
+            None,
+            None,
+            None,
+            None,
+        )
         assert result.error_code == ErrorCode.CATALOG_NOT_FOUND
         assert result.errors == ["Catalog item 'nope' not found."]
         assert sessions_repo.list() == []
@@ -163,7 +201,8 @@ class BlueprintRunServiceLoadTests:
         validated = Catalog(engine_paths).validate(
             "deploy", item_type=CatalogItemType.BLUEPRINT, blueprint_cls=BlueprintDefinition, step_cls=StepDefinition
         )
-        assert (result.invalid_blueprint, result.error_code) == ("deploy", ErrorCode.CATALOG_SCHEMA_INVALID)
+        assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
+        assert (result.session_id, result.blueprint_name, result.session_status) == (None, None, None)
         assert (
             result.errors
             == validated.errors
@@ -173,18 +212,28 @@ class BlueprintRunServiceLoadTests:
             ]
         )
         assert result.remediations == validated.remediations
-        assert observer.calls == [("validation_warnings", [])]
+        assert result.warnings == validated.warnings
+        assert observer.calls == []
         assert sessions_repo.list() == []
         assert not engine_paths.worktrees_dir.exists() or list(engine_paths.worktrees_dir.iterdir()) == []
 
-    def test_validation_warnings_reach_the_observer_before_the_first_step_and_not_the_result(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
+    def test_validation_warnings_are_carried_on_the_result_not_the_observer(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        stub_drive_run: StubDriveRun,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         write_runnable_blueprint(
             engine_paths.root_dir, key="build", steps=[{"id": "build", "type": "script", "script_path": "build.sh"}]
         )
         stub_drive_run(None)
         observer = RecordingRunObserver()
+
+        monkeypatch.setattr(
+            "dovo.engine.services.run.reconcile_stale_sessions",
+            lambda sessions_db, *, path: Reconciliation(warning="reconciled 1 stale run"),
+        )
 
         result = BlueprintRunService(
             name="build",
@@ -198,13 +247,11 @@ class BlueprintRunServiceLoadTests:
         ).execute()
 
         assert result.ok
-        assert observer.calls == [
-            (
-                "validation_warnings",
-                ["Step 'build' script_path 'build.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
-            )
+        assert result.warnings == [
+            "reconciled 1 stale run",
+            "Step 'build' script_path 'build.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND).",
         ]
-        assert result.warnings == []
+        assert all(call[0] != "validation_warnings" for call in observer.calls)
 
     def test_file_named_like_the_blueprint_is_not_what_gets_validated(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
@@ -223,7 +270,7 @@ class BlueprintRunServiceLoadTests:
             new_id=fixed_new_id,
         ).execute()
 
-        assert (result.ok, result.invalid_blueprint, result.errors) == (True, None, [])
+        assert (result.ok, result.errors) == (True, [])
 
     def test_unexpected_definition_error_is_recorded_under_engine_run(
         self,
@@ -249,7 +296,7 @@ class BlueprintRunServiceLoadTests:
             new_id=fixed_new_id,
         ).execute()
 
-        assert result.session_record is None
+        assert result.session_id is None
         assert result.error_code == ErrorCode.INTERNAL_ERROR
         assert result.errors == ["Unexpected error during engine.run: bad"]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
@@ -376,7 +423,7 @@ class BlueprintRunServiceLoadTests:
             new_id=fixed_new_id,
         ).execute()
 
-        assert result.session_record is None
+        assert result.session_id is None
         assert result.error_code == ErrorCode.BLUEPRINT_INPUT_INVALID
         assert result.errors == [
             "Missing required input 'target' for 'needs-input'.\n\nUsage:\n  dovo run needs-input -i target=<value>"
@@ -483,7 +530,7 @@ class BlueprintRunServiceCatchTests:
 
         result = _lint_service(engine_paths, sessions_repo).execute()
 
-        assert result.session_record is None
+        assert result.session_id is None
         assert result.error_code == ErrorCode.INTERNAL_ERROR
         assert result.errors == ["Unexpected error during engine.run: boom"]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]

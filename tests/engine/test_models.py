@@ -10,28 +10,26 @@ from pydantic import ValidationError
 from dovo.common.error_codes import ErrorCode
 from dovo.core.agents import default_tool_policy
 from dovo.core.agents.models import ResolvedAgentSettings
-from dovo.core.db import SessionRecord, SessionStatus
+from dovo.core.db import SessionStatus
 from dovo.engine.models import AgentSettingsResolution, BlueprintRunResult, DefinitionRef, RunOutcome
 
 
 class BlueprintRunResultTests:
     @pytest.mark.parametrize(
-        ("has_record", "errors", "expected"),
+        ("error_code", "session_status", "errors", "expected"),
         [
-            pytest.param(True, [], True, id="record-no-errors"),
-            pytest.param(False, [], False, id="no-record"),
-            pytest.param(True, ["boom"], False, id="record-with-errors"),
+            pytest.param(None, SessionStatus.COMPLETED, [], True, id="no-code-with-session"),
+            pytest.param(None, None, [], True, id="no-code-without-session"),
+            pytest.param(ErrorCode.RUN_STEP_FAILED, SessionStatus.FAILED, ["boom"], False, id="code-with-session"),
+            pytest.param(ErrorCode.CATALOG_NOT_FOUND, None, ["missing"], False, id="code-without-session"),
         ],
     )
-    def test_ok_requires_a_run_record_and_no_errors(self, has_record: bool, errors: list[str], expected: bool) -> None:
-        record = (
-            SessionRecord(project_id="proj-a", session_id="s", blueprint_name="lint", blueprint_key="lint")
-            if has_record
-            else None
-        )
-
+    def test_ok_is_true_exactly_when_error_code_is_null(
+        self, error_code: ErrorCode | None, session_status: SessionStatus | None, errors: list[str], expected: bool
+    ) -> None:
+        session_id = None if session_status is None else "s"
         result = BlueprintRunResult(
-            session_record=record, errors=errors, error_code=ErrorCode.RUN_STEP_FAILED if errors else None
+            error_code=error_code, errors=errors, session_id=session_id, session_status=session_status
         )
 
         assert result.ok is expected

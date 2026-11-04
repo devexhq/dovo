@@ -549,6 +549,16 @@ def parse_events(stdout: str) -> list[dict[str, object]]:
     return events
 
 
+def run_result(stdout: str) -> dict[str, object]:
+    """Return the payload of the BlueprintRunResult that must be the last JSON line of a run or resume."""
+    events = parse_events(stdout)
+    if not events or events[-1].get("event_type") != "BlueprintRunResult":
+        pytest.fail(f"Expected the last event to be BlueprintRunResult in stdout:\n{stdout}")
+    payload = events[-1].get("payload")
+    assert isinstance(payload, dict)
+    return cast("dict[str, object]", payload)
+
+
 def find_event(stdout: str, event_type: str) -> dict[str, object]:
     """Find a specific event envelope by event_type from newline-delimited JSON stdout."""
     for event in parse_events(stdout):

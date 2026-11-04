@@ -56,6 +56,7 @@ from dovo.core.worktree import (
     WorktreePruneResult,
     WorktreeShowResult,
 )
+from dovo.engine.models import BlueprintRunResult
 from tests.harness.builders import diagnostic_result
 from tests.harness.formatter import render_rich
 
@@ -159,6 +160,9 @@ SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
         error_code=ErrorCode.WORKTREE_NOT_FOUND, errors=["boom"], worktree_id="wt-1", diagnostics=[RECORD]
     ),
     DovoStatusResult: _status_sample,
+    BlueprintRunResult: lambda: BlueprintRunResult(
+        error_code=ErrorCode.RUN_STEP_FAILED, errors=["Step 'a' failed."], diagnostics=[RECORD]
+    ),
 }
 
 
@@ -183,6 +187,7 @@ RENDERED: Final[list[type[BaseResult]]] = [
     WorktreeApplyResult,
     WorktreeDeleteResult,
     WorktreeDiffResult,
+    BlueprintRunResult,
 ]
 
 

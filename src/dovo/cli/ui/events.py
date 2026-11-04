@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
-from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.models import Remediation
 from dovo.core.agents import AgentProgressKind
-from dovo.core.db import SessionStatus
 
 
 class ErrorPanelEvent(BaseModel):
@@ -18,33 +16,6 @@ class ErrorPanelEvent(BaseModel):
     title: str
     message: str
     border_style: str = "red"
-
-
-class BlueprintInvalidEvent(BaseModel):
-    """UI event for a blueprint that failed validation before any step ran: every error, with the code and remediations `dovo blueprint validate` reports."""
-
-    model_config = {"extra": "forbid", "strict": True}
-
-    blueprint: str
-    error_code: str
-    errors: list[str]
-    remediations: list[Remediation]
-
-
-class WarningEvent(BaseModel):
-    """UI event representing a warning notice."""
-
-    model_config = {"extra": "forbid", "strict": True}
-
-    message: str
-
-
-class DiagnosticsEvent(BaseModel):
-    """UI event listing the diagnostic-log records a run recorded, shown in terminal output after its warnings and outcome."""
-
-    model_config = {"extra": "forbid", "strict": True}
-
-    diagnostics: list[DiagnosticRecord]
 
 
 class LockWaitEvent(BaseModel):
@@ -64,16 +35,6 @@ class MessageEvent(BaseModel):
 
     message: str
     style: str | None = None
-
-
-class RunSuccessEvent(BaseModel):
-    """UI event representing blueprint run completion."""
-
-    model_config = {"extra": "forbid", "strict": True}
-
-    session_id: str
-    blueprint_name: str
-    status: SessionStatus
 
 
 class StepStartEvent(BaseModel):

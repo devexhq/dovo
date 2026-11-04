@@ -11,6 +11,8 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.cli.run.observer import DispatcherRunObserver
+from dovo.cli.run.prompter import DispatcherFailurePrompter, DispatcherInteractionPrompter
 from dovo.cli.ui.dispatcher import UiDispatcher, ui_dispatcher
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
@@ -25,6 +27,7 @@ from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
 from dovo.engine import SessionStateStore
+from dovo.engine.engine import Engine
 from dovo.engine.models import LifecycleUpdate
 from dovo.engine.state_models import ExecutionStateTree
 from tests.harness import FakeAgentRunner, UnfixableAgentRunner
@@ -33,6 +36,7 @@ from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.diagnostic_log import details_line, unwrapped
 from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.lock import raise_lock_timeout
+from tests.harness.run_result import REPLACED_EVENTS, RUN_RESULT, RunResultPayload, json_events, run_result_payload
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -63,15 +67,18 @@ class RunCliTests:
     """Typer runner tests for dovo run's catalog failures."""
 
     def test_run_missing_blueprint_json_reports_catalog_not_found(self, cli_runner: CliRunner, git_repo: Path) -> None:
-        """Exit 1 with one Run Failed event whose message is the catalog's not-found error for `run ghost --format json`."""
+        """Exit 1 and end with the run result carrying the catalog's not-found error and no session for `run ghost --format json`."""
         result = cli_runner.invoke(app, ["-p", str(git_repo), "run", "ghost", "--format", "json"])
 
         assert result.exit_code == 1
-        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-        failures = [event["payload"] for event in events if event["event_type"] == "ErrorPanelEvent"]
-        assert failures == [
-            {"title": "Run Failed", "message": "Catalog item 'ghost' not found.", "border_style": "red"}
-        ]
+        payload = run_result_payload(result.stdout)
+        assert (payload["ok"], payload["error_code"], payload["errors"]) == (
+            False,
+            "CATALOG_NOT_FOUND",
+            ["Catalog item 'ghost' not found."],
+        )
+        assert (payload["session_id"], payload["blueprint_name"], payload["session_status"]) == (None, None, None)
+        assert payload["paused_prompt_id"] is None
 
 
 _UNDECLARED_PLACEHOLDER_STEP: dict[str, object] = {"id": "s1", "run": "true", "env": {"GHOST": "${{ inputs.ghost }}"}}
@@ -90,9 +97,8 @@ class RunValidationCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "deploy", "--no-worktree"])
 
         assert result.exit_code == 1
-        assert "Blueprint Invalid" in result.stdout
-        assert "Blueprint 'deploy' failed validation; no steps ran." in result.stdout
-        assert "- Step id 'a' is used by more than one step." in result.stdout
+        assert "Run Failed" in result.stdout
+        assert "Step id 'a' is used by more than one step." in result.stdout
         assert "- Resolve: Step id 'a' is used by more than one step." in result.stdout
         paths = initialized_workspace_paths(cli_workspace)
         assert DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list() == []
@@ -107,13 +113,11 @@ class RunValidationCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "deploy", "--no-worktree"])
 
         assert result.exit_code == 1
-        assert "- steps.1: Value error, Agent steps must specify a non-empty 'prompt' string." in result.stdout
+        assert "steps.1: Value error, Agent steps must specify a non-empty 'prompt' string." in result.stdout
         assert "errors.pydantic.dev" not in result.stdout
         assert "LoopStepBlock" not in result.stdout
 
-    def test_invalid_blueprint_json_is_one_blueprint_invalid_event(
-        self, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
+    def test_invalid_blueprint_json_ends_with_the_run_result(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         write_runnable_blueprint(
             cli_workspace,
             key="deploy",
@@ -129,19 +133,21 @@ class RunValidationCliIntegrationTests:
         )
 
         assert result.exit_code == 1
-        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-        assert [event["event_type"] for event in events] == ["MessageEvent", "WarningEvent", "BlueprintInvalidEvent"]
-        assert events[1]["payload"] == {
-            "message": "Step 's' script_path 'missing.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."
-        }
-        assert events[2]["payload"] == {
-            "blueprint": "deploy",
+        assert [event["event_type"] for event in json_events(result.stdout)] == ["MessageEvent", RUN_RESULT]
+        assert run_result_payload(result.stdout) == {
+            "ok": False,
             "error_code": "CATALOG_SCHEMA_INVALID",
             "errors": ["Step id 'a' is used by more than one step."],
+            "warnings": ["Step 's' script_path 'missing.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
             "remediations": [{"message": "Resolve: Step id 'a' is used by more than one step.", "command": None}],
+            "diagnostics": [],
+            "session_id": None,
+            "blueprint_name": None,
+            "session_status": None,
+            "paused_prompt_id": None,
         }
 
-    def test_validation_warning_prints_once_before_the_first_step_and_the_run_completes(
+    def test_validation_warning_is_carried_once_on_the_run_result_and_the_run_completes(
         self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
         write_runnable_blueprint(cli_workspace, key="build", steps=[_UNDECLARED_PLACEHOLDER_STEP])
@@ -149,13 +155,12 @@ class RunValidationCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "build", "--no-worktree", "--format", "json"])
 
         assert result.exit_code == 0
-        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-        warnings = [index for index, event in enumerate(events) if event["event_type"] == "WarningEvent"]
-        first_step = next(index for index, event in enumerate(events) if event["event_type"] == "StepStartEvent")
-        assert [events[index]["payload"]["message"] for index in warnings] == [
+        payload = run_result_payload(result.stdout)
+        assert (payload["ok"], payload["session_status"]) == (True, "completed")
+        assert payload["warnings"] == [
             "Placeholder 'inputs.ghost' is not declared in 'inputs:' (CATALOG_UNDECLARED_INPUT_PLACEHOLDER)."
         ]
-        assert warnings[0] < first_step
+        assert REPLACED_EVENTS.isdisjoint(event["event_type"] for event in json_events(result.stdout))
 
     def test_validation_warning_prints_in_the_terminal_with_validate_text(
         self, cli_runner: CliRunner, cli_workspace: Path
@@ -300,6 +305,7 @@ class RunCliIntegrationTests:
         )
 
         assert result.exit_code == 1
+        assert "Run Cancelled" in result.stdout
         run_paths = initialized_workspace_paths(cli_workspace)
         record = DovoDb(database_file=run_paths.database_file, project_id=run_paths.project_id).sessions.get(
             "paused-session-1"
@@ -327,6 +333,8 @@ class RunCliIntegrationTests:
         )
 
         assert result.exit_code == 1
+        assert "Run Cancelled" in result.stdout
+        assert "Execution cancelled by user." in result.stdout
         run_paths = initialized_workspace_paths(cli_workspace)
         record = DovoDb(database_file=run_paths.database_file, project_id=run_paths.project_id).sessions.get(
             "ask-session-1"
@@ -334,18 +342,29 @@ class RunCliIntegrationTests:
         assert record is not None
         assert (record.status, record.error_message) == (SessionStatus.PAUSED, "Execution cancelled by user.")
 
-    def test_run_cli_json_format_emits_run_success_event(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+    def test_run_cli_json_format_ends_with_the_completed_run_result(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
         write_runnable_blueprint(cli_workspace, key="json-task", steps=[{"id": "s1", "run": "true"}])
 
         result = cli_runner.invoke(
-            app, ["-p", str(cli_workspace), "run", "json-task", "--no-worktree", "--format", "json"]
+            app,
+            ["-p", str(cli_workspace), "run", "json-task", "--no-worktree", "--session-id", "s-1", "--format", "json"],
         )
 
         assert result.exit_code == 0
-        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-        success_events = [e for e in events if e["event_type"] == "RunSuccessEvent"]
-        assert len(success_events) == 1
-        assert success_events[0]["payload"]["status"] == "completed"
+        assert run_result_payload(result.stdout) == {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
+            "session_id": "s-1",
+            "blueprint_name": "json-task",
+            "session_status": "completed",
+            "paused_prompt_id": None,
+        }
 
     def test_run_cli_json_finalization_failure_carries_plain_warning(
         self,
@@ -354,7 +373,7 @@ class RunCliIntegrationTests:
         frozen_diagnostic_clock: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Exit 0 and emit a WarningEvent carrying the finalization failure alone, with no 'Details logged' text, under --format json."""
+        """Exit 0 and carry the finalization failure alone in the run result's warnings, with no 'Details logged' text, under --format json."""
         write_runnable_blueprint(cli_workspace, key="json-task", steps=[{"id": "s1", "run": "true"}])
         original_save = SessionStateStore.save
 
@@ -375,9 +394,9 @@ class RunCliIntegrationTests:
         )
 
         assert result.exit_code == 0
-        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-        warnings = [e["payload"]["message"] for e in events if e["event_type"] == "WarningEvent"]
-        assert warnings == ["Failed to update run status in database: disk full"]
+        payload = run_result_payload(result.stdout)
+        assert payload["warnings"] == ["Failed to update run status in database: disk full"]
+        assert payload["diagnostics"] == [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]
         assert "Details logged" not in result.stdout
 
     def test_run_cli_renders_diagnostics_after_outcome(
@@ -464,14 +483,14 @@ class RunCliIntegrationTests:
         assert unwrapped("Warning: Details logged") not in output
         assert output.endswith(line)
 
-    def test_run_cli_json_emits_no_diagnostics_event(
+    def test_run_cli_json_diagnostics_are_on_the_run_result_without_details_text(
         self,
         cli_runner: CliRunner,
         cli_workspace: Path,
         frozen_diagnostic_clock: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """With Blueprint.load raising and --format json, exit 1 and emit no DiagnosticsEvent envelope and no 'Details logged' text in any event."""
+        """With Blueprint.load raising and --format json, exit 1 with the record in the run result's diagnostics, no replaced event and no 'Details logged' text."""
         write_runnable_blueprint(cli_workspace, key="load-task", steps=[{"id": "s1", "run": "true"}])
         monkeypatch.setattr(Blueprint, "load", classmethod(_raise_type_error))
 
@@ -480,15 +499,14 @@ class RunCliIntegrationTests:
         )
 
         assert result.exit_code == 1
-        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-        assert [event["payload"] for event in events if event["event_type"] == "ErrorPanelEvent"] == [
-            {
-                "title": "Run Failed",
-                "message": "Unexpected error during engine.run: bad",
-                "border_style": "red",
-            }
-        ]
-        assert "DiagnosticsEvent" not in {event["event_type"] for event in events}
+        payload = run_result_payload(result.stdout)
+        assert (payload["ok"], payload["error_code"], payload["errors"]) == (
+            False,
+            "INTERNAL_ERROR",
+            ["Unexpected error during engine.run: bad"],
+        )
+        assert payload["diagnostics"] == [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]
+        assert REPLACED_EVENTS.isdisjoint(event["event_type"] for event in json_events(result.stdout))
         assert "Details logged" not in result.stdout
         assert frozen_diagnostic_clock.is_file()
 
@@ -1195,3 +1213,196 @@ class RunContinueExitCodeCliIntegrationTests:
         assert [(step["state"], step["exit_code"]) for step in steps if step["step_id"] == "check"] == [
             ("ignored", 1)
         ] * 3
+
+
+_APPROVE_INTERACTION: dict[str, object] = {
+    "mode": "select",
+    "message": "Approve this plan?",
+    "options": [{"value": "approve", "label": "Approve"}, {"value": "deny", "label": "Deny"}],
+}
+
+
+def _interrupt_on_step_start(*_args: object, **_kwargs: object) -> None:
+    """Stand in for DispatcherRunObserver.on_step_start, as Ctrl-C would while a step runs."""
+    raise KeyboardInterrupt
+
+
+def _run_json(cli_runner: CliRunner, workspace: Path, key: str, *extra: str) -> tuple[int, RunResultPayload]:
+    """Run blueprint key in place as session 's-1' under --format json; return the exit code and the run result."""
+    result = cli_runner.invoke(
+        app,
+        ["-p", str(workspace), "run", key, "--no-worktree", "--session-id", "s-1", "--format", "json", *extra],
+    )
+    return result.exit_code, run_result_payload(result.stdout)
+
+
+def _outcome(payload: RunResultPayload) -> tuple[object, ...]:
+    """Return the run result's ok, error_code, errors, session fields and paused prompt id."""
+    return (
+        payload["ok"],
+        payload["error_code"],
+        payload["errors"],
+        payload["session_id"],
+        payload["blueprint_name"],
+        payload["session_status"],
+        payload["paused_prompt_id"],
+    )
+
+
+class RunResultCliTests:
+    """Typer runner tests for #1311: every dovo run ends with exactly one run result, its last JSON line."""
+
+    def test_json_headless_pause_at_ask_is_ok_with_the_hint_just_before_the_run_result(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        _ask_blueprint(cli_workspace)
+
+        result = cli_runner.invoke(
+            app,
+            [
+                *["-p", str(cli_workspace), "run", "ask-feature", "--no-tty", "--no-worktree"],
+                *["--session-id", "s-1", "--format", "json"],
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert _outcome(run_result_payload(result.stdout)) == (
+            True,
+            None,
+            [],
+            "s-1",
+            "ask-feature",
+            "paused",
+            "approve",
+        )
+        hint = json_events(result.stdout)[-2]
+        assert hint == {
+            "event_type": "MessageEvent",
+            "payload": {
+                "message": "Run paused at prompt 'approve'. Answer with 'dovo resume s-1 --answer approve=<value>'.",
+                "style": None,
+            },
+        }
+
+    def test_json_cancelled_during_a_step_reports_run_cancelled(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(DispatcherRunObserver, "on_step_start", _interrupt_on_step_start)
+        write_runnable_blueprint(cli_workspace, key="long-task", steps=[{"id": "s1", "run": "true"}])
+
+        exit_code, payload = _run_json(cli_runner, cli_workspace, "long-task")
+
+        assert exit_code == 1
+        assert _outcome(payload) == (
+            False,
+            "RUN_CANCELLED",
+            ["Execution cancelled by user."],
+            "s-1",
+            "long-task",
+            "cancelled",
+            None,
+        )
+
+    def test_json_interrupted_at_a_failure_prompt_is_cancelled_and_still_paused(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A Ctrl-C at the failure prompt, which only a terminal reads, still ends the JSON stream with the run result."""
+        monkeypatch.setattr(DispatcherFailurePrompter, "prompt_step_failure", _raise_keyboard_interrupt)
+        write_runnable_blueprint(
+            cli_workspace, key="pause-task", steps=[{"id": "s1", "run": "exit 1", "on_failure": "prompt_user"}]
+        )
+
+        exit_code, payload = _run_json(cli_runner, cli_workspace, "pause-task")
+
+        assert exit_code == 1
+        assert (payload["ok"], payload["error_code"], payload["session_status"]) == (False, "RUN_CANCELLED", "paused")
+        assert len(payload["errors"]) == 1
+        assert payload["errors"][0].startswith("Step 's1' failed")
+
+    def test_json_interrupted_at_an_ask_prompt_is_cancelled_and_still_paused(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A Ctrl-C at the ask prompt, which only a terminal reads, still ends the JSON stream with the run result."""
+        monkeypatch.setattr(DispatcherInteractionPrompter, "ask", _raise_keyboard_interrupt)
+        write_runnable_blueprint(
+            cli_workspace, key="ask-task", steps=[{"id": "approve", "type": "ask", "interaction": _APPROVE_INTERACTION}]
+        )
+
+        exit_code, payload = _run_json(cli_runner, cli_workspace, "ask-task")
+
+        assert exit_code == 1
+        assert _outcome(payload) == (
+            False,
+            "RUN_CANCELLED",
+            ["Execution cancelled by user."],
+            "s-1",
+            "ask-task",
+            "paused",
+            "approve",
+        )
+
+    def test_json_failed_step_reports_run_step_failed_with_the_failed_session(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        write_runnable_blueprint(cli_workspace, key="fail-task", steps=[{"id": "s1", "run": "exit 3"}])
+
+        exit_code, payload = _run_json(cli_runner, cli_workspace, "fail-task", "--no-tty")
+
+        assert exit_code == 1
+        assert (payload["ok"], payload["error_code"], payload["session_status"]) == (
+            False,
+            "RUN_STEP_FAILED",
+            "failed",
+        )
+        assert (payload["session_id"], payload["blueprint_name"]) == ("s-1", "fail-task")
+        assert payload["errors"][0].startswith("Step 's1' failed")
+
+    def test_json_stream_has_no_replaced_events(
+        self, cli_runner: CliRunner, cli_workspace: Path, frozen_diagnostic_clock: Path
+    ) -> None:
+        """A run with a validation warning, a recorded stream failure and a failed step emits none of the replaced events."""
+        step = {**_UNDECLARED_PLACEHOLDER_STEP, "run": r"printf '\377'"}
+        write_runnable_blueprint(cli_workspace, key="pipe-task", steps=[step])
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "run", "pipe-task", "--no-worktree", "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = run_result_payload(result.stdout)
+        assert payload["warnings"] != []
+        assert payload["diagnostics"] == [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]
+        assert REPLACED_EVENTS.isdisjoint(event["event_type"] for event in json_events(result.stdout))
+        assert all("Details logged" not in text for text in [*payload["errors"], *payload["warnings"]])
+
+    def test_terminal_prints_warnings_outcome_then_details_lines(
+        self, cli_runner: CliRunner, cli_workspace: Path, frozen_diagnostic_clock: Path
+    ) -> None:
+        step = {**_UNDECLARED_PLACEHOLDER_STEP, "run": r"printf '\377'"}
+        write_runnable_blueprint(cli_workspace, key="pipe-task", steps=[step])
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "pipe-task", "--no-worktree"])
+
+        assert result.exit_code == 1
+        output = unwrapped(result.stdout)
+        warning = unwrapped("Warning: Placeholder 'inputs.ghost' is not declared in 'inputs:'")
+        line = unwrapped(details_line(frozen_diagnostic_clock))
+        assert output.index(warning) < output.index("RunFailed") < output.index(line)
+        assert output.endswith(line)
+
+    def test_lock_timeout_propagating_from_the_run_emits_no_run_result(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _lock_timeout(*_args: object, **_kwargs: object) -> None:
+            raise LockTimeoutError("lock held")
+
+        monkeypatch.setattr(Engine, "run", _lock_timeout)
+        write_runnable_blueprint(cli_workspace, key="json-task", steps=[{"id": "s1", "run": "true"}])
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "run", "json-task", "--no-worktree", "--format", "json"]
+        )
+
+        assert result.exit_code != 0
+        assert isinstance(result.exception, LockTimeoutError)
+        assert RUN_RESULT not in {event["event_type"] for event in json_events(result.stdout)}

@@ -39,12 +39,8 @@ def _event_formatters(console: Console | None) -> FormatterTable:
 
     return {
         models.ErrorPanelEvent: formatters.ErrorPanelFormatter(),
-        models.BlueprintInvalidEvent: formatters.BlueprintInvalidFormatter(),
         models.LockWaitEvent: formatters.LockWaitFormatter(),
-        models.WarningEvent: formatters.WarningFormatter(),
-        models.DiagnosticsEvent: formatters.DiagnosticsFormatter(),
         models.MessageEvent: formatters.MessageFormatter(),
-        models.RunSuccessEvent: formatters.RunSuccessFormatter(),
         models.StepStartEvent: formatters.StepStartFormatter(),
         models.StepDoneEvent: formatters.StepDoneFormatter(),
         models.StepSkippedEvent: formatters.StepSkippedFormatter(),
@@ -131,6 +127,14 @@ def _worktree_formatters(console: Console | None) -> FormatterTable:
     }
 
 
+def _engine_formatters(console: Console | None) -> FormatterTable:
+    """Formatters for `dovo.engine` results."""
+    import dovo.cli.ui.formatters.run as formatters
+    import dovo.engine.models as models
+
+    return {models.BlueprintRunResult: formatters.RunResultFormatter()}
+
+
 def _status_formatters(console: Console | None) -> FormatterTable:
     """Formatters for `dovo.core.status` results."""
     import dovo.cli.ui.formatters.status as formatters
@@ -150,6 +154,7 @@ FORMATTER_GROUPS: Final[dict[str, Callable[[Console | None], FormatterTable]]] =
     "dovo.core.bootstrap": _bootstrap_formatters,
     "dovo.core.worktree": _worktree_formatters,
     "dovo.core.status": _status_formatters,
+    "dovo.engine": _engine_formatters,
 }
 
 

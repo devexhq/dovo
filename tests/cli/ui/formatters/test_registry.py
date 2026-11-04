@@ -6,16 +6,16 @@ import pytest
 from pydantic import BaseModel, JsonValue
 
 from dovo.cli.ui.dispatcher import UiDispatcher
-from dovo.cli.ui.events import MessageEvent, WarningEvent
-from dovo.cli.ui.formatters.events import WarningFormatter
+from dovo.cli.ui.events import LockWaitEvent, MessageEvent
+from dovo.cli.ui.formatters.events import MessageFormatter
 from dovo.cli.ui.formatters.registry import FORMATTER_GROUPS, formatters_for
 from dovo.common.models import OutputFormatOptions
 
 
-class ShoutingWarningFormatter(WarningFormatter):
-    """Warning formatter override that upper-cases the message in JSON."""
+class ShoutingMessageFormatter(MessageFormatter):
+    """Message formatter override that upper-cases the message in JSON."""
 
-    def to_json_serializable(self, data: WarningEvent) -> dict[str, JsonValue]:
+    def to_json_serializable(self, data: MessageEvent) -> dict[str, JsonValue]:
         return {"message": data.message.upper()}
 
 
@@ -34,17 +34,19 @@ class FormatterRegistryTests:
         assert formatters_for(int) == {}
 
     def test_dispatcher_loads_the_group_of_a_model_on_first_dispatch(self, capsys: pytest.CaptureFixture[str]) -> None:
-        UiDispatcher().dispatch(WarningEvent(message="careful"), OutputFormatOptions.JSON)
+        UiDispatcher().dispatch(MessageEvent(message="careful"), OutputFormatOptions.JSON)
 
-        assert capsys.readouterr().out == '{"event_type": "WarningEvent", "payload": {"message": "careful"}}\n'
+        assert capsys.readouterr().out == (
+            '{"event_type": "MessageEvent", "payload": {"message": "careful", "style": null}}\n'
+        )
 
     def test_loading_a_group_keeps_an_explicitly_registered_formatter(self, capsys: pytest.CaptureFixture[str]) -> None:
         dispatcher = UiDispatcher()
-        dispatcher.register(WarningEvent, ShoutingWarningFormatter())
+        dispatcher.register(MessageEvent, ShoutingMessageFormatter())
 
-        dispatcher.dispatch(MessageEvent(message="hi"), OutputFormatOptions.JSON)
-        dispatcher.dispatch(WarningEvent(message="careful"), OutputFormatOptions.JSON)
+        dispatcher.dispatch(LockWaitEvent(lock_path="/tmp/lock", timeout_seconds=1.0), OutputFormatOptions.JSON)
+        dispatcher.dispatch(MessageEvent(message="careful"), OutputFormatOptions.JSON)
 
         assert capsys.readouterr().out.splitlines()[-1] == (
-            '{"event_type": "WarningEvent", "payload": {"message": "CAREFUL"}}'
+            '{"event_type": "MessageEvent", "payload": {"message": "CAREFUL"}}'
         )

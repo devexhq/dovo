@@ -24,6 +24,7 @@ from tests.harness import FakeAgentRunner
 from tests.harness.catalog import write_runnable_step
 from tests.harness.diagnostic_log import details_line, diagnostic_record, unwrapped
 from tests.harness.fakes import fixed_clock, fixed_new_id
+from tests.harness.run_result import REPLACED_EVENTS, RUN_RESULT, json_events, run_result_payload
 from tests.harness.sessions import seed_crashed_session, seed_paused_ask_session, seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -102,24 +103,34 @@ class SessionResumeCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "resume", "does-not-exist"])
 
         assert result.exit_code == 1
-        assert "Resume Failed" in result.stdout
+        assert "Run Failed" in result.stdout
+        assert "Resume Failed" not in result.stdout
 
-    def test_resume_cli_json_failure_emits_error_panel_and_exits_one(
+    def test_resume_cli_json_unknown_session_ends_with_a_run_result_without_session(
         self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
-        """For an unknown session with --format json, exit 1 and emit one ErrorPanelEvent with the message and no error_code key."""
+        """For an unknown session with --format json, exit 1 and end with SESSION_NOT_FOUND and every session field null."""
         result = cli_runner.invoke(
             app, ["-p", str(cli_workspace), "session", "resume", "does-not-exist", "--format", "json"]
         )
 
         assert result.exit_code == 1
-        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-        panels = [event["payload"] for event in events if event["event_type"] == "ErrorPanelEvent"]
-        assert len(panels) == 1
-        assert panels[0]["message"] == "Session 'does-not-exist' not found."
-        assert "error_code" not in panels[0]
+        assert run_result_payload(result.stdout) == {
+            "ok": False,
+            "error_code": "SESSION_NOT_FOUND",
+            "errors": ["Session 'does-not-exist' not found."],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
+            "session_id": None,
+            "blueprint_name": None,
+            "session_status": None,
+            "paused_prompt_id": None,
+        }
 
-    def test_resume_cli_json_format_emits_run_success_event(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+    def test_resume_cli_json_format_ends_with_the_completed_run_result(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
         _seed_paused_session(
             cli_workspace,
             session_id="paused-session-2",
@@ -135,10 +146,14 @@ class SessionResumeCliIntegrationTests:
         )
 
         assert result.exit_code == 0
-        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-        success_events = [e for e in events if e["event_type"] == "RunSuccessEvent"]
-        assert len(success_events) == 1
-        assert success_events[0]["payload"]["status"] == "completed"
+        payload = run_result_payload(result.stdout)
+        assert (payload["ok"], payload["error_code"], payload["errors"]) == (True, None, [])
+        assert (payload["session_id"], payload["session_status"], payload["paused_prompt_id"]) == (
+            "paused-session-2",
+            "completed",
+            None,
+        )
+        assert REPLACED_EVENTS.isdisjoint(event["event_type"] for event in json_events(result.stdout))
 
     def test_resume_cli_completes_after_source_catalog_blueprint_deleted(
         self, cli_runner: CliRunner, cli_workspace: Path
@@ -196,7 +211,7 @@ _DUPLICATE_ID_STEPS: list[dict[str, object]] = [{"id": "a", "run": "echo one"}, 
 class SessionResumeValidationCliIntegrationTests:
     """Typer runner tests for GH-1096: dovo resume validates the session's blueprint snapshot before any step."""
 
-    def test_invalid_snapshot_prints_blueprint_invalid_exits_one_and_stays_paused(
+    def test_invalid_snapshot_prints_run_failed_exits_one_and_stays_paused(
         self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
         _seed_invalid_snapshot(
@@ -206,33 +221,34 @@ class SessionResumeValidationCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "resume", "bad-snap"])
 
         assert result.exit_code == 1
-        assert "Blueprint Invalid" in result.stdout
-        assert "Blueprint 'bad-snap' failed validation; no steps ran." in result.stdout
-        assert "- steps.2: Value error, Agent steps must specify a non-empty 'prompt' string." in result.stdout
+        assert "Run Failed" in result.stdout
+        assert "steps.2: Value error, Agent steps must specify a non-empty 'prompt' string." in result.stdout
         assert "errors.pydantic.dev" not in result.stdout
         paths = initialized_workspace_paths(cli_workspace)
         record = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.get("bad-snap")
         assert record is not None
         assert record.status == SessionStatus.PAUSED
 
-    def test_invalid_snapshot_json_is_one_blueprint_invalid_event(
-        self, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
+    def test_invalid_snapshot_json_ends_with_the_run_result(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         _seed_invalid_snapshot(cli_workspace, "bad-snap", _DUPLICATE_ID_STEPS)
 
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "resume", "bad-snap", "--format", "json"])
 
         assert result.exit_code == 1
-        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-        assert [event["event_type"] for event in events] == ["MessageEvent", "BlueprintInvalidEvent"]
-        assert events[1]["payload"] == {
-            "blueprint": "bad-snap",
-            "error_code": "CATALOG_SCHEMA_INVALID",
-            "errors": ["Step id 'a' is used by more than one step."],
-            "remediations": [{"message": "Resolve: Step id 'a' is used by more than one step.", "command": None}],
-        }
+        assert [event["event_type"] for event in json_events(result.stdout)] == ["MessageEvent", RUN_RESULT]
+        payload = run_result_payload(result.stdout)
+        assert (payload["ok"], payload["error_code"], payload["errors"]) == (
+            False,
+            "CATALOG_SCHEMA_INVALID",
+            ["Step id 'a' is used by more than one step."],
+        )
+        assert payload["remediations"] == [
+            {"message": "Resolve: Step id 'a' is used by more than one step.", "command": None}
+        ]
+        assert (payload["session_id"], payload["session_status"]) == ("bad-snap", "paused")
+        assert _session_status(cli_workspace, "bad-snap") == SessionStatus.PAUSED
 
-    def test_snapshot_warning_prints_once_before_the_first_step(
+    def test_snapshot_warning_is_carried_once_on_the_run_result(
         self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
         _seed_invalid_snapshot(
@@ -246,13 +262,24 @@ class SessionResumeValidationCliIntegrationTests:
         )
 
         assert result.exit_code == 0
-        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-        warnings = [index for index, event in enumerate(events) if event["event_type"] == "WarningEvent"]
-        first_step = next(index for index, event in enumerate(events) if event["event_type"] == "StepStartEvent")
-        assert [events[index]["payload"]["message"] for index in warnings] == [
+        assert run_result_payload(result.stdout)["warnings"] == [
             "Placeholder 'inputs.ghost' is not declared in 'inputs:' (CATALOG_UNDECLARED_INPUT_PLACEHOLDER)."
         ]
-        assert warnings[0] < first_step
+
+    def test_snapshot_warning_prints_once_before_the_outcome(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        _seed_invalid_snapshot(
+            cli_workspace,
+            "warn-snap",
+            [*_RESUMABLE_STEPS[:2], {"id": "s3", "run": "true", "env": {"GHOST": "${{ inputs.ghost }}"}}],
+        )
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "resume", "warn-snap"])
+
+        assert result.exit_code == 0
+        output = unwrapped(result.stdout)
+        warning = unwrapped("Warning: Placeholder 'inputs.ghost' is not declared in 'inputs:'")
+        assert output.count(warning) == 1
+        assert output.index(warning) < output.index(unwrapped("Blueprint Run Completed:"))
 
 
 class SessionResumeEnvFlagsCliIntegrationTests:
@@ -532,9 +559,7 @@ class SessionResumeCrashedRunCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "resume", "crashed", "--format", "json"])
 
         assert result.exit_code == 0, result.stdout
-        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-        warnings = [event["payload"]["message"] for event in events if event["event_type"] == "WarningEvent"]
-        assert warnings == [_PAUSED_SENTENCE, _RERUN_WARNING]
+        assert run_result_payload(result.stdout)["warnings"] == [_PAUSED_SENTENCE, _RERUN_WARNING]
 
     def test_resumed_crashed_run_shows_no_error_message(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         """After the resume, `dovo session show crashed --format json` reports completed with a null error message."""
@@ -609,3 +634,92 @@ class SessionResumeCliDiagnosticsTests:
         line = unwrapped(details_line(frozen_diagnostic_clock))
         assert output.count(unwrapped("Details logged")) == 1
         assert output.endswith(line)
+
+
+class SessionResumeResultCliTests:
+    """Typer runner tests for #1311: every dovo resume ends with exactly one run result, its last JSON line."""
+
+    def test_json_headless_re_pause_at_ask_is_ok_with_the_hint_just_before_the_run_result(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        session_id = _seed_paused_ask(cli_workspace)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "resume", session_id, "--no-tty", "--format", "json"]
+        )
+
+        assert result.exit_code == 0
+        payload = run_result_payload(result.stdout)
+        assert (payload["ok"], payload["error_code"], payload["session_status"], payload["paused_prompt_id"]) == (
+            True,
+            None,
+            "paused",
+            "approve",
+        )
+        assert json_events(result.stdout)[-2] == {
+            "event_type": "MessageEvent",
+            "payload": {
+                "message": (
+                    f"Run paused at prompt 'approve'. Answer with 'dovo resume {session_id} --answer approve=<value>'."
+                ),
+                "style": None,
+            },
+        }
+
+    def test_json_failed_step_reports_run_step_failed(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        _seed_paused_session(
+            cli_workspace,
+            session_id="fail-after-resume",
+            steps=[{"id": "s1", "run": "true"}, {"id": "s2", "run": "exit 3"}],
+            paused_step_id="s2",
+        )
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "resume", "fail-after-resume", "--no-tty", "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = run_result_payload(result.stdout)
+        assert (payload["ok"], payload["error_code"], payload["session_status"]) == (False, "RUN_STEP_FAILED", "failed")
+        assert (payload["session_id"], payload["blueprint_name"]) == ("fail-after-resume", "fail-after-resume")
+        assert payload["errors"][0].startswith("Step 's2' failed")
+
+    def test_json_no_paused_session_is_rejected_before_any_step(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "resume", "--format", "json"])
+
+        assert result.exit_code == 1
+        payload = run_result_payload(result.stdout)
+        assert (payload["ok"], payload["error_code"], payload["errors"]) == (
+            False,
+            "SESSION_NOT_FOUND",
+            ["No paused session found to resume."],
+        )
+        assert (payload["session_id"], payload["blueprint_name"], payload["session_status"]) == (None, None, None)
+
+    def test_json_argument_error_ends_with_the_run_result(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        session_id = _seed_paused_ask(cli_workspace)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "resume", session_id, "--comment", "c", "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        assert [event["event_type"] for event in json_events(result.stdout)] == [RUN_RESULT]
+        payload = run_result_payload(result.stdout)
+        assert (payload["ok"], payload["error_code"]) == (False, "INTERACTION_ARGUMENTS_INVALID")
+        assert len(payload["errors"]) == 1
+        assert (payload["session_id"], payload["blueprint_name"], payload["session_status"]) == (None, None, None)
+        assert _session_status(cli_workspace, session_id) == SessionStatus.PAUSED
+
+    @pytest.mark.parametrize(
+        "flags",
+        [pytest.param(["does-not-exist"], id="failed_resume"), pytest.param(["--comment", "c"], id="argument_error")],
+    )
+    def test_terminal_titles_match_run(self, cli_runner: CliRunner, cli_workspace: Path, flags: list[str]) -> None:
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "resume", *flags])
+
+        assert result.exit_code == 1
+        assert "Run Failed" in result.stdout
+        assert "Resume Failed" not in result.stdout

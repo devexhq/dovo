@@ -33,7 +33,6 @@ from dovo.engine.models import (
     RunRequest,
     RunStartConfig,
 )
-from dovo.engine.notify import safe_notify
 from dovo.engine.preset_prompter import PresetInteractionPrompter
 from dovo.engine.session import drive_run
 from dovo.engine.state_models import ExecutionStateTree
@@ -121,15 +120,14 @@ class Engine:
     ) -> RunOutcome:
         """Load a paused run's durable state and execute it through the same RunCoordinator entry point as run().
 
-        The blueprint snapshot's validation warnings go to the observer's on_validation_warnings before the first
-        step; a snapshot that fails validation raises its CatalogError and leaves the session paused, unchanged.
+        The blueprint snapshot's validation warnings lead the outcome's warnings; a snapshot that fails validation
+        raises its CatalogError and leaves the session paused, unchanged.
         """
         engine_warnings: list[str] = []
         validation_warnings: list[str] = []
         prior_diagnostics: list[DiagnosticRecord] = []
         with WorkspaceLock(self.paths.lock_file):
             _, state, _ = EngineLoader.load_for_resume(self.db, self.paths, session_id, validation_warnings)
-            safe_notify(observer, "on_validation_warnings", validation_warnings)
             if answers:
                 preset = EngineLoader.resolve_answers(session_id, state, answers, engine_warnings)
                 interaction_prompter = PresetInteractionPrompter(preset, interaction_prompter)
@@ -152,7 +150,12 @@ class Engine:
         self._finish_run(session_id, outcome, engine_warnings, finish_diagnostics)
 
         return self._finalize_outcome(
-            outcome, session_id, engine_warnings, prior=prior_diagnostics, finish=finish_diagnostics
+            outcome,
+            session_id,
+            engine_warnings,
+            prior=prior_diagnostics,
+            finish=finish_diagnostics,
+            leading_warnings=validation_warnings,
         )
 
     def _start_run(
@@ -322,14 +325,15 @@ class Engine:
         *,
         prior: Sequence[DiagnosticRecord],
         finish: Sequence[DiagnosticRecord],
+        leading_warnings: Sequence[str] = (),
     ) -> RunOutcome:
-        """Stamp the session id, append Engine warnings, and set diagnostics to prior, the outcome's records, then finish."""
+        """Stamp the session id, set warnings to leading_warnings, the outcome's, then Engine's, and set diagnostics to prior, the outcome's records, then finish."""
         update: dict[str, object] = {
             "session_id": session_id,
             "diagnostics": [*prior, *outcome.diagnostics, *finish],
         }
-        if extra_warnings:
-            update["warnings"] = [*outcome.warnings, *extra_warnings]
+        if leading_warnings or extra_warnings:
+            update["warnings"] = [*leading_warnings, *outcome.warnings, *extra_warnings]
         return outcome.model_copy(update=update)
 
     def _mark_running(self, session_id: str, warnings: list[str], diagnostics: list[DiagnosticRecord]) -> None:

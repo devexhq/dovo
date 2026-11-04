@@ -20,7 +20,6 @@ from dovo.cli.ui.events import (
     StepOutputEvent,
     StepSkippedEvent,
     StepStartEvent,
-    WarningEvent,
     WorktreeLifecycleEvent,
 )
 from dovo.common.models import DisplayFormatOptions, OutputFormatOptions, Remediation
@@ -82,11 +81,6 @@ class DispatcherRunObserver(RunObserver):
         """Exit observer context and stop live display."""
         if self._live:
             self._dispatcher.stop_live()
-
-    def on_validation_warnings(self, warnings: Sequence[str]) -> None:
-        """Dispatch one warning event per validation warning, before the first step."""
-        for warning in warnings:
-            self._dispatcher.dispatch(WarningEvent(message=warning))
 
     def on_worktree_ready(self, path: Path, active: bool) -> None:
         """Dispatch worktree readiness event."""

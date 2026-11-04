@@ -19,7 +19,7 @@ from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import BlueprintStep, LoopStepBlock, StepDefinition
-from dovo.core.db import SessionRecord, SessionStatus
+from dovo.core.db import SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import InteractionAnswer, InteractionRequest
 from dovo.core.worktree import WorktreeSession
@@ -264,11 +264,7 @@ class RunContext:
 
 @runtime_checkable
 class RunObserver(Protocol):
-    """Optional progress hooks for validation, worktree, step, and loop lifecycle events."""
-
-    def on_validation_warnings(self, warnings: Sequence[str]) -> None:
-        """Called once per run or resume, before the first step, with the blueprint's validation warnings in `dovo blueprint validate` order."""
-        ...
+    """Optional progress hooks for worktree, step, and loop lifecycle events."""
 
     def on_worktree_ready(self, path: Path, active: bool) -> None:
         """Called after the execution directory is chosen."""
@@ -373,18 +369,21 @@ class RunOutcome(BaseModel):
 
 
 class BlueprintRunResult(BaseResult):
-    """Result of executing a blueprint.
+    """Result of a run or resume: its failure, if any, and the session it ran.
 
-    invalid_blueprint names the blueprint when validation stopped the run or resume before any step ran; errors then
-    hold every validation error, and error_code and remediations are those `dovo blueprint validate` reports.
-    Validation warnings reach the observer before any step and are not repeated in warnings.
+    session_id, blueprint_name and session_status describe the session record read back after the run, each None
+    when no session was loaded; session_status is the session's own state and never names the failure, which
+    error_code alone reports. paused_prompt_id is set only when the run paused at an `ask` prompt. A validation
+    failure carries every validation error in errors, with the error_code and remediations `dovo blueprint validate`
+    reports; validation warnings are in warnings, after any reconciliation warning.
     """
 
-    session_record: SessionRecord | None = None
+    session_id: str | None = None
+    blueprint_name: str | None = None
+    session_status: SessionStatus | None = None
     paused_prompt_id: str | None = None
-    invalid_blueprint: str | None = None
 
     @property
     def ok(self) -> bool:
-        """Return True if run completed without fatal errors."""
-        return self.session_record is not None and len(self.errors) == 0
+        """Return True exactly when error_code is None."""
+        return self.error_code is None
