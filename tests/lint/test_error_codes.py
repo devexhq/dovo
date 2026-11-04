@@ -5,7 +5,8 @@ Scope: the name check reads the real `ErrorCode` enum. The reference check colle
 in src/dovo outside `common/error_codes.py`. The raising check reads every call in src/dovo to a failure constructor
 whose first positional argument, or whose `error_code=` keyword, is an `ErrorCode.<NAME>` attribute, and maps its file
 to a package with `package_of`. A failure constructor is a callee whose simple name ends in `Error`, `_error` or
-`Result`, or is `Failure` (`WorktreeError(...)`, `git_command_error(...)`, `CatalogValidateResult(...)`); any other
+`Result` or `Record`, or is `Failure` (`WorktreeError(...)`, `git_command_error(...)`, `CatalogValidateResult(...)`,
+`DiagnosticCheckRecord(...)`); any other
 call taking a code, such as `_LABELS.get(ErrorCode.X)`, is a lookup, not a raise.
 
 Not detected, and left to review: a code passed through a variable (`WorktreeError(exc.error_code, ...)`, the intended
@@ -48,6 +49,7 @@ OWNERS: Final[dict[str, frozenset[str]]] = {
     "RUN": frozenset({"engine"}),
     "INTERACTION": frozenset({"core/interaction"}),
     "ASK": frozenset({"core/interaction"}),
+    "DOCTOR": frozenset({"core/diagnostics"}),
 }
 
 STATES: Final[tuple[str, ...]] = (
@@ -75,6 +77,9 @@ STATES: Final[tuple[str, ...]] = (
     "UNWRITABLE",
     "UNSUPPORTED",
     "CANCELLED",
+    "STALE",
+    "ORPHANED",
+    "CRASHED",
 )
 
 _FOREIGN_RAISE_FIXTURE: Final[str] = """
@@ -95,6 +100,11 @@ def check(completed):
     if completed.returncode:
         raise AgentError(ErrorCode.GIT_FAILED, "git reset failed")
     return Failure(error_code=ErrorCode.AGENT_SCRATCH_UNAVAILABLE, message="no scratch")
+"""
+
+_RECORD_FIXTURE: Final[str] = """
+def check(context):
+    return DiagnosticCheckRecord(check_id="git.repo", error_code=ErrorCode.DOCTOR_GIT_REPO_NOT_FOUND)
 """
 
 _LOOKUP_FIXTURE: Final[str] = """
@@ -133,10 +143,10 @@ def _code_name(node: ast.expr) -> str | None:
 
 
 def _is_failure_constructor(call: ast.Call) -> bool:
-    """Return whether call's callee is named like a failure constructor: *Error, *_error, *Result or Failure."""
+    """Return whether call's callee is named like a failure constructor: *Error, *_error, *Result, *Record or Failure."""
     func = call.func
     name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
-    return name == "Failure" or name.endswith(("Error", "_error", "Result"))
+    return name == "Failure" or name.endswith(("Error", "_error", "Result", "Record"))
 
 
 def _literal_codes(call: ast.Call) -> Iterator[str]:
@@ -274,6 +284,16 @@ class ErrorCodeRaiserTests:
                 ],
                 id="foreign-git-and-agent",
             ),
+            pytest.param(
+                "src/dovo/engine/doctor.py",
+                _RECORD_FIXTURE,
+                [
+                    "src/dovo/engine/doctor.py:3: engine raises DOCTOR_GIT_REPO_NOT_FOUND, whose prefix DOCTOR belongs "
+                    "to core/diagnostics"
+                ],
+                id="foreign-doctor-record",
+            ),
+            pytest.param("src/dovo/core/diagnostics/checks/git_repo.py", _RECORD_FIXTURE, [], id="own-doctor-record"),
             pytest.param("src/dovo/cli/ui/formatters/labels.py", _LOOKUP_FIXTURE, [], id="lookup-not-raise"),
         ],
     )

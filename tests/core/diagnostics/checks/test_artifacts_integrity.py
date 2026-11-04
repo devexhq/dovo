@@ -84,7 +84,7 @@ class ArtifactsIntegrityCheckTests:
         )
 
         assert result.status == CheckStatus.WARNING
-        assert result.error_code == "DOCTOR_ARTIFACT_ORPHAN_DIR"
+        assert result.error_code == "DOCTOR_ARTIFACT_DIR_ORPHANED"
         assert result.details == {"orphan_directories": [str(orphan_dir.resolve())]}
 
     def test_execute_row_without_directory_returns_missing_warning(
@@ -98,7 +98,7 @@ class ArtifactsIntegrityCheckTests:
         )
 
         assert result.status == CheckStatus.WARNING
-        assert result.error_code == "DOCTOR_ARTIFACT_MISSING_DIR"
+        assert result.error_code == "DOCTOR_ARTIFACT_DIR_MISSING"
         assert result.details == {"missing_directories": ["wf_1/plan@1"]}
         assert artifacts_repository.get("wf_1", "plan") is not None
 
@@ -114,7 +114,7 @@ class ArtifactsIntegrityCheckTests:
             DiagnosticsContext(cwd=artifacts_integrity_paths.root_dir, paths=artifacts_integrity_paths, git=GitRunner())
         )
 
-        assert result.error_code == "DOCTOR_ARTIFACT_MISSING_DIR"
+        assert result.error_code == "DOCTOR_ARTIFACT_DIR_MISSING"
 
     def test_execute_missing_database_returns_ok_with_zero_verified_count(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory

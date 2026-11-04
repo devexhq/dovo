@@ -96,7 +96,7 @@ class GitRepoCheckTests:
         assert result.check_id == "git.repo"
         assert result.category == CheckCategory.GIT
         assert result.status == CheckStatus.FAILED
-        assert result.error_code == "DOCTOR_GIT_NOT_REPO"
+        assert result.error_code == "DOCTOR_GIT_REPO_NOT_FOUND"
         assert result.errors == [f"'{tmp_path}' is not a Git repository."]
 
     def test_execute_inside_git_repository_returns_ok_with_root_and_branch(

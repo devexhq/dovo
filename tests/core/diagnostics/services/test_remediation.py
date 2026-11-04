@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
-from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult
+from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckRecord
 from dovo.core.diagnostics.services.remediation import resolve_remediations
 
 
@@ -22,7 +23,7 @@ def _export_remediation(env_var: str) -> Remediation:
 
 REMEDIATION_RESOLUTION_CASES = [
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="git.repo",
             name="Git Repository Check",
             category=CheckCategory.GIT,
@@ -33,7 +34,7 @@ REMEDIATION_RESOLUTION_CASES = [
         id="ok_status_returns_empty",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="worktree.refs",
             name="Worktree References Check",
             category=CheckCategory.WORKTREE,
@@ -44,13 +45,13 @@ REMEDIATION_RESOLUTION_CASES = [
         id="skipped_status_returns_empty",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="git.repo",
             name="Git Repository Check",
             category=CheckCategory.GIT,
             status=CheckStatus.FAILED,
             message="'/tmp/x' is not a Git repository.",
-            error_code="DOCTOR_GIT_NOT_REPO",
+            error_code=ErrorCode.DOCTOR_GIT_REPO_NOT_FOUND,
         ),
         [
             Remediation(
@@ -61,13 +62,13 @@ REMEDIATION_RESOLUTION_CASES = [
         id="git_not_repo",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="git.repo",
             name="Git Repository Check",
             category=CheckCategory.GIT,
             status=CheckStatus.FAILED,
             message="git binary was not found on PATH.",
-            error_code="DOCTOR_GIT_BINARY_MISSING",
+            error_code=ErrorCode.DOCTOR_GIT_BINARY_MISSING,
         ),
         [
             Remediation(
@@ -77,13 +78,13 @@ REMEDIATION_RESOLUTION_CASES = [
         id="git_binary_missing",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="config.schema",
             name="Config Schema Check",
             category=CheckCategory.CONFIG,
             status=CheckStatus.FAILED,
             message="Malformed config.json.",
-            error_code="CONFIG_JSON_INVALID",
+            error_code=ErrorCode.CONFIG_JSON_INVALID,
             errors=["Malformed config.json."],
             remediations=[Remediation(message="Repair JSON syntax, or restore from backup")],
         ),
@@ -91,14 +92,14 @@ REMEDIATION_RESOLUTION_CASES = [
         id="check_carries_own_remediations",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="filesystem.writable",
             name="Filesystem Writable Check",
             category=CheckCategory.FILESYSTEM,
             status=CheckStatus.FAILED,
             message="2 configured path(s) are not writable.",
             details={"unwritable_paths": ["/repo/.dovo", "/repo/.dovo/sessions"]},
-            error_code="DOCTOR_FS_UNWRITABLE",
+            error_code=ErrorCode.DOCTOR_FS_UNWRITABLE,
         ),
         [
             Remediation(
@@ -113,13 +114,13 @@ REMEDIATION_RESOLUTION_CASES = [
         id="fs_unwritable_with_paths",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="filesystem.writable",
             name="Filesystem Writable Check",
             category=CheckCategory.FILESYSTEM,
             status=CheckStatus.FAILED,
             message="paths are not writable.",
-            error_code="DOCTOR_FS_UNWRITABLE",
+            error_code=ErrorCode.DOCTOR_FS_UNWRITABLE,
         ),
         [
             Remediation(
@@ -130,13 +131,13 @@ REMEDIATION_RESOLUTION_CASES = [
         id="fs_unwritable_missing_details_fallback",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="worktree.refs",
             name="Worktree References Check",
             category=CheckCategory.WORKTREE,
             status=CheckStatus.WARNING,
             message="1 stale worktree reference(s) detected.",
-            error_code="DOCTOR_WORKTREE_STALE",
+            error_code=ErrorCode.DOCTOR_WORKTREE_STALE,
         ),
         [
             Remediation(
@@ -147,13 +148,13 @@ REMEDIATION_RESOLUTION_CASES = [
         id="worktree_stale",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="worktree.refs",
             name="Worktree References Check",
             category=CheckCategory.WORKTREE,
             status=CheckStatus.WARNING,
             message="1 orphaned worktree directory(s) detected.",
-            error_code="DOCTOR_WORKTREE_ORPHAN",
+            error_code=ErrorCode.DOCTOR_WORKTREE_ORPHANED,
         ),
         [
             Remediation(
@@ -164,39 +165,39 @@ REMEDIATION_RESOLUTION_CASES = [
         id="worktree_orphan",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="env.binaries",
             name="Environment Binaries Check",
             category=CheckCategory.ENVIRONMENT,
             status=CheckStatus.WARNING,
             message="1 required binary(s) not found on PATH: gh.",
             details={"missing_binaries": ["gh"]},
-            error_code="DOCTOR_BINARY_MISSING",
+            error_code=ErrorCode.DOCTOR_BINARY_MISSING,
         ),
         [Remediation(message="Install 'gh' via your package manager and ensure it is available on 'PATH'.")],
         id="binary_missing_with_details",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="env.binaries",
             name="Environment Binaries Check",
             category=CheckCategory.ENVIRONMENT,
             status=CheckStatus.WARNING,
             message="required binary(s) not found on PATH.",
-            error_code="DOCTOR_BINARY_MISSING",
+            error_code=ErrorCode.DOCTOR_BINARY_MISSING,
         ),
         [Remediation(message="Install '<binary>' via your package manager and ensure it is available on 'PATH'.")],
         id="binary_missing_missing_details_fallback",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="agent.setup",
             name="Agent Setup Check",
             category=CheckCategory.AGENT,
             status=CheckStatus.FAILED,
             message="Agent provider 'copilot' is missing required credential 'GH_TOKEN'.",
             details={"provider": "copilot", "missing_env_var": "GH_TOKEN"},
-            error_code="DOCTOR_AGENT_KEY_MISSING",
+            error_code=ErrorCode.DOCTOR_AGENT_KEY_MISSING,
         ),
         [
             Remediation(
@@ -207,13 +208,13 @@ REMEDIATION_RESOLUTION_CASES = [
         id="agent_key_missing_with_details",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="agent.setup",
             name="Agent Setup Check",
             category=CheckCategory.AGENT,
             status=CheckStatus.FAILED,
             message="missing required credential.",
-            error_code="DOCTOR_AGENT_KEY_MISSING",
+            error_code=ErrorCode.DOCTOR_AGENT_KEY_MISSING,
         ),
         [
             Remediation(
@@ -224,7 +225,7 @@ REMEDIATION_RESOLUTION_CASES = [
         id="agent_key_missing_missing_details_fallback",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="agent.setup",
             name="Agent Setup Check",
             category=CheckCategory.AGENT,
@@ -235,7 +236,7 @@ REMEDIATION_RESOLUTION_CASES = [
                 "missing_env_var": "CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY",
                 "credential_envs": ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
             },
-            error_code="DOCTOR_AGENT_KEY_MISSING",
+            error_code=ErrorCode.DOCTOR_AGENT_KEY_MISSING,
         ),
         [
             _export_remediation("CLAUDE_CODE_OAUTH_TOKEN"),
@@ -247,7 +248,7 @@ REMEDIATION_RESOLUTION_CASES = [
         id="agent_key_missing_claude_exports_each_name_then_login",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="agent.setup",
             name="Agent Setup Check",
             category=CheckCategory.AGENT,
@@ -258,33 +259,33 @@ REMEDIATION_RESOLUTION_CASES = [
                 "missing_env_var": "GH_TOKEN or GITHUB_TOKEN",
                 "credential_envs": ["GH_TOKEN", "GITHUB_TOKEN"],
             },
-            error_code="DOCTOR_AGENT_KEY_MISSING",
+            error_code=ErrorCode.DOCTOR_AGENT_KEY_MISSING,
         ),
         [_export_remediation("GH_TOKEN"), _export_remediation("GITHUB_TOKEN")],
         id="agent_key_missing_two_names_emit_one_export_each",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="agent.setup",
             name="Agent Setup Check",
             category=CheckCategory.AGENT,
             status=CheckStatus.FAILED,
             message="Agent provider 'copilot' is missing required credential 'GH_TOKEN'.",
             details={"provider": "copilot", "missing_env_var": "GH_TOKEN", "credential_envs": "GH_TOKEN"},
-            error_code="DOCTOR_AGENT_KEY_MISSING",
+            error_code=ErrorCode.DOCTOR_AGENT_KEY_MISSING,
         ),
         [_export_remediation("GH_TOKEN")],
         id="agent_key_missing_non_list_credential_envs_falls_back_to_missing_env_var",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="agent.setup",
             name="Agent Setup Check",
             category=CheckCategory.AGENT,
             status=CheckStatus.WARNING,
             message="Agent provider 'copilot' has no model configured.",
             details={"provider": "copilot"},
-            error_code="DOCTOR_AGENT_NO_MODEL",
+            error_code=ErrorCode.DOCTOR_AGENT_MODEL_MISSING,
         ),
         [
             Remediation(
@@ -295,13 +296,13 @@ REMEDIATION_RESOLUTION_CASES = [
         id="agent_no_model",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="agent.setup",
             name="Agent Setup Check",
             category=CheckCategory.AGENT,
             status=CheckStatus.WARNING,
             message="Agent provider has no model configured.",
-            error_code="DOCTOR_AGENT_NO_MODEL",
+            error_code=ErrorCode.DOCTOR_AGENT_MODEL_MISSING,
         ),
         [
             Remediation(
@@ -312,7 +313,7 @@ REMEDIATION_RESOLUTION_CASES = [
         id="agent_no_model_missing_details_fallback",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="worktree.refs",
             name="Worktree References Check",
             category=CheckCategory.WORKTREE,
@@ -322,23 +323,23 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                message="No deterministic remediation is registered for check 'worktree.refs' (error_code='DOCTOR_UNKNOWN'). Review the check message and details to diagnose and resolve the issue."
+                message="No deterministic remediation is registered for check 'worktree.refs' (error_code='none'). Review the check message and details to diagnose and resolve the issue."
             )
         ],
         id="none_error_code_falls_back",
     ),
     pytest.param(
-        DiagnosticCheckResult(
+        DiagnosticCheckRecord(
             check_id="crashing.check",
             name="Crashing Check",
             category=CheckCategory.WORKTREE,
             status=CheckStatus.FAILED,
             message="Unhandled exception during check execution: boom",
-            error_code="DOCTOR_CHECK_CRASH",
+            error_code=ErrorCode.DOCTOR_CHECK_CRASHED,
         ),
         [
             Remediation(
-                message="No deterministic remediation is registered for check 'crashing.check' (error_code='DOCTOR_CHECK_CRASH'). Review the check message and details to diagnose and resolve the issue."
+                message="No deterministic remediation is registered for check 'crashing.check' (error_code='DOCTOR_CHECK_CRASHED'). Review the check message and details to diagnose and resolve the issue."
             )
         ],
         id="unmapped_string_code_falls_back",
@@ -351,6 +352,6 @@ class ResolveRemediationsTests:
 
     @pytest.mark.parametrize(("result", "expected"), REMEDIATION_RESOLUTION_CASES)
     def test_resolve_remediations_returns_exact_mapping(
-        self, result: DiagnosticCheckResult, expected: list[Remediation]
+        self, result: DiagnosticCheckRecord, expected: list[Remediation]
     ) -> None:
         assert resolve_remediations(result) == expected

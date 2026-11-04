@@ -6,7 +6,7 @@ from dovo.core.diagnostics.models import (
     CheckCategory,
     CheckStatus,
     DiagnosticCheck,
-    DiagnosticCheckResult,
+    DiagnosticCheckRecord,
     DiagnosticsContext,
     DiagnosticsReport,
 )
@@ -16,7 +16,7 @@ __all__ = [
     "CheckRegistrationError",
     "CheckStatus",
     "DiagnosticCheck",
-    "DiagnosticCheckResult",
+    "DiagnosticCheckRecord",
     "Diagnostics",
     "DiagnosticsContext",
     "DiagnosticsReport",

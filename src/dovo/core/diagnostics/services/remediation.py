@@ -5,25 +5,26 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Final
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
-from dovo.core.diagnostics.models import CheckStatus, DiagnosticCheckResult
+from dovo.core.diagnostics.models import CheckStatus, DiagnosticCheckRecord
 
 
-def resolve_remediations(result: DiagnosticCheckResult) -> list[Remediation]:
+def resolve_remediations(result: DiagnosticCheckRecord) -> list[Remediation]:
     """Return a failed or warning check's own remediations, or the deterministic ones for its error code."""
     if result.status not in (CheckStatus.FAILED, CheckStatus.WARNING):
         return []
     if result.remediations:
         return list(result.remediations)
-    builder = _ERROR_CODE_BUILDERS.get(result.error_code or "")
+    builder = _ERROR_CODE_BUILDERS.get(result.error_code) if result.error_code else None
     if builder is None:
         return [_fallback_remediation(result)]
     return builder(result)
 
 
-def _fallback_remediation(result: DiagnosticCheckResult) -> Remediation:
+def _fallback_remediation(result: DiagnosticCheckRecord) -> Remediation:
     """Return the generic manual-inspection remediation for a check with no mapped error code."""
-    code = result.error_code or "DOCTOR_UNKNOWN"
+    code = result.error_code or "none"
     return Remediation(
         message=(
             f"No deterministic remediation is registered for check '{result.check_id}' "
@@ -32,8 +33,8 @@ def _fallback_remediation(result: DiagnosticCheckResult) -> Remediation:
     )
 
 
-def _git_not_repo(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return the remediation for a workspace that is not a Git repository (DOCTOR_GIT_NOT_REPO)."""
+def _git_repo_not_found(result: DiagnosticCheckRecord) -> list[Remediation]:
+    """Return the remediation for a workspace that is not a Git repository (DOCTOR_GIT_REPO_NOT_FOUND)."""
     return [
         Remediation(
             message="Run 'git init' from the workspace root to create the Git repository worktree operations require.",
@@ -42,7 +43,7 @@ def _git_not_repo(result: DiagnosticCheckResult) -> list[Remediation]:
     ]
 
 
-def _git_binary_missing(result: DiagnosticCheckResult) -> list[Remediation]:
+def _git_binary_missing(result: DiagnosticCheckRecord) -> list[Remediation]:
     """Return the remediation for a missing git executable on PATH (DOCTOR_GIT_BINARY_MISSING)."""
     return [
         Remediation(
@@ -54,7 +55,7 @@ def _git_binary_missing(result: DiagnosticCheckResult) -> list[Remediation]:
     ]
 
 
-def _fs_unwritable(result: DiagnosticCheckResult) -> list[Remediation]:
+def _fs_unwritable(result: DiagnosticCheckRecord) -> list[Remediation]:
     """Return one remediation per unwritable workspace path, or a generic fallback when none are named (DOCTOR_FS_UNWRITABLE)."""
     unwritable_paths = result.details.get("unwritable_paths")
     paths = unwritable_paths if isinstance(unwritable_paths, list) and unwritable_paths else [".dovo"]
@@ -70,7 +71,7 @@ def _fs_unwritable(result: DiagnosticCheckResult) -> list[Remediation]:
     ]
 
 
-def _worktree_stale(result: DiagnosticCheckResult) -> list[Remediation]:
+def _worktree_stale(result: DiagnosticCheckRecord) -> list[Remediation]:
     """Return the remediation for stale worktree database references (DOCTOR_WORKTREE_STALE)."""
     return [
         Remediation(
@@ -80,8 +81,8 @@ def _worktree_stale(result: DiagnosticCheckResult) -> list[Remediation]:
     ]
 
 
-def _worktree_orphan(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return the remediation for orphaned worktree directories (DOCTOR_WORKTREE_ORPHAN)."""
+def _worktree_orphaned(result: DiagnosticCheckRecord) -> list[Remediation]:
+    """Return the remediation for orphaned worktree directories (DOCTOR_WORKTREE_ORPHANED)."""
     return [
         Remediation(
             message="Run 'dovo worktree prune' to remove worktree directories that have no matching database record.",
@@ -90,7 +91,7 @@ def _worktree_orphan(result: DiagnosticCheckResult) -> list[Remediation]:
     ]
 
 
-def _binary_missing(result: DiagnosticCheckResult) -> list[Remediation]:
+def _binary_missing(result: DiagnosticCheckRecord) -> list[Remediation]:
     """Return one remediation per missing required binary, or a generic fallback when none are named (DOCTOR_BINARY_MISSING)."""
     missing_binaries = result.details.get("missing_binaries")
     binaries = missing_binaries if isinstance(missing_binaries, list) and missing_binaries else ["<binary>"]
@@ -125,7 +126,7 @@ def _claude_login_remediation() -> Remediation:
     )
 
 
-def _agent_key_missing(result: DiagnosticCheckResult) -> list[Remediation]:
+def _agent_key_missing(result: DiagnosticCheckRecord) -> list[Remediation]:
     """Return one export remediation per missing credential name, plus the Claude login remediation for claude (DOCTOR_AGENT_KEY_MISSING)."""
     remediations = [
         Remediation(
@@ -143,8 +144,8 @@ def _agent_key_missing(result: DiagnosticCheckResult) -> list[Remediation]:
     return remediations
 
 
-def _agent_no_model(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return the remediation for an agent provider with no model configured (DOCTOR_AGENT_NO_MODEL)."""
+def _agent_model_missing(result: DiagnosticCheckRecord) -> list[Remediation]:
+    """Return the remediation for an agent provider with no model configured (DOCTOR_AGENT_MODEL_MISSING)."""
     provider = result.details.get("provider", "<provider>")
     return [
         Remediation(
@@ -157,13 +158,13 @@ def _agent_no_model(result: DiagnosticCheckResult) -> list[Remediation]:
     ]
 
 
-_ERROR_CODE_BUILDERS: Final[dict[str, Callable[[DiagnosticCheckResult], list[Remediation]]]] = {
-    "DOCTOR_GIT_NOT_REPO": _git_not_repo,
-    "DOCTOR_GIT_BINARY_MISSING": _git_binary_missing,
-    "DOCTOR_FS_UNWRITABLE": _fs_unwritable,
-    "DOCTOR_WORKTREE_STALE": _worktree_stale,
-    "DOCTOR_WORKTREE_ORPHAN": _worktree_orphan,
-    "DOCTOR_BINARY_MISSING": _binary_missing,
-    "DOCTOR_AGENT_KEY_MISSING": _agent_key_missing,
-    "DOCTOR_AGENT_NO_MODEL": _agent_no_model,
+_ERROR_CODE_BUILDERS: Final[dict[ErrorCode, Callable[[DiagnosticCheckRecord], list[Remediation]]]] = {
+    ErrorCode.DOCTOR_GIT_REPO_NOT_FOUND: _git_repo_not_found,
+    ErrorCode.DOCTOR_GIT_BINARY_MISSING: _git_binary_missing,
+    ErrorCode.DOCTOR_FS_UNWRITABLE: _fs_unwritable,
+    ErrorCode.DOCTOR_WORKTREE_STALE: _worktree_stale,
+    ErrorCode.DOCTOR_WORKTREE_ORPHANED: _worktree_orphaned,
+    ErrorCode.DOCTOR_BINARY_MISSING: _binary_missing,
+    ErrorCode.DOCTOR_AGENT_KEY_MISSING: _agent_key_missing,
+    ErrorCode.DOCTOR_AGENT_MODEL_MISSING: _agent_model_missing,
 }

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
-from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DiagnosticsContext
+from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckRecord, DiagnosticsContext
 
 
 class ArtifactsIntegrityCheck:
@@ -15,7 +16,7 @@ class ArtifactsIntegrityCheck:
     name: str = "Artifacts Integrity Check"
     category: CheckCategory = CheckCategory.ARTIFACTS
 
-    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
+    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckRecord:
         """Report revision directories without a row and rows without a directory as WARNINGs; repair nothing."""
         db_path = context.paths.database_file
         if not db_path.is_file():
@@ -49,41 +50,41 @@ def _revision_directories(artifacts_dir: Path) -> set[Path]:
     }
 
 
-def _orphan_result(check: ArtifactsIntegrityCheck, orphan_dirs: list[str]) -> DiagnosticCheckResult:
-    """Build the WARNING DOCTOR_ARTIFACT_ORPHAN_DIR result naming directories without a row."""
+def _orphan_result(check: ArtifactsIntegrityCheck, orphan_dirs: list[str]) -> DiagnosticCheckRecord:
+    """Build the WARNING DOCTOR_ARTIFACT_DIR_ORPHANED result naming directories without a row."""
     message = f"{len(orphan_dirs)} artifact revision directory(s) without a database row detected."
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check.check_id,
         name=check.name,
         category=check.category,
         status=CheckStatus.WARNING,
         message=message,
         details={"orphan_directories": orphan_dirs},
-        error_code="DOCTOR_ARTIFACT_ORPHAN_DIR",
+        error_code=ErrorCode.DOCTOR_ARTIFACT_DIR_ORPHANED,
         errors=[],
         warnings=[message],
     )
 
 
-def _missing_result(check: ArtifactsIntegrityCheck, missing: list[str]) -> DiagnosticCheckResult:
-    """Build the WARNING DOCTOR_ARTIFACT_MISSING_DIR result naming rows as '<session>/<name>@<revision>'."""
+def _missing_result(check: ArtifactsIntegrityCheck, missing: list[str]) -> DiagnosticCheckRecord:
+    """Build the WARNING DOCTOR_ARTIFACT_DIR_MISSING result naming rows as '<session>/<name>@<revision>'."""
     message = f"{len(missing)} artifact revision row(s) without a directory detected."
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check.check_id,
         name=check.name,
         category=check.category,
         status=CheckStatus.WARNING,
         message=message,
         details={"missing_directories": missing},
-        error_code="DOCTOR_ARTIFACT_MISSING_DIR",
+        error_code=ErrorCode.DOCTOR_ARTIFACT_DIR_MISSING,
         errors=[],
         warnings=[message],
     )
 
 
-def _ok_result(check: ArtifactsIntegrityCheck, verified_count: int) -> DiagnosticCheckResult:
+def _ok_result(check: ArtifactsIntegrityCheck, verified_count: int) -> DiagnosticCheckRecord:
     """Build the OK result carrying the count of artifact revisions verified against disk."""
-    return DiagnosticCheckResult(
+    return DiagnosticCheckRecord(
         check_id=check.check_id,
         name=check.name,
         category=check.category,

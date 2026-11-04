@@ -6,13 +6,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.config.models import DovoConfig, ProjectConfig
 from dovo.core.diagnostics.models import (
     CheckCategory,
     CheckStatus,
     DiagnosticCheck,
-    DiagnosticCheckResult,
+    DiagnosticCheckRecord,
     DiagnosticsContext,
     DiagnosticsReport,
 )
@@ -29,7 +30,7 @@ class StructuralCheck:
     name: str = "Structural Check"
     category: CheckCategory = CheckCategory.GIT
 
-    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
+    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckRecord:
         return diagnostic_result(check_id=self.check_id, name=self.name, category=self.category)
 
 
@@ -41,7 +42,7 @@ class NonConformingCheck:
 
 
 class DiagnosticsModelsTests:
-    """Unit tests for DiagnosticsContext, DiagnosticCheckResult, and DiagnosticCheck."""
+    """Unit tests for DiagnosticsContext, DiagnosticCheckRecord, and DiagnosticCheck."""
 
     @pytest.mark.parametrize(
         ("status", "expected_ok"),
@@ -60,6 +61,26 @@ class DiagnosticsModelsTests:
         result = diagnostic_result(status=status)
 
         assert result.ok is expected_ok
+
+    def test_warning_check_carries_its_code_with_no_errors(self) -> None:
+        """Build a WARNING DOCTOR_WORKTREE_STALE record with errors == [] and warnings == ['stale']."""
+        record = diagnostic_result(
+            status=CheckStatus.WARNING, error_code=ErrorCode.DOCTOR_WORKTREE_STALE, warnings=["stale"]
+        )
+
+        assert (record.error_code, record.errors, record.warnings) == (ErrorCode.DOCTOR_WORKTREE_STALE, [], ["stale"])
+
+    @pytest.mark.parametrize(
+        "error_code",
+        [
+            pytest.param("GIT_NOT_REPO", id="unpublished-name"),
+            pytest.param("DOCTOR_GIT_REPO_NOT_FOUND", id="published-value-as-plain-string"),
+        ],
+    )
+    def test_check_with_unpublished_code_is_refused(self, error_code: str) -> None:
+        """Raise ValidationError when a DiagnosticCheckRecord is built with an error_code that is not an ErrorCode member."""
+        with pytest.raises(ValidationError):
+            diagnostic_result(status=CheckStatus.FAILED, error_code=error_code, errors=["boom"])
 
     def test_doctor_context_extra_fields_forbidden(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
