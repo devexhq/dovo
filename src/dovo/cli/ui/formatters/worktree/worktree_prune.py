@@ -7,6 +7,7 @@ from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import with_diagnostics
+from dovo.cli.ui.formatters.header import header_fields
 from dovo.cli.ui.formatters.worktree.pruned_item import PrunedItemFormatter
 from dovo.cli.ui.formatters.worktree.worktree_views import WorktreePruneView
 from dovo.core.worktree.models import WorktreePruneResult
@@ -50,6 +51,7 @@ class WorktreePruneFormatter(ComponentFormatter[WorktreePruneResult, WorktreePru
         ]
 
         return WorktreePruneView(
+            **header_fields(data),
             status=data.status,
             dry_run=data.dry_run,
             force=data.force,
@@ -57,11 +59,6 @@ class WorktreePruneFormatter(ComponentFormatter[WorktreePruneResult, WorktreePru
             pruned_count=data.pruned_count,
             skipped_count=data.skipped_count,
             failed_count=data.failed_count,
-            error_code=data.error_code,
-            errors=list(data.errors),
-            warnings=list(data.warnings),
-            remediations=list(data.remediations),
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: WorktreePruneResult) -> RenderableType:

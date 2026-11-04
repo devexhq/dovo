@@ -53,11 +53,6 @@ class WorkspaceInitResult(BaseResult):
     config_generation: ConfigGenerationSummary | None = None
     seed: SeedSummary | None = None
 
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is null."""
-        return self.error_code is None
-
     @model_validator(mode="after")
     def _require_every_step_on_success(self) -> Self:
         """Reject a success that lacks a step: every failure sets error_code."""

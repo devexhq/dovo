@@ -8,6 +8,8 @@ from .catalog_list import CatalogListFormatter
 from .catalog_show import CatalogShowFormatter
 from .catalog_validate import CatalogValidateFormatter
 from .catalog_views import (
+    CatalogCreateView,
+    CatalogDeleteView,
     CatalogItemView,
     CatalogListView,
     CatalogShowView,
@@ -17,7 +19,9 @@ from .catalog_views import (
 
 __all__ = [
     "CatalogCreateFormatter",
+    "CatalogCreateView",
     "CatalogDeleteFormatter",
+    "CatalogDeleteView",
     "CatalogItemView",
     "CatalogListFormatter",
     "CatalogListView",

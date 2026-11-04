@@ -22,6 +22,7 @@ from tests.harness.formatter import (
 
 def _make_session_list_view(**overrides: object) -> SessionListView:
     defaults: dict[str, object] = {
+        "ok": overrides.get("error_code") is None,
         "sessions": [session_summary_view()],
         "total_sessions": 1,
         "errors": [],
@@ -78,32 +79,40 @@ HISTORY_LIST_PAYLOAD_CASES = [
     pytest.param(
         EMPTY_RUNS,
         {
-            "sessions": [],
-            "total_sessions": 0,
+            "ok": True,
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],
-            "error_code": None,
             "diagnostics": [],
+            "sessions": [],
+            "total_sessions": 0,
         },
         id="empty_runs",
     ),
     pytest.param(
         ERRORS_RUNS,
         {
-            "sessions": [],
-            "total_sessions": 0,
+            "ok": False,
+            "error_code": "INTERNAL_ERROR",
             "errors": ["Database query failed."],
             "warnings": [],
             "remediations": [],
-            "error_code": "INTERNAL_ERROR",
             "diagnostics": [],
+            "sessions": [],
+            "total_sessions": 0,
         },
         id="errors_runs",
     ),
     pytest.param(
         WARNINGS_RUNS,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": ["Marked 1 interrupted session failed (session_id: sess-stale)."],
+            "remediations": [],
+            "diagnostics": [],
             "sessions": [
                 {
                     "session_id": "sess-12345678",
@@ -117,11 +126,6 @@ HISTORY_LIST_PAYLOAD_CASES = [
                 }
             ],
             "total_sessions": 1,
-            "errors": [],
-            "warnings": ["Marked 1 interrupted session failed (session_id: sess-stale)."],
-            "remediations": [],
-            "error_code": None,
-            "diagnostics": [],
         },
         id="warnings_runs",
     ),

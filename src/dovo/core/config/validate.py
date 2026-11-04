@@ -23,11 +23,6 @@ class ConfigValidationResult(BaseResult):
     raw: dict[str, Any] | None = None
     config: DovoConfig | None = None
 
-    @property
-    def ok(self) -> bool:
-        """Return True exactly when error_code is None."""
-        return self.error_code is None
-
 
 @dataclass(frozen=True, slots=True)
 class ValidatedConfig:

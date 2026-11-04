@@ -31,6 +31,7 @@ _SAMPLE_DIFF = """diff --git a/src/main.py b/src/main.py
 def make_diff_view(**overrides: object) -> SessionDiffView:
     """Construct a SessionDiffView with healthy baseline defaults."""
     defaults: dict[str, object] = {
+        "ok": overrides.get("error_code") is None,
         "session_id": "dovo_fmt_1",
         "artifact_path": Path("/repo/.dovo/sessions/dovo_fmt_1/diff.patch"),
         "relative_path": "/repo/.dovo/sessions/dovo_fmt_1/diff.patch",
@@ -226,6 +227,12 @@ DIFF_PAYLOAD_CASES = [
     pytest.param(
         OK_POPULATED,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": ["Non-critical warning"],
+            "remediations": [],
+            "diagnostics": [],
             "session_id": "dovo_fmt_1",
             "artifact_path": "/repo/.dovo/sessions/dovo_fmt_1/diff.patch",
             "relative_path": "/repo/.dovo/sessions/dovo_fmt_1/diff.patch",
@@ -235,17 +242,18 @@ DIFF_PAYLOAD_CASES = [
             "total_lines": 6,
             "truncated": False,
             "truncated_lines": 0,
-            "errors": [],
-            "warnings": ["Non-critical warning"],
-            "remediations": [],
-            "error_code": None,
-            "diagnostics": [],
         },
         id="ok_populated_diff",
     ),
     pytest.param(
         EMPTY_DIFF,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "session_id": "dovo_fmt_empty",
             "artifact_path": "/repo/.dovo/sessions/dovo_fmt_empty/diff.patch",
             "relative_path": "/repo/.dovo/sessions/dovo_fmt_empty/diff.patch",
@@ -255,17 +263,20 @@ DIFF_PAYLOAD_CASES = [
             "total_lines": 0,
             "truncated": False,
             "truncated_lines": 0,
-            "errors": [],
-            "warnings": [],
-            "remediations": [],
-            "error_code": None,
-            "diagnostics": [],
         },
         id="empty_diff",
     ),
     pytest.param(
         SESSION_NOT_FOUND,
         {
+            "ok": False,
+            "error_code": "SESSION_NOT_FOUND",
+            "errors": ["Session 'dovo_missing_99' not found."],
+            "warnings": [],
+            "remediations": [
+                {"message": "Run 'dovo session list' to list valid session IDs", "command": "dovo session list"}
+            ],
+            "diagnostics": [],
             "session_id": "dovo_missing_99",
             "artifact_path": None,
             "relative_path": "<sessions_dir>/dovo_missing_99/diff.patch",
@@ -275,13 +286,6 @@ DIFF_PAYLOAD_CASES = [
             "total_lines": 0,
             "truncated": False,
             "truncated_lines": 0,
-            "errors": ["Session 'dovo_missing_99' not found."],
-            "warnings": [],
-            "remediations": [
-                {"message": "Run 'dovo session list' to list valid session IDs", "command": "dovo session list"}
-            ],
-            "error_code": "SESSION_NOT_FOUND",
-            "diagnostics": [],
         },
         id="session_not_found",
     ),

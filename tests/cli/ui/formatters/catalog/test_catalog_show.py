@@ -54,6 +54,7 @@ BLUEPRINT_FOUND = FormatterCase(
         item_type=CatalogItemType.BLUEPRINT, item=_sample_catalog_record(), content="name: test-blueprint\nversion: 1\n"
     ),
     view=CatalogShowView(
+        ok=True,
         item_type="blueprint",
         item=CatalogItemView(
             sha="blueprint_1234567",
@@ -86,6 +87,7 @@ STEP_FOUND = FormatterCase(
         item_type=CatalogItemType.STEP, item=_sample_step_record(), content="name: test-step\naction: run\n"
     ),
     view=CatalogShowView(
+        ok=True,
         item_type="step",
         item=CatalogItemView(
             sha="step_1234567",
@@ -112,6 +114,7 @@ TEMPLATE_MATCH = FormatterCase(
         content="name: default-blueprint\n",
     ),
     view=CatalogShowView(
+        ok=True,
         item_type="blueprint",
         item=None,
         content="name: default-blueprint\n",
@@ -131,6 +134,7 @@ ERRORS = FormatterCase(
         errors=["Catalog item 'missing' not found."],
     ),
     view=CatalogShowView(
+        ok=False,
         item_type="blueprint",
         item=None,
         content=None,
@@ -155,6 +159,7 @@ PAYLOAD_CASES = [
     pytest.param(
         BLUEPRINT_FOUND,
         {
+            "ok": True,
             "error_code": None,
             "errors": [],
             "warnings": [],
@@ -178,6 +183,7 @@ PAYLOAD_CASES = [
     pytest.param(
         ERRORS,
         {
+            "ok": False,
             "error_code": "CATALOG_NOT_FOUND",
             "errors": ["Catalog item 'missing' not found."],
             "warnings": [],
@@ -194,6 +200,7 @@ PAYLOAD_CASES = [
     pytest.param(
         TEMPLATE_MATCH,
         {
+            "ok": True,
             "error_code": None,
             "errors": [],
             "warnings": [],

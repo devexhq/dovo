@@ -18,6 +18,7 @@ from dovo.cli.ui.formatters.catalog.common import (
     catalog_type_label,
 )
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
+from dovo.cli.ui.formatters.header import header_fields
 from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogListResult
 
@@ -84,15 +85,12 @@ class CatalogListFormatter(ComponentFormatter[CatalogListResult, CatalogListView
             for template_type, template_path in data.templates
         ]
         return CatalogListView(
+            **header_fields(data),
             item_type=enum_value(data.item_type),
             items=items,
             type_filter=enum_value(data.type_filter) if data.type_filter else None,
             templates=templates,
             total_items=len(data.items),
-            errors=data.errors,
-            warnings=data.warnings,
-            remediations=data.remediations,
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: CatalogListResult) -> RenderableType:

@@ -7,6 +7,7 @@ from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import with_diagnostics
+from dovo.cli.ui.formatters.header import header_fields
 from dovo.cli.ui.formatters.status.common import build_status_table
 from dovo.cli.ui.formatters.status.status_view import StatusView
 from dovo.common.formatters import format_remediations
@@ -52,12 +53,7 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
         git_branch = data.git.branch if data.git.is_git_repo else None
 
         return StatusView(
-            ok=data.ok,
-            error_code=data.error_code,
-            errors=list(data.errors),
-            warnings=list(data.warnings),
-            remediations=list(data.remediations),
-            diagnostics=list(data.diagnostics),
+            **header_fields(data),
             status=data.status,
             root_dir=data.root_dir,
             project_name=_derive_project_name(data),

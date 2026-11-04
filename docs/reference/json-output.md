@@ -14,7 +14,7 @@ Each line is one JSON object with two keys:
 
 ## Command results
 
-Most command results carry these header keys in their payload:
+Every command result's payload starts with these six header keys, in this order:
 
 | Key | Value |
 | --- | --- |
@@ -25,7 +25,9 @@ Most command results carry these header keys in their payload:
 | `remediations` | Suggested fixes, each with a `message` and a `command` (`null` when there is no command to run). |
 | `diagnostics` | [Diagnostic log](../cli/doctor.md#diagnostic-logs) records, each with an `event_id` and a `log_path`. |
 
-The payload's other keys belong to the command and are documented on its page. Which header keys a result carries, and where they appear among its other keys, differs from command to command: `dovo status` reports `health` and `config_error_code` with no `ok` or `error_code`, and `dovo doctor` reports `ok` and a list of `checks`, each with its own `error_code`. Read keys by name rather than by position.
+`errors`, `warnings`, `remediations` and `diagnostics` are always lists, never `null`, and `errors` is non-empty exactly when `error_code` is set. `warnings` and `remediations` can be non-empty when `ok` is `true`.
+
+The payload's other keys follow the header. They belong to the command and are documented on its page. Only two commands report a `status` key: `dovo status` (the workspace's health) and `dovo worktree prune` (what the run did). Every other command reports a failure only through `error_code`. Streaming events written before the result, such as `StepStartEvent`, carry no header.
 
 ## The `error` event
 

@@ -65,11 +65,13 @@ class ArtifactsListCliIntegrationTests:
         assert json.loads(result.stdout) == {
             "event_type": "ArtifactsListResult",
             "payload": {
-                "artifacts": [],
+                "ok": True,
+                "error_code": None,
                 "errors": [],
                 "warnings": [],
                 "remediations": [],
                 "diagnostics": [],
+                "artifacts": [],
             },
         }
 

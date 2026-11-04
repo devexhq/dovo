@@ -21,21 +21,23 @@ pytestmark = pytest.mark.usefixtures("workspace_config")
 
 _PROMPT = "Are you sure you want to delete blueprint '{name}'?"
 _CANCELLED_PAYLOAD = {
+    "ok": True,
+    "error_code": None,
     "errors": [],
     "warnings": [],
     "remediations": [],
     "diagnostics": [],
-    "error_code": None,
     "item_type": "blueprint",
     "deleted": False,
     "cancelled": True,
 }
 _NOT_FOUND_PAYLOAD = {
+    "ok": False,
+    "error_code": "CATALOG_NOT_FOUND",
     "errors": ["Catalog blueprint 'ghost' not found."],
     "warnings": [],
     "remediations": [],
     "diagnostics": [],
-    "error_code": "CATALOG_NOT_FOUND",
     "item_type": "blueprint",
     "item": None,
     "deleted": False,
@@ -216,11 +218,12 @@ class BlueprintDeleteCliTests:
         assert isinstance(item, dict)
         assert item["key"] == "gone-blueprint"
         assert {key: value for key, value in payload.items() if key != "item"} == {
+            "ok": True,
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],
             "diagnostics": [],
-            "error_code": None,
             "item_type": "blueprint",
             "deleted": True,
             "cancelled": False,

@@ -28,11 +28,6 @@ class DiffResult(BaseResult):
     max_lines: int | None = None
     latest: bool = False
 
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is None."""
-        return self.error_code is None
-
 
 class SessionLogEventType(StrEnum):
     """Discriminates which optional fields a SessionLogEvent populates."""
@@ -101,21 +96,11 @@ class LogsShowResult(BaseResult):
     available_steps: list[str] = Field(default_factory=list)
     available_attempts: list[int] = Field(default_factory=list)
 
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is None."""
-        return self.error_code is None
-
 
 class HistoryListResult(BaseResult):
     """Structured result for session list before rendering."""
 
     sessions: list[SessionRecord] = Field(default_factory=list)
-
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is None."""
-        return self.error_code is None
 
 
 class StepRunSummary(BaseModel):
@@ -155,11 +140,6 @@ class HistoryShowResult(BaseResult):
     steps: list[StepRunSummary] = Field(default_factory=list)
     worktree_kept: bool | None = None
     worktree_path: Path | None = None
-
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is None."""
-        return self.error_code is None
 
 
 @dataclass(frozen=True, slots=True)

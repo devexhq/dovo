@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.config.config_load import ConfigLoadFormatter
+from dovo.cli.ui.formatters.config.config_views import ConfigLoadView
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.config.loader import ConfigLoadResult
@@ -20,20 +21,27 @@ from tests.harness.formatter import (
 
 _CONFIG_PATH = Path("/workspace/.dovo/config.json")
 
-VALID_CONFIG = FormatterCase.identity(
-    data=ConfigLoadResult(
-        config_path=_CONFIG_PATH,
-        config=DovoConfig(version=1, project=ProjectConfig(name="test-project")),
-    ),
+_CONFIG = DovoConfig(version=1, project=ProjectConfig(name="test-project"))
+
+VALID_CONFIG = FormatterCase(
+    data=ConfigLoadResult(config_path=_CONFIG_PATH, config=_CONFIG),
+    view=ConfigLoadView(ok=True, config_path=_CONFIG_PATH, config=_CONFIG),
     render_expectations=["test-project", _CONFIG_PATH.as_posix()],
 )
 
-NOT_FOUND = FormatterCase.identity(
+NOT_FOUND = FormatterCase(
     data=ConfigLoadResult(
         config_path=_CONFIG_PATH,
         error_code=ErrorCode.CONFIG_NOT_FOUND,
         errors=["Configuration file not found at '/workspace/.dovo/config.json'."],
         remediations=[Remediation(message="Run 'dovo init' to initialize Dovo", command="dovo init")],
+    ),
+    view=ConfigLoadView(
+        ok=False,
+        error_code=ErrorCode.CONFIG_NOT_FOUND,
+        errors=["Configuration file not found at '/workspace/.dovo/config.json'."],
+        remediations=[Remediation(message="Run 'dovo init' to initialize Dovo", command="dovo init")],
+        config_path=_CONFIG_PATH,
     ),
     render_expectations=[
         "Configuration file not found at '/workspace/.dovo/config.json'.",
@@ -51,6 +59,12 @@ CONFIG_LOAD_PAYLOAD_CASES = [
     pytest.param(
         VALID_CONFIG,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "config_path": "/workspace/.dovo/config.json",
             "raw": None,
             "config": {
@@ -96,25 +110,21 @@ CONFIG_LOAD_PAYLOAD_CASES = [
                     "sensitive_variables": [],
                 },
             },
-            "warnings": [],
-            "errors": [],
-            "remediations": [],
-            "diagnostics": [],
-            "error_code": None,
         },
         id="valid_config",
     ),
     pytest.param(
         NOT_FOUND,
         {
+            "ok": False,
+            "error_code": "CONFIG_NOT_FOUND",
+            "errors": ["Configuration file not found at '/workspace/.dovo/config.json'."],
+            "warnings": [],
+            "remediations": [{"message": "Run 'dovo init' to initialize Dovo", "command": "dovo init"}],
+            "diagnostics": [],
             "config_path": "/workspace/.dovo/config.json",
             "raw": None,
             "config": None,
-            "warnings": [],
-            "errors": ["Configuration file not found at '/workspace/.dovo/config.json'."],
-            "remediations": [{"message": "Run 'dovo init' to initialize Dovo", "command": "dovo init"}],
-            "diagnostics": [],
-            "error_code": "CONFIG_NOT_FOUND",
         },
         id="not_found",
     ),
@@ -127,11 +137,11 @@ class ConfigLoadFormatterTests:
     @pytest.mark.parametrize(("case", "expected_payload"), CONFIG_LOAD_PAYLOAD_CASES)
     def test_json_payload_matches_published_shape(
         self,
-        case: FormatterCase[ConfigLoadResult, ConfigLoadResult],
+        case: FormatterCase[ConfigLoadResult, ConfigLoadView],
         expected_payload: dict[str, Any],
     ) -> None:
         assert_json_payload_matches_published_shape(ConfigLoadFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", CONFIG_LOAD_CASES)
-    def test_rich_render_shows_every_view_value(self, case: FormatterCase[ConfigLoadResult, ConfigLoadResult]) -> None:
+    def test_rich_render_shows_every_view_value(self, case: FormatterCase[ConfigLoadResult, ConfigLoadView]) -> None:
         assert_rich_render_shows_every_view_value(ConfigLoadFormatter, case.data, case.render_expectations)

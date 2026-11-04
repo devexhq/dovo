@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_apply import WorktreeApplyFormatter
+from dovo.cli.ui.formatters.worktree.worktree_views import WorktreeApplyView
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
@@ -21,18 +22,28 @@ from tests.harness.formatter import (
     assert_rich_render_shows_every_view_value,
 )
 
-APPLIED_SQUASH = FormatterCase.identity(
+APPLIED_SQUASH = FormatterCase(
     data=WorktreeApplyResult(
         worktree_id="dovo_1",
         strategy=WorktreeApplyStrategy.SQUASH,
         commit_sha="abc1234",
         cleaned_up=True,
     ),
+    view=WorktreeApplyView(
+        ok=True, worktree_id="dovo_1", strategy=WorktreeApplyStrategy.SQUASH, commit_sha="abc1234", cleaned_up=True
+    ),
     render_expectations=["dovo_1", "squash", "abc1234"],
 )
 
-APPLIED_PATCH = FormatterCase.identity(
+APPLIED_PATCH = FormatterCase(
     data=WorktreeApplyResult(
+        worktree_id="dovo_2",
+        strategy=WorktreeApplyStrategy.PATCH,
+        touched_files=["src/main.py"],
+        cleaned_up=False,
+    ),
+    view=WorktreeApplyView(
+        ok=True,
         worktree_id="dovo_2",
         strategy=WorktreeApplyStrategy.PATCH,
         touched_files=["src/main.py"],
@@ -41,7 +52,7 @@ APPLIED_PATCH = FormatterCase.identity(
     render_expectations=["dovo_2", "patch"],
 )
 
-FAILED_CONFLICT = FormatterCase.identity(
+FAILED_CONFLICT = FormatterCase(
     data=WorktreeApplyResult(
         worktree_id="dovo_3",
         error_code=ErrorCode.GIT_FAILED,
@@ -50,10 +61,19 @@ FAILED_CONFLICT = FormatterCase.identity(
         errors=["Merge conflict in src/conflict.py"],
         remediations=[Remediation(message="Resolve manually")],
     ),
+    view=WorktreeApplyView(
+        ok=False,
+        error_code=ErrorCode.GIT_FAILED,
+        errors=["Merge conflict in src/conflict.py"],
+        remediations=[Remediation(message="Resolve manually")],
+        worktree_id="dovo_3",
+        strategy=WorktreeApplyStrategy.SQUASH,
+        conflicting_files=["src/conflict.py"],
+    ),
     render_expectations=["Merge conflict in src/conflict.py", "Fix:", "- Resolve manually"],
 )
 
-APPLIED_DELETE_WITH_DIAGNOSTICS = FormatterCase.identity(
+APPLIED_DELETE_WITH_DIAGNOSTICS = FormatterCase(
     data=WorktreeApplyResult(
         worktree_id="dovo_4",
         strategy=WorktreeApplyStrategy.SQUASH,
@@ -68,6 +88,21 @@ APPLIED_DELETE_WITH_DIAGNOSTICS = FormatterCase.identity(
             )
         ],
     ),
+    view=WorktreeApplyView(
+        ok=True,
+        warnings=["Failed to delete branch 'dovo/dovo_4': boom"],
+        diagnostics=[
+            DiagnosticRecord(
+                event_id="exc_3f9a1c07b2de",
+                log_path=Path("/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json"),
+                level=DiagnosticLevel.ERROR,
+            )
+        ],
+        worktree_id="dovo_4",
+        strategy=WorktreeApplyStrategy.SQUASH,
+        commit_sha="def5678",
+        cleaned_up=True,
+    ),
     render_expectations=[
         "dovo_4",
         "Failed to delete branch 'dovo/dovo_4': boom",
@@ -75,11 +110,17 @@ APPLIED_DELETE_WITH_DIAGNOSTICS = FormatterCase.identity(
     ],
 )
 
-ALREADY_MERGED = FormatterCase.identity(
+ALREADY_MERGED = FormatterCase(
     data=WorktreeApplyResult(
         worktree_id="dovo_5",
         error_code=ErrorCode.WORKTREE_ALREADY_MERGED,
         errors=["Worktree 'dovo_5' is already merged."],
+    ),
+    view=WorktreeApplyView(
+        ok=False,
+        error_code=ErrorCode.WORKTREE_ALREADY_MERGED,
+        errors=["Worktree 'dovo_5' is already merged."],
+        worktree_id="dovo_5",
     ),
     render_expectations=["Worktree 'dovo_5' is already merged."],
 )
@@ -96,51 +137,54 @@ WORKTREE_APPLY_PAYLOAD_CASES = [
     pytest.param(
         APPLIED_SQUASH,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "worktree_id": "dovo_1",
             "strategy": "squash",
             "touched_files": [],
             "conflicting_files": [],
             "cleaned_up": True,
             "commit_sha": "abc1234",
-            "warnings": [],
-            "errors": [],
-            "error_code": None,
-            "remediations": [],
-            "diagnostics": [],
         },
         id="applied_squash",
     ),
     pytest.param(
         FAILED_CONFLICT,
         {
+            "ok": False,
+            "error_code": "GIT_FAILED",
+            "errors": ["Merge conflict in src/conflict.py"],
+            "warnings": [],
+            "remediations": [{"message": "Resolve manually", "command": None}],
+            "diagnostics": [],
             "worktree_id": "dovo_3",
             "strategy": "squash",
             "touched_files": [],
             "conflicting_files": ["src/conflict.py"],
             "cleaned_up": False,
             "commit_sha": None,
-            "warnings": [],
-            "errors": ["Merge conflict in src/conflict.py"],
-            "error_code": "GIT_FAILED",
-            "remediations": [{"message": "Resolve manually", "command": None}],
-            "diagnostics": [],
         },
         id="failed_conflict",
     ),
     pytest.param(
         ALREADY_MERGED,
         {
+            "ok": False,
+            "error_code": "WORKTREE_ALREADY_MERGED",
+            "errors": ["Worktree 'dovo_5' is already merged."],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "worktree_id": "dovo_5",
             "strategy": "patch",
             "touched_files": [],
             "conflicting_files": [],
             "cleaned_up": False,
             "commit_sha": None,
-            "warnings": [],
-            "errors": ["Worktree 'dovo_5' is already merged."],
-            "error_code": "WORKTREE_ALREADY_MERGED",
-            "remediations": [],
-            "diagnostics": [],
         },
         id="already_merged",
     ),
@@ -153,13 +197,13 @@ class WorktreeApplyFormatterTests:
     @pytest.mark.parametrize(("case", "expected_payload"), WORKTREE_APPLY_PAYLOAD_CASES)
     def test_json_payload_matches_published_shape(
         self,
-        case: FormatterCase[WorktreeApplyResult, WorktreeApplyResult],
+        case: FormatterCase[WorktreeApplyResult, WorktreeApplyView],
         expected_payload: dict[str, Any],
     ) -> None:
         assert_json_payload_matches_published_shape(WorktreeApplyFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", WORKTREE_APPLY_CASES)
     def test_rich_render_shows_every_view_value(
-        self, case: FormatterCase[WorktreeApplyResult, WorktreeApplyResult]
+        self, case: FormatterCase[WorktreeApplyResult, WorktreeApplyView]
     ) -> None:
         assert_rich_render_shows_every_view_value(WorktreeApplyFormatter, case.data, case.render_expectations)

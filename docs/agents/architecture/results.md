@@ -30,27 +30,31 @@ What a public entrypoint returns and what a caller branches on. These entries ho
 
 ## status only where error_code cannot say it
 
-- **Decision:** a command-result payload has a `status` field only for `dovo status` health (`ok`, `degraded`, `uninitialized`) and `dovo worktree prune` (`ok`, `partial_failure`).
+- **Decision:** a command-result payload has a `status` field only for `dovo status` health (`ok`, `degraded`, `uninitialized`) and `dovo worktree prune` (`pruned`, `nothing_to_prune`, `partial_failure`).
+  - A prune whose scan fails before any item is processed reports `status` `null`; its `error_code` names the failure.
+  - `tests/lint/test_result_header.py` fails when any other command view declares a top-level `status`, or when either `status` admits other values.
   - A result whose only outcomes are success or failure has no `status`; it keeps a named boolean (`valid`, `created`, `deleted`) where it needs one.
   - A new status enum or value holds only an outcome `error_code` cannot express.
 - **Why:** `status` reports health or how much of a multi-item operation failed, never why.
-- **Since:** #925
+- **Since:** #925, #1309
 
 ## The six-field header comes first
 
 - **Decision:** every command-result payload starts with `ok`, `error_code`, `errors`, `warnings`, `remediations` and `diagnostics`, in that order.
   - Streaming events (step, lock-wait, banner and message events) carry no header.
+  - The header is defined once, by `ResultHeaderView` in `cli/ui/formatters/header.py`. Every command result's formatter declares a view that subclasses it and adds only the command's own fields, filled with `**header_fields(result)`; Pydantic puts parent fields first, so the header leads. `core` result serialization does not carry the header.
+  - No command formatter overrides `to_json_serializable`; its payload is its view's dump. `tests/lint/test_result_header.py` walks `FORMATTER_GROUPS` and fails, naming the formatter, when a command formatter's view does not subclass `ResultHeaderView`, redeclares a header field, or the formatter builds its payload by hand.
 - **Why:** one parser can tell whether any command succeeded, and why not, without knowing its payload.
-- **Since:** #925
+- **Since:** #925, #1309
 
 ## ok means error_code is null
 
 - **Decision:** on every command-result payload, the result a CLI command dispatches, `ok` is true exactly when `error_code` is null.
-  - No command result computes `ok` from `status`, `errors` or any other field.
+  - No command result computes `ok` from `status`, `errors` or any other field. `ok` is defined once, as a property on `BaseResult`, and `ResultHeaderView` refuses a view whose `ok` disagrees with `error_code`; `tests/lint/test_result_header.py` fails when a dispatched result defines its own.
   - Internal results that no command dispatches (interaction, input resolution, agent settings) may define `ok` for their own callers.
   - A step's outcome inside a run is a `StepRecord`, a record rather than a result: a failed step's text is its `error_message`, and its `error_code` is a published one with no `errors`, set on every failed `command`, `script`, `internal` and `ask` step and `null` on a completed one.
 - **Why:** callers branch on `ok`, so it must agree with the one failure classification.
-- **Since:** #925
+- **Since:** #925, #1309
 
 ## errors and error_code agree
 

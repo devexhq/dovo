@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.cli.ui.formatters.header import ResultHeaderView
 from dovo.core.artifacts.models import PrunedArtifact
 
 
@@ -29,18 +29,14 @@ class ArtifactRowView(BaseModel):
     expires_at: str | None = None
 
 
-class ArtifactsListView(BaseModel):
+class ArtifactsListView(ResultHeaderView):
     """Presentation view of `dovo artifacts list` results."""
-
-    model_config = {"extra": "forbid", "strict": True}
 
     artifacts: list[ArtifactRowView] = Field(default_factory=list)
 
 
-class ArtifactsPruneView(BaseModel):
+class ArtifactsPruneView(ResultHeaderView):
     """Presentation view of an artifacts prune pass."""
-
-    model_config = {"extra": "forbid", "strict": True}
 
     disabled: bool
     dry_run: bool
@@ -48,4 +44,13 @@ class ArtifactsPruneView(BaseModel):
     items: list[PrunedArtifact] = Field(default_factory=list)
     pruned_count: int = 0
     failed_count: int = 0
-    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
+
+
+class ArtifactDownloadView(ResultHeaderView):
+    """Presentation view of `dovo artifacts download`: the header, then the downloaded revision."""
+
+    session_id: str = ""
+    name: str = ""
+    dest: str = ""
+    revision: int = 0
+    file_count: int = 0

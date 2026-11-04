@@ -97,6 +97,12 @@ class SessionDiffCliIntegrationTests:
         assert json.loads(result.stdout) == {
             "event_type": "DiffResult",
             "payload": {
+                "ok": True,
+                "error_code": None,
+                "errors": [],
+                "warnings": [],
+                "remediations": [],
+                "diagnostics": [],
                 "session_id": "sess-diff-1",
                 "artifact_path": str(patch_path),
                 "relative_path": str(patch_path),
@@ -106,11 +112,6 @@ class SessionDiffCliIntegrationTests:
                 "total_lines": 7,
                 "truncated": False,
                 "truncated_lines": 0,
-                "errors": [],
-                "warnings": [],
-                "remediations": [],
-                "error_code": None,
-                "diagnostics": [],
             },
         }
 

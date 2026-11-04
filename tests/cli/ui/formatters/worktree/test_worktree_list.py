@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_list import WorktreeListFormatter
+from dovo.cli.ui.formatters.worktree.worktree_views import WorktreeListView
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.core.db import WorktreeRecord, WorktreeStatus
@@ -30,13 +31,15 @@ _RECORD = WorktreeRecord(
     updated_at="2026-08-31T20:00:00Z",
 )
 
-WITH_WORKTREES = FormatterCase.identity(
+WITH_WORKTREES = FormatterCase(
     data=WorktreeListResult(worktrees=[_RECORD]),
+    view=WorktreeListView(ok=True, worktrees=[_RECORD]),
     render_expectations=[_RECORD.id, "list-worktree", _RECORD.branch_name],
 )
 
-EMPTY_WORKTREES = FormatterCase.identity(
+EMPTY_WORKTREES = FormatterCase(
     data=WorktreeListResult(worktrees=[]),
+    view=WorktreeListView(ok=True, worktrees=[]),
     render_expectations=["No worktrees found."],
 )
 
@@ -46,8 +49,14 @@ _RECORD_LOG = DiagnosticRecord(
     level=DiagnosticLevel.ERROR,
 )
 
-INTERNAL_ERROR = FormatterCase.identity(
+INTERNAL_ERROR = FormatterCase(
     data=WorktreeListResult(
+        error_code=ErrorCode.INTERNAL_ERROR,
+        errors=["Unexpected error during worktree.list: database is locked"],
+        diagnostics=[_RECORD_LOG],
+    ),
+    view=WorktreeListView(
+        ok=False,
         error_code=ErrorCode.INTERNAL_ERROR,
         errors=["Unexpected error during worktree.list: database is locked"],
         diagnostics=[_RECORD_LOG],
@@ -68,6 +77,12 @@ WORKTREE_LIST_PAYLOAD_CASES = [
     pytest.param(
         WITH_WORKTREES,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "worktrees": [
                 {
                     "id": "dovo_list1234",
@@ -81,23 +96,19 @@ WORKTREE_LIST_PAYLOAD_CASES = [
                     "updated_at": "2026-08-31T20:00:00Z",
                 }
             ],
-            "warnings": [],
-            "errors": [],
-            "error_code": None,
-            "remediations": [],
-            "diagnostics": [],
         },
         id="with_worktrees",
     ),
     pytest.param(
         EMPTY_WORKTREES,
         {
-            "worktrees": [],
-            "warnings": [],
-            "errors": [],
+            "ok": True,
             "error_code": None,
+            "errors": [],
+            "warnings": [],
             "remediations": [],
             "diagnostics": [],
+            "worktrees": [],
         },
         id="empty_worktrees",
     ),
@@ -110,13 +121,13 @@ class WorktreeListFormatterTests:
     @pytest.mark.parametrize(("case", "expected_payload"), WORKTREE_LIST_PAYLOAD_CASES)
     def test_json_payload_matches_published_shape(
         self,
-        case: FormatterCase[WorktreeListResult, WorktreeListResult],
+        case: FormatterCase[WorktreeListResult, WorktreeListView],
         expected_payload: dict[str, Any],
     ) -> None:
         assert_json_payload_matches_published_shape(WorktreeListFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", WORKTREE_LIST_CASES)
     def test_rich_render_shows_every_view_value(
-        self, case: FormatterCase[WorktreeListResult, WorktreeListResult]
+        self, case: FormatterCase[WorktreeListResult, WorktreeListView]
     ) -> None:
         assert_rich_render_shows_every_view_value(WorktreeListFormatter, case.data, case.render_expectations)

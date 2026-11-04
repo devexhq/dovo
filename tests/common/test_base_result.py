@@ -119,3 +119,26 @@ class RemediationModelTests:
     def test_dumps_both_keys_with_null_command(self) -> None:
         """Dump Remediation(message="Check it") to {"message": "Check it", "command": None}."""
         assert Remediation(message="Check it").model_dump(mode="json") == {"message": "Check it", "command": None}
+
+
+class BaseResultOkTests:
+    """Unit tests pinning BaseResult.ok as the absence of an error_code."""
+
+    @pytest.mark.parametrize(
+        ("fields", "expected"),
+        [
+            pytest.param({}, True, id="success"),
+            pytest.param({"errors": ["boom"], "error_code": ErrorCode.GIT_FAILED}, False, id="failed"),
+            pytest.param(
+                {"warnings": ["careful"], "remediations": [Remediation(message="Retry")]},
+                True,
+                id="success_with_warnings_and_remediations",
+            ),
+        ],
+    )
+    def test_ok_is_true_exactly_when_error_code_is_null(self, fields: dict[str, object], expected: bool) -> None:
+        """Return ok == (error_code is None) for success, failed and success-with-warnings results."""
+        result = BaseResult.model_validate(fields)
+
+        assert result.ok is expected
+        assert (result.error_code is None) is expected

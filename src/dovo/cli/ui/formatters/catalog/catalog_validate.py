@@ -11,6 +11,7 @@ from rich.text import Text
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import CatalogValidateView
 from dovo.cli.ui.formatters.common import with_diagnostics
+from dovo.cli.ui.formatters.header import header_fields
 from dovo.common.models import Remediation
 from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogValidateResult
@@ -91,16 +92,12 @@ class CatalogValidateFormatter(ComponentFormatter[CatalogValidateResult, Catalog
             CatalogValidateView with flat, JSON-faithful fields.
         """
         return CatalogValidateView(
+            **header_fields(data),
             valid=data.valid,
             status_label="PASSED" if data.ok else "FAILED",
             target=data.target,
             resolved_path=data.resolved_path.as_posix() if data.resolved_path is not None else None,
             item_type=enum_value(data.item_type),
-            error_code=data.error_code,
-            errors=list(data.errors),
-            warnings=list(data.warnings),
-            remediations=list(data.remediations),
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: CatalogValidateResult) -> RenderableType:

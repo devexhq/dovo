@@ -23,6 +23,7 @@ WITH_PRUNED_ITEM = FormatterCase(
         items=[PrunedArtifact(session_id="wf_abc123", name="dist-packages", revision=2, pruned=True)],
     ),
     view=ArtifactsPruneView(
+        ok=True,
         disabled=False,
         dry_run=False,
         force=False,
@@ -35,7 +36,9 @@ WITH_PRUNED_ITEM = FormatterCase(
 
 DISABLED = FormatterCase(
     data=ArtifactsPruneResult(disabled=True, dry_run=False, force=False, items=[]),
-    view=ArtifactsPruneView(disabled=True, dry_run=False, force=False, items=[], pruned_count=0, failed_count=0),
+    view=ArtifactsPruneView(
+        ok=True, disabled=True, dry_run=False, force=False, items=[], pruned_count=0, failed_count=0
+    ),
     render_expectations=["Artifact pruning is disabled; pass --force to override."],
 )
 
@@ -43,6 +46,12 @@ ARTIFACTS_PRUNE_PAYLOAD_CASES = [
     pytest.param(
         WITH_PRUNED_ITEM,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "disabled": False,
             "dry_run": False,
             "force": False,
@@ -51,20 +60,24 @@ ARTIFACTS_PRUNE_PAYLOAD_CASES = [
             ],
             "pruned_count": 1,
             "failed_count": 0,
-            "diagnostics": [],
         },
         id="with_pruned_item",
     ),
     pytest.param(
         DISABLED,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "disabled": True,
             "dry_run": False,
             "force": False,
             "items": [],
             "pruned_count": 0,
             "failed_count": 0,
-            "diagnostics": [],
         },
         id="disabled",
     ),

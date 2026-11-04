@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.catalog.catalog_delete import CatalogDeleteFormatter
+from dovo.cli.ui.formatters.catalog.catalog_views import CatalogDeleteView
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.catalog.models import (
@@ -44,22 +45,25 @@ _STEP_RECORD = CatalogRecord(
     tier=CatalogTier.REPO,
 )
 
-DELETED = FormatterCase.identity(
+DELETED = FormatterCase(
     data=CatalogDeleteResult(item_type=CatalogItemType.BLUEPRINT, item=_RECORD, deleted=True, cancelled=False),
+    view=CatalogDeleteView(ok=True, item_type=CatalogItemType.BLUEPRINT, item=_RECORD, deleted=True, cancelled=False),
     render_expectations=["Deleted catalog blueprint", _RECORD.sha, str(_RECORD.path)],
 )
 
-DELETED_STEP = FormatterCase.identity(
+DELETED_STEP = FormatterCase(
     data=CatalogDeleteResult(item_type=CatalogItemType.STEP, item=_STEP_RECORD, deleted=True, cancelled=False),
+    view=CatalogDeleteView(ok=True, item_type=CatalogItemType.STEP, item=_STEP_RECORD, deleted=True, cancelled=False),
     render_expectations=["Deleted catalog step", _STEP_RECORD.sha, str(_STEP_RECORD.path)],
 )
 
-CANCELLED = FormatterCase.identity(
+CANCELLED = FormatterCase(
     data=CatalogDeleteResult(item_type=CatalogItemType.BLUEPRINT, item=_RECORD, cancelled=True),
+    view=CatalogDeleteView(ok=True, item_type=CatalogItemType.BLUEPRINT, item=_RECORD, cancelled=True),
     render_expectations=["Deletion cancelled."],
 )
 
-DELETE_ERROR = FormatterCase.identity(
+DELETE_ERROR = FormatterCase(
     data=CatalogDeleteResult(
         item_type=CatalogItemType.BLUEPRINT,
         error_code=ErrorCode.CATALOG_NOT_FOUND,
@@ -70,6 +74,18 @@ DELETE_ERROR = FormatterCase.identity(
         remediations=[
             Remediation(message="Run 'dovo blueprint list' to inspect available items", command="dovo blueprint list")
         ],
+    ),
+    view=CatalogDeleteView(
+        ok=False,
+        error_code=ErrorCode.CATALOG_NOT_FOUND,
+        errors=["Catalog blueprint 'missing' not found."],
+        remediations=[
+            Remediation(message="Run 'dovo blueprint list' to inspect available items", command="dovo blueprint list")
+        ],
+        item_type=CatalogItemType.BLUEPRINT,
+        item=None,
+        deleted=False,
+        cancelled=False,
     ),
     render_expectations=[
         "Catalog blueprint 'missing' not found.",
@@ -89,11 +105,12 @@ CATALOG_DELETE_PAYLOAD_CASES = [
     pytest.param(
         DELETED,
         {
+            "ok": True,
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],
             "diagnostics": [],
-            "error_code": None,
             "item_type": "blueprint",
             "item": {
                 "key": "test-blueprint",
@@ -113,13 +130,14 @@ CATALOG_DELETE_PAYLOAD_CASES = [
     pytest.param(
         DELETE_ERROR,
         {
+            "ok": False,
+            "error_code": "CATALOG_NOT_FOUND",
             "errors": ["Catalog blueprint 'missing' not found."],
             "warnings": [],
             "remediations": [
                 {"message": "Run 'dovo blueprint list' to inspect available items", "command": "dovo blueprint list"}
             ],
             "diagnostics": [],
-            "error_code": "CATALOG_NOT_FOUND",
             "item_type": "blueprint",
             "item": None,
             "deleted": False,
@@ -130,11 +148,12 @@ CATALOG_DELETE_PAYLOAD_CASES = [
     pytest.param(
         CANCELLED,
         {
+            "ok": True,
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],
             "diagnostics": [],
-            "error_code": None,
             "item_type": "blueprint",
             "item": {
                 "key": "test-blueprint",
@@ -160,13 +179,13 @@ class CatalogDeleteFormatterTests:
     @pytest.mark.parametrize(("case", "expected_payload"), CATALOG_DELETE_PAYLOAD_CASES)
     def test_json_payload_matches_published_shape(
         self,
-        case: FormatterCase[CatalogDeleteResult, CatalogDeleteResult],
+        case: FormatterCase[CatalogDeleteResult, CatalogDeleteView],
         expected_payload: dict[str, Any],
     ) -> None:
         assert_json_payload_matches_published_shape(CatalogDeleteFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", CATALOG_DELETE_CASES)
     def test_rich_render_shows_every_view_value(
-        self, case: FormatterCase[CatalogDeleteResult, CatalogDeleteResult]
+        self, case: FormatterCase[CatalogDeleteResult, CatalogDeleteView]
     ) -> None:
         assert_rich_render_shows_every_view_value(CatalogDeleteFormatter, case.data, case.render_expectations)

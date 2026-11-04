@@ -51,7 +51,8 @@ def _make_pruned_item_view(**overrides: object) -> PrunedItemView:
 def _make_prune_view(**overrides: object) -> WorktreePruneView:
     """Construct a WorktreePruneView with all fields explicitly specified."""
     defaults: dict[str, object] = {
-        "status": WorktreePruneStatus.OK,
+        "ok": True,
+        "status": WorktreePruneStatus.NOTHING_TO_PRUNE,
         "dry_run": False,
         "force": False,
         "items": [],
@@ -69,7 +70,7 @@ def _make_prune_view(**overrides: object) -> WorktreePruneView:
 
 EMPTY_PRUNE = FormatterCase(
     data=WorktreePruneResult(
-        status=WorktreePruneStatus.OK,
+        status=WorktreePruneStatus.NOTHING_TO_PRUNE,
         dry_run=False,
         force=False,
         items=[],
@@ -107,6 +108,7 @@ PRUNED_MULTIPLE_ITEMS = FormatterCase(
         errors=["Ref lock failure"],
     ),
     view=_make_prune_view(
+        ok=False,
         status=WorktreePruneStatus.PARTIAL_FAILURE,
         force=True,
         items=[
@@ -143,7 +145,7 @@ PRUNED_MULTIPLE_ITEMS = FormatterCase(
 
 DRY_RUN_PRUNE = FormatterCase(
     data=WorktreePruneResult(
-        status=WorktreePruneStatus.OK,
+        status=WorktreePruneStatus.PRUNED,
         dry_run=True,
         force=False,
         items=[
@@ -156,6 +158,7 @@ DRY_RUN_PRUNE = FormatterCase(
         ],
     ),
     view=_make_prune_view(
+        status=WorktreePruneStatus.PRUNED,
         dry_run=True,
         items=[
             _make_pruned_item_view(
@@ -174,7 +177,7 @@ DRY_RUN_PRUNE = FormatterCase(
 
 WITH_WARNINGS_AND_REMEDIATIONS = FormatterCase(
     data=WorktreePruneResult(
-        status=WorktreePruneStatus.OK,
+        status=WorktreePruneStatus.NOTHING_TO_PRUNE,
         dry_run=False,
         force=False,
         warnings=["Warning message"],
@@ -195,7 +198,7 @@ DIAGNOSTIC_RECORD: Final[DiagnosticRecord] = DiagnosticRecord(
 
 WITH_DIAGNOSTICS = FormatterCase(
     data=WorktreePruneResult(
-        status=WorktreePruneStatus.OK,
+        status=WorktreePruneStatus.NOTHING_TO_PRUNE,
         dry_run=False,
         force=False,
         diagnostics=[DIAGNOSTIC_RECORD],
@@ -213,6 +216,7 @@ STOPPED = FormatterCase(
         errors=["Git execution failed ('git worktree list'): fatal error"],
     ),
     view=_make_prune_view(
+        ok=False,
         status=None,
         error_code=ErrorCode.GIT_FAILED,
         errors=["Git execution failed ('git worktree list'): fatal error"],
@@ -233,24 +237,31 @@ PRUNE_PAYLOAD_CASES = [
     pytest.param(
         EMPTY_PRUNE,
         {
-            "status": "ok",
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
+            "status": "nothing_to_prune",
             "dry_run": False,
             "force": False,
             "items": [],
             "pruned_count": 0,
             "skipped_count": 0,
             "failed_count": 0,
-            "error_code": None,
-            "errors": [],
-            "warnings": [],
-            "remediations": [],
-            "diagnostics": [],
         },
         id="empty_prune",
     ),
     pytest.param(
         PRUNED_MULTIPLE_ITEMS,
         {
+            "ok": False,
+            "error_code": "WORKTREE_PRUNE_FAILED",
+            "errors": ["Ref lock failure"],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "status": "partial_failure",
             "dry_run": False,
             "force": True,
@@ -295,24 +306,13 @@ PRUNE_PAYLOAD_CASES = [
             "pruned_count": 1,
             "skipped_count": 1,
             "failed_count": 1,
-            "error_code": "WORKTREE_PRUNE_FAILED",
-            "errors": ["Ref lock failure"],
-            "warnings": [],
-            "remediations": [],
-            "diagnostics": [],
         },
         id="pruned_multiple_items",
     ),
     pytest.param(
         WITH_DIAGNOSTICS,
         {
-            "status": "ok",
-            "dry_run": False,
-            "force": False,
-            "items": [],
-            "pruned_count": 0,
-            "skipped_count": 0,
-            "failed_count": 0,
+            "ok": True,
             "error_code": None,
             "errors": [],
             "warnings": [],
@@ -323,12 +323,25 @@ PRUNE_PAYLOAD_CASES = [
                     "log_path": "/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json",
                 }
             ],
+            "status": "nothing_to_prune",
+            "dry_run": False,
+            "force": False,
+            "items": [],
+            "pruned_count": 0,
+            "skipped_count": 0,
+            "failed_count": 0,
         },
         id="with_diagnostics",
     ),
     pytest.param(
         STOPPED,
         {
+            "ok": False,
+            "error_code": "GIT_FAILED",
+            "errors": ["Git execution failed ('git worktree list'): fatal error"],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "status": None,
             "dry_run": False,
             "force": False,
@@ -336,13 +349,21 @@ PRUNE_PAYLOAD_CASES = [
             "pruned_count": 0,
             "skipped_count": 0,
             "failed_count": 0,
-            "error_code": "GIT_FAILED",
-            "errors": ["Git execution failed ('git worktree list'): fatal error"],
-            "warnings": [],
-            "remediations": [],
-            "diagnostics": [],
         },
         id="stopped",
+    ),
+]
+
+
+PRUNE_STATUS_CASES = [
+    pytest.param(WorktreePruneStatus.PRUNED, None, [], "pruned", id="pruned"),
+    pytest.param(WorktreePruneStatus.NOTHING_TO_PRUNE, None, [], "nothing_to_prune", id="nothing_to_prune"),
+    pytest.param(
+        WorktreePruneStatus.PARTIAL_FAILURE,
+        ErrorCode.WORKTREE_PRUNE_FAILED,
+        ["Ref lock failure"],
+        "partial_failure",
+        id="partial_failure",
     ),
 ]
 
@@ -367,3 +388,18 @@ class WorktreePruneFormatterTests:
         self, case: FormatterCase[WorktreePruneResult, WorktreePruneView]
     ) -> None:
         assert_rich_render_shows_every_view_value(WorktreePruneFormatter, case.data, case.render_expectations)
+
+    @pytest.mark.parametrize(("status", "error_code", "errors", "expected"), PRUNE_STATUS_CASES)
+    def test_json_status_serializes_as_each_published_value(
+        self,
+        status: WorktreePruneStatus,
+        error_code: ErrorCode | None,
+        errors: list[str],
+        expected: str,
+    ) -> None:
+        """Serialize each WorktreePruneStatus as its published string next to the header ok flag."""
+        result = WorktreePruneResult(status=status, dry_run=False, force=False, error_code=error_code, errors=errors)
+        payload = WorktreePruneFormatter().to_json_serializable(result)
+        assert payload["status"] == expected
+        assert payload["ok"] is (error_code is None)
+        assert payload["error_code"] == (error_code.value if error_code else None)

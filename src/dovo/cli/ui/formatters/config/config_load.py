@@ -7,19 +7,26 @@ from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
+from dovo.cli.ui.formatters.config.config_views import ConfigLoadView
+from dovo.cli.ui.formatters.header import header_fields
 from dovo.core.config.loader import ConfigLoadResult
 from dovo.core.config.serialize import as_json
 
 
-class ConfigLoadFormatter(ComponentFormatter[ConfigLoadResult]):
+class ConfigLoadFormatter(ComponentFormatter[ConfigLoadResult, ConfigLoadView]):
     """Formatter for configuration load and validation results."""
+
+    def transform(self, data: ConfigLoadResult) -> ConfigLoadView:
+        """Derive the view: the result header, then the raw and typed config."""
+        return ConfigLoadView(**header_fields(data), config_path=data.config_path, raw=data.raw, config=data.config)
 
     def to_rich(self, data: ConfigLoadResult) -> RenderableType:
         """Render configuration source path header and normalized JSON body, or error panel."""
-        if data.ok and data.config is not None:
-            payload = f"Config: {data.config_path.as_posix()}\nStatus: valid\n\n{as_json(data.config)}"
+        view = self.transform(data)
+        if view.ok and view.config is not None:
+            payload = f"Config: {view.config_path.as_posix()}\nStatus: valid\n\n{as_json(view.config)}"
             return Text(payload)
 
-        fallback = f"Configuration failed to load ({data.error_code})."
-        panel = build_error_panel("Config Error", data.errors, fallback, remediations=data.remediations)
-        return with_diagnostics(panel, data.diagnostics)
+        fallback = f"Configuration failed to load ({view.error_code})."
+        panel = build_error_panel("Config Error", view.errors, fallback, remediations=view.remediations)
+        return with_diagnostics(panel, view.diagnostics)

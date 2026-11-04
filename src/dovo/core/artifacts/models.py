@@ -58,11 +58,6 @@ class ArtifactUploadResult(BaseResult):
     file_count: int = 0
     expires_at: str | None = None
 
-    @property
-    def ok(self) -> bool:
-        """True when error_code is None: the artifact bundle was published or the unchanged latest revision kept."""
-        return self.error_code is None
-
 
 class ArtifactDownloadResult(BaseResult):
     """Result of downloading and verifying an artifact bundle."""
@@ -73,32 +68,17 @@ class ArtifactDownloadResult(BaseResult):
     revision: int = 0
     file_count: int = 0
 
-    @property
-    def ok(self) -> bool:
-        """True when error_code is None: the artifact bundle was extracted and checksum-verified."""
-        return self.error_code is None
-
 
 class ArtifactReferencesResult(BaseResult):
     """Resolved {artifact name: {field: value}} values for the latest revision of each requested artifact."""
 
     references: dict[str, dict[str, str]] = Field(default_factory=dict)
 
-    @property
-    def ok(self) -> bool:
-        """True when error_code is None: every requested field was resolved (unknown artifacts are simply absent)."""
-        return self.error_code is None
-
 
 class ArtifactsListResult(BaseResult):
     """Result of listing artifacts for the current project."""
 
     artifacts: list[ArtifactRecord] = Field(default_factory=list)
-
-    @property
-    def ok(self) -> bool:
-        """True when error_code is None (including an empty listing)."""
-        return self.error_code is None
 
 
 class PrunedArtifact(BaseModel):
@@ -120,8 +100,3 @@ class ArtifactsPruneResult(BaseResult):
     dry_run: bool = False
     force: bool = False
     items: list[PrunedArtifact] = Field(default_factory=list)
-
-    @property
-    def ok(self) -> bool:
-        """True when error_code is None, including a disabled no-op and items that failed to prune."""
-        return self.error_code is None
