@@ -96,10 +96,6 @@ class InitCliTests:
         assert not (git_project / ".dovo" / "project.json").exists()
         assert not (git_project / ".dovo" / "config.json").exists()
 
-    @pytest.mark.xfail(
-        reason="src/dovo/cli/cli.py prints the Rich 'Workspace Not Initialized' panel before --format json applies",
-        strict=True,
-    )
     def test_uninitialized_git_project_status_json_exits_one_with_json_envelope(
         self, run_dovo: DovoRunner, git_project: Path
     ) -> None:

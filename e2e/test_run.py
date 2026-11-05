@@ -344,7 +344,7 @@ class RunInterruptCliTests:
         tmp_path: Path,
         signum: int,
     ) -> None:
-        """Signal `dovo run` once its step wrote its PGID, then see returncode -signum, "Blueprint Run Cancelled" in stdout, `session show` status cancelled, and no process in that group within 5 s."""
+        """Signal `dovo run` once its step wrote its PGID, then see returncode -signum, "Run Cancelled" in stdout, `session show` status cancelled, and no process in that group within 5 s."""
         pid_file = tmp_path / "step.pid"
         write_blueprint(
             initialized_project,
@@ -367,7 +367,7 @@ steps:
         stdout, _ = process.communicate(timeout=15)
 
         assert process.returncode == -signum
-        assert "Blueprint Run Cancelled" in stdout
+        assert "Run Cancelled" in stdout
         assert wait_until(lambda: not is_process_group_alive(pgid), timeout=5.0)
         show = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         payload = parse_json(show.stdout).get("payload", {})
