@@ -150,7 +150,8 @@ class ConfigSetCliIntegrationTests:
 
         assert res.exit_code == 0
         assert json.loads(res.stdout) == {
-            "event_type": "ConfigSetResult",
+            "version": 1,
+            "event_type": "config.set",
             "payload": {
                 "ok": True,
                 "error_code": None,

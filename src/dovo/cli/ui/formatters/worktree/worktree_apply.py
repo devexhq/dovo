@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group, RenderableType
 from rich.text import Text
 
@@ -39,6 +41,8 @@ def _format_apply_success(view: WorktreeApplyView) -> Group:
 
 class WorktreeApplyFormatter(ComponentFormatter[WorktreeApplyResult, WorktreeApplyView]):
     """Formatter for worktree apply command results."""
+
+    event_type: ClassVar[str] = "worktree.apply"
 
     def transform(self, data: WorktreeApplyResult) -> WorktreeApplyView:
         """Derive the view: the result header, then what the apply changed."""

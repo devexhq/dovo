@@ -46,7 +46,8 @@ class ConfigShowCliIntegrationTests:
         assert res.exit_code == 0
         raw_payload = json.loads(config_path.read_text())
         assert json.loads(res.stdout) == {
-            "event_type": "ConfigLoadResult",
+            "version": 1,
+            "event_type": "config.show",
             "payload": {
                 "ok": True,
                 "error_code": None,

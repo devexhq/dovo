@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
+from typing import ClassVar
 
 from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import CatalogValidateView
+from dovo.cli.ui.formatters.catalog.common import CatalogFormatter
 from dovo.cli.ui.formatters.common import with_diagnostics
 from dovo.cli.ui.formatters.header import header_fields
 from dovo.common.models import Remediation
 from dovo.common.utils import enum_value
-from dovo.core.catalog.models import CatalogValidateResult
+from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult
 
 _CODE_SUFFIX_RE = re.compile(r"\s*\(([A-Z][A-Z0-9_]*)\)\.?\s*$")
 
@@ -79,8 +81,13 @@ def _render(view: CatalogValidateView) -> RenderableType:
     return Group(*renderables)
 
 
-class CatalogValidateFormatter(ComponentFormatter[CatalogValidateResult, CatalogValidateView]):
+class CatalogValidateFormatter(CatalogFormatter[CatalogValidateResult, CatalogValidateView]):
     """Formatter for catalog validate command results."""
+
+    event_types: ClassVar[Mapping[CatalogItemType, str]] = {
+        CatalogItemType.BLUEPRINT: "blueprint.validate",
+        CatalogItemType.STEP: "step.validate",
+    }
 
     def transform(self, data: CatalogValidateResult) -> CatalogValidateView:
         """Derive the presentation-ready view from CatalogValidateResult.

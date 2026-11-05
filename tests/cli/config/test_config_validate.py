@@ -65,7 +65,8 @@ class ConfigValidateCliIntegrationTests:
         assert res.exit_code == 0
         raw_payload = json.loads(config_path.read_text())
         assert json.loads(res.stdout) == {
-            "event_type": "ConfigValidationResult",
+            "version": 1,
+            "event_type": "config.validate",
             "payload": {
                 "ok": True,
                 "error_code": None,
@@ -92,7 +93,8 @@ class ConfigValidateCliIntegrationTests:
 
         assert res.exit_code == 1
         assert json.loads(res.stdout) == {
-            "event_type": "ConfigValidationResult",
+            "version": 1,
+            "event_type": "config.validate",
             "payload": {
                 "ok": False,
                 "error_code": "CONFIG_NOT_FOUND",

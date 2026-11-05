@@ -14,6 +14,7 @@ from dovo.common.redact import SecretRedactor
 from dovo.core.db import DovoDb, SessionStatus
 from dovo.engine.writer import get_session_dir, write_session_diff
 from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
+from tests.harness.run_result import json_events
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 _PATCH_TEXT = (
@@ -95,7 +96,8 @@ class SessionDiffCliIntegrationTests:
 
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {
-            "event_type": "DiffResult",
+            "version": 1,
+            "event_type": "session.diff",
             "payload": {
                 "ok": True,
                 "error_code": None,
@@ -114,6 +116,14 @@ class SessionDiffCliIntegrationTests:
                 "truncated_lines": 0,
             },
         }
+
+    def test_diff_shortcut_emits_the_session_diff_event(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        _write_session_diff(cli_workspace, "sess-diff-1")
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "diff", "sess-diff-1", "--format", "json"])
+
+        assert result.exit_code == 0
+        assert [event["event_type"] for event in json_events(result.stdout)] == ["session.diff"]
 
     def test_diff_cli_full_flag_binds_into_json_payload(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         _write_session_diff(cli_workspace, "sess-diff-1")

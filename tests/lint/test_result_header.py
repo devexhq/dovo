@@ -41,13 +41,18 @@ def _command_formatters() -> list[CommandFormatter]:
     return sorted(pairs, key=lambda pair: pair[0].__name__)
 
 
+def _is_formatter_base(base: object) -> bool:
+    """Return whether base is a parameterized ComponentFormatter, or a parameterized subclass of it."""
+    origin = get_origin(base)
+    return isinstance(origin, type) and issubclass(origin, ComponentFormatter)
+
+
 def _declared_view(formatter_cls: type) -> type | None:
-    """Return the view type formatter_cls declares as its ComponentFormatter[T, V] argument, or None."""
+    """Return the view type formatter_cls declares as the V argument of its ComponentFormatter[T, V] base, or None."""
     for klass in formatter_cls.__mro__:
-        for base in getattr(klass, "__orig_bases__", ()):
-            if get_origin(base) is ComponentFormatter:
-                args = get_args(base)
-                return args[1] if len(args) == 2 else None
+        for base in filter(_is_formatter_base, getattr(klass, "__orig_bases__", ())):
+            args = get_args(base)
+            return args[1] if len(args) == 2 else None
     return None
 
 

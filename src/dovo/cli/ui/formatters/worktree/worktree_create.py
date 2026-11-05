@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 from rich.console import Group, RenderableType
 from rich.text import Text
@@ -17,6 +18,8 @@ from dovo.core.worktree.models import WorktreeCreateResult
 
 class WorktreeCreateFormatter(ComponentFormatter[WorktreeCreateResult, WorktreeCreateView]):
     """Formatter for worktree creation command results."""
+
+    event_type: ClassVar[str] = "worktree.create"
 
     def transform(self, data: WorktreeCreateResult) -> WorktreeCreateView:
         """Derive the view: the result header, then the created worktree session."""

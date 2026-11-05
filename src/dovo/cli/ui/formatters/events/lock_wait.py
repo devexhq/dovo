@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 from rich.panel import Panel
 
@@ -12,6 +13,8 @@ from dovo.cli.ui.formatters.base import ComponentFormatter
 
 class LockWaitFormatter(ComponentFormatter[LockWaitEvent]):
     """Formatter for lock waiting notification panels."""
+
+    event_type: ClassVar[str] = "lock.wait"
 
     def to_rich(self, data: LockWaitEvent) -> Panel:
         """Render lock waiting notification panel with yellow border."""

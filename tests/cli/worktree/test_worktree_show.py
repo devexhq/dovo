@@ -92,7 +92,7 @@ class WorktreeShowCliIntegrationTests:
 
         assert result.exit_code == 0
         event = json.loads(result.stdout)
-        assert event["event_type"] == "WorktreeShowResult"
+        assert event["event_type"] == "worktree.show"
         assert event["payload"]["error_code"] is None
         assert event["payload"]["worktree"]["id"] == session.session_id
 

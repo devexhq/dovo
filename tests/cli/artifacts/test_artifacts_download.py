@@ -122,7 +122,8 @@ class ArtifactsDownloadCliIntegrationTests:
 
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {
-            "event_type": "ArtifactDownloadResult",
+            "version": 1,
+            "event_type": "artifacts.download",
             "payload": {
                 "ok": True,
                 "error_code": None,
@@ -161,7 +162,8 @@ class ArtifactsDownloadCliIntegrationTests:
 
         assert result.exit_code == 1
         assert json.loads(result.stdout) == {
-            "event_type": "ArtifactDownloadResult",
+            "version": 1,
+            "event_type": "artifacts.download",
             "payload": {
                 "ok": False,
                 "error_code": "ARTIFACT_NOT_FOUND",

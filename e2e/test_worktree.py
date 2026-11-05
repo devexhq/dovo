@@ -21,7 +21,7 @@ class WorktreeCliTests:
         result = run_dovo(["worktree", "create", "--name", "first-wt", "--format", "json"], cwd=initialized_project)
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
-        assert envelope.get("event_type") == "WorktreeCreateResult"
+        assert envelope.get("event_type") == "worktree.create"
         payload = envelope.get("payload", {})
         session = payload.get("session", {})
         session_id = session.get("session_id")
@@ -114,7 +114,7 @@ class WorktreeCliTests:
         result = run_dovo(["worktree", "show", session_id, "--format", "json"], cwd=initialized_project)
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
-        assert envelope.get("event_type") == "WorktreeShowResult"
+        assert envelope.get("event_type") == "worktree.show"
         payload = envelope.get("payload", {})
         assert payload.get("disk_present") is True
         worktree = payload.get("worktree", {})
@@ -133,7 +133,7 @@ class WorktreeCliTests:
         result = run_dovo(["worktree", "diff", session_id, "--format", "json"], cwd=initialized_project)
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
-        assert envelope.get("event_type") == "WorktreeDiffResult"
+        assert envelope.get("event_type") == "worktree.diff"
         payload = envelope.get("payload", {})
         assert "diff_file.py" in payload.get("files_changed", [])
         assert "diff_file.py" in payload.get("diff_text", "")
@@ -163,7 +163,7 @@ class WorktreeCliTests:
         result = run_dovo(["worktree", "apply", session_id, "--format", "json"], cwd=initialized_project)
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
-        assert envelope.get("event_type") == "WorktreeApplyResult"
+        assert envelope.get("event_type") == "worktree.apply"
         payload = envelope.get("payload", {})
         assert payload.get("strategy") == "patch"
         assert "patch_result.txt" in payload.get("touched_files", [])

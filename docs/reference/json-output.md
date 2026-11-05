@@ -4,13 +4,48 @@ Every `dovo` command that takes `--format json` writes its output as JSON lines 
 
 ## Event lines
 
-Each line is one JSON object with two keys:
+Each line is one JSON object with exactly three keys, in this order:
 
 ```json
-{"event_type": "<name>", "payload": {}}
+{"version": 1, "event_type": "<name>", "payload": {}}
 ```
 
-`event_type` names the event, such as `BlueprintRunResult`, `StepStartEvent` or `error`, and `payload` holds its fields. A command can write progress events before its result; the command result is its last line.
+| Key | Value |
+| --- | --- |
+| `version` | The integer `1`. It changes only when the shape of the line itself changes. |
+| `event_type` | The event's name, from the table below. |
+| `payload` | The event's fields. |
+
+A command can write progress events before its result; the command result is its last line.
+
+### Event names
+
+An event name is lowercase words joined by dots, matching `^[a-z][a-z_]*(\.[a-z][a-z_]*)*$`, and each name belongs to exactly one kind of event. A command result is named after the command path. A shortcut writes the same name as its long form: `dovo diff`, `dovo logs` and `dovo resume` write `session.diff`, `session.logs` and `run.result`, like `dovo session diff`, `dovo session logs` and `dovo session resume`.
+
+| `event_type` | Written by |
+| --- | --- |
+| `artifacts.list`, `artifacts.download`, `artifacts.prune` | `dovo artifacts list`, `download` and `prune` |
+| `blueprint.list`, `blueprint.show`, `blueprint.create`, `blueprint.delete`, `blueprint.validate` | `dovo blueprint list`, `show`, `create`, `delete` and `validate` |
+| `step.list`, `step.show`, `step.create`, `step.delete`, `step.validate` | `dovo step list`, `show`, `create`, `delete` and `validate` |
+| `config.show`, `config.validate`, `config.set`, `config.unset` | `dovo config show`, `validate`, `set` and `unset` |
+| `session.list`, `session.show`, `session.logs`, `session.diff` | `dovo session list`, `show`, `logs` and `diff` |
+| `worktree.create`, `worktree.list`, `worktree.show`, `worktree.diff`, `worktree.apply`, `worktree.delete`, `worktree.prune` | `dovo worktree create`, `list`, `show`, `diff`, `apply`, `delete` and `prune` |
+| `init` | `dovo init` |
+| `status` | `dovo status` |
+| `doctor` | `dovo doctor` |
+| `run.result` | The last line of `dovo run` and `dovo resume` (see [`dovo run`](../cli/run.md#run-result)) |
+| `run.step_start`, `run.step_done` | A step starting and finishing during `dovo run` or `dovo resume` |
+| `run.step_skipped` | A step or loop skipped by its `when` guard |
+| `run.if_branch` | The branch an `if` block chose |
+| `run.step_output` | One line of a running step's output |
+| `run.agent_progress` | One action of an agent step |
+| `run.worktree` | The run's worktree being created, activated or cleaned up |
+| `run.loop` | A loop's progress |
+| `run.prompt` | A prompt that waits for an answer |
+| `message` | A notice, such as how to answer a paused run |
+| `lock.wait` | Waiting for another `dovo` process to release the workspace lock |
+| `banner` | The welcome banner |
+| `error` | A failure no command result carries (see [The `error` event](#the-error-event)) |
 
 ## Command results
 
@@ -27,7 +62,7 @@ Every command result's payload starts with these six header keys, in this order:
 
 `errors`, `warnings`, `remediations` and `diagnostics` are always lists, never `null`, and `errors` is non-empty exactly when `error_code` is set. `warnings` and `remediations` can be non-empty when `ok` is `true`.
 
-The payload's other keys follow the header. They belong to the command and are documented on its page. Only two commands report a `status` key: `dovo status` (the workspace's health) and `dovo worktree prune` (what the run did). Every other command reports a failure only through `error_code`. Streaming events written before the result, such as `StepStartEvent`, carry no header.
+The payload's other keys follow the header. They belong to the command and are documented on its page. Only two commands report a `status` key: `dovo status` (the workspace's health) and `dovo worktree prune` (what the run did). Every other command reports a failure only through `error_code`. Streaming events written before the result, such as `run.step_start`, carry no header.
 
 ## The `error` event
 
@@ -41,7 +76,7 @@ Some failures stop a command before it produces a result. Dovo then writes one `
 The `error` event is the last line of the output and the only line written for that failure. It is written whenever `--format json` or `--format=json` appears on the command line, even when the failure happens before the subcommand's own options are read. For example, `dovo worktree list --format json` in a repository without `.dovo/project.json` prints:
 
 ```json
-{"event_type": "error", "payload": {"ok": false, "error_code": "WORKSPACE_NOT_INITIALIZED", "errors": ["Workspace is not initialized: no valid project identity at '/path/to/repo/.dovo/project.json'."], "warnings": [], "remediations": [{"message": "Run 'dovo init' to initialize the workspace.", "command": "dovo init"}], "diagnostics": []}}
+{"version": 1, "event_type": "error", "payload": {"ok": false, "error_code": "WORKSPACE_NOT_INITIALIZED", "errors": ["Workspace is not initialized: no valid project identity at '/path/to/repo/.dovo/project.json'."], "warnings": [], "remediations": [{"message": "Run 'dovo init' to initialize the workspace.", "command": "dovo init"}], "diagnostics": []}}
 ```
 
 Its payload keys always come in this order:

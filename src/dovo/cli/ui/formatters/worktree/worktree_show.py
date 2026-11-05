@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
@@ -49,6 +51,8 @@ def _format_show_rich(view: WorktreeShowView) -> RenderableType:
 
 class WorktreeShowFormatter(ComponentFormatter[WorktreeShowResult, WorktreeShowView]):
     """Formatter for worktree show command results."""
+
+    event_type: ClassVar[str] = "worktree.show"
 
     def transform(self, data: WorktreeShowResult) -> WorktreeShowView:
         """Derive the view: the result header, then the worktree and its disk state."""

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group
 from rich.text import Text
 
@@ -11,6 +13,8 @@ from dovo.cli.ui.formatters.base import ComponentFormatter
 
 class StepStartFormatter(ComponentFormatter[StepStartEvent]):
     """Formatter for step start notices."""
+
+    event_type: ClassVar[str] = "run.step_start"
 
     def to_rich(self, data: StepStartEvent) -> Group:
         """Render step start progress line after a blank line."""

@@ -104,7 +104,7 @@ class WorktreeDiffCliIntegrationTests:
 
         assert result.exit_code == 0
         event = json.loads(result.stdout)
-        assert event["event_type"] == "WorktreeDiffResult"
+        assert event["event_type"] == "worktree.diff"
         assert "status" not in event["payload"]
         assert event["payload"]["error_code"] is None
         assert event["payload"]["files_changed"] == ["target.py"]

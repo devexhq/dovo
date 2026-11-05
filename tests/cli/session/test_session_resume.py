@@ -24,7 +24,7 @@ from tests.harness import FakeAgentRunner
 from tests.harness.catalog import write_runnable_step
 from tests.harness.diagnostic_log import details_line, diagnostic_record, unwrapped
 from tests.harness.fakes import fixed_clock, fixed_new_id
-from tests.harness.run_result import REPLACED_EVENTS, RUN_RESULT, json_events, run_result_payload
+from tests.harness.run_result import RUN_RESULT, json_events, run_result_payload
 from tests.harness.sessions import seed_crashed_session, seed_paused_ask_session, seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -153,7 +153,6 @@ class SessionResumeCliIntegrationTests:
             "completed",
             None,
         )
-        assert REPLACED_EVENTS.isdisjoint(event["event_type"] for event in json_events(result.stdout))
 
     def test_resume_cli_completes_after_source_catalog_blueprint_deleted(
         self, cli_runner: CliRunner, cli_workspace: Path
@@ -235,7 +234,7 @@ class SessionResumeValidationCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "resume", "bad-snap", "--format", "json"])
 
         assert result.exit_code == 1
-        assert [event["event_type"] for event in json_events(result.stdout)] == ["MessageEvent", RUN_RESULT]
+        assert [event["event_type"] for event in json_events(result.stdout)] == ["message", RUN_RESULT]
         payload = run_result_payload(result.stdout)
         assert (payload["ok"], payload["error_code"], payload["errors"]) == (
             False,
@@ -681,7 +680,8 @@ class SessionResumeResultCliTests:
             "approve",
         )
         assert json_events(result.stdout)[-2] == {
-            "event_type": "MessageEvent",
+            "version": 1,
+            "event_type": "message",
             "payload": {
                 "message": (
                     f"Run paused at prompt 'approve'. Answer with 'dovo resume {session_id} --answer approve=<value>'."

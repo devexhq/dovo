@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Console, Group, RenderableType
 from rich.panel import Panel
 from rich.syntax import Syntax
@@ -38,6 +40,8 @@ def _format_diff_error_panel(view: SessionDiffView) -> Panel:
 
 class SessionDiffFormatter(ComponentFormatter[DiffResult, SessionDiffView]):
     """Formatter for diff command results."""
+
+    event_type: ClassVar[str] = "session.diff"
 
     def __init__(
         self,

@@ -83,7 +83,7 @@ class BlueprintListCliIntegrationTests:
 
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
-        assert payload["event_type"] == "CatalogListResult"
+        assert payload["event_type"] == "blueprint.list"
         assert payload["payload"]["items"][0]["tier"] == "repo"
         assert payload["payload"]["item_type"] == "blueprint"
 

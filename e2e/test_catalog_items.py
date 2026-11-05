@@ -62,7 +62,7 @@ class CatalogItemCliTests:
 
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
-        assert envelope.get("event_type") == "CatalogCreateResult"
+        assert envelope.get("event_type") == f"{kind.command}.create"
         payload = envelope.get("payload", {})
         assert payload.get("item", {}).get("name") == name
 
@@ -82,7 +82,7 @@ class CatalogItemCliTests:
 
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
-        assert envelope.get("event_type") == "CatalogValidateResult"
+        assert envelope.get("event_type") == f"{kind.command}.validate"
         payload = envelope.get("payload", {})
         assert payload.get("valid") is True
         assert payload.get("status_label") == "PASSED"
@@ -109,7 +109,7 @@ class CatalogItemCliTests:
 
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
-        assert envelope.get("event_type") == "CatalogListResult"
+        assert envelope.get("event_type") == f"{kind.command}.list"
         items = envelope.get("payload", {}).get("items", [])
         names = [item["name"] for item in items]
         assert name in names
@@ -124,7 +124,7 @@ class CatalogItemCliTests:
 
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
-        assert envelope.get("event_type") == "CatalogShowResult"
+        assert envelope.get("event_type") == f"{kind.command}.show"
         payload = envelope.get("payload", {})
         assert payload.get("item", {}).get("name") == name
         assert "content" in payload
@@ -166,6 +166,6 @@ class CatalogItemCliTests:
 
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
-        assert envelope.get("event_type") == "CatalogDeleteResult"
+        assert envelope.get("event_type") == f"{kind.command}.delete"
         assert envelope.get("payload", {}).get("deleted") is True
         assert not item_path.exists()

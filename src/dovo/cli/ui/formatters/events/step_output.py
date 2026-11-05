@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group
 from rich.padding import Padding
 from rich.text import Text
@@ -32,6 +34,8 @@ def _build_agent_summary(summary: AgentSummaryView) -> Group:
 
 class StepOutputFormatter(ComponentFormatter[StepOutputEvent, StepOutputEvent]):
     """Formatter for live step output lines."""
+
+    event_type: ClassVar[str] = "run.step_output"
 
     def to_rich(self, data: StepOutputEvent) -> Text | Group:
         """Render raw output text, or the agent summary block."""

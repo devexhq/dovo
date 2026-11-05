@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group, RenderableType
 from rich.text import Text
 
@@ -33,6 +35,8 @@ def _render_list_runs(view: SessionListView) -> RenderableType:
 
 class SessionListFormatter(ComponentFormatter[HistoryListResult, SessionListView]):
     """Formatter for session list command results."""
+
+    event_type: ClassVar[str] = "session.list"
 
     def transform(self, data: HistoryListResult) -> SessionListView:
         """Derive the presentation-ready view from HistoryListResult.

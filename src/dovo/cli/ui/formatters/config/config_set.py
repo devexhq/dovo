@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import RenderableType
 from rich.text import Text
 
@@ -15,6 +17,8 @@ from dovo.core.config.mutate import ConfigSetResult
 
 class ConfigSetFormatter(ComponentFormatter[ConfigSetResult, ConfigSetView]):
     """Formatter for configuration mutation results."""
+
+    event_type: ClassVar[str] = "config.set"
 
     def transform(self, data: ConfigSetResult) -> ConfigSetView:
         """Derive the presentation-ready view from ConfigSetResult domain model.

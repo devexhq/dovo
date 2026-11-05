@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 from rich.console import Group, RenderableType
 from rich.panel import Panel
@@ -94,6 +95,8 @@ def _render_show_run(view: SessionShowView) -> RenderableType:
 
 class SessionShowFormatter(ComponentFormatter[HistoryShowResult, SessionShowView]):
     """Formatter for session show command results."""
+
+    event_type: ClassVar[str] = "session.show"
 
     def transform(self, data: HistoryShowResult) -> SessionShowView:
         """Derive the presentation-ready view from HistoryShowResult.

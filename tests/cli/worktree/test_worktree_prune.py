@@ -70,7 +70,8 @@ class WorktreePruneCliIntegrationTests:
 
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {
-            "event_type": "WorktreePruneResult",
+            "version": 1,
+            "event_type": "worktree.prune",
             "payload": {
                 "ok": True,
                 "error_code": None,

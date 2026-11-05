@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import ClassVar, Final
 
 from rich.console import Group, RenderableType
 from rich.table import Table
@@ -55,6 +55,8 @@ def _summary_line(view: DoctorReportView) -> str:
 
 class DoctorReportFormatter(ComponentFormatter[DiagnosticsReport, DoctorReportView]):
     """Formatter for aggregated diagnostic doctor reports."""
+
+    event_type: ClassVar[str] = "doctor"
 
     def transform(self, data: DiagnosticsReport) -> DoctorReportView:
         """Reshape DiagnosticsReport, header first, and its DiagnosticCheckRecord entries into DoctorReportView/DoctorCheckView, field for field."""

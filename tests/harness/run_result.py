@@ -5,14 +5,11 @@ from __future__ import annotations
 import json
 from typing import Final, TypedDict, cast
 
-RUN_RESULT: Final[str] = "BlueprintRunResult"
-REPLACED_EVENTS: Final[frozenset[str]] = frozenset(
-    {"RunSuccessEvent", "WarningEvent", "ErrorPanelEvent", "BlueprintInvalidEvent", "DiagnosticsEvent"}
-)
+RUN_RESULT: Final[str] = "run.result"
 
 
 class RunResultPayload(TypedDict):
-    """The published JSON payload of a BlueprintRunResult event."""
+    """The published JSON payload of a `run.result` event."""
 
     ok: bool
     error_code: str | None
@@ -26,13 +23,20 @@ class RunResultPayload(TypedDict):
     paused_prompt_id: str | None
 
 
+JSON_LINE_KEYS: Final[list[str]] = ["version", "event_type", "payload"]
+
+
 def json_events(stdout: str) -> list[dict[str, object]]:
-    """Return every JSON envelope printed to stdout, in order."""
-    return [json.loads(line) for line in stdout.splitlines() if line.startswith("{")]
+    """Return every JSON line printed to stdout, in order, asserting each is a version 1 envelope."""
+    events: list[dict[str, object]] = [json.loads(line) for line in stdout.splitlines() if line.startswith("{")]
+    for event in events:
+        assert list(event) == JSON_LINE_KEYS, event
+        assert event["version"] == 1, event
+    return events
 
 
 def run_result_payload(stdout: str) -> RunResultPayload:
-    """Return the payload of the last stdout line, asserting it is the stream's one BlueprintRunResult."""
+    """Return the payload of the last stdout line, asserting it is the stream's one `run.result`."""
     events = json_events(stdout)
     assert [event["event_type"] for event in events].count(RUN_RESULT) == 1, stdout
     assert events[-1]["event_type"] == RUN_RESULT, stdout

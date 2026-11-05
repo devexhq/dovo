@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group, RenderableType
 from rich.text import Text
 
@@ -32,6 +34,8 @@ def _format_prune_rich(view: WorktreePruneView) -> RenderableType:
 
 class WorktreePruneFormatter(ComponentFormatter[WorktreePruneResult, WorktreePruneView]):
     """Formatter for worktree prune command results."""
+
+    event_type: ClassVar[str] = "worktree.prune"
 
     def transform(self, data: WorktreePruneResult) -> WorktreePruneView:
         """Derive the presentation-ready view from WorktreePruneResult.

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field
 from rich.console import Group, RenderableType
@@ -30,6 +30,8 @@ class ErrorEventView(BaseModel):
 
 class ErrorEventFormatter(ComponentFormatter[ErrorEvent, ErrorEventView]):
     """Formatter for a failure no command result carries."""
+
+    event_type: ClassVar[str] = "error"
 
     def transform(self, data: ErrorEvent) -> ErrorEventView:
         """Derive the view: the panel title, then the header with ok false and no warnings."""

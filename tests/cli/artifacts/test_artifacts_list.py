@@ -63,7 +63,8 @@ class ArtifactsListCliIntegrationTests:
 
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {
-            "event_type": "ArtifactsListResult",
+            "version": 1,
+            "event_type": "artifacts.list",
             "payload": {
                 "ok": True,
                 "error_code": None,

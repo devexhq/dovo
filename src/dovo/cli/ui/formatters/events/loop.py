@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group
 from rich.text import Text
 
@@ -26,6 +28,8 @@ def _build_conditions_evaluated_text(data: LoopLifecycleEvent) -> Group:
 
 class LoopLifecycleFormatter(ComponentFormatter[LoopLifecycleEvent]):
     """Formatter for loop execution notices."""
+
+    event_type: ClassVar[str] = "run.loop"
 
     def to_rich(self, data: LoopLifecycleEvent) -> Text | Group:
         """Render loop progress, iteration, evaluation, or termination line, labelled with the loop's name or id."""

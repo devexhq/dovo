@@ -186,7 +186,7 @@ class InitCliTests:
         result = run_dovo(["doctor", "--format", "json"], cwd=initialized_project)
 
         envelope = json.loads(result.stdout)
-        assert envelope.get("event_type") == "DiagnosticsReport"
+        assert envelope.get("event_type") == "doctor"
         payload = envelope.get("payload", {})
         assert "checks" in payload
         assert len(payload["checks"]) > 0

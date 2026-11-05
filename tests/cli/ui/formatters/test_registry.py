@@ -37,7 +37,7 @@ class FormatterRegistryTests:
         UiDispatcher().dispatch(MessageEvent(message="careful"), OutputFormatOptions.JSON)
 
         assert capsys.readouterr().out == (
-            '{"event_type": "MessageEvent", "payload": {"message": "careful", "style": null}}\n'
+            '{"version": 1, "event_type": "message", "payload": {"message": "careful", "style": null}}\n'
         )
 
     def test_loading_a_group_keeps_an_explicitly_registered_formatter(self, capsys: pytest.CaptureFixture[str]) -> None:
@@ -48,5 +48,5 @@ class FormatterRegistryTests:
         dispatcher.dispatch(MessageEvent(message="careful"), OutputFormatOptions.JSON)
 
         assert capsys.readouterr().out.splitlines()[-1] == (
-            '{"event_type": "MessageEvent", "payload": {"message": "CAREFUL"}}'
+            '{"version": 1, "event_type": "message", "payload": {"message": "CAREFUL"}}'
         )

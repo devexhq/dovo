@@ -63,7 +63,7 @@ class StepCreateCliIntegrationTests:
 
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
-        assert payload["event_type"] == "CatalogCreateResult"
+        assert payload["event_type"] == "step.create"
         assert payload["payload"]["item"]["tier"] == "repo"
         assert payload["payload"]["item"]["item_type"] == "step"
         assert payload["payload"]["item_type"] == "step"

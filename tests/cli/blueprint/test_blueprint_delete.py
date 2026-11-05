@@ -123,7 +123,7 @@ class BlueprintDeleteCliIntegrationTests:
 
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
-        assert payload["event_type"] == "CatalogDeleteResult"
+        assert payload["event_type"] == "blueprint.delete"
         assert payload["payload"]["deleted"] is True
         assert payload["payload"]["item_type"] == "blueprint"
 
