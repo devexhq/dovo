@@ -16,10 +16,10 @@ if TYPE_CHECKING:
     # TyperGroup is annotated with Typer's vendored click types, which have no public name.
     from typer._click.core import Command, Context
 
-from dovo.cli.context import CliContext, default_lock_wait_notifier, ensure_lazy_project_init
+from dovo.cli.context import CliContext, ensure_lazy_project_init
 from dovo.cli.outcome import exit_for
 from dovo.cli.ui.dispatcher import ui_dispatcher
-from dovo.cli.ui.events import ErrorEvent, MessageEvent, WelcomeBannerEvent
+from dovo.cli.ui.events import ErrorEvent, LockWaitEvent, MessageEvent, WelcomeBannerEvent
 from dovo.common.diagnostic_log import DiagnosticLevel, bind_cli_command, record_exception, reset_cli_command
 from dovo.common.exceptions import (
     FailureFields,
@@ -29,7 +29,7 @@ from dovo.common.exceptions import (
 )
 from dovo.common.filesystem import Filesystem
 from dovo.common.interrupt import install_interrupt_handlers, reraise_interrupt_signal
-from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.common.lock import LockTimeoutError, LockWaitNotifier, WorkspaceLock
 from dovo.common.models import OutputFormatOptions
 from dovo.common.version import get_version
 from dovo.core.config import ConfigError
@@ -115,35 +115,49 @@ class DovoTyperGroup(TyperGroup):
         return list(self.commands)
 
     def invoke(self, ctx: "Context") -> object:
-        """Capture help flags, then run the command, reporting a failure no command result carries and exiting 1."""
+        """Capture help flags and announce lock waits in the requested format, then run the command, reporting a failure no command result carries and exiting 1."""
         raw_args = [*getattr(ctx, "_protected_args", []), *getattr(ctx, "args", [])]
         if raw_args:
             ctx.ensure_object(dict)
             ctx.obj["is_help"] = any(a in ("--help", "-h") for a in raw_args)
+        output_format = _requested_format(raw_args)
+        WorkspaceLock.set_default_on_wait(_lock_wait_notifier(output_format))
         try:
             return super().invoke(ctx)
         except (ClickException, Exit, Abort):
             raise
         except LockTimeoutError as error:
-            _report_failure("Workspace Lock Timeout", escaped_failure_fields(error), raw_args)
+            _report_failure("Workspace Lock Timeout", escaped_failure_fields(error), output_format)
         except WorkspaceError as error:
-            _report_failure("Workspace Not Initialized", escaped_failure_fields(error), raw_args)
+            _report_failure("Workspace Not Initialized", escaped_failure_fields(error), output_format)
         except ConfigError as error:
-            _report_failure("Invalid Configuration", escaped_failure_fields(error), raw_args)
+            _report_failure("Invalid Configuration", escaped_failure_fields(error), output_format)
         except Exception as error:
             record = record_exception(error, level=DiagnosticLevel.ERROR, operation="cli.run")
-            _report_failure("Fatal Error", fatal_failure_fields(error, record), raw_args)
+            _report_failure("Fatal Error", fatal_failure_fields(error, record), output_format)
         raise typer.Exit(code=1)
 
 
-def requests_json(args: Sequence[str]) -> bool:
-    """Return whether the command line asks for JSON output: `--format json` or `--format=json`."""
-    return "--format=json" in args or any(flag == "--format" and value == "json" for flag, value in pairwise(args))
+def _requested_format(args: Sequence[str]) -> OutputFormatOptions:
+    """Return the output format the command line asks for: JSON for `--format json` or `--format=json`, else terminal."""
+    requests_json = "--format=json" in args or any(
+        flag == "--format" and value == "json" for flag, value in pairwise(args)
+    )
+    return OutputFormatOptions.JSON if requests_json else OutputFormatOptions.TERMINAL
 
 
-def _report_failure(title: str, fields: FailureFields, raw_args: Sequence[str]) -> None:
+def _lock_wait_notifier(output_format: OutputFormatOptions) -> LockWaitNotifier:
+    """Return the WorkspaceLock wait callback that dispatches LockWaitEvent in output_format."""
+
+    def notify(lock_path: Path, holder_pid: str | None, timeout_seconds: float) -> None:
+        event = LockWaitEvent(lock_path=str(lock_path), holder_pid=holder_pid, timeout_seconds=timeout_seconds)
+        ui_dispatcher.dispatch(event, output_format=output_format)
+
+    return notify
+
+
+def _report_failure(title: str, fields: FailureFields, output_format: OutputFormatOptions) -> None:
     """Dispatch the failure as the `error` event under JSON output, else as a titled panel."""
-    output_format = OutputFormatOptions.JSON if requests_json(raw_args) else OutputFormatOptions.TERMINAL
     ui_dispatcher.dispatch(ErrorEvent(title=title, **fields), output_format=output_format)
 
 
@@ -216,9 +230,6 @@ def main(
     ctx.call_on_close(lambda: reset_cli_command(token))
     ctx.obj["verbose"] = verbose
     ctx.obj["path"] = path
-
-    # Initialize default lock wait notifier for cross-process concurrency feedback
-    WorkspaceLock.set_default_on_wait(default_lock_wait_notifier)
 
     # 1. Handle base commands
     if ctx.invoked_subcommand is None:

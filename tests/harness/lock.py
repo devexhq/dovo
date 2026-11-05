@@ -16,6 +16,13 @@ def raise_lock_timeout(_self: WorkspaceLock) -> WorkspaceLock:
     raise LockTimeoutError("lock held")
 
 
+def announce_wait_then_time_out(self: WorkspaceLock) -> WorkspaceLock:
+    """Stand in for WorkspaceLock.__enter__ when process 4242 holds the lock: report the wait through on_wait, then time out."""
+    if self.on_wait is not None:
+        self.on_wait(self.lock_path, "4242", self.timeout_seconds)
+    raise LockTimeoutError("lock held")
+
+
 def time_out_first_lock(monkeypatch: pytest.MonkeyPatch) -> None:
     """Patch WorkspaceLock.__enter__ so its first acquisition raises LockTimeoutError("lock held") and every later one acquires normally."""
     original_enter = WorkspaceLock.__enter__
