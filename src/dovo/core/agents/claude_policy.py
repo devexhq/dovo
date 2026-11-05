@@ -48,6 +48,8 @@ _NETWORK_WILDCARD_PREFIX: Final = "*."
 _EMPTY_MCP_CONFIG: Final = '{"mcpServers":{}}'
 _MCP_CONFIG_FILENAME: Final = "mcp-config.json"
 _MCP_WILDCARD: Final = "*"
+CLAUDE_SCHEDULING_TOOLS: Final = ("ScheduleWakeup", "CronCreate", "Monitor")
+"""Claude Code tools that schedule work outliving the agent's turn; every rendered policy denies them."""
 
 
 def _rule_root(rule: ToolRule, roots: PolicyRoots) -> Path | None:
@@ -227,7 +229,8 @@ def _flags(
 ) -> ClaudePolicyArgs:
     """Build the Claude Code flags for one permission mode.
 
-    The flag order is fixed, so later flags are appended after these.
+    The flag order is fixed, so later flags are appended after these. The scheduling tools always close the
+    --disallowedTools list, so a call to one comes back to the agent as a tool error.
     """
     flags = ["--permission-mode", mode, *_mcp_flags(mcp_config)]
     if tools is not None:
@@ -236,8 +239,7 @@ def _flags(
     if allowed:
         flags += ["--allowedTools", ",".join(allowed)]
 
-    if denied:
-        flags += ["--disallowedTools", ",".join(denied)]
+    flags += ["--disallowedTools", ",".join(_unique([*denied, *CLAUDE_SCHEDULING_TOOLS]))]
 
     return ClaudePolicyArgs(flags=tuple(flags), mcp_config=mcp_config)
 
@@ -249,6 +251,8 @@ def _render_allow_all(
     user: Mapping[str, dict[str, object]],
 ) -> ClaudePolicyArgs | str:
     """Render an allow_all policy as bypassPermissions flags, or dontAsk flags when it has deny rules.
+
+    Either way the scheduling tools are denied, so bypassPermissions never exposes them.
 
     Allow rules other than mcp are neither checked nor rendered, since everything is already granted.
     Deny rules and mcp allow rules are held to the same checks as in a restricted policy.

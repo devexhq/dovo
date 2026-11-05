@@ -1437,6 +1437,16 @@ class RunCliProcessTests:
 
         assert (runner.received_stdout_callback, runner.received_stderr_callback) == (None, None)
 
+    def test_stop_when_reaches_the_runner(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        runner = StreamingAgentRunner(stdout_lines=["a", "end", "b"], stderr_lines=[], completed_stdout=b"")
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
+
+        run_cli_process(
+            ["tool"], _request(tmp_path), env={}, binary="tool", install_hint="x", stop_when=lambda line: line == "end"
+        )
+
+        assert runner.stopped_at == "end"
+
     @pytest.mark.parametrize(
         ("raised", "expected"),
         [

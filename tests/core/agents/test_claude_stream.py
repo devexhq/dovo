@@ -10,7 +10,7 @@ import pytest
 
 import dovo.core.agents.claude_stream as claude_stream_module
 from dovo.common.tool_policy import ToolCapability
-from dovo.core.agents.claude_stream import classify_claude_output
+from dovo.core.agents.claude_stream import ClaudeTurnTracker, classify_claude_output
 from dovo.core.agents.cli_mutation import CliMutationOutcome
 from dovo.core.agents.models import AgentDenial
 from tests.harness.fixtures import load_agent_fixture
@@ -470,6 +470,79 @@ class ClaudeStreamDenialTests:
 
         assert outcome.status == "error"
         assert outcome.denials == []
+
+
+class ClaudeSchedulingRefusalTests:
+    @pytest.mark.parametrize(
+        "text",
+        [
+            pytest.param("Permission to use ScheduleWakeup has been denied.", id="deny-rule-wording"),
+            pytest.param(
+                "<tool_use_error>Error: No such tool available: ScheduleWakeup</tool_use_error>", id="no-such-tool"
+            ),
+        ],
+    )
+    def test_refused_scheduling_call_is_not_a_denial_but_bash_still_is(self, text: str) -> None:
+        stdout = _stream(
+            _tool_use_event("toolu-1", "ScheduleWakeup"),
+            _tool_result_event("toolu-1", text),
+            _tool_use_event("toolu-2", "Bash"),
+            _tool_result_event("toolu-2", _DENIED_BASH_TEXT),
+            _SUCCESS_RESULT,
+        )
+
+        outcome = classify_claude_output(0, stdout, "")
+
+        assert outcome == CliMutationOutcome(status="finished", result_text="done", denials=[_bash_denial()])
+
+    @pytest.mark.parametrize("tool", ["ScheduleWakeup", "CronCreate", "Monitor"])
+    def test_structured_denial_of_a_scheduling_tool_is_dropped(self, tool: str) -> None:
+        outcome = classify_claude_output(0, _stream(_result_with_denials([{"tool_name": tool}])), "")
+
+        assert (outcome.status, outcome.denials) == ("finished", [])
+
+
+def _task_event(subtype: str, task_id: str) -> str:
+    return json.dumps({"type": "system", "subtype": subtype, "task_id": task_id})
+
+
+class ClaudeTurnTrackerTests:
+    def test_result_with_no_pending_task_ends_the_turn(self) -> None:
+        tracker = ClaudeTurnTracker()
+
+        answers = [tracker(json.dumps({"type": "system", "subtype": "init"})), tracker(json.dumps(_SUCCESS_RESULT))]
+
+        assert (answers, tracker.finished) == ([False, True], True)
+
+    def test_result_while_a_task_is_pending_waits_for_its_notification(self) -> None:
+        tracker = ClaudeTurnTracker()
+        lines = [
+            _task_event("task_started", "t1"),
+            _task_event("task_started", "t2"),
+            json.dumps(_SUCCESS_RESULT),
+            _task_event("task_notification", "t1"),
+            json.dumps(_SUCCESS_RESULT),
+            _task_event("task_notification", "t2"),
+            json.dumps(_SUCCESS_RESULT),
+        ]
+
+        assert [tracker(line) for line in lines] == [False, False, False, False, False, False, True]
+        assert tracker.finished is True
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            pytest.param("not json", id="non-json"),
+            pytest.param("[1]", id="non-object"),
+            pytest.param("", id="blank"),
+            pytest.param(json.dumps({"type": "assistant", "message": {"content": []}}), id="assistant"),
+            pytest.param(json.dumps({"type": "system", "subtype": "task_started"}), id="task-without-id"),
+        ],
+    )
+    def test_other_lines_do_not_end_the_turn(self, line: str) -> None:
+        tracker = ClaudeTurnTracker()
+
+        assert (tracker(line), tracker.finished) == (False, False)
 
 
 class ClaudeStreamPurityTests:

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -34,6 +36,7 @@ from tests.harness import (
     EditingAgentRunner,
     FakeAgentRunner,
     FakeAgentRunnerCall,
+    StreamingAgentRunner,
     patch_claude_probe,
     real_invocation,
 )
@@ -62,6 +65,7 @@ class ClaudeDescriptorTests:
         )
 
 
+_SUCCESS_EVENT: dict[str, object] = {"type": "result", "subtype": "success", "is_error": False, "result": "done"}
 _SUCCESS_STDOUT = b'{"type":"result","subtype":"success","is_error":false,"result":"done"}\n'
 _ALLOW_ALL_ARGV = [
     "claude",
@@ -76,6 +80,8 @@ _ALLOW_ALL_ARGV = [
     "--strict-mcp-config",
     "--mcp-config",
     '{"mcpServers":{}}',
+    "--disallowedTools",
+    "ScheduleWakeup,CronCreate,Monitor",
 ]
 
 
@@ -90,7 +96,9 @@ def _porcelain(repo: Path) -> str:
     return subprocess.run(["git", "status", "--porcelain"], cwd=repo, check=True, capture_output=True, text=True).stdout
 
 
-def _install_fake_claude_runner(monkeypatch: pytest.MonkeyPatch, runner: FakeAgentRunner) -> None:
+def _install_fake_claude_runner(
+    monkeypatch: pytest.MonkeyPatch, runner: FakeAgentRunner | StreamingAgentRunner
+) -> None:
     """Set ANTHROPIC_API_KEY, unset CLAUDE_CODE_OAUTH_TOKEN, and install runner at the Claude process boundary."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
@@ -312,6 +320,50 @@ class ClaudeRunTests:
         outcome = default_claude_run(_run_request(tmp_path))
 
         assert (outcome.status, outcome.result_text, outcome.error_detail) == ("finished", "done", None)
+
+    def test_result_while_a_task_is_pending_does_not_end_the_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Stop only at the result that follows the background task's notification and report its text."""
+        lines = [
+            json.dumps({"type": "system", "subtype": "task_started", "task_id": "t1"}),
+            json.dumps({**_SUCCESS_EVENT, "result": "first"}),
+            json.dumps({"type": "system", "subtype": "task_notification", "task_id": "t1", "status": "completed"}),
+            json.dumps({**_SUCCESS_EVENT, "result": "second"}),
+        ]
+        runner = StreamingAgentRunner(stdout_lines=lines, stderr_lines=[], completed_stdout="\n".join(lines).encode())
+        _install_fake_claude_runner(monkeypatch, runner)
+
+        outcome = default_claude_run(_run_request(tmp_path))
+
+        assert runner.stopped_at == lines[-1]
+        assert (outcome.status, outcome.result_text) == ("finished", "second")
+
+    @pytest.mark.parametrize(
+        ("lines", "expected"),
+        [
+            pytest.param(
+                [json.dumps(_SUCCESS_EVENT)],
+                CliMutationOutcome(status="finished", result_text="done"),
+                id="result-then-stopped",
+            ),
+            pytest.param(
+                [json.dumps({"type": "system", "subtype": "init"})],
+                CliMutationOutcome(status="error", error_detail="Claude Code stream ended without a result (exit -15)"),
+                id="stopped-without-result",
+            ),
+        ],
+    )
+    def test_terminated_exit_is_judged_by_whether_the_turn_was_over(
+        self, lines: list[str], expected: CliMutationOutcome, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Classify a SIGTERM exit by the result once the turn is over, and as an error otherwise."""
+        runner = StreamingAgentRunner(
+            stdout_lines=lines, stderr_lines=[], completed_stdout="\n".join(lines).encode(), returncode=-15
+        )
+        _install_fake_claude_runner(monkeypatch, runner)
+
+        assert default_claude_run(_run_request(tmp_path)) == expected
 
     @pytest.mark.parametrize(
         ("mode", "expects_bare", "expected_env"),
@@ -538,6 +590,39 @@ def _invoke_rejected_edit(
     )
 
     return ClaudeAgentAdapter().invoke(request), destination
+
+
+_LINGERING_CLAUDE = """\
+import json
+import sys
+import time
+
+sys.stdin.read()
+print(json.dumps({"type": "system", "subtype": "init"}), flush=True)
+print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "done"}), flush=True)
+time.sleep(300)
+"""
+
+
+class ClaudeLingeringProcessTests:
+    def test_finished_agent_that_stays_alive_completes_instead_of_timing_out(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A real claude that prints its result and then lingers past the step timeout completes the step."""
+        if sys.platform == "win32":
+            pytest.skip("POSIX executable scripts and process groups required")
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        claude = bin_dir / "claude"
+        claude.write_text(f"#!{sys.executable}\n{_LINGERING_CLAUDE}", encoding="utf-8")
+        claude.chmod(0o755)
+        monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth")
+        request = AgentRequestBuilder().with_worktree_path(git_repo).build()
+
+        response = ClaudeAgentAdapter().invoke(request)
+
+        assert (response.status, response.raw_text, response.errors) == (AgentResponseStatus.NO_OP, "done", [])
 
 
 class ClaudeGitIntegrationTests:

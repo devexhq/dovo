@@ -16,6 +16,8 @@ from dovo.core.agents.claude_policy import ClaudePolicyArgs, McpConfigFile, rend
 _ALL_TOOLS = "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash,WebFetch"
 _READ_WRITE_TOOLS = "Read,Grep,Glob,Edit,Write,NotebookEdit"
 _MCP_FLAGS = ("--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}')
+_SCHEDULING_TOOLS = "ScheduleWakeup,CronCreate,Monitor"
+_DENY_SCHEDULING = ("--disallowedTools", _SCHEDULING_TOOLS)
 _GITHUB = McpServerDefinition(command="npx", args=["-y", "pkg"], env={"TOKEN": "${GITHUB_TOKEN}"})
 _GITHUB_CONFIG = '{"mcpServers":{"github":{"command":"npx","args":["-y","pkg"],"env":{"TOKEN":"${GITHUB_TOKEN}"}}}}'
 
@@ -56,6 +58,7 @@ def _read_write_flags(root: Path) -> tuple[str, ...]:
         _READ_WRITE_TOOLS,
         "--allowedTools",
         f"Read({_spec(root)}),Edit({_spec(root)})",
+        *_DENY_SCHEDULING,
     )
 
 
@@ -103,6 +106,7 @@ class ClaudePolicyRenderTests:
                 _READ_WRITE_TOOLS,
                 "--allowedTools",
                 f"Read({_spec(tmp_path, 'src/**')}),Edit({_spec(tmp_path, 'docs/*.md')}),Edit({_spec(tmp_path, 'a/b')})",
+                *_DENY_SCHEDULING,
             )
         )
 
@@ -122,7 +126,7 @@ class ClaudePolicyRenderTests:
                 "--allowedTools",
                 f"Read({_spec(tmp_path)})",
                 "--disallowedTools",
-                f"Read({_spec(tmp_path, 'secrets/**')}),Edit({_spec(tmp_path)})",
+                f"Read({_spec(tmp_path, 'secrets/**')}),Edit({_spec(tmp_path)}),{_SCHEDULING_TOOLS}",
             )
         )
 
@@ -137,7 +141,7 @@ class ClaudePolicyRenderTests:
                 "--tools",
                 "",
                 "--disallowedTools",
-                f"Edit({_spec(tmp_path)})",
+                f"Edit({_spec(tmp_path)}),{_SCHEDULING_TOOLS}",
             )
         )
 
@@ -156,9 +160,29 @@ class ClaudePolicyRenderTests:
                 "--allowedTools",
                 "Read,Edit,Bash,WebFetch",
                 "--disallowedTools",
-                f"Read({_spec(roots.scratch, 'private/**')})",
+                f"Read({_spec(roots.scratch, 'private/**')}),{_SCHEDULING_TOOLS}",
             )
         )
+
+    @pytest.mark.parametrize(
+        ("policy", "disallowed"),
+        [
+            pytest.param(ToolPolicy(allow_all=True), _SCHEDULING_TOOLS, id="bypass-permissions"),
+            pytest.param(
+                ToolPolicy(allow_all=True, deny=[_rule(ToolCapability.SHELL, "git push *")]),
+                f"Bash(git push:*),{_SCHEDULING_TOOLS}",
+                id="allow-all-with-deny",
+            ),
+            pytest.param(default_tool_policy(), _SCHEDULING_TOOLS, id="restricted"),
+        ],
+    )
+    def test_scheduling_tools_always_close_the_disallowed_tools(
+        self, tmp_path: Path, policy: ToolPolicy, disallowed: str
+    ) -> None:
+        result = _render(policy, _roots(tmp_path))
+
+        assert isinstance(result, ClaudePolicyArgs)
+        assert result.flags[result.flags.index("--disallowedTools") + 1] == disallowed
 
     def test_default_policy_carries_empty_mcp_set_after_permission_mode(self, tmp_path: Path) -> None:
         result = _render(default_tool_policy(), _roots(tmp_path))
@@ -183,7 +207,15 @@ class ClaudePolicyRenderTests:
         policy = ToolPolicy(deny=[_rule(ToolCapability.MCP, pattern)])
 
         assert _render(policy, _roots(tmp_path)) == ClaudePolicyArgs(
-            flags=("--permission-mode", "dontAsk", *_MCP_FLAGS, "--tools", "", "--disallowedTools", denied)
+            flags=(
+                "--permission-mode",
+                "dontAsk",
+                *_MCP_FLAGS,
+                "--tools",
+                "",
+                "--disallowedTools",
+                f"{denied},{_SCHEDULING_TOOLS}",
+            )
         )
 
     def test_mcp_deny_composes_with_other_denies_in_rule_order(self, tmp_path: Path) -> None:
@@ -203,13 +235,13 @@ class ClaudePolicyRenderTests:
                 "--tools",
                 "",
                 "--disallowedTools",
-                "Bash(git push:*),mcp__github",
+                f"Bash(git push:*),mcp__github,{_SCHEDULING_TOOLS}",
             )
         )
 
     def test_empty_policy_emits_empty_tools_value_and_no_other_lists(self, tmp_path: Path) -> None:
         assert _render(ToolPolicy(), _roots(tmp_path)) == ClaudePolicyArgs(
-            flags=("--permission-mode", "dontAsk", *_MCP_FLAGS, "--tools", "")
+            flags=("--permission-mode", "dontAsk", *_MCP_FLAGS, "--tools", "", *_DENY_SCHEDULING)
         )
 
     @pytest.mark.parametrize(
@@ -226,7 +258,16 @@ class ClaudePolicyRenderTests:
         policy = ToolPolicy(allow=[_rule(ToolCapability.SHELL, pattern)])
 
         assert _render(policy, _roots(tmp_path)) == ClaudePolicyArgs(
-            flags=("--permission-mode", "dontAsk", *_MCP_FLAGS, "--tools", "Bash", "--allowedTools", permission)
+            flags=(
+                "--permission-mode",
+                "dontAsk",
+                *_MCP_FLAGS,
+                "--tools",
+                "Bash",
+                "--allowedTools",
+                permission,
+                *_DENY_SCHEDULING,
+            )
         )
 
     @pytest.mark.parametrize(
@@ -242,7 +283,16 @@ class ClaudePolicyRenderTests:
         policy = ToolPolicy(allow=[_rule(ToolCapability.NETWORK, pattern)])
 
         assert _render(policy, _roots(tmp_path)) == ClaudePolicyArgs(
-            flags=("--permission-mode", "dontAsk", *_MCP_FLAGS, "--tools", "WebFetch", "--allowedTools", permission)
+            flags=(
+                "--permission-mode",
+                "dontAsk",
+                *_MCP_FLAGS,
+                "--tools",
+                "WebFetch",
+                "--allowedTools",
+                permission,
+                *_DENY_SCHEDULING,
+            )
         )
 
     def test_tools_follow_fixed_order_and_duplicate_permissions_collapse(self, tmp_path: Path) -> None:
@@ -265,6 +315,7 @@ class ClaudePolicyRenderTests:
                 _ALL_TOOLS,
                 "--allowedTools",
                 f"WebFetch,Bash,Edit({_spec(tmp_path)}),Read({_spec(tmp_path)})",
+                *_DENY_SCHEDULING,
             )
         )
 
@@ -279,6 +330,7 @@ class ClaudePolicyRenderTests:
                 "--strict-mcp-config",
                 "--mcp-config",
                 str(tmp_path / "control" / "mcp-config.json"),
+                *_DENY_SCHEDULING,
             ),
             mcp_config=McpConfigFile(path=tmp_path / "control" / "mcp-config.json", content=_GITHUB_CONFIG),
         )
@@ -316,7 +368,7 @@ class ClaudePolicyRenderTests:
                 "--allowedTools",
                 "Read,Edit,Bash,WebFetch",
                 "--disallowedTools",
-                "Bash(git push:*)",
+                f"Bash(git push:*),{_SCHEDULING_TOOLS}",
             )
         )
 
@@ -333,7 +385,7 @@ class ClaudePolicyRenderTests:
                 "--allowedTools",
                 "Read,Edit,Bash,WebFetch",
                 "--disallowedTools",
-                "mcp__github",
+                f"mcp__github,{_SCHEDULING_TOOLS}",
             )
         )
 
@@ -353,7 +405,7 @@ class ClaudePolicyRenderTests:
                 "--allowedTools",
                 "Bash(git:*)",
                 "--disallowedTools",
-                "Bash(git push:*),WebFetch",
+                f"Bash(git push:*),WebFetch,{_SCHEDULING_TOOLS}",
             )
         )
 
@@ -371,6 +423,7 @@ class ClaudePolicyRenderTests:
                 _READ_WRITE_TOOLS,
                 "--allowedTools",
                 allowed,
+                *_DENY_SCHEDULING,
                 "--add-dir",
                 str(roots.scratch),
             )
@@ -390,6 +443,7 @@ class ClaudePolicyRenderTests:
                 "Read,Grep,Glob",
                 "--allowedTools",
                 f"Read({_spec(roots.scratch)})",
+                *_DENY_SCHEDULING,
                 "--add-dir",
                 str(roots.scratch),
             )
@@ -521,6 +575,7 @@ class ClaudePolicyRenderTests:
                 _READ_WRITE_TOOLS,
                 "--allowedTools",
                 f"Edit({_spec(tmp_path)}),Read({_spec(roots.scratch)})",
+                *_DENY_SCHEDULING,
                 "--add-dir",
                 str(roots.scratch),
             )
@@ -541,6 +596,7 @@ class ClaudePolicyRenderTests:
                 "",
                 "--allowedTools",
                 "mcp__github",
+                *_DENY_SCHEDULING,
             ),
             mcp_config=McpConfigFile(path=config_path, content=_GITHUB_CONFIG),
         )
@@ -551,7 +607,7 @@ class ClaudePolicyRenderTests:
         result = _render(policy, _control_roots(tmp_path), configured={"github": _GITHUB})
 
         assert isinstance(result, ClaudePolicyArgs)
-        assert result.flags[-2:] == ("--allowedTools", "mcp__github__create_issue")
+        assert result.flags[result.flags.index("--allowedTools") + 1] == "mcp__github__create_issue"
 
     def test_server_named_by_several_allow_rules_is_written_once(self, tmp_path: Path) -> None:
         policy = ToolPolicy(
@@ -562,7 +618,7 @@ class ClaudePolicyRenderTests:
 
         assert isinstance(result, ClaudePolicyArgs)
         assert result.mcp_config == McpConfigFile(path=tmp_path / "control" / "mcp-config.json", content=_GITHUB_CONFIG)
-        assert result.flags[-1] == "mcp__github__create_issue,mcp__github"
+        assert result.flags[result.flags.index("--allowedTools") + 1] == "mcp__github__create_issue,mcp__github"
 
     def test_user_config_server_is_used_when_not_configured(self, tmp_path: Path) -> None:
         policy = ToolPolicy(allow=[_rule(ToolCapability.MCP, "github/*")])

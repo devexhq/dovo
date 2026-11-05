@@ -56,6 +56,8 @@ SLEEP_SCRIPT = "import time; time.sleep(60)"
 EXIT_WITHOUT_READING_SCRIPT = "import sys; sys.exit(3)"
 FIFO_GATED_SCRIPT = "import sys; print('first', flush=True); open(sys.argv[1]).read(); print('second', flush=True)"
 THREE_LINES_SCRIPT = "print('first'); print('second'); print('third')"
+PRINT_PID_THEN_SLEEP_SCRIPT = "import os, time; print(os.getpid(), flush=True); time.sleep(60)"
+EXIT_AFTER_LINE_SCRIPT = "import sys; print('done', flush=True); sys.exit(4)"
 INTERRUPTED_STREAM_SCRIPT = """
 import sys
 from dovo.common.interrupt import install_interrupt_handlers, reraise_interrupt_signal
@@ -179,6 +181,48 @@ class StreamIsolatedProcessTests:
         assert outcome.output == b"ready\n"
         assert stdout_lines == ["ready"]
         assert len(process_registry) == registered_before
+
+    def test_stop_when_ends_the_run_and_its_process_group_before_the_deadline(self) -> None:
+        if sys.platform == "win32":
+            pytest.skip("POSIX process groups required")
+
+        outcome = _run_bounded(
+            lambda: stream_isolated_process(
+                _python(PRINT_PID_THEN_SLEEP_SCRIPT),
+                timeout_seconds=BOUNDED_CALL_DEADLINE_SECONDS,
+                grace_seconds=0.2,
+                stop_when=str.isdigit,
+            )
+        )
+
+        assert isinstance(outcome, subprocess.CompletedProcess)
+        assert outcome.returncode == -signal.SIGTERM
+        assert not is_process_group_alive(int(outcome.stdout))
+
+    def test_stop_when_that_never_matches_still_times_out(self) -> None:
+        outcome = _run_bounded(
+            lambda: stream_isolated_process(
+                _python(PRINT_THEN_SLEEP_SCRIPT), timeout_seconds=1.0, grace_seconds=0.2, stop_when=lambda _line: False
+            )
+        )
+
+        assert isinstance(outcome, subprocess.TimeoutExpired)
+        assert outcome.output == b"ready\n"
+
+    def test_stop_when_that_raises_counts_as_no_match(self) -> None:
+        def raising(line: str) -> bool:
+            raise RuntimeError(line)
+
+        completed = stream_isolated_process(_python(THREE_LINES_SCRIPT), timeout_seconds=20.0, stop_when=raising)
+
+        assert (completed.returncode, completed.stdout) == (0, b"first\nsecond\nthird\n")
+
+    def test_stop_when_on_a_child_that_exits_returns_its_own_exit_code(self) -> None:
+        completed = stream_isolated_process(
+            _python(EXIT_AFTER_LINE_SCRIPT), timeout_seconds=20.0, stop_when=lambda line: line == "done"
+        )
+
+        assert (completed.returncode, completed.stdout) == (4, b"done\n")
 
     def test_large_input_to_child_that_never_reads_stdin_times_out(self) -> None:
         outcome = _run_bounded(

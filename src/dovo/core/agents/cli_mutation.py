@@ -123,8 +123,12 @@ def run_cli_process(
     env: dict[str, str],
     binary: str,
     install_hint: str,
+    stop_when: Callable[[str], bool] | None = None,
 ) -> subprocess.CompletedProcess[bytes] | CliMutationOutcome:
-    """Run cmd in the request worktree, streaming lines to the request callbacks, or return the terminal outcome for a timeout or spawn failure."""
+    """Run cmd in the request worktree, streaming lines to the request callbacks, or return the terminal outcome for a timeout or spawn failure.
+
+    stop_when, when given, ends the run early on the stdout line it accepts, as stream_isolated_process describes.
+    """
     try:
         return stream_isolated_process(
             cmd,
@@ -134,6 +138,7 @@ def run_cli_process(
             timeout_seconds=request.timeout_seconds,
             on_stdout_line=forward_stdout(request),
             on_stderr_line=forward_line("stderr", request.on_line),
+            stop_when=stop_when,
         )
     except subprocess.TimeoutExpired:
         return CliMutationOutcome(status="timeout")
