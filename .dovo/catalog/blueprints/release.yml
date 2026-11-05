@@ -1,23 +1,29 @@
 version: 1
 name: release
 id: release
-description: Tag a closed milestone's green main commit and publish its release notes after approval.
-summary: Closed milestone to tagged GitHub release with a human gate
+description: Tag the green main commit and publish release notes for everything merged since the previous tag, after approval.
+summary: Merged pull requests since the last tag to a tagged GitHub release with a human gate
 
 inputs:
   version:
     type: string
-    description: Release tag, matching the start of the milestone title (e.g. v0.8.0)
+    description: Release tag to create (e.g. v0.9.0)
     required: true
     aliases: ["-v", "--version"]
+  title:
+    type: string
+    description: Release theme appended to the tag in the release title (e.g. Output Contract)
+    default: ""
+    aliases: ["-t", "--title"]
 
 steps:
   - id: resolve
-    name: Check the milestone and pick the commit
+    name: Check the tag is free and pick the commit
     type: script
     script_path: scripts/release/resolve.sh
     env:
       VERSION: ${{ inputs.version }}
+      TITLE: "${{ inputs.title }}"
 
   - id: wait-ci
     name: Wait for every workflow on the commit to pass
