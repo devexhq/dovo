@@ -72,7 +72,8 @@ class ConfigCliTests:
         assert envelope.get("event_type") == "config.show"
         payload = envelope.get("payload", {})
 
-        assert payload.get("status") == "ok"
+        assert payload.get("ok") is True
+        assert payload.get("error_code") is None
         assert "config" in payload
         config_data = payload["config"]
         assert "project" in config_data
