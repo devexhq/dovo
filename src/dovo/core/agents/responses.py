@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.formatters import format_remediations
 from dovo.common.models import Remediation
 from dovo.core.agents.models import AgentDenial, AgentResponse, AgentResponseStatus
@@ -17,9 +18,10 @@ def timeout_response(
     raw_text: str | None = None,
     mutation_baseline_ref: str | None = None,
 ) -> AgentResponse:
-    """Build the TIMEOUT response carrying the canonical timeout error and remediation."""
+    """Build the AGENT_TIMEOUT response carrying the canonical timeout error and remediation."""
     return AgentResponse(
         status=AgentResponseStatus.TIMEOUT,
+        error_code=ErrorCode.AGENT_TIMEOUT,
         duration_seconds=duration_seconds,
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
@@ -36,9 +38,10 @@ def provider_error_response(
     raw_text: str | None = None,
     mutation_baseline_ref: str | None = None,
 ) -> AgentResponse:
-    """Build the PROVIDER_ERROR response, prefixing ``detail`` once and placing it before ``errors``.
+    """Build the AGENT_PROVIDER_FAILED response, prefixing ``detail`` once and placing it before ``errors``.
 
-    ``errors`` are already-classified error strings and are copied through unprefixed; the input is never mutated.
+    ``errors`` are already-classified error strings and are copied through unprefixed; the input is never mutated. A
+    caller whose failure came from something it consumed copies that failure's code over AGENT_PROVIDER_FAILED.
     """
     errors_out = [*errors]
     if detail is not None:
@@ -46,6 +49,7 @@ def provider_error_response(
 
     return AgentResponse(
         status=AgentResponseStatus.PROVIDER_ERROR,
+        error_code=ErrorCode.AGENT_PROVIDER_FAILED,
         duration_seconds=duration_seconds,
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
@@ -76,9 +80,10 @@ def unfixable_response(
     raw_text: str | None = None,
     mutation_baseline_ref: str | None = None,
 ) -> AgentResponse:
-    """Build the UNFIXABLE response carrying the agent's reason and any errors from discarding its edit."""
+    """Build the AGENT_TASK_UNFIXABLE response carrying the agent's reason and any errors from discarding its edit."""
     return AgentResponse(
         status=AgentResponseStatus.UNFIXABLE,
+        error_code=ErrorCode.AGENT_TASK_UNFIXABLE,
         duration_seconds=duration_seconds,
         unfixable_reason=reason,
         raw_text=raw_text,
@@ -95,7 +100,7 @@ def blocked_response(
     raw_text: str | None = None,
     mutation_baseline_ref: str | None = None,
 ) -> AgentResponse:
-    """Build the BLOCKED response whose grant remediation names agents.<provider>.tools.
+    """Build the AGENT_TASK_BLOCKED response whose grant remediation names agents.<provider>.tools.
 
     ``denials`` must be non-empty.
     """
@@ -127,6 +132,7 @@ def blocked_response(
 
     return AgentResponse(
         status=AgentResponseStatus.BLOCKED,
+        error_code=ErrorCode.AGENT_TASK_BLOCKED,
         duration_seconds=duration_seconds,
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,

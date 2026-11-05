@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentAttempt,
@@ -254,7 +255,7 @@ class ExecuteAgentStepOutputTests:
         assert outcome.status == "completed"
         assert outcome.exit_code == 0
         assert outcome.stderr == ""
-        assert outcome.error_message is None
+        assert (outcome.error_message, outcome.error_code) == (None, None)
         assert outcome.stdout == (
             '{"status":"no_op","summary":"Inspected the repository; no edits were required.",'
             '"unfixable_reason":null,"touched_files":[]}\n'
@@ -329,6 +330,7 @@ class ExecuteAgentStepOutputTests:
         assert outcome.status == "completed"
         assert outcome.exit_code == 0
         assert outcome.stderr == ""
+        assert outcome.error_code is None
         summary = _summary(outcome)
         assert summary["status"] == "proposed_patch"
         assert summary["touched_files"] == ["a.txt"]
@@ -365,6 +367,7 @@ class ExecuteAgentStepOutputTests:
         assert outcome.status == "failed"
         assert outcome.exit_code == 203
         assert outcome.error_message == "Agent output callback error: ui down"
+        assert outcome.error_code == ErrorCode.INTERNAL_ERROR
         assert _summary(outcome)["status"] == "provider_error"
         assert _summary(outcome)["touched_files"] == ["a.txt"]
         assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
@@ -385,6 +388,23 @@ class ExecuteAgentStepOutputTests:
         outcome = _run(tmp_path)
 
         assert outcome.diagnostics == [record]
+
+    @pytest.mark.parametrize(
+        "error_code",
+        [
+            pytest.param(ErrorCode.AGENT_TASK_UNFIXABLE, id="agent"),
+            pytest.param(ErrorCode.PATCH_FILE_COUNT_EXCEEDED, id="patch"),
+            pytest.param(ErrorCode.GIT_TIMEOUT, id="git"),
+        ],
+    )
+    def test_failed_attempt_code_becomes_the_outcome_code(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error_code: ErrorCode
+    ) -> None:
+        _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, error_code=error_code))
+
+        outcome = _run(tmp_path)
+
+        assert (outcome.status, outcome.error_code) == ("failed", error_code)
 
 
 class ExecuteAgentStepScratchTests:
@@ -431,6 +451,7 @@ class ExecuteAgentStepScratchTests:
 
         assert outcome.status == "failed"
         assert outcome.exit_code == 203
+        assert outcome.error_code == ErrorCode.AGENT_SCRATCH_UNAVAILABLE
         assert outcome.error_message == (
             scratch_unavailable_message(step.id, "the session temp directory is unavailable")
             + "\nFix:\n- Restore access to the session temp directory or correct its storage path."
@@ -461,11 +482,27 @@ class ExecuteAgentStepScratchTests:
         assert _porcelain(git_repo) == ""
 
     @pytest.mark.parametrize(
-        ("step", "agent", "worktree_active", "expected_message"),
+        ("step", "agent", "worktree_active", "expected_message", "expected_code"),
         [
-            pytest.param(_step(), _settings(), False, WORKTREE_REQUIRED_MESSAGE, id="worktree-inactive"),
-            pytest.param(_step(), None, True, MISSING_SETTINGS_MESSAGE, id="no-settings"),
-            pytest.param(_step(prompt="   "), _settings(), True, BLANK_PROMPT_MESSAGE, id="blank-prompt"),
+            pytest.param(
+                _step(),
+                _settings(),
+                False,
+                WORKTREE_REQUIRED_MESSAGE,
+                ErrorCode.STEP_WORKTREE_MISSING,
+                id="worktree-inactive",
+            ),
+            pytest.param(
+                _step(), None, True, MISSING_SETTINGS_MESSAGE, ErrorCode.STEP_AGENT_SETTINGS_MISSING, id="no-settings"
+            ),
+            pytest.param(
+                _step(prompt="   "),
+                _settings(),
+                True,
+                BLANK_PROMPT_MESSAGE,
+                ErrorCode.STEP_PROMPT_EMPTY,
+                id="blank-prompt",
+            ),
         ],
     )
     def test_guards_run_before_allocation(
@@ -476,6 +513,7 @@ class ExecuteAgentStepScratchTests:
         agent: ResolvedAgentSettings | None,
         worktree_active: bool,
         expected_message: str,
+        expected_code: ErrorCode,
     ) -> None:
         requested = _use_provider(monkeypatch, FakeAgentProvider(_patch()))
         session_tmp = _session_tmp_dir(git_repo)
@@ -495,7 +533,7 @@ class ExecuteAgentStepScratchTests:
             progress=RecordingProgressSink(),
         )
 
-        assert (outcome.status, outcome.exit_code) == ("failed", 203)
+        assert (outcome.status, outcome.exit_code, outcome.error_code) == ("failed", 203, expected_code)
         assert outcome.error_message == outcome.stderr == expected_message
         assert (
             outcome.stdout == '{"status":"provider_error","summary":null,"unfixable_reason":null,"touched_files":[]}\n'

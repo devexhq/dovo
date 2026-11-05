@@ -475,6 +475,7 @@ class SharedMutationAdapterTests:
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
         assert resp.status == AgentResponseStatus.PROPOSED_PATCH
+        assert resp.error_code is None
         assert resp.unified_diff is not None and "fixed" in resp.unified_diff
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
@@ -486,6 +487,7 @@ class SharedMutationAdapterTests:
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
         assert resp.status == AgentResponseStatus.NO_OP
+        assert resp.error_code is None
         assert resp.unified_diff is None
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
@@ -496,7 +498,7 @@ class SharedMutationAdapterTests:
 
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
-        assert resp.status == AgentResponseStatus.TIMEOUT
+        assert (resp.status, resp.error_code) == (AgentResponseStatus.TIMEOUT, ErrorCode.AGENT_TIMEOUT)
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
         assert resp.errors == ["Agent timed out after 10s (provider=unit-test)."]
@@ -507,7 +509,7 @@ class SharedMutationAdapterTests:
 
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
-        assert resp.status == AgentResponseStatus.PROVIDER_ERROR
+        assert (resp.status, resp.error_code) == (AgentResponseStatus.PROVIDER_ERROR, ErrorCode.AGENT_PROVIDER_FAILED)
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
         assert resp.errors == ["Agent provider error: boom"]
@@ -535,7 +537,10 @@ class SharedMutationAdapterTests:
 
         resp = adapter.invoke(_gated_request(git_repo, destination))
 
-        assert resp.status == AgentResponseStatus.PROVIDER_ERROR
+        assert (resp.status, resp.error_code) == (
+            AgentResponseStatus.PROVIDER_ERROR,
+            ErrorCode.PATCH_FILE_COUNT_EXCEEDED,
+        )
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
         assert resp.errors == [
@@ -566,16 +571,33 @@ class SharedMutationAdapterTests:
     def test_git_failure_before_proposal_returns_provider_error(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, key: tuple[str, ...], expected_error: str
     ) -> None:
-        """Return PROVIDER_ERROR whose error names the git package's GIT_FAILED message, leaving the agent's edit in place."""
+        """Return PROVIDER_ERROR carrying GIT_FAILED and the git package's message, leaving the agent's edit in place."""
         _use_git(monkeypatch, FakeGitRunner({key: GitProcessOutput(128, "", "fatal: broke")}))
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "edit\n"}))
 
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
-        assert resp.status == AgentResponseStatus.PROVIDER_ERROR
+        assert (resp.status, resp.error_code) == (AgentResponseStatus.PROVIDER_ERROR, ErrorCode.GIT_FAILED)
         assert resp.errors == [expected_error.format(baseline=resp.mutation_baseline_ref)]
         if resp.mutation_baseline_ref is not None:
             assert (git_repo / "a.txt").read_text(encoding="utf-8") == "edit\n"
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            pytest.param(("--no-optional-locks", "status"), id="baseline"),
+            pytest.param(("diff", "--cached"), id="capture-diff"),
+        ],
+    )
+    def test_git_timeout_before_proposal_carries_git_timeout(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, key: tuple[str, ...]
+    ) -> None:
+        """Return PROVIDER_ERROR carrying GIT_TIMEOUT when a worktree git command times out."""
+        _use_git(monkeypatch, FakeGitRunner({key: GitError(ErrorCode.GIT_TIMEOUT, "git timed out")}))
+
+        resp = UnitTestAdapter(run_fn=_fake_run()).invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert (resp.status, resp.error_code) == (AgentResponseStatus.PROVIDER_ERROR, ErrorCode.GIT_TIMEOUT)
 
     def test_missing_git_binary_reaches_the_provider_error(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -632,7 +654,7 @@ class SharedMutationAdapterTests:
 
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
-        assert resp.status == AgentResponseStatus.PROVIDER_ERROR
+        assert (resp.status, resp.error_code) == (AgentResponseStatus.PROVIDER_ERROR, ErrorCode.AGENT_PROVIDER_FAILED)
         assert resp.errors == ["Agent provider error: preflight failed"]
         assert not run_function_called
 
@@ -658,12 +680,13 @@ class CliMutationDurationTests:
 
 class BlockedClassificationTests:
     @pytest.mark.parametrize(
-        ("denials", "writes_file", "expected", "expected_errors"),
+        ("denials", "writes_file", "expected", "expected_code", "expected_errors"),
         [
             pytest.param(
                 [AgentDenial(tool="bash", message="denied")],
                 False,
                 AgentResponseStatus.BLOCKED,
+                ErrorCode.AGENT_TASK_BLOCKED,
                 ["Agent run was blocked by tool permissions: bash: denied"],
                 id="denial-and-empty-diff",
             ),
@@ -671,10 +694,11 @@ class BlockedClassificationTests:
                 [AgentDenial(tool="bash", message="denied")],
                 True,
                 AgentResponseStatus.PROPOSED_PATCH,
+                None,
                 [],
                 id="denial-with-diff",
             ),
-            pytest.param([], False, AgentResponseStatus.NO_OP, [], id="no-denial-empty-diff"),
+            pytest.param([], False, AgentResponseStatus.NO_OP, None, [], id="no-denial-empty-diff"),
         ],
     )
     def test_denials_block_only_when_the_worktree_diff_is_empty(
@@ -683,6 +707,7 @@ class BlockedClassificationTests:
         denials: list[AgentDenial],
         writes_file: bool,
         expected: AgentResponseStatus,
+        expected_code: ErrorCode | None,
         expected_errors: list[str],
     ) -> None:
         adapter = UnitTestAdapter(
@@ -691,7 +716,7 @@ class BlockedClassificationTests:
 
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
-        assert resp.status == expected
+        assert (resp.status, resp.error_code) == (expected, expected_code)
         assert resp.errors == expected_errors
 
 
@@ -883,7 +908,7 @@ class RejectedPatchSaveTests:
             AgentRequestBuilder().with_worktree_path(git_repo).with_rejected_patch_destination(destination).build()
         )
 
-        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert (response.status, response.error_code) == (AgentResponseStatus.PROVIDER_ERROR, error_code)
         assert response.errors[0] == "gate said no"
         assert response.rejected_patch_path == str(destination)
         assert "agent.txt" in destination.read_text(encoding="utf-8")
@@ -1052,7 +1077,7 @@ class UnfixableClassificationTests:
             _unfixable_request(git_repo, tmp_path, None)
         )
 
-        assert response.status == AgentResponseStatus.UNFIXABLE
+        assert (response.status, response.error_code) == (AgentResponseStatus.UNFIXABLE, ErrorCode.AGENT_TASK_UNFIXABLE)
         assert response.unfixable_reason == "no SSH key"
         assert response.errors == []
         assert response.rejected_patch_path is None
@@ -1191,7 +1216,10 @@ class UnfixableClassificationTests:
 
         response = UnitTestAdapter(run_fn=_write).invoke(request)
 
-        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert (response.status, response.error_code) == (
+            AgentResponseStatus.PROVIDER_ERROR,
+            ErrorCode.AGENT_PROVIDER_FAILED,
+        )
         assert response.errors == [
             f"Agent provider error: Failed to read {request.agent_scratch_path}/unfixable.txt: {reason}"
         ]
