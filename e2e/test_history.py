@@ -143,11 +143,17 @@ steps:
         assert diff_grouped.exit_code == 0
         assert diff_grouped.stdout == diff_patch.stdout
 
+    @pytest.mark.parametrize(
+        "logs_command",
+        [pytest.param(["logs"], id="shortcut"), pytest.param(["session", "logs"], id="session")],
+    )
     def test_logs_displays_structured_event_timeline(
         self,
         run_dovo: DovoRunner,
         initialized_project: Path,
+        logs_command: list[str],
     ) -> None:
+        """`session logs` and its root `logs` shortcut both print the session's event timeline."""
         write_blueprint(
             initialized_project,
             "timeline-bp",
@@ -163,11 +169,11 @@ steps:
             runner=run_dovo,
         )
 
-        session_id = "sess-timeline-test"
+        session_id = f"sess-timeline-{'-'.join(logs_command)}"
         run_res = run_dovo(["run", "timeline-bp", "--session-id", session_id], cwd=initialized_project)
         assert run_res.exit_code == 0
 
-        logs_res = run_dovo(["logs", session_id], cwd=initialized_project)
+        logs_res = run_dovo([*logs_command, session_id], cwd=initialized_project)
         assert logs_res.exit_code == 0
         assert "Time" in logs_res.stdout
         assert "Event" in logs_res.stdout

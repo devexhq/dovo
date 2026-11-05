@@ -99,13 +99,15 @@ class CatalogItemCliTests:
         missing_res = run_dovo([kind.command, "validate", kind.missing_target], cwd=initialized_project)
         assert missing_res.exit_code == 1
 
+    @pytest.mark.parametrize("subcommand", ["list", "ls"])
     def test_list_includes_created_item(
-        self, run_dovo: DovoRunner, initialized_project: Path, kind: CatalogKind
+        self, run_dovo: DovoRunner, initialized_project: Path, kind: CatalogKind, subcommand: str
     ) -> None:
+        """`list` and its `ls` alias both report the created item under the list event."""
         name = f"listed-test-{kind.suffix}"
         run_dovo([kind.command, "create", "--name", name], cwd=initialized_project)
 
-        result = run_dovo([kind.command, "list", "--format", "json"], cwd=initialized_project)
+        result = run_dovo([kind.command, subcommand, "--format", "json"], cwd=initialized_project)
 
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
