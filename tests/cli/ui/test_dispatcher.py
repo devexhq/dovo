@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 
 import pytest
@@ -49,3 +50,29 @@ class UiDispatcherJsonTests:
         dispatcher.dispatch(CatalogListResult(item_type=item_type))
 
         assert json.loads(capsys.readouterr().out)["event_type"] == event_type
+
+
+class UiDispatcherConfirmTests:
+    @pytest.mark.parametrize(
+        ("answer", "expected"),
+        [
+            pytest.param("y\n", True, id="y"),
+            pytest.param("YES\n", True, id="yes"),
+            pytest.param("n\n", False, id="n"),
+            pytest.param("\n", False, id="empty"),
+            pytest.param("", False, id="end-of-input"),
+            pytest.param("maybe\ny\n", True, id="invalid-then-y"),
+        ],
+    )
+    def test_confirm_asks_on_stderr_and_writes_nothing_to_stdout(
+        self, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, answer: str, expected: bool
+    ) -> None:
+        """Return the answer to the question asked on stderr, re-asking after an invalid one, with stdout empty."""
+        monkeypatch.setattr("sys.stdin", io.StringIO(answer))
+
+        confirmed = UiDispatcher(output_format=OutputFormatOptions.JSON).confirm("Delete it?")
+
+        captured = capsys.readouterr()
+        assert confirmed is expected
+        assert captured.out == ""
+        assert captured.err.startswith("Delete it? [y/N]: ")

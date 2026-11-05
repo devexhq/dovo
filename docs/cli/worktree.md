@@ -58,7 +58,7 @@ dovo worktree delete <worktree-id> [--force] [--format terminal|json]
 
 If removing the directory, deleting the branch, updating the local database or pruning git's worktree list fails, the worktree is still reported as deleted and each failure is listed as a warning.
 
-Declining the confirmation prints `Deletion cancelled.`, removes nothing, and exits with code 0; with `--format json` the result has `cancelled: true`. Deleting a worktree that is already cleaned asks nothing and reports `already_cleaned: true`, also with exit code 0. An unknown id reports `error_code` `WORKTREE_NOT_FOUND` and exits with code 1, and an unexpected error reports `INTERNAL_ERROR`.
+Without `--force`, it asks for confirmation on stderr, also with `--format json`, so stdout holds only the result line. Declining the confirmation, or closing the prompt without an answer, prints `Deletion cancelled.`, removes nothing, and exits with code 0; with `--format json` the result has `cancelled: true`. Deleting a worktree that is already cleaned asks nothing and reports `already_cleaned: true`, also with exit code 0. An unknown id reports `error_code` `WORKTREE_NOT_FOUND` and exits with code 1, and an unexpected error reports `INTERNAL_ERROR`.
 
 This is also how a failed run's kept worktree is removed (see [`dovo run`](run.md#worktree-retention)). Kept worktrees count toward `worktree.max_active_worktrees`, and `dovo worktree prune` does not remove them.
 

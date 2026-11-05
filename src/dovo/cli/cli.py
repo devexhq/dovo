@@ -115,12 +115,13 @@ class DovoTyperGroup(TyperGroup):
         return list(self.commands)
 
     def invoke(self, ctx: "Context") -> object:
-        """Capture help flags and announce lock waits in the requested format, then run the command, reporting a failure no command result carries and exiting 1."""
+        """Capture help flags and the requested format, announce lock waits in it, then run the command, reporting a failure no command result carries and exiting 1."""
         raw_args = [*getattr(ctx, "_protected_args", []), *getattr(ctx, "args", [])]
+        ctx.ensure_object(dict)
         if raw_args:
-            ctx.ensure_object(dict)
             ctx.obj["is_help"] = any(a in ("--help", "-h") for a in raw_args)
         output_format = _requested_format(raw_args)
+        ctx.obj["output_format"] = output_format
         WorkspaceLock.set_default_on_wait(_lock_wait_notifier(output_format))
         try:
             return super().invoke(ctx)
@@ -183,12 +184,25 @@ def version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-def _ensure_run_workspace(path: Path | None) -> None:
-    """Auto-initialize the workspace for `dovo run`; on failure render the init result and exit by its error_code."""
+def _ensure_run_workspace(path: Path | None, output_format: OutputFormatOptions) -> None:
+    """Auto-initialize the workspace for `dovo run`; on failure report it and exit by its error_code.
+
+    Under JSON output the failure is the `error` event, since no run has started; otherwise the init result's panel.
+    """
     result = ensure_lazy_project_init(Filesystem(path))
-    if result is not None and not result.ok:
+    if result is None or result.error_code is None:
+        return
+    if output_format == OutputFormatOptions.JSON:
+        fields = FailureFields(
+            error_code=result.error_code,
+            errors=result.errors,
+            remediations=result.remediations,
+            diagnostics=result.diagnostics,
+        )
+        _report_failure("Initialization Failed", fields, output_format)
+    else:
         ui_dispatcher.dispatch(result)
-        exit_for(result)
+    exit_for(result)
 
 
 @app.callback(invoke_without_command=True)
@@ -230,6 +244,7 @@ def main(
     ctx.call_on_close(lambda: reset_cli_command(token))
     ctx.obj["verbose"] = verbose
     ctx.obj["path"] = path
+    output_format = ctx.obj.get("output_format", OutputFormatOptions.TERMINAL)
 
     # 1. Handle base commands
     if ctx.invoked_subcommand is None:
@@ -238,13 +253,14 @@ def main(
         raise typer.Exit()
     elif verbose:
         ui_dispatcher.dispatch(
-            MessageEvent(message="[dim yellow][TELEMETRY] Global verbose tracking layer active.[/dim yellow]")
+            MessageEvent(message="[TELEMETRY] Global verbose tracking layer active.", style="dim yellow"),
+            output_format=output_format,
         )
 
     # 2. Build the shared CLI context for every real subcommand invocation
     if not ctx.obj.get("is_help", False) and ctx.invoked_subcommand != "init":
         if ctx.invoked_subcommand == "run":
-            _ensure_run_workspace(path)
+            _ensure_run_workspace(path, output_format)
         ctx.obj["context"] = CliContext.build(
             path=path, load_config=ctx.invoked_subcommand not in NON_STRICT_CONFIG_COMMANDS
         )

@@ -647,6 +647,26 @@ class RunCliAutoInitTests:
         assert _tree_bytes(target) == target_before
         assert _tree_bytes(dovo_home) == home_before
 
+    def test_run_cli_failed_auto_init_json_writes_one_error_event_and_exits_one(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 with stdout exactly one `error` event carrying the init failure's error_code, errors and remediations."""
+        target, _ = _failed_auto_init_target("bootstrap", tmp_path, monkeypatch)
+
+        result = cli_runner.invoke(app, ["-p", str(target), "run", "tests", "--format", "json"])
+
+        assert result.exit_code == 1
+        assert len(result.stdout.splitlines()) == 1
+        [event] = json_events(result.stdout)
+        assert event["event_type"] == "error"
+        payload = event["payload"]
+        assert isinstance(payload, dict)
+        assert payload["ok"] is False
+        assert payload["error_code"] == ErrorCode.BOOTSTRAP_PATH_INVALID.value
+        assert any("exists but is a file, not a directory." in error for error in payload["errors"])
+        assert payload["remediations"]
+        assert "Initialization Failed!" not in result.stdout
+
     def test_run_cli_seed_failure_during_auto_init_exits_one_and_rolls_back(
         self, cli_runner: CliRunner, git_repo: Path, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
     ) -> None:

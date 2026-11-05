@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from e2e.conftest import DOVO_HOME, DovoRunner
+from e2e.conftest import DOVO_HOME, DovoRunner, parse_json
 
 
 @dataclass(frozen=True)
@@ -171,3 +171,21 @@ class CatalogItemCliTests:
         assert envelope.get("event_type") == f"{kind.command}.delete"
         assert envelope.get("payload", {}).get("deleted") is True
         assert not item_path.exists()
+
+    def test_delete_json_without_force_asks_on_stderr_and_keeps_stdout_json(
+        self, run_dovo: DovoRunner, initialized_project: Path, kind: CatalogKind
+    ) -> None:
+        name = f"ask-delete-{kind.suffix}"
+        run_dovo([kind.command, "create", "--name", name], cwd=initialized_project)
+        item_path = initialized_project / ".dovo" / "catalog" / kind.catalog_dir / f"{name}.yml"
+
+        result = run_dovo([kind.command, "delete", name, "--format", "json"], cwd=initialized_project, input_text="")
+
+        assert result.exit_code == 0
+        assert f"Are you sure you want to delete {kind.command} '{name}'? [y/N]: " in result.stderr
+        envelope = parse_json(result.stdout)
+        assert envelope.get("event_type") == f"{kind.command}.delete"
+        payload = envelope.get("payload")
+        assert isinstance(payload, dict)
+        assert (payload.get("deleted"), payload.get("cancelled")) == (False, True)
+        assert item_path.is_file()

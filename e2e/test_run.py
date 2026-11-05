@@ -49,6 +49,28 @@ steps:
         assert (git_project / ".dovo" / "config.json").is_file()
         assert (git_project / "lazy_output.txt").read_text().strip() == "lazy initialized"
 
+    def test_run_json_failed_auto_init_writes_one_error_event(self, run_dovo: DovoRunner, git_project: Path) -> None:
+        (git_project / ".dovo").write_text("not a directory\n", encoding="utf-8")
+
+        result = run_dovo(["run", "anything", "--format", "json"], cwd=git_project)
+
+        assert result.exit_code == 1
+        envelope = parse_json(result.stdout)
+        assert envelope.get("event_type") == "error"
+        payload = envelope.get("payload")
+        assert isinstance(payload, dict)
+        assert payload.get("error_code") == "BOOTSTRAP_PATH_INVALID"
+        assert payload.get("errors")
+        assert payload.get("remediations")
+
+    def test_run_failed_auto_init_prints_the_error_panel(self, run_dovo: DovoRunner, git_project: Path) -> None:
+        (git_project / ".dovo").write_text("not a directory\n", encoding="utf-8")
+
+        result = run_dovo(["run", "anything"], cwd=git_project)
+
+        assert result.exit_code == 1
+        assert "Initialization Failed!" in result.stdout
+
     def test_run_no_worktree_persists_completed_session(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
         write_blueprint(
             initialized_project,

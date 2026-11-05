@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from e2e.conftest import DOVO_HOME, DovoRunner, parse_json
+from e2e.conftest import DOVO_HOME, DovoRunner, parse_events, parse_json
 
 
 @pytest.mark.e2e
@@ -175,6 +175,14 @@ class InitCliTests:
         assert payload.get("status") == "ok"
         assert payload.get("config_error_code") is None
         assert "config_status" not in payload
+
+    def test_verbose_status_json_writes_only_json_lines(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
+        result = run_dovo(["-v", "status", "--format", "json"], cwd=initialized_project)
+
+        assert result.exit_code == 0
+        events = parse_events(result.stdout)
+        assert len(events) == len(result.stdout.splitlines())
+        assert [event.get("event_type") for event in events] == ["message", "status"]
 
     def test_initialized_git_project_doctor_emits_parseable_json(
         self, run_dovo: DovoRunner, initialized_project: Path

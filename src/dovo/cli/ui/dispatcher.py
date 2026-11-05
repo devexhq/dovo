@@ -159,6 +159,32 @@ class UiDispatcher:
         sys.stdout.write(text)
         sys.stdout.flush()
 
+    def confirm(self, question: str) -> bool:
+        """Ask a yes/no question on stderr and read the answer from stdin, writing nothing to stdout.
+
+        Args:
+            question: Question to ask, without the answer hint.
+
+        Returns:
+            True for a "y" or "yes" answer; False for "n", "no", an empty answer, end of input or an interrupt.
+        """
+        while True:
+            sys.stderr.write(f"{question} [y/N]: ")
+            sys.stderr.flush()
+            try:
+                line = sys.stdin.readline()
+            except KeyboardInterrupt:
+                line = ""
+            if not line:
+                sys.stderr.write("\n")
+                return False
+            answer = line.strip().lower()
+            if answer in ("", "n", "no"):
+                return False
+            if answer in ("y", "yes"):
+                return True
+            sys.stderr.write("Error: invalid input\n")
+
     def _dispatch_interactive(self, data: object, formatter: ComponentFormatter[Any]) -> bool:
         """Route event to active live or collapsing-tail display if one is running."""
         if self._live_display is not None and self._live_display.is_active:

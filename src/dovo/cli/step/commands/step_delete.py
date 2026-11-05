@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import typer
-
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.common.models import OutputFormatOptions
@@ -14,16 +12,10 @@ from dovo.core.catalog.models import CatalogDeleteResult, CatalogItemType, Catal
 
 
 def _confirm_delete(sha_or_name: str) -> Callable[[CatalogRecord], bool]:
-    """Return a confirm callback asking to delete step sha_or_name; it returns False when declined or aborted."""
+    """Return a confirm callback asking on stderr to delete step sha_or_name; it returns False when declined or aborted."""
 
     def confirm(_item: CatalogRecord) -> bool:
-        try:
-            return typer.confirm(
-                f"Are you sure you want to delete step '{sha_or_name}'?",
-                default=False,
-            )
-        except typer.Abort:
-            return False
+        return ui_dispatcher.confirm(f"Are you sure you want to delete step '{sha_or_name}'?")
 
     return confirm
 
