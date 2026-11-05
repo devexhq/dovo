@@ -20,7 +20,7 @@ Every test directory has an `__init__.py`. `tests/core/**` never imports `dovo.c
 - **Banned vague names:** `test_ok`, `test_success`, `test_present`, `test_missing`, `test_blank`, `test_basic`, `test_default`, `test_works`, `test_timeout`, `test_no_op`, `test_help`, or `should_*`.
 - **Docstrings:** Optional; write a single imperative sentence only when the identifier cannot carry an exact literal or ordering contract.
 
-## The Four Execution Tiers
+## The Five Execution Tiers
 
 ### Tier 1 — Domain Behavior (`tests/core/`, `tests/engine/`, `tests/common/`)
 Assert on returned `*Result` objects and real side effects (files, git refs, DB rows). Use real `tmp_path`, SQLite, and `GitWorkspaceHarness`; mock only genuine process/network boundaries.
@@ -36,6 +36,9 @@ Every command action gets a `*CliIntegrationTests` suite (`runner.invoke(app, [.
 
 ### Tier 4 — Invariants (`tests/lint/`)
 Static AST and architectural boundary checks: layer direction, output routing, atomic file writes, model strictness, type-ignore reasons, and `README.md` command parity.
+
+### Tier 5 — End-to-End Scenarios (`e2e/`)
+Each scenario runs the installed `dovo` binary as a subprocess (`run_dovo`, `start_dovo` or `run_dovo_pty` from `e2e/conftest.py`) against a materialized fixture repository and asserts only what a person gets: exit code, terminal text, JSON output, files on disk and git state. Never assert internals, or a contract a lower tier already pins; one scenario per user-visible path is enough. An outcome that changes what a person types or sees from the binary (a command, a flag, an exit code, a terminal text or a JSON field) gets its scenario added or updated in the same pull request (R13); an outcome a person cannot observe from the binary gets none. The suite runs serially (`uv run pytest e2e -n 0`), outside `dovo run quality`, and gates CI on its own job.
 
 ## Harness, Fixtures, and Parameterization
 

@@ -15,7 +15,7 @@ Read from disk:
 ## Review priorities
 
 1. **Correctness and failure paths:** Bugs, regressions, unhandled edge cases, partial state writes, or silent error swallowing in the diff.
-2. **Contract coverage:** Every outcome (`O-n`), decision (`D-n`), binding value, and `Done when` condition in `.agentic/ship/contract.json` (plus any settled `answered_questions` in `.agentic/ship/progress.json`) is met by the code and verified by meaningful assertions in tests.
+2. **Contract coverage:** Every outcome (`O-n`), decision (`D-n`), binding value, and `Done when` condition in `.agentic/ship/contract.json` (plus any settled `answered_questions` in `.agentic/ship/progress.json`) is met by the code and verified by meaningful assertions in tests. An outcome a person can observe from the installed binary is also verified by an end-to-end scenario under `e2e/` (R13); a missing or stale scenario is a rule violation.
 3. **Repository rules and docs:** Compliance with R1–R18 in [AGENTS.md](../../../../../AGENTS.md), [docs/agents/code-conventions.md](../../../../../docs/agents/code-conventions.md), and required documentation updates.
 
 ## Dispositions
