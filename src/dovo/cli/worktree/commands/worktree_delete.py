@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import typer
-
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.common.models import OutputFormatOptions
@@ -12,15 +10,11 @@ from dovo.core.worktree import Worktree, WorktreeDeleteResult
 
 
 def _confirm_delete(row: WorktreeRecord) -> bool:
-    """Ask to delete row's worktree and branch; True when confirmed, False when declined or aborted."""
-    try:
-        return typer.confirm(
-            f"Delete worktree '{row.id}' (branch {row.branch_name}, path {row.worktree_path})?\n"
-            "This removes the git worktree and branch.",
-            default=False,
-        )
-    except typer.Abort:
-        return False
+    """Ask on stderr to delete row's worktree and branch; True when confirmed, False when declined or aborted."""
+    return ui_dispatcher.confirm(
+        f"Delete worktree '{row.id}' (branch {row.branch_name}, path {row.worktree_path})?\n"
+        "This removes the git worktree and branch."
+    )
 
 
 def worktree_delete_command(

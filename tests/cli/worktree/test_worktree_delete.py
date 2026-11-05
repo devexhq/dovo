@@ -78,7 +78,8 @@ class WorktreeDeleteCliIntegrationTests:
         )
 
         assert result.exit_code == 0
-        payload = json.loads(result.stdout[result.stdout.index("{") :])["payload"]
+        assert "Delete worktree" in result.stderr
+        payload = json.loads(result.stdout)["payload"]
         assert payload["worktree"]["id"] == session.session_id
         assert {key: value for key, value in payload.items() if key != "worktree"} == {
             "ok": True,

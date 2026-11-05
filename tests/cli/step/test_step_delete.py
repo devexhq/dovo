@@ -46,8 +46,9 @@ _NOT_FOUND_PAYLOAD = {
 
 
 def _payload(stdout: str) -> dict[str, object]:
-    """Return the JSON event payload that follows any prompt text in stdout."""
-    return json.loads(stdout[stdout.index("{") :])["payload"]
+    """Return the payload of stdout, asserting stdout is exactly one JSON line."""
+    assert len(stdout.splitlines()) == 1, stdout
+    return json.loads(stdout)["payload"]
 
 
 def _assert_cancelled_keeping(payload: dict[str, object], key: str) -> None:
@@ -138,7 +139,7 @@ class StepDeleteCliIntegrationTests:
 
         assert result.exit_code == 1
         assert lock_timeout_reported(result.stdout)
-        assert _PROMPT.format(name="demo") not in result.stdout
+        assert _PROMPT.format(name="demo") not in result.stderr
         assert (isolated_workspace / ".dovo" / "catalog" / "steps" / "demo.yml").is_file()
 
 
@@ -148,7 +149,7 @@ class StepDeleteCliTests:
     def test_declined_confirmation_returns_cancelled_json(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """Exit 0 with payload == the declined-delete JSON, item the kept record, when stdin answers 'n', and keep the file on disk."""
+        """Exit 0 with payload == the declined-delete JSON, item the kept record, when stdin answers 'n', asking on stderr only, and keep the file on disk."""
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "kept-step")
 
         result = cli_runner.invoke(
@@ -156,12 +157,12 @@ class StepDeleteCliTests:
         )
 
         assert result.exit_code == 0
-        assert _PROMPT.format(name="kept-step") in result.stdout
+        assert _PROMPT.format(name="kept-step") in result.stderr
         _assert_cancelled_keeping(_payload(result.stdout), "kept-step")
         assert (isolated_workspace / ".dovo" / "catalog" / "steps" / "kept-step.yml").is_file()
 
     def test_unanswered_prompt_returns_cancelled_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """Exit 0 with payload == the declined-delete JSON, item the kept record, when stdin is closed without an answer, and keep the file."""
+        """Exit 0 with payload == the declined-delete JSON, item the kept record, when stdin is closed without an answer, asking on stderr only, and keep the file."""
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "kept-step")
 
         result = cli_runner.invoke(
@@ -169,6 +170,7 @@ class StepDeleteCliTests:
         )
 
         assert result.exit_code == 0
+        assert _PROMPT.format(name="kept-step") in result.stderr
         _assert_cancelled_keeping(_payload(result.stdout), "kept-step")
         assert (isolated_workspace / ".dovo" / "catalog" / "steps" / "kept-step.yml").is_file()
 
@@ -197,7 +199,7 @@ class StepDeleteCliTests:
         )
 
         assert result.exit_code == 0
-        assert (_PROMPT.format(name="gone-step") in result.stdout) is prompted
+        assert (_PROMPT.format(name="gone-step") in result.stderr) is prompted
         payload = _payload(result.stdout)
         item = payload["item"]
         assert isinstance(item, dict)
@@ -230,7 +232,7 @@ class StepDeleteCliTests:
         )
 
         assert result.exit_code == 1
-        assert _PROMPT.format(name="ghost") not in result.stdout
+        assert _PROMPT.format(name="ghost") not in result.stderr
         assert _payload(result.stdout) == _NOT_FOUND_PAYLOAD
 
     @pytest.mark.parametrize(
@@ -265,7 +267,7 @@ class StepDeleteCliTests:
         )
 
         assert result.exit_code == 1
-        assert _PROMPT.format(name=name) not in result.stdout
+        assert _PROMPT.format(name=name) not in result.stderr
         payload = _payload(result.stdout)
         assert payload["error_code"] == error_code
         assert payload["errors"] == [error]
@@ -293,7 +295,7 @@ class StepDeleteItemTypeScopeTests:
         )
 
         assert result.exit_code == 1
-        assert _PROMPT.format(name=target) not in result.stdout
+        assert _PROMPT.format(name=target) not in result.stderr
         assert _payload(result.stdout) == {
             **_NOT_FOUND_PAYLOAD,
             "errors": [f"Catalog step '{target}' not found."],
@@ -342,7 +344,7 @@ class StepDeleteItemTypeScopeTests:
         )
 
         assert result.exit_code == 1
-        assert _PROMPT.format(name="foo") not in result.stdout
+        assert _PROMPT.format(name="foo") not in result.stderr
         payload = _payload(result.stdout)
         assert payload["error_code"] == "CATALOG_TIER_DELETE_FORBIDDEN"
         assert payload["errors"] == [

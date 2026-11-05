@@ -305,6 +305,26 @@ class WorktreeCliTests:
         )
         assert branch_proc.stdout.strip() == ""
 
+    def test_worktree_delete_json_without_force_asks_on_stderr_and_keeps_stdout_json(
+        self, run_dovo: DovoRunner, initialized_project: Path
+    ) -> None:
+        create_res = run_dovo(
+            ["worktree", "create", "--name", "json-ask-del-wt", "--format", "json"], cwd=initialized_project
+        )
+        session_id = json.loads(create_res.stdout)["payload"]["session"]["session_id"]
+        wt_dir = initialized_project / ".dovo" / "worktrees" / session_id
+
+        result = run_dovo(
+            ["worktree", "delete", session_id, "--format", "json"], cwd=initialized_project, input_text="n\n"
+        )
+
+        assert result.exit_code == 0
+        assert f"Delete worktree '{session_id}'" in result.stderr
+        envelope = json.loads(result.stdout)
+        assert len(result.stdout.splitlines()) == 1
+        assert (envelope["payload"]["deleted"], envelope["payload"]["cancelled"]) == (False, True)
+        assert wt_dir.is_dir()
+
     def test_worktree_delete_interactive_prompt_confirms_and_aborts(
         self, run_dovo_pty: DovoPtyRunner, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:

@@ -48,6 +48,25 @@ class CliSmokeTests:
         assert "Dovo CLI" in result.stdout
         assert "init" in result.stdout
 
+    def test_verbose_json_writes_only_json_lines(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        """Exit 0 with every stdout line a JSON event, the telemetry notice a `message` event, for `-v status --format json`."""
+        result = cli_runner.invoke(app, ["-v", "-p", str(cli_workspace), "status", "--format", "json"])
+
+        assert result.exit_code == 0
+        lines = result.stdout.splitlines()
+        assert len(json_events(result.stdout)) == len(lines)
+        assert json.loads(lines[0])["event_type"] == "message"
+        assert json.loads(lines[0])["payload"] == {
+            "message": "[TELEMETRY] Global verbose tracking layer active.",
+            "style": "dim yellow",
+        }
+
+    def test_verbose_terminal_prints_the_telemetry_notice(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        result = cli_runner.invoke(app, ["-v", "-p", str(cli_workspace), "status"])
+
+        assert result.exit_code == 0
+        assert "[TELEMETRY] Global verbose tracking layer active." in result.stdout
+
     def test_mistyped_command_suggests_a_command_group(self, cli_runner: CliRunner) -> None:
         result = cli_runner.invoke(app, ["blueprnt"])
 

@@ -18,6 +18,8 @@ Each line is one JSON object with exactly three keys, in this order:
 
 A command can write progress events before its result; the command result is its last line.
 
+Under `--format json`, every line on stdout is an event line. A question a command asks, such as the confirmation of a `delete` run without `--force`, is written to stderr, and the notice that `--verbose` (`-v`) turns on is written as a `message` event.
+
 ### Event names
 
 An event name is lowercase words joined by dots, matching `^[a-z][a-z_]*(\.[a-z][a-z_]*)*$`, and each name belongs to exactly one kind of event. A command result is named after the command path. A shortcut writes the same name as its long form: `dovo diff`, `dovo logs` and `dovo resume` write `session.diff`, `session.logs` and `run.result`, like `dovo session diff`, `dovo session logs` and `dovo session resume`.
@@ -71,6 +73,7 @@ Some failures stop a command before it produces a result. Dovo then writes one `
 - The workspace is not initialized.
 - The configuration does not load, for a command that needs it.
 - Another `dovo` process holds the workspace lock and the wait times out.
+- The automatic initialization of `dovo run` fails, so no run starts.
 - An unexpected error escapes the command.
 
 The `error` event is the last line of the output and the only line written for that failure. It is written whenever `--format json` or `--format=json` appears on the command line, even when the failure happens before the subcommand's own options are read. For example, `dovo worktree list --format json` in a repository without `.dovo/project.json` prints:
@@ -97,6 +100,7 @@ Without `--format json`, the same failure prints a red panel instead. The panel 
 | No valid `.dovo/project.json` | `WORKSPACE_NOT_INITIALIZED` | `Workspace Not Initialized` | See [Workspace not initialized](#workspace-not-initialized). |
 | Configuration does not load | The configuration failure's code | `Invalid Configuration` | The configuration failure's fixes. |
 | Workspace lock timeout | `WORKSPACE_LOCK_TIMEOUT` | `Workspace Lock Timeout` | `Wait for the other dovo process to release the workspace lock, then retry.` |
+| Automatic initialization of `dovo run` fails | The initialization failure's code, such as `BOOTSTRAP_PATH_INVALID` | `Initialization Failed!` | The initialization failure's fixes, as `dovo init` prints them. |
 | Unexpected error | `INTERNAL_ERROR` | `Fatal Error` | None. |
 
 Every `error` event, and every one of these panels, exits `1`.
@@ -105,7 +109,7 @@ Every `error` event, and every one of these panels, exits `1`.
 
 Every command except `dovo init` and `dovo run` needs a valid `.dovo/project.json`. When it is missing, unreadable or invalid, the command fails with `Workspace is not initialized: no valid project identity at '<path>'.` and the remediation `Run 'dovo init' to initialize the workspace.` (command `dovo init`). When `.dovo/project.json` exists but cannot be used, a second remediation follows: `Run 'dovo init --id <project-id> --force' to replace the unusable identity.` (command `dovo init --id <project-id> --force`).
 
-`dovo run` initializes a workspace that has no `.dovo/project.json` itself; see [`dovo run`](../cli/run.md).
+`dovo run` initializes a workspace that has no `.dovo/project.json` itself; see [`dovo run`](../cli/run.md). When that initialization fails, `dovo run --format json` writes the `error` event with the initialization failure's code, messages and remediations instead of a `run.result`, because no run has started.
 
 ### Configuration does not load
 
