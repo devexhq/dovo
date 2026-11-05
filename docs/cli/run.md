@@ -64,11 +64,11 @@ The `path` of a `cleanup` event (including with `--format json`) is relative to 
 
 ### Step failure codes
 
-With `--format json`, each step that finishes prints a `StepDoneEvent` carrying `idx`, `total`, `step_id`, `ok`, `exit_code`, `duration_seconds`, `error_message` and `error_code`; `dovo resume` prints the same event. `error_code` is `null` for a step that completed. A failed step carries one of the codes below, or, when it failed because something it used failed, that failure's code: `CATALOG_NOT_FOUND` for a `uses:` step that does not exist, an `ARTIFACT_*` code for an artifact that cannot be published, downloaded or inlined, or an `ASK_*` code for an `ask` prompt that cannot be built. A step continued past with `on_failure: continue`, or with `continue` at a failure prompt, keeps its code, and a retried step carries the code of its last attempt. A failed agent step carries no code yet, unless its `assert` checks or a declared artifact failed. [`dovo session show`](session.md#dovo-session-show) reports the same code for each step.
+With `--format json`, each step that finishes prints a `StepDoneEvent` carrying `idx`, `total`, `step_id`, `ok`, `exit_code`, `duration_seconds`, `error_message` and `error_code`; `dovo resume` prints the same event. `error_code` is `null` for a step that completed. A failed step carries one of the codes below, or, when it failed because something it used failed, that failure's code: `CATALOG_NOT_FOUND` for a `uses:` step that does not exist, an `ARTIFACT_*` code for an artifact that cannot be published, downloaded or inlined, an `ASK_*` code for an `ask` prompt that cannot be built, or, for an agent step, the `PATCH_*` code its edit failed validation with (`PATCH_FILE_COUNT_EXCEEDED` for an edit over `max_files`, for example), or the `GIT_*` code of a git command on its worktree that failed (`GIT_TIMEOUT` when it timed out, `GIT_FAILED` for most other failures). A step continued past with `on_failure: continue`, or with `continue` at a failure prompt, keeps its code, and a retried step carries the code of its last attempt. [`dovo session show`](session.md#dovo-session-show) reports the same code for each step.
 
 | Code | Cause |
 | --- | --- |
-| `STEP_WORKTREE_MISSING` | The step's working directory does not exist or is not a directory. |
+| `STEP_WORKTREE_MISSING` | The step's working directory does not exist or is not a directory, or an agent step ran without a worktree (`--no-worktree`). |
 | `STEP_DEFINITION_INVALID` | The step cannot run as written: an unsupported type, a `command` or `internal` step with no command, a `script` step with no `script_path`, an unknown internal command, or an `ask` step with no interaction. |
 | `STEP_SCRIPT_NOT_FOUND` | The file named by `script_path` does not exist. |
 | `STEP_LAUNCH_FAILED` | The command or script could not be started. |
@@ -79,7 +79,15 @@ With `--format json`, each step that finishes prints a `StepDoneEvent` carrying 
 | `STEP_SESSION_MISSING` | An `artifacts.upload` or `artifacts.download` step ran with no active session. |
 | `STEP_INPUT_INVALID` | An `artifacts.upload` or `artifacts.download` step is missing `ARTIFACT_NAME`, `ARTIFACT_PATH` or `ARTIFACT_DEST`, or its `ARTIFACT_REVISION` is not a positive integer. |
 | `STEP_ANSWER_FAILED` | An `ask` step was answered with an option marked `fail: true`. |
-| `INTERNAL_ERROR` | An internal command failed with an unexpected error. |
+| `STEP_AGENT_SETTINGS_MISSING` | An agent step ran with no resolved agent settings. |
+| `STEP_PROMPT_EMPTY` | An agent step's prompt is blank after interpolation. |
+| `AGENT_SCRATCH_UNAVAILABLE` | The agent step's private scratch directory could not be prepared. |
+| `AGENT_PROVIDER_UNSUPPORTED` | The agent step's provider is not a supported provider. |
+| `AGENT_TIMEOUT` | The agent ran longer than the step's `timeout_seconds`. |
+| `AGENT_TASK_UNFIXABLE` | The agent reported the task unfixable. |
+| `AGENT_TASK_BLOCKED` | The agent was blocked by its tool permissions and made no change. |
+| `AGENT_PROVIDER_FAILED` | Any other agent provider failure, such as a missing credential, a provider that exited with an error, or an unreadable unfixable report. |
+| `INTERNAL_ERROR` | An internal command, or an agent provider, failed with an unexpected error, or an agent step's output could not be delivered. |
 
 ### Run result
 

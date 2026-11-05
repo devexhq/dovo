@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.constants import SESSION_LOG_FILENAME
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import FailurePolicy
 from dovo.core.agents import (
@@ -149,15 +150,33 @@ class AgentStepRunnerTests:
         assert result.exit_code == 202
         assert json.loads(result.stdout)["status"] == "timeout"
 
+    def test_retried_agent_step_carries_its_last_attempts_code(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provider = FakeAgentProvider(
+            AgentResponse(status=AgentResponseStatus.PROVIDER_ERROR, error_code=ErrorCode.AGENT_PROVIDER_FAILED),
+            AgentResponse(status=AgentResponseStatus.TIMEOUT, error_code=ErrorCode.AGENT_TIMEOUT),
+        )
+        _use_provider(monkeypatch, provider)
+
+        result = _run_agent_step(git_repo, StepBuilder.agent("plan").with_retry(max_retries=2, backoff_ms=0))
+
+        assert (result.status, result.attempts, result.error_code) == ("failed", 2, ErrorCode.AGENT_TIMEOUT)
+
     def test_continue_policy_ignores_unfixable_step_but_keeps_summary_status(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _use_provider(monkeypatch, FakeAgentProvider(AgentResponse(status=AgentResponseStatus.UNFIXABLE)))
+        _use_provider(
+            monkeypatch,
+            FakeAgentProvider(
+                AgentResponse(status=AgentResponseStatus.UNFIXABLE, error_code=ErrorCode.AGENT_TASK_UNFIXABLE)
+            ),
+        )
 
         result = _run_agent_step(git_repo, StepBuilder.agent("plan").with_on_failure(FailurePolicy.CONTINUE))
 
         assert result.status == "ignored"
-        assert result.exit_code == 201
+        assert (result.exit_code, result.error_code) == (201, ErrorCode.AGENT_TASK_UNFIXABLE)
         assert json.loads(result.stdout)["status"] == "unfixable"
 
     @pytest.mark.parametrize(

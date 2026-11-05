@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
@@ -145,10 +146,13 @@ class RunDirectAttemptRequestTests:
     def test_unregistered_provider_returns_provider_error_attempt(
         self, git_repo: Path, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return provider_error naming the unsupported provider with no diagnostics and no record."""
+        """Return provider_error carrying AGENT_PROVIDER_UNSUPPORTED and naming the provider, with no diagnostics and no record."""
         attempt = _attempt(git_repo, "unregistered")
 
-        assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
+        assert (attempt.status, attempt.error_code) == (
+            AgentResponseStatus.PROVIDER_ERROR,
+            ErrorCode.AGENT_PROVIDER_UNSUPPORTED,
+        )
         assert "Unsupported agent provider 'unregistered'." in attempt.errors[0]
         assert attempt.diagnostics == []
         assert not frozen_diagnostic_clock.parent.parent.exists()
@@ -156,7 +160,7 @@ class RunDirectAttemptRequestTests:
     def test_provider_exception_returns_provider_error_attempt(
         self, git_repo: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return provider_error with errors == ["Agent provider error: boom"] and diagnostics == [the agents.run record]."""
+        """Return provider_error carrying INTERNAL_ERROR, errors == ["Agent provider error: boom"] and diagnostics == [the agents.run record]."""
 
         class _Exploding(BaseAgentProvider):
             def _invoke(self, request: AgentRequest) -> AgentResponse:
@@ -166,7 +170,7 @@ class RunDirectAttemptRequestTests:
 
         attempt = _attempt(git_repo)
 
-        assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
+        assert (attempt.status, attempt.error_code) == (AgentResponseStatus.PROVIDER_ERROR, ErrorCode.INTERNAL_ERROR)
         assert attempt.errors == ["Agent provider error: boom"]
         assert attempt.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
@@ -193,7 +197,7 @@ class RunDirectAttemptRequestTests:
 
         attempt = _attempt(git_repo)
 
-        assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
+        assert (attempt.status, attempt.error_code) == (AgentResponseStatus.PROVIDER_ERROR, ErrorCode.INTERNAL_ERROR)
         assert attempt.errors == ["Agent provider error: build failed"]
         assert attempt.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
@@ -232,7 +236,7 @@ class RunDirectAttemptSettleTests:
 
         attempt = _attempt(git_repo)
 
-        assert attempt.status == AgentResponseStatus.NO_OP
+        assert (attempt.status, attempt.error_code) == (AgentResponseStatus.NO_OP, None)
         assert attempt.summary == expected_summary
         assert _porcelain(git_repo) == before
 
@@ -268,6 +272,24 @@ class RunDirectAttemptSettleTests:
         assert attempt.errors == ["Unexpected error during agents.invoke: boom"]
         assert attempt.diagnostics == [record]
 
+    @pytest.mark.parametrize(
+        "error_code",
+        [
+            pytest.param(ErrorCode.AGENT_TIMEOUT, id="agent-timeout"),
+            pytest.param(ErrorCode.PATCH_SIZE_EXCEEDED, id="patch"),
+            pytest.param(ErrorCode.GIT_FAILED, id="git"),
+        ],
+    )
+    def test_settle_copies_response_error_code_onto_attempt(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, error_code: ErrorCode
+    ) -> None:
+        response = AgentResponse(status=AgentResponseStatus.PROVIDER_ERROR, error_code=error_code)
+        _use_provider(monkeypatch, FakeAgentProvider(response))
+
+        attempt = _attempt(git_repo)
+
+        assert attempt.error_code == error_code
+
 
 class _EditingAdapter(CliDirectMutationAdapter):
     """Real direct-mutation adapter that writes the given files instead of invoking a tool."""
@@ -299,7 +321,7 @@ class RunDirectAttemptDirectMutationTests:
         attempt = _attempt(git_repo, "copilot")
 
         assert requested == ["copilot"]
-        assert attempt.status == AgentResponseStatus.PROPOSED_PATCH
+        assert (attempt.status, attempt.error_code) == (AgentResponseStatus.PROPOSED_PATCH, None)
         assert attempt.touched_files == ["a.txt", "b.txt"]
 
     def test_mutation_over_step_max_files_returns_provider_error_and_rolls_back(
@@ -311,7 +333,10 @@ class RunDirectAttemptDirectMutationTests:
 
         attempt = _attempt(git_repo, "copilot", max_files=1, context=context)
 
-        assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
+        assert (attempt.status, attempt.error_code) == (
+            AgentResponseStatus.PROVIDER_ERROR,
+            ErrorCode.PATCH_FILE_COUNT_EXCEEDED,
+        )
         assert _porcelain(git_repo) == ""
 
     def test_mutation_without_step_max_files_is_not_limited(

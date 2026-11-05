@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability
 from dovo.core.agents.models import AgentDenial, AgentResponse, AgentResponseStatus
@@ -31,6 +32,7 @@ class TimeoutResponseTests:
 
         assert response == AgentResponse(
             status=AgentResponseStatus.TIMEOUT,
+            error_code=ErrorCode.AGENT_TIMEOUT,
             duration_seconds=250.0,
             raw_text="partial",
             mutation_baseline_ref="abc",
@@ -66,6 +68,7 @@ class BlockedResponseContractTests:
 
         assert response == AgentResponse(
             status=AgentResponseStatus.BLOCKED,
+            error_code=ErrorCode.AGENT_TASK_BLOCKED,
             duration_seconds=7.0,
             raw_text="partial",
             mutation_baseline_ref="abc",
@@ -138,6 +141,7 @@ class ProviderErrorResponseTests:
         response = provider_error_response(duration_seconds=1.0, detail=detail, errors=errors)
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.error_code == ErrorCode.AGENT_PROVIDER_FAILED
         assert response.errors == expected
 
     def test_provider_error_response_does_not_mutate_input_errors(self) -> None:
@@ -160,6 +164,7 @@ class NoOpResponseTests:
         response = no_op_response(duration_seconds=9.0, raw_text="r", mutation_baseline_ref="abc")
 
         assert response.status == AgentResponseStatus.NO_OP
+        assert response.error_code is None
         assert response.unified_diff is None
         assert response.errors == []
         assert response.raw_text == "r"
@@ -179,6 +184,7 @@ class UnfixableResponseTests:
 
         assert response == AgentResponse(
             status=AgentResponseStatus.UNFIXABLE,
+            error_code=ErrorCode.AGENT_TASK_UNFIXABLE,
             duration_seconds=11.0,
             unfixable_reason="no SSH key",
             errors=["Discarded edit saved to /tmp/x.patch."],
