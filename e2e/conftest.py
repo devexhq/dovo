@@ -12,14 +12,17 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
 import pytest
+
+from e2e.command_coverage import CommandRecorder, CoverageReport, compare, read_command_tree, read_gap_list
 
 E2E_ROOT = Path("/tmp/dovo-e2e")
 DOVO_HOME = Path("/tmp/dovo-home")
@@ -29,6 +32,11 @@ LOCK_FILE = Path("/tmp/dovo-e2e.lock")
 FIXTURES_LOCK_PATH = Path(__file__).parent / "fixtures.lock"
 LOCAL_FIXTURES_CANDIDATE = Path("/home/luckner/workspace/devexhq/dovo-e2e-fixtures")
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+E2E_DIR = Path(__file__).parent
+COMMAND_GAPS_PATH = E2E_DIR / "command_gaps.txt"
+RECORDER_KEY = pytest.StashKey[CommandRecorder]()
+DESELECTED_KEY = pytest.StashKey[bool]()
+COVERAGE_KEY = pytest.StashKey[CoverageReport | str]()
 
 
 @dataclass(frozen=True)
@@ -73,10 +81,13 @@ def _partial_output(output: bytes | str | None) -> str:
 class DovoRunner:
     """Runner executing the dovo CLI binary in a non-interactive subprocess."""
 
-    def __init__(self, binary_path: str, default_cwd: Path, default_env: dict[str, str]) -> None:
+    def __init__(
+        self, binary_path: str, default_cwd: Path, default_env: dict[str, str], recorder: CommandRecorder
+    ) -> None:
         self._binary_path = binary_path
         self._default_cwd = default_cwd
         self._default_env = default_env
+        self._recorder = recorder
 
     def __call__(
         self,
@@ -91,6 +102,7 @@ class DovoRunner:
         if env is not None:
             execution_env.update(env)
 
+        self._recorder.record(args)
         cmd = [self._binary_path, *args]
         start_time = time.monotonic()
         try:
@@ -122,14 +134,18 @@ class DovoRunner:
 class DovoProcessStarter:
     """Starter launching the dovo CLI binary as a background subprocess with the e2e environment."""
 
-    def __init__(self, binary_path: str, default_cwd: Path, default_env: dict[str, str]) -> None:
+    def __init__(
+        self, binary_path: str, default_cwd: Path, default_env: dict[str, str], recorder: CommandRecorder
+    ) -> None:
         self._binary_path = binary_path
         self._default_cwd = default_cwd
         self._default_env = default_env
+        self._recorder = recorder
         self.started: list[subprocess.Popen[str]] = []
 
     def __call__(self, args: list[str], cwd: Path | str | None = None) -> subprocess.Popen[str]:
         """Start `dovo <args>` with captured text stdout/stderr and return the running process."""
+        self._recorder.record(args)
         process = subprocess.Popen(
             [self._binary_path, *args],
             cwd=Path(cwd) if cwd is not None else self._default_cwd,
@@ -146,10 +162,13 @@ class DovoProcessStarter:
 class DovoPtyRunner:
     """Runner executing the dovo CLI binary in a pseudo-terminal for interactive prompts."""
 
-    def __init__(self, binary_path: str, default_cwd: Path, default_env: dict[str, str]) -> None:
+    def __init__(
+        self, binary_path: str, default_cwd: Path, default_env: dict[str, str], recorder: CommandRecorder
+    ) -> None:
         self._binary_path = binary_path
         self._default_cwd = default_cwd
         self._default_env = default_env
+        self._recorder = recorder
 
     def __call__(
         self,
@@ -164,6 +183,7 @@ class DovoPtyRunner:
         if env is not None:
             execution_env.update(env)
 
+        self._recorder.record(args)
         cmd = [self._binary_path, *args]
         start_time = time.monotonic()
 
@@ -293,6 +313,96 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Create the recorder that collects the binary invocations scenario bodies make."""
+    config.stash[RECORDER_KEY] = CommandRecorder()
+    config.stash[DESELECTED_KEY] = False
+
+
+def pytest_deselected(items: list[pytest.Item]) -> None:
+    """Note that the run deselected tests, so its command coverage is partial."""
+    if items:
+        items[0].config.stash[DESELECTED_KEY] = True
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item: pytest.Item) -> Generator[None]:
+    """Record invocations only while a test body runs, and never for a scenario calling a live model provider."""
+    recorder = item.config.stash[RECORDER_KEY]
+    recorder.active = item.get_closest_marker("llm") is None
+    try:
+        yield
+    finally:
+        recorder.active = False
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Fail a whole e2e run when a command has no scenario and no gap line, or a gap line is out of date."""
+    reason = _coverage_skip_reason(session, exitstatus)
+    if reason is not None:
+        session.config.stash[COVERAGE_KEY] = reason
+        return
+    with tempfile.TemporaryDirectory(prefix="dovo-e2e-commands-") as home:
+        tree = read_command_tree(_binary_completer(resolve_dovo_binary(), Path(home)))
+    gaps = read_gap_list(COMMAND_GAPS_PATH.read_text(encoding="utf-8"))
+    report = compare(tree.leaves(), session.config.stash[RECORDER_KEY].covered(tree), gaps)
+    session.config.stash[COVERAGE_KEY] = report
+    if not report.ok:
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, config: pytest.Config) -> None:
+    """Print the command coverage report, or why this run did not check it."""
+    outcome = config.stash.get(COVERAGE_KEY, None)
+    if outcome is None:
+        return
+    terminalreporter.section("command coverage")
+    if isinstance(outcome, str):
+        terminalreporter.write_line(f"command coverage not checked: {outcome}")
+        return
+    for line in outcome.lines(f"e2e/{COMMAND_GAPS_PATH.name}"):
+        terminalreporter.write_line(line, red=not outcome.ok)
+
+
+def _coverage_skip_reason(session: pytest.Session, exitstatus: int) -> str | None:
+    """Return why a run cannot judge command coverage, or None when it ran the whole e2e suite to the end."""
+    config = session.config
+    checks = (
+        (not _selects_whole_suite(config), "the run did not select the whole e2e directory"),
+        (config.stash.get(DESELECTED_KEY, False), "the run deselected tests"),
+        (hasattr(config, "workerinput") or bool(config.getoption("numprocesses", None)), "tests ran in xdist workers"),
+        (bool(config.getoption("collectonly")), "tests were only collected"),
+        (bool(session.shouldstop or session.shouldfail), "the run stopped early"),
+        (exitstatus not in (pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED), "the run did not complete"),
+    )
+    return next((reason for applies, reason in checks if applies), None)
+
+
+def _selects_whole_suite(config: pytest.Config) -> bool:
+    """True when every path the run was given is the e2e directory itself."""
+    base = config.invocation_params.dir
+    return all((base / arg).resolve() == E2E_DIR.resolve() for arg in config.args)
+
+
+def _binary_completer(binary: str, home: Path) -> Callable[[tuple[str, ...]], str]:
+    """Return a function asking the binary for the zsh completion of a command path."""
+    env = {**os.environ, "NO_COLOR": "1", "DOVO_HOME": str(home), "_DOVO_COMPLETE": "complete_zsh"}
+
+    def complete(path: tuple[str, ...]) -> str:
+        process = subprocess.run(
+            [binary],
+            cwd=home,
+            env={**env, "_TYPER_COMPLETE_ARGS": " ".join(["dovo", *path, ""])},
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        return process.stdout
+
+    return complete
+
+
 @pytest.fixture(scope="session", autouse=True)
 def session_lock(request: pytest.FixtureRequest) -> Generator[None]:
     """Acquire exclusive session lock and manage lifecycle of isolated E2E state directories."""
@@ -361,23 +471,35 @@ def dovo_binary_path() -> str:
     return resolve_dovo_binary()
 
 
+@pytest.fixture(scope="session")
+def command_recorder(request: pytest.FixtureRequest) -> CommandRecorder:
+    """Return the session's recorder of the binary invocations scenario bodies make."""
+    return request.config.stash[RECORDER_KEY]
+
+
 @pytest.fixture
-def run_dovo(dovo_binary_path: str, default_subprocess_env: dict[str, str]) -> DovoRunner:
+def run_dovo(
+    dovo_binary_path: str, default_subprocess_env: dict[str, str], command_recorder: CommandRecorder
+) -> DovoRunner:
     """Provide a callable runner to execute non-interactive dovo CLI commands."""
     return DovoRunner(
         binary_path=dovo_binary_path,
         default_cwd=E2E_ROOT,
         default_env=default_subprocess_env,
+        recorder=command_recorder,
     )
 
 
 @pytest.fixture
-def start_dovo(dovo_binary_path: str, default_subprocess_env: dict[str, str]) -> Generator[DovoProcessStarter]:
+def start_dovo(
+    dovo_binary_path: str, default_subprocess_env: dict[str, str], command_recorder: CommandRecorder
+) -> Generator[DovoProcessStarter]:
     """Provide a callable starting background dovo CLI processes, killing any still alive on teardown."""
     starter = DovoProcessStarter(
         binary_path=dovo_binary_path,
         default_cwd=E2E_ROOT,
         default_env=default_subprocess_env,
+        recorder=command_recorder,
     )
     yield starter
     for process in starter.started:
@@ -387,12 +509,15 @@ def start_dovo(dovo_binary_path: str, default_subprocess_env: dict[str, str]) ->
 
 
 @pytest.fixture
-def run_dovo_pty(dovo_binary_path: str, default_subprocess_env: dict[str, str]) -> DovoPtyRunner:
+def run_dovo_pty(
+    dovo_binary_path: str, default_subprocess_env: dict[str, str], command_recorder: CommandRecorder
+) -> DovoPtyRunner:
     """Provide a callable runner to execute interactive dovo CLI commands via pseudo-terminal."""
     return DovoPtyRunner(
         binary_path=dovo_binary_path,
         default_cwd=E2E_ROOT,
         default_env=default_subprocess_env,
+        recorder=command_recorder,
     )
 
 
