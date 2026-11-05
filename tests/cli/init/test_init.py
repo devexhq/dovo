@@ -101,7 +101,7 @@ class InitCliIntegrationTests:
 
         assert result.exit_code == 0
         event = json.loads(result.stdout)
-        assert event["event_type"] == "WorkspaceInitResult"
+        assert event["event_type"] == "init"
         assert event["payload"]["ok"] is True
         assert event["payload"]["error_code"] is None
         assert "failure_mode" not in event["payload"]

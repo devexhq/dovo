@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import RenderableType
 from rich.text import Text
 
@@ -15,6 +17,8 @@ from dovo.core.config.serialize import as_json
 
 class ConfigLoadFormatter(ComponentFormatter[ConfigLoadResult, ConfigLoadView]):
     """Formatter for configuration load and validation results."""
+
+    event_type: ClassVar[str] = "config.show"
 
     def transform(self, data: ConfigLoadResult) -> ConfigLoadView:
         """Derive the view: the result header, then the raw and typed config."""

@@ -88,7 +88,7 @@ class BlueprintValidateCliIntegrationTests:
 
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
-        assert payload["event_type"] == "CatalogValidateResult"
+        assert payload["event_type"] == "blueprint.validate"
         assert payload["payload"]["valid"] is True
         assert payload["payload"]["item_type"] == "blueprint"
 

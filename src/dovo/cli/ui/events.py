@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
-
 from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
 from dovo.common.diagnostic_log import DiagnosticRecord
@@ -16,8 +14,6 @@ class ErrorEvent(BaseModel):
     """A failure no command result carries, rendered as a titled panel or written as the `error` event."""
 
     model_config = {"extra": "forbid", "strict": True}
-
-    event_type: ClassVar[str] = "error"
 
     title: str
     error_code: ErrorCode

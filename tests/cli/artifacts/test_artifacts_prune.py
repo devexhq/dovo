@@ -103,7 +103,8 @@ class ArtifactsPruneCliIntegrationTests:
 
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {
-            "event_type": "ArtifactsPruneResult",
+            "version": 1,
+            "event_type": "artifacts.prune",
             "payload": {
                 "ok": True,
                 "error_code": None,

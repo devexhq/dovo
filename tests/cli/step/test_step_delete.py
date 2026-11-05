@@ -110,7 +110,7 @@ class StepDeleteCliIntegrationTests:
 
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
-        assert payload["event_type"] == "CatalogDeleteResult"
+        assert payload["event_type"] == "step.delete"
         assert payload["payload"]["deleted"] is True
         assert payload["payload"]["item_type"] == "step"
 

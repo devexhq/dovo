@@ -75,7 +75,7 @@ class SessionListCliIntegrationTests:
 
         assert result.exit_code == 0
         event = json.loads(result.stdout)
-        assert event["event_type"] == "HistoryListResult"
+        assert event["event_type"] == "session.list"
         assert [row["session_id"] for row in event["payload"]["sessions"]] == ["session-failed", "session-completed"]
 
     def test_session_list_cli_json_reports_reconciliation_record_in_diagnostics(

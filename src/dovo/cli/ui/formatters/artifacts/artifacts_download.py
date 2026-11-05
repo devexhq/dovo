@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import RenderableType
 from rich.text import Text
 
@@ -14,6 +16,8 @@ from dovo.core.artifacts.models import ArtifactDownloadResult
 
 class ArtifactDownloadFormatter(ComponentFormatter[ArtifactDownloadResult, ArtifactDownloadView]):
     """Formatter for `dovo artifacts download` command results."""
+
+    event_type: ClassVar[str] = "artifacts.download"
 
     def transform(self, data: ArtifactDownloadResult) -> ArtifactDownloadView:
         """Derive the view: the result header, then the downloaded revision."""

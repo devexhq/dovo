@@ -190,7 +190,7 @@ class SessionLogsCliIntegrationTests:
 
         assert result.exit_code == 0
         event = json.loads(result.stdout)
-        assert event["event_type"] == "LogsShowResult"
+        assert event["event_type"] == "session.logs"
         assert "status" not in event["payload"]
         assert (event["payload"]["error_code"], event["payload"]["errors"]) == (None, [])
         assert [row["event"] for row in event["payload"]["events"]] == ["session_started", "session_completed"]
@@ -243,7 +243,7 @@ class SessionLogsLatestCliIntegrationTests:
 
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
-        assert envelope["event_type"] == "LogsShowResult"
+        assert envelope["event_type"] == "session.logs"
         assert envelope["payload"]["session_id"] == "sess-logs"
         assert "(latest)" not in result.stdout
 

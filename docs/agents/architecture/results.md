@@ -47,6 +47,16 @@ What a public entrypoint returns and what a caller branches on. These entries ho
 - **Why:** one parser can tell whether any command succeeded, and why not, without knowing its payload.
 - **Since:** #925, #1309
 
+## Every JSON line is a versioned envelope under a declared name
+
+- **Decision:** `UiDispatcher` writes every `--format json` line as `{"version": 1, "event_type": <name>, "payload": <view dump>}`, in that order.
+  - The name is a literal the formatter declares as `event_type`; a catalog formatter declares one per `CatalogItemType` in `event_types` and is named by the result's `item_type`. Nothing derives a name from a class, module or command path.
+  - A command result is named after its command path (`worktree.create`, `blueprint.list`); run events are `run.*`. A shortcut shares its long form's formatter, so it shares the name.
+  - `tests/lint/test_event_names.py` walks `FORMATTER_GROUPS` and fails when a registered formatter declares no name, a name outside `^[a-z][a-z_]*(\.[a-z][a-z_]*)*$`, or a name another formatter also declares.
+  - `version` changes only when the line's own keys or their meaning change, never for a payload change.
+- **Why:** renaming a class must never rename a public event, and a consumer must know which shape it reads.
+- **Since:** #1407
+
 ## ok means error_code is null
 
 - **Decision:** on every command-result payload, the result a CLI command dispatches, `ok` is true exactly when `error_code` is null.

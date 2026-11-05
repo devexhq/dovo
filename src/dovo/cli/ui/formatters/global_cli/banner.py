@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.panel import Panel
 from rich.text import Text
 
@@ -11,6 +13,8 @@ from dovo.cli.ui.formatters.base import ComponentFormatter
 
 class WelcomeBannerFormatter(ComponentFormatter[WelcomeBannerEvent]):
     """Formatter for welcome brand banner."""
+
+    event_type: ClassVar[str] = "banner"
 
     def to_rich(self, data: WelcomeBannerEvent) -> Panel:
         """Render ASCII brand banner."""

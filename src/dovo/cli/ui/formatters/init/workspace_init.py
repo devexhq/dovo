@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import NamedTuple
+from typing import ClassVar, NamedTuple
 
 from rich.console import Group, RenderableType
 from rich.text import Text
@@ -107,6 +107,8 @@ def _extract_seed_fields(summary: SeedSummary | None, cwd: Path) -> tuple[list[s
 
 class WorkspaceInitFormatter(ComponentFormatter[WorkspaceInitResult, WorkspaceInitView]):
     """Formatter for workspace initialization results."""
+
+    event_type: ClassVar[str] = "init"
 
     def transform(self, data: WorkspaceInitResult) -> WorkspaceInitView:
         """Derive presentation-ready view model from WorkspaceInitResult.

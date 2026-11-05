@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group, RenderableType
 from rich.text import Text
 
@@ -20,6 +22,8 @@ def _render_item(item: PrunedArtifact) -> Text:
 
 class ArtifactsPruneFormatter(ComponentFormatter[ArtifactsPruneResult, ArtifactsPruneView]):
     """Formatter for `dovo artifacts prune` command results."""
+
+    event_type: ClassVar[str] = "artifacts.prune"
 
     def transform(self, data: ArtifactsPruneResult) -> ArtifactsPruneView:
         """Derive the presentation-ready view from ArtifactsPruneResult, including pruned/failed counts."""

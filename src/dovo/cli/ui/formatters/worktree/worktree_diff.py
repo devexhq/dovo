@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import RenderableType
 from rich.syntax import Syntax
 from rich.text import Text
@@ -15,6 +17,8 @@ from dovo.core.worktree.models import WorktreeDiffResult
 
 class WorktreeDiffFormatter(ComponentFormatter[WorktreeDiffResult, WorktreeDiffView]):
     """Formatter for worktree diff command results."""
+
+    event_type: ClassVar[str] = "worktree.diff"
 
     def transform(self, data: WorktreeDiffResult) -> WorktreeDiffView:
         """Derive the view: the result header, then the diff, its stat and the changed files."""

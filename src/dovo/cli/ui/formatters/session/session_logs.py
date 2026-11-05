@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import RenderableType
 from rich.panel import Panel
 from rich.table import Table
@@ -53,6 +55,8 @@ def _build_events_table(events: list[SessionLogEvent]) -> Table:
 
 class SessionLogsFormatter(ComponentFormatter[LogsShowResult, SessionLogsView]):
     """Formatter for session logs command results."""
+
+    event_type: ClassVar[str] = "session.logs"
 
     def transform(self, data: LogsShowResult) -> SessionLogsView:
         """Derive the presentation-ready view from LogsShowResult."""

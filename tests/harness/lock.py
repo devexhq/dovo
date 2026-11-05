@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from itertools import count
+from typing import cast
 
 import pytest
 
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from tests.harness.run_result import json_events
 
 
 def raise_lock_timeout(_self: WorkspaceLock) -> WorkspaceLock:
@@ -29,7 +31,8 @@ def time_out_first_lock(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def lock_timeout_reported(stdout: str) -> bool:
     """Return whether stdout reports a lock timeout: the JSON `error` event last, or else the terminal panel."""
-    lines = [line for line in stdout.splitlines() if line.startswith("{")]
-    if lines:
-        return lines[-1].startswith('{"event_type": "error"') and '"WORKSPACE_LOCK_TIMEOUT"' in lines[-1]
+    events = json_events(stdout)
+    if events:
+        payload = cast(dict[str, object], events[-1]["payload"])
+        return events[-1]["event_type"] == "error" and payload["error_code"] == "WORKSPACE_LOCK_TIMEOUT"
     return "Workspace Lock Timeout" in stdout

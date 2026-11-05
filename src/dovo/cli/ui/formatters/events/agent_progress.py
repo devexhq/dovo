@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Final
+from typing import ClassVar, Final
 
 from pydantic import Field
 from rich.console import Group
@@ -98,6 +98,8 @@ def _build_result(view: AgentProgressView) -> Table:
 
 class AgentProgressFormatter(ComponentFormatter[AgentProgressEvent, AgentProgressView]):
     """Formatter for agent actions, notes and tool results."""
+
+    event_type: ClassVar[str] = "run.agent_progress"
 
     def transform(self, data: AgentProgressEvent) -> AgentProgressView:
         """Attach the verb and the result lines to show."""

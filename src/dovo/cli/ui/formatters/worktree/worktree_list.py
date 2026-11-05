@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import RenderableType
 from rich.text import Text
 
@@ -27,6 +29,8 @@ def _format_list_rich(view: WorktreeListView) -> RenderableType:
 
 class WorktreeListFormatter(ComponentFormatter[WorktreeListResult, WorktreeListView]):
     """Formatter for worktree list command results."""
+
+    event_type: ClassVar[str] = "worktree.list"
 
     def transform(self, data: WorktreeListResult) -> WorktreeListView:
         """Derive the view: the result header, then every worktree record."""

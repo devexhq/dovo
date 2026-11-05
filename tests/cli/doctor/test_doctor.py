@@ -112,7 +112,7 @@ class DoctorCliIntegrationTests:
 
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
-        assert envelope["event_type"] == "DiagnosticsReport"
+        assert envelope["event_type"] == "doctor"
 
         payload = envelope["payload"]
         duration_seconds = payload.pop("duration_seconds")

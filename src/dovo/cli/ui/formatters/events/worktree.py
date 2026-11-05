@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.text import Text
 
 from dovo.cli.ui.events import WorktreeLifecycleEvent
@@ -11,6 +13,8 @@ from dovo.common.formatters import format_remediations
 
 class WorktreeLifecycleFormatter(ComponentFormatter[WorktreeLifecycleEvent]):
     """Formatter for worktree lifecycle notices."""
+
+    event_type: ClassVar[str] = "run.worktree"
 
     def to_rich(self, data: WorktreeLifecycleEvent) -> Text:
         """Render worktree ready or cleanup notice."""

@@ -14,7 +14,11 @@ class ComponentFormatter[T, V: BaseModel = BaseModel](ABC):
     code="config_not_found", severity=Severity.WARNING is required, and to_rich
     maps severity to a color. "2 valid / 2 total" is banned; valid_items=2,
     total_items=2 is required.
+
+    Every concrete formatter declares `event_type`, the literal name its JSON lines are written under.
     """
+
+    event_type: ClassVar[str]
 
     _STYLE_MAP: ClassVar[dict[str, str]] = {
         "success": "green",
@@ -23,6 +27,21 @@ class ComponentFormatter[T, V: BaseModel = BaseModel](ABC):
         "info": "cyan",
         "default": "default",
     }
+
+    def event_type_of(self, data: T) -> str:
+        """Return the declared name the JSON line for data is written under.
+
+        Args:
+            data: Domain data object about to be written.
+
+        Returns:
+            The formatter's declared `event_type`.
+        """
+        return self.event_type
+
+    def declared_event_types(self) -> tuple[str, ...]:
+        """Return every name this formatter can write a JSON line under."""
+        return (self.event_type,)
 
     def transform(self, data: T) -> V:
         """Derive the presentation-ready view. Default: the model is its own view.

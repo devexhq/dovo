@@ -166,7 +166,7 @@ class WorktreeDeleteCliIntegrationTests:
 
         assert result.exit_code == 0
         event = json.loads(result.stdout)
-        assert event["event_type"] == "WorktreeDeleteResult"
+        assert event["event_type"] == "worktree.delete"
         assert event["payload"]["deleted"] is True
         assert "status" not in event["payload"]
         assert event["payload"]["worktree_id"] == session.session_id

@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
+from typing import ClassVar
 
 from rich.console import RenderableType
 from rich.text import Text
 
-from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import CatalogCreateView
+from dovo.cli.ui.formatters.catalog.common import CatalogFormatter
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.cli.ui.formatters.header import header_fields
 from dovo.common.utils import enum_value
-from dovo.core.catalog.models import CatalogCreateResult, CatalogTier
+from dovo.core.catalog.models import CatalogCreateResult, CatalogItemType, CatalogTier
 
 
 def _display_path(tier: CatalogTier, rel_path: Path, resolved_path: Path) -> str:
@@ -42,8 +44,13 @@ def _render(view: CatalogCreateView) -> RenderableType:
     return Text(f"Created {item_type} '{view.item.name}' (tier: {tier}) at '{path}'.")
 
 
-class CatalogCreateFormatter(ComponentFormatter[CatalogCreateResult, CatalogCreateView]):
+class CatalogCreateFormatter(CatalogFormatter[CatalogCreateResult, CatalogCreateView]):
     """Formatter for catalog create command results."""
+
+    event_types: ClassVar[Mapping[CatalogItemType, str]] = {
+        CatalogItemType.BLUEPRINT: "blueprint.create",
+        CatalogItemType.STEP: "step.create",
+    }
 
     def transform(self, data: CatalogCreateResult) -> CatalogCreateView:
         """Derive the view: the result header, then the created item and its resolved path."""

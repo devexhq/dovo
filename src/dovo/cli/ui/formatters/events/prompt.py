@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group
 from rich.text import Text
 
@@ -11,6 +13,8 @@ from dovo.cli.ui.formatters.base import ComponentFormatter
 
 class PromptFormatter(ComponentFormatter[PromptEvent]):
     """Formatter for interactive prompt events."""
+
+    event_type: ClassVar[str] = "run.prompt"
 
     def to_rich(self, data: PromptEvent) -> Group:
         """Render prompt title, diagnostic, status, and options as formatted Rich renderables."""

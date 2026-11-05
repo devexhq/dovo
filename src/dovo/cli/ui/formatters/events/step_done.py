@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group
 from rich.text import Text
 
@@ -11,6 +13,8 @@ from dovo.cli.ui.formatters.base import ComponentFormatter
 
 class StepDoneFormatter(ComponentFormatter[StepDoneEvent]):
     """Formatter for step completion and failure notices."""
+
+    event_type: ClassVar[str] = "run.step_done"
 
     def to_rich(self, data: StepDoneEvent) -> Group:
         """Render step completed or failed line followed by a blank line."""

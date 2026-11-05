@@ -69,7 +69,7 @@ class ConfigCliTests:
 
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
-        assert envelope.get("event_type") == "ConfigLoadResult"
+        assert envelope.get("event_type") == "config.show"
         payload = envelope.get("payload", {})
 
         assert payload.get("status") == "ok"

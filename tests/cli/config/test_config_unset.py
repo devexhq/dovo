@@ -119,7 +119,8 @@ class ConfigUnsetCliIntegrationTests:
 
         assert res.exit_code == 0
         assert json.loads(res.stdout) == {
-            "event_type": "ConfigUnsetResult",
+            "version": 1,
+            "event_type": "config.unset",
             "payload": {
                 "ok": True,
                 "error_code": None,

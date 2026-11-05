@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.text import Text
 
 from dovo.cli.ui.events import ConditionOutcomeView, IfBranchEvent, StepSkippedEvent
@@ -23,6 +25,8 @@ def _condition_text(condition: ConditionOutcomeView) -> str:
 class StepSkippedFormatter(ComponentFormatter[StepSkippedEvent]):
     """Formatter for the one line a step or loop skipped by its `when` guard prints."""
 
+    event_type: ClassVar[str] = "run.step_skipped"
+
     def to_rich(self, data: StepSkippedEvent) -> Text:
         """Render '[idx/total] <label> — skipped (when: <expression> → FALSE|UNRESOLVED)'."""
         outcome = _outcome_word(passed=False, resolved=data.cause == "when_false")
@@ -34,6 +38,8 @@ class StepSkippedFormatter(ComponentFormatter[StepSkippedEvent]):
 
 class IfBranchFormatter(ComponentFormatter[IfBranchEvent]):
     """Formatter for the one line an `if` block prints when it chooses its branch."""
+
+    event_type: ClassVar[str] = "run.if_branch"
 
     def to_rich(self, data: IfBranchEvent) -> Text:
         """Render '[idx/total] <label> — <branch> (if: <expression> → <outcome>; ...)'."""

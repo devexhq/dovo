@@ -143,8 +143,8 @@ class DispatcherFailurePrompterTests:
         assert (step_decision, loop_decision) == (FailurePromptDecision.ABORT, LoopPromptDecision.ABORT)
         events = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
         assert [(event["event_type"], event["payload"]["step_id"]) for event in events] == [
-            ("PromptEvent", "s1"),
-            ("PromptEvent", "loop1"),
+            ("run.prompt", "s1"),
+            ("run.prompt", "loop1"),
         ]
 
 
@@ -373,7 +373,7 @@ class DispatcherInteractionPrompterTests:
 
         assert (answer, terminal.prompts, prompter.is_interactive) == (None, [], False)
         written = capsys.readouterr().out
-        assert [json.loads(line)["event_type"] for line in written.splitlines() if line.strip()] == ["PromptEvent"]
+        assert [json.loads(line)["event_type"] for line in written.splitlines() if line.strip()] == ["run.prompt"]
 
     def test_event_uses_one_based_keys_option_values_and_short_digest(self, capsys: pytest.CaptureFixture[str]) -> None:
         artifact = RequestArtifact(name="plan", revision=2, digest="b07d44aa11223344", preview=["line"])

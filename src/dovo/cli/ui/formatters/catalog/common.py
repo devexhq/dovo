@@ -1,13 +1,33 @@
-"""Shared Rich tables for catalog formatters."""
+"""Shared base and Rich tables for catalog formatters."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import ClassVar
+
+from pydantic import BaseModel
 from rich.table import Table
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import (
     CatalogItemView,
     CatalogTemplateView,
 )
+from dovo.core.catalog.models import CatalogItemType, CatalogResult
+
+
+class CatalogFormatter[T: CatalogResult, V: BaseModel](ComponentFormatter[T, V]):
+    """Formatter for a result shared by the blueprint and step commands, named by the result's item type."""
+
+    event_types: ClassVar[Mapping[CatalogItemType, str]]
+
+    def event_type_of(self, data: T) -> str:
+        """Return the declared name for the result's item type, e.g. `blueprint.list` or `step.list`."""
+        return self.event_types[data.item_type]
+
+    def declared_event_types(self) -> tuple[str, ...]:
+        """Return the declared name of every item type."""
+        return tuple(self.event_types.values())
 
 
 def catalog_type_label(item_type: str) -> str:

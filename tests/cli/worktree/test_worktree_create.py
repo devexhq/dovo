@@ -82,7 +82,7 @@ class WorktreeCreateCliIntegrationTests:
 
         assert result.exit_code == 0
         event = json.loads(result.stdout)
-        assert event["event_type"] == "WorktreeCreateResult"
+        assert event["event_type"] == "worktree.create"
         assert event["payload"]["error_code"] is None
         assert "status" not in event["payload"]
         assert event["payload"]["session"]["name"] == "demo"

@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import ClassVar
+
 from rich.console import RenderableType
 from rich.text import Text
 
-from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import CatalogDeleteView
+from dovo.cli.ui.formatters.catalog.common import CatalogFormatter
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.cli.ui.formatters.header import header_fields
 from dovo.common.utils import enum_value
-from dovo.core.catalog.models import CatalogDeleteResult
+from dovo.core.catalog.models import CatalogDeleteResult, CatalogItemType
 
 
 def _render(view: CatalogDeleteView) -> RenderableType:
@@ -32,8 +35,13 @@ def _render(view: CatalogDeleteView) -> RenderableType:
     return Text("")
 
 
-class CatalogDeleteFormatter(ComponentFormatter[CatalogDeleteResult, CatalogDeleteView]):
+class CatalogDeleteFormatter(CatalogFormatter[CatalogDeleteResult, CatalogDeleteView]):
     """Formatter for catalog delete command results."""
+
+    event_types: ClassVar[Mapping[CatalogItemType, str]] = {
+        CatalogItemType.BLUEPRINT: "blueprint.delete",
+        CatalogItemType.STEP: "step.delete",
+    }
 
     def transform(self, data: CatalogDeleteResult) -> CatalogDeleteView:
         """Derive the view: the result header, then the item and what the delete did."""

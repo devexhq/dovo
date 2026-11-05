@@ -3,7 +3,7 @@
 import json
 import sys
 from collections.abc import Callable
-from typing import Any, TypeVar, overload
+from typing import Any, Final, TypeVar, overload
 
 from rich.console import Console
 
@@ -24,11 +24,8 @@ from dovo.common.models import OutputFormatOptions
 T = TypeVar("T")
 F = TypeVar("F", bound=ComponentFormatter[Any] | type[ComponentFormatter[Any]])
 
-
-def _event_type(data_type: type[object]) -> str:
-    """Return the name an event is written under: its declared `event_type` class attribute, else its class name."""
-    declared = getattr(data_type, "event_type", None)
-    return declared if isinstance(declared, str) else data_type.__name__
+# The shape of a JSON line; it changes only when the line's keys or their meaning change.
+JSON_LINE_VERSION: Final[int] = 1
 
 
 class UiDispatcher:
@@ -122,6 +119,8 @@ class UiDispatcher:
     def dispatch(self, data: object, output_format: OutputFormatOptions | None = None) -> None:
         """Dispatch domain data to registered formatter according to output format.
 
+        JSON output is one line `{"version", "event_type", "payload"}`, named by the formatter's declared event type.
+
         Args:
             data: Domain data object to render.
             output_format: Output format for this call. Defaults to the dispatcher's current format.
@@ -141,7 +140,8 @@ class UiDispatcher:
 
         if effective_format == OutputFormatOptions.JSON:
             envelope = {
-                "event_type": _event_type(data_type),
+                "version": JSON_LINE_VERSION,
+                "event_type": formatter.event_type_of(data),
                 "payload": formatter.to_json_serializable(data),
             }
             sys.stdout.write(json.dumps(envelope) + "\n")

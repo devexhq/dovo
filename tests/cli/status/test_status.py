@@ -76,7 +76,7 @@ class StatusCliIntegrationTests:
 
         assert result.exit_code == 0
         event = json.loads(result.stdout)
-        assert event["event_type"] == "DovoStatusResult"
+        assert event["event_type"] == "status"
         assert event["payload"]["ok"] is True
         assert event["payload"]["error_code"] is None
         assert event["payload"]["status"] == "ok"
@@ -139,7 +139,7 @@ class StatusCliIntegrationTests:
 
         assert result.exit_code == 0
         event = json.loads(result.stdout)
-        assert event["event_type"] == "DovoStatusResult"
+        assert event["event_type"] == "status"
         assert not any("Details logged" in warning for warning in event["payload"]["warnings"])
         assert event["payload"]["diagnostics"] == [
             {"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}

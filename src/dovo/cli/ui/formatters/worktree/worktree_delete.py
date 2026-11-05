@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
@@ -47,6 +49,8 @@ def _format_delete_rich(view: WorktreeDeleteView) -> RenderableType:
 
 class WorktreeDeleteFormatter(ComponentFormatter[WorktreeDeleteResult, WorktreeDeleteView]):
     """Formatter for worktree delete command results."""
+
+    event_type: ClassVar[str] = "worktree.delete"
 
     def transform(self, data: WorktreeDeleteResult) -> WorktreeDeleteView:
         """Derive the view: the result header, then what the delete did."""

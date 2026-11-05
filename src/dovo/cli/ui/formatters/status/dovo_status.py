@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group, RenderableType
 from rich.text import Text
 
@@ -44,6 +46,8 @@ def _derive_catalog_counts(data: DovoStatusResult) -> tuple[int | None, int | No
 
 class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
     """Formatter for Dovo workspace status results."""
+
+    event_type: ClassVar[str] = "status"
 
     def transform(self, data: DovoStatusResult) -> StatusView:
         """Derive the presentation-ready view from workspace status domain data."""

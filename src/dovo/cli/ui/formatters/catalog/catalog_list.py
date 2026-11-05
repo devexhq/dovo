@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import ClassVar
+
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
 
-from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import (
     CatalogItemView,
     CatalogListView,
     CatalogTemplateView,
 )
 from dovo.cli.ui.formatters.catalog.common import (
+    CatalogFormatter,
     build_catalog_table,
     build_catalog_template_table,
     catalog_type_label,
@@ -20,7 +23,7 @@ from dovo.cli.ui.formatters.catalog.common import (
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
 from dovo.cli.ui.formatters.header import header_fields
 from dovo.common.utils import enum_value
-from dovo.core.catalog.models import CatalogListResult
+from dovo.core.catalog.models import CatalogItemType, CatalogListResult
 
 
 def _render_list_empty(view: CatalogListView) -> RenderableType:
@@ -57,8 +60,13 @@ def _render(view: CatalogListView) -> RenderableType:
     return _render_list_items(view)
 
 
-class CatalogListFormatter(ComponentFormatter[CatalogListResult, CatalogListView]):
+class CatalogListFormatter(CatalogFormatter[CatalogListResult, CatalogListView]):
     """Formatter for catalog list command results."""
+
+    event_types: ClassVar[Mapping[CatalogItemType, str]] = {
+        CatalogItemType.BLUEPRINT: "blueprint.list",
+        CatalogItemType.STEP: "step.list",
+    }
 
     def transform(self, data: CatalogListResult) -> CatalogListView:
         """Derive the presentation-ready view from CatalogListResult.

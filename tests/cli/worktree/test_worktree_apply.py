@@ -76,7 +76,7 @@ class WorktreeApplyCliIntegrationTests:
 
         assert result.exit_code == 0
         event = json.loads(result.stdout)
-        assert event["event_type"] == "WorktreeApplyResult"
+        assert event["event_type"] == "worktree.apply"
         assert "status" not in event["payload"]
         assert event["payload"]["error_code"] is None
         assert event["payload"]["touched_files"] == ["target.py"]

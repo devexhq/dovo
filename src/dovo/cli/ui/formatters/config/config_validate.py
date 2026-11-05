@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group, RenderableType
 from rich.text import Text
 
@@ -47,6 +49,8 @@ def _format_invalid_config(view: ConfigValidationView) -> RenderableType:
 
 class ConfigValidateFormatter(ComponentFormatter[ConfigValidationResult, ConfigValidationView]):
     """Formatter for configuration validation results."""
+
+    event_type: ClassVar[str] = "config.validate"
 
     def transform(self, data: ConfigValidationResult) -> ConfigValidationView:
         """Derive the presentation-ready view from ConfigValidationResult domain model.

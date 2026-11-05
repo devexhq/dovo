@@ -221,7 +221,7 @@ class TopLevelFailureCliTests:
 
         events = json_events(result.stdout)
         assert result.exit_code == 1
-        assert result.stdout.splitlines()[-1].startswith('{"event_type": "error"')
+        assert result.stdout.splitlines()[-1].startswith('{"version": 1, "event_type": "error"')
         assert [event["event_type"] for event in events] == ["error"]
         payload = cast(dict[str, object], events[0]["payload"])
         assert (payload["ok"], payload["error_code"], payload["warnings"]) == (False, error_code, [])
@@ -254,6 +254,7 @@ class TopLevelFailureCliTests:
         identity_path = (tmp_path / "workspace").resolve() / ".dovo" / "project.json"
         assert json_events(result.stdout) == [
             {
+                "version": 1,
                 "event_type": "error",
                 "payload": {
                     "ok": False,
@@ -275,6 +276,7 @@ class TopLevelFailureCliTests:
 
         assert json_events(result.stdout) == [
             {
+                "version": 1,
                 "event_type": "error",
                 "payload": {
                     "ok": False,

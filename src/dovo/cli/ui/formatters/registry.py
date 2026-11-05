@@ -116,7 +116,6 @@ def _worktree_formatters(console: Console | None) -> FormatterTable:
     import dovo.core.worktree as models
 
     return {
-        models.PrunedItem: formatters.PrunedItemFormatter(),
         models.WorktreePruneResult: formatters.WorktreePruneFormatter(),
         models.WorktreeShowResult: formatters.WorktreeShowFormatter(),
         models.WorktreeListResult: formatters.WorktreeListFormatter(),

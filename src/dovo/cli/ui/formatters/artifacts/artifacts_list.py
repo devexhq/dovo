@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import RenderableType
 from rich.text import Text
 
@@ -35,6 +37,8 @@ def _to_row(record: ArtifactRecord) -> ArtifactRowView:
 
 class ArtifactsListFormatter(ComponentFormatter[ArtifactsListResult, ArtifactsListView]):
     """Formatter for `dovo artifacts list` command results."""
+
+    event_type: ClassVar[str] = "artifacts.list"
 
     def transform(self, data: ArtifactsListResult) -> ArtifactsListView:
         """Derive the presentation-ready view: the result header, then every artifact row."""

@@ -36,7 +36,7 @@ from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.diagnostic_log import details_line, unwrapped
 from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.lock import lock_timeout_reported, raise_lock_timeout
-from tests.harness.run_result import REPLACED_EVENTS, RUN_RESULT, RunResultPayload, json_events, run_result_payload
+from tests.harness.run_result import RUN_RESULT, RunResultPayload, json_events, run_result_payload
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -133,7 +133,7 @@ class RunValidationCliIntegrationTests:
         )
 
         assert result.exit_code == 1
-        assert [event["event_type"] for event in json_events(result.stdout)] == ["MessageEvent", RUN_RESULT]
+        assert [event["event_type"] for event in json_events(result.stdout)] == ["message", RUN_RESULT]
         assert run_result_payload(result.stdout) == {
             "ok": False,
             "error_code": "CATALOG_SCHEMA_INVALID",
@@ -160,7 +160,6 @@ class RunValidationCliIntegrationTests:
         assert payload["warnings"] == [
             "Placeholder 'inputs.ghost' is not declared in 'inputs:' (CATALOG_UNDECLARED_INPUT_PLACEHOLDER)."
         ]
-        assert REPLACED_EVENTS.isdisjoint(event["event_type"] for event in json_events(result.stdout))
 
     def test_validation_warning_prints_in_the_terminal_with_validate_text(
         self, cli_runner: CliRunner, cli_workspace: Path
@@ -506,7 +505,6 @@ class RunCliIntegrationTests:
             ["Unexpected error during engine.run: bad"],
         )
         assert payload["diagnostics"] == [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]
-        assert REPLACED_EVENTS.isdisjoint(event["event_type"] for event in json_events(result.stdout))
         assert "Details logged" not in result.stdout
         assert frozen_diagnostic_clock.is_file()
 
@@ -802,7 +800,7 @@ class RunCliRetentionIntegrationTests:
         )
 
         events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
-        step_done = next(event["payload"] for event in events if event["event_type"] == "StepDoneEvent")
+        step_done = next(event["payload"] for event in events if event["event_type"] == "run.step_done")
         assert result.exit_code == 1
         assert (step_done["step_id"], step_done["ok"], step_done["exit_code"]) == ("s1", False, 1)
         assert (step_done["error_message"], step_done["error_code"]) == (
@@ -826,8 +824,8 @@ class RunCliUnfixableAgentIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "agent-task", "--format", "json"])
 
         events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
-        step_done = next(event["payload"] for event in events if event["event_type"] == "StepDoneEvent")
-        output_lines = [event["payload"]["line"] for event in events if event["event_type"] == "StepOutputEvent"]
+        step_done = next(event["payload"] for event in events if event["event_type"] == "run.step_done")
+        output_lines = [event["payload"]["line"] for event in events if event["event_type"] == "run.step_output"]
         summaries = [json.loads(line) for line in output_lines if line.startswith("{")]
         row = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list(limit=1)[0]
         assert result.exit_code == 1
@@ -1023,7 +1021,7 @@ class RunAskCliIntegrationTests:
         )
 
         envelopes = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
-        prompt = next(envelope for envelope in envelopes if envelope["event_type"] == "PromptEvent")
+        prompt = next(envelope for envelope in envelopes if envelope["event_type"] == "run.prompt")
         assert result.exit_code == 0
         assert prompt["payload"]["step_id"] == "approve"
         assert [option["decision"] for option in prompt["payload"]["options"]] == ["approve", "revise", "deny"]
@@ -1116,7 +1114,7 @@ class RunGuardCliIntegrationTests:
         )
 
         envelopes = [json.loads(line) for line in resumed.stdout.splitlines() if line.startswith("{")]
-        skipped = [envelope["payload"] for envelope in envelopes if envelope["event_type"] == "StepSkippedEvent"]
+        skipped = [envelope["payload"] for envelope in envelopes if envelope["event_type"] == "run.step_skipped"]
         assert skipped[0] == {
             "idx": 2,
             "total": 4,
@@ -1187,7 +1185,7 @@ class RunIfBlockCliIntegrationTests:
         )
 
         envelopes = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
-        branches = [envelope["payload"] for envelope in envelopes if envelope["event_type"] == "IfBranchEvent"]
+        branches = [envelope["payload"] for envelope in envelopes if envelope["event_type"] == "run.if_branch"]
         assert branches == [
             {
                 "idx": 2,
@@ -1295,7 +1293,8 @@ class RunResultCliTests:
         )
         hint = json_events(result.stdout)[-2]
         assert hint == {
-            "event_type": "MessageEvent",
+            "version": 1,
+            "event_type": "message",
             "payload": {
                 "message": "Run paused at prompt 'approve'. Answer with 'dovo resume s-1 --answer approve=<value>'.",
                 "style": None,
@@ -1390,7 +1389,6 @@ class RunResultCliTests:
         payload = run_result_payload(result.stdout)
         assert payload["warnings"] != []
         assert payload["diagnostics"] == [{"event_id": "exc_3f9a1c07b2de", "log_path": str(frozen_diagnostic_clock)}]
-        assert REPLACED_EVENTS.isdisjoint(event["event_type"] for event in json_events(result.stdout))
         assert all("Details logged" not in text for text in [*payload["errors"], *payload["warnings"]])
 
     def test_terminal_prints_warnings_outcome_then_details_lines(
@@ -1443,6 +1441,7 @@ class RunResultCliTests:
         assert result.exit_code == 1
         assert RUN_RESULT not in {event["event_type"] for event in events}
         assert events[-1] == {
+            "version": 1,
             "event_type": "error",
             "payload": {
                 "ok": False,

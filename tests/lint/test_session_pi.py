@@ -549,7 +549,8 @@ class TestMain:
         logs.mkdir()
         _write_log(logs / "01_code_attempt_1.stdout.log", [_use("a", "Bash"), _final()])
         shown = {
-            "event_type": "SessionShowResult",
+            "version": 1,
+            "event_type": "session.show",
             "payload": {**_payload([_step("code")]), "log_files": [str(logs / "x.log")]},
         }
         commands: list[tuple[str, ...]] = []

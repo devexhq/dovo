@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rich.console import Group, RenderableType
 from rich.text import Text
 
@@ -31,6 +33,8 @@ def _render_outcome(view: RunResultView) -> RenderableType:
 
 class RunResultFormatter(ComponentFormatter[BlueprintRunResult, RunResultView]):
     """Formatter for the run result that ends every `dovo run` and `dovo resume`."""
+
+    event_type: ClassVar[str] = "run.result"
 
     def transform(self, data: BlueprintRunResult) -> RunResultView:
         """Derive the view: the shared header, with ok from error_code, then the session fields."""
