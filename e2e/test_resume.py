@@ -137,12 +137,18 @@ steps:
         assert isinstance(after_session, dict)
         assert after_session.get("status") == "completed"
 
+    @pytest.mark.parametrize(
+        "resume_command",
+        [pytest.param(["resume"], id="shortcut"), pytest.param(["session", "resume"], id="session")],
+    )
     def test_resume_with_explicit_session_id_completes_targeted_session(
         self,
         run_dovo: DovoRunner,
         run_dovo_pty: DovoPtyRunner,
         initialized_project: Path,
+        resume_command: list[str],
     ) -> None:
+        """`session resume <id>` and its root `resume` shortcut both complete the named paused session."""
         write_blueprint(
             initialized_project,
             "resumable-targeted-bp",
@@ -159,7 +165,7 @@ steps:
             runner=run_dovo,
         )
 
-        session_id = "paused-sess-targeted"
+        session_id = f"paused-sess-targeted-{'-'.join(resume_command)}"
         run_result = run_dovo_pty(
             ["run", "resumable-targeted-bp", "--session-id", session_id, "--no-worktree"],
             prompt_replies=[("Select option [r/c/a]: ", "\x03")],
@@ -170,7 +176,7 @@ steps:
         (initialized_project / "targeted_fix.txt").write_text("targeted ok", encoding="utf-8")
 
         resume_result = run_dovo_pty(
-            ["resume", session_id],
+            [*resume_command, session_id],
             prompt_replies=[("Select option [r/c/a]: ", "r\n")],
             cwd=initialized_project,
         )

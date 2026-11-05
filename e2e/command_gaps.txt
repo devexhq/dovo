@@ -2,5 +2,3 @@
 # A full e2e run fails when a command has no scenario and is not listed here,
 # and when a listed command gains a scenario or is no longer offered.
 # Remove a line in the pull request that adds the command's scenario.
-session logs
-session resume
