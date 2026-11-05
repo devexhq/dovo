@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import signal
 import sys
 from collections.abc import Callable, Iterator
@@ -33,7 +34,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.status.models import DovoStatusResult
 from tests.harness.builders import WorkspaceBuilder, init_git_repository
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID, read_single_event
-from tests.harness.lock import raise_lock_timeout
+from tests.harness.lock import announce_wait_then_time_out, raise_lock_timeout
 from tests.harness.run_result import json_events
 
 
@@ -199,6 +200,63 @@ _FAILURES: dict[str, tuple[Callable[[Path, pytest.MonkeyPatch], list[str]], str,
     "lock_timeout": (_lock_timeout, "WORKSPACE_LOCK_TIMEOUT", "Workspace Lock Timeout"),
     "unexpected": (_unexpected, "INTERNAL_ERROR", "Fatal Error"),
 }
+
+
+def _init_argv(tmp_path: Path) -> list[str]:
+    """Return argv for `init` in a fresh git repository: a lock-taking command that builds no CLI context."""
+    repository = tmp_path / "repository"
+    init_git_repository(repository)
+    return ["-p", str(repository), "init"]
+
+
+def _worktree_create_argv(tmp_path: Path) -> list[str]:
+    """Return argv for `worktree create` in an initialized workspace: a lock-taking command that builds the CLI context."""
+    workspace = WorkspaceBuilder(tmp_path / "workspace").with_git().build()
+    return ["-p", str(workspace), "worktree", "create", "--name", "feat-x"]
+
+
+_LOCK_TAKING_COMMANDS: dict[str, Callable[[Path], list[str]]] = {
+    "init": _init_argv,
+    "worktree_create": _worktree_create_argv,
+}
+
+
+class LockWaitNoticeCliTests:
+    """While a command waits for the workspace lock, the notice follows the requested output format."""
+
+    @pytest.mark.parametrize("spelling", [["--format", "json"], ["--format=json"]], ids=["separate", "joined"])
+    @pytest.mark.parametrize("command", list(_LOCK_TAKING_COMMANDS))
+    def test_json_output_writes_only_json_lines_while_waiting(
+        self,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        command: str,
+        spelling: list[str],
+    ) -> None:
+        argv = _LOCK_TAKING_COMMANDS[command](tmp_path)
+        monkeypatch.setattr(WorkspaceLock, "__enter__", announce_wait_then_time_out)
+
+        result = cli_runner.invoke(app, [*argv, *spelling])
+
+        lines = [json.loads(line) for line in result.stdout.splitlines()]
+        assert result.exit_code == 1
+        assert [line["event_type"] for line in lines] == ["lock.wait", "error"]
+        assert lines[0]["payload"]["holder_pid"] == "4242"
+
+    @pytest.mark.parametrize("command", list(_LOCK_TAKING_COMMANDS))
+    def test_terminal_output_shows_the_lock_held_panel(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+    ) -> None:
+        argv = _LOCK_TAKING_COMMANDS[command](tmp_path)
+        monkeypatch.setattr(WorkspaceLock, "__enter__", announce_wait_then_time_out)
+
+        result = cli_runner.invoke(app, argv)
+
+        assert result.exit_code == 1
+        assert "Lock Held" in result.stdout
+        assert "Workspace lock is currently held by another process (PID: 4242)." in result.stdout
+        assert json_events(result.stdout) == []
 
 
 class TopLevelFailureCliTests:

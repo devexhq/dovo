@@ -113,7 +113,7 @@ Commands other than `dovo config`, `dovo doctor`, `dovo init` and `dovo status` 
 
 ### Workspace lock timeout
 
-Commands that change the workspace wait for the workspace lock while another `dovo` process holds it. When the wait times out, the message is:
+Commands that change the workspace wait for the workspace lock while another `dovo` process holds it. When the wait starts, a command run with `--format json` writes one `lock.wait` line, and without it prints a `Lock Held` panel. When the wait times out, the message is:
 
 ```text
 Timed out waiting for workspace lock on '<lock path>' after <seconds>s (held by process <pid>).
