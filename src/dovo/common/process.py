@@ -181,26 +181,34 @@ def stream_isolated_process(
     on_stdout_line: Callable[[str], None] | None = None,
     on_stderr_line: Callable[[str], None] | None = None,
     grace_seconds: float = DEFAULT_GRACE_PERIOD_SECONDS,
+    stop_when: Callable[[str], bool] | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     """Run cmd in an isolated process group, delivering each decoded stdout and stderr line to its callback as it arrives.
 
     One deadline covers the stdin write, the wait and the pipe drain. On expiry the whole process tree is terminated
     and the raised TimeoutExpired carries the bytes captured so far.
+
+    stop_when is called on each stdout line after on_stdout_line; one that raises counts as False. Once it returns
+    True the output is complete: the process gets grace_seconds to exit on its own, then its tree is terminated, and
+    the call returns the bytes captured with the real return code. It never times out after stop_when has fired.
     """
     proc = _spawn_isolated_process(cmd, cwd, env, input_data is not None)
     pgid = proc.pid
     process_registry.register(proc, pgid=pgid)
 
     deadline = time.monotonic() + timeout_seconds if timeout_seconds is not None else None
+    early_stop = _EarlyStop(stop_when) if stop_when is not None else None
     stdout_bytes = bytearray()
     stderr_bytes = bytearray()
     readers, threads = _start_stream_threads(
-        proc, input_data, (on_stdout_line, on_stderr_line), stdout_bytes, stderr_bytes
+        proc, input_data, (_with_stop(on_stdout_line, early_stop), on_stderr_line), stdout_bytes, stderr_bytes
     )
 
     try:
-        proc.wait(timeout=_remaining_seconds(deadline))
-        if not _join_threads(readers, deadline):
+        if _wait_for_exit_or_stop(proc, early_stop, deadline):
+            _end_stopped_process(proc, pgid, grace_seconds)
+            _join_threads(threads, time.monotonic() + _POST_KILL_JOIN_SECONDS)
+        elif not _join_threads(readers, deadline):
             raise subprocess.TimeoutExpired(cmd, timeout_seconds or 0.0)
         return subprocess.CompletedProcess(
             args=cmd,
@@ -223,6 +231,81 @@ def stream_isolated_process(
         _join_threads(threads, time.monotonic() + _POST_KILL_JOIN_SECONDS)
         process_registry.unregister(proc)
         _cleanup_process_streams(proc)
+
+
+class _EarlyStop:
+    """Watch stdout lines for the one a stop predicate accepts; wake is set when it fires or the process exits."""
+
+    def __init__(self, predicate: Callable[[str], bool]) -> None:
+        self._predicate = predicate
+        self.fired = threading.Event()
+        self.wake = threading.Event()
+
+    def check(self, line: str) -> None:
+        """Fire and wake the waiter when the predicate accepts line; a predicate that raises counts as False."""
+        if self.fired.is_set():
+            return
+        try:
+            matched = self._predicate(line)
+        except Exception:
+            # Deliberately swallowed, like a failing line callback: common/ has no error sink.
+            matched = False
+        if matched:
+            self.fired.set()
+            self.wake.set()
+
+
+def _with_stop(callback: Callable[[str], None] | None, early_stop: _EarlyStop | None) -> Callable[[str], None] | None:
+    """Return a line callback that delivers to callback, then checks early_stop, even when callback raises."""
+    if early_stop is None:
+        return callback
+
+    def deliver(line: str) -> None:
+        try:
+            if callback is not None:
+                callback(line)
+        finally:
+            early_stop.check(line)
+
+    return deliver
+
+
+def _set_on_exit(proc: subprocess.Popen[bytes], event: threading.Event) -> None:
+    """Wait for proc to exit, then set event."""
+    try:
+        proc.wait()
+    except Exception:
+        # Deliberately swallowed: the event is set either way, and the caller reads the exit from proc.
+        pass
+    finally:
+        event.set()
+
+
+def _wait_for_exit_or_stop(
+    proc: subprocess.Popen[bytes], early_stop: _EarlyStop | None, deadline: float | None
+) -> bool:
+    """Wait until proc exits or early_stop fires and return whether it fired; raise TimeoutExpired at the deadline."""
+    if early_stop is None:
+        proc.wait(timeout=_remaining_seconds(deadline))
+        return False
+
+    threading.Thread(target=_set_on_exit, args=(proc, early_stop.wake), daemon=True).start()
+    early_stop.wake.wait(_remaining_seconds(deadline))
+    if early_stop.fired.is_set():
+        return True
+    if proc.poll() is None:
+        raise subprocess.TimeoutExpired(proc.args, 0.0)
+    return False
+
+
+def _end_stopped_process(proc: subprocess.Popen[bytes], pgid: int, grace_seconds: float) -> None:
+    """Give a process whose output is complete grace_seconds to exit, then terminate its tree if any of it still runs."""
+    try:
+        proc.wait(timeout=max(0.0, grace_seconds))
+    except subprocess.TimeoutExpired:
+        pass
+    if proc.poll() is None or is_process_group_alive(pgid):
+        terminate_process_tree(proc, grace_seconds=grace_seconds, pgid=pgid)
 
 
 def _start_stream_threads(

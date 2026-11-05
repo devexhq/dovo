@@ -16,7 +16,7 @@ from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.claude_mcp import load_user_claude_mcp_servers
 from dovo.core.agents.claude_policy import ClaudePolicyArgs, McpConfigFile, render_claude_policy
 from dovo.core.agents.claude_progress import map_claude_line
-from dovo.core.agents.claude_stream import classify_claude_output
+from dovo.core.agents.claude_stream import ClaudeTurnTracker, classify_claude_output
 from dovo.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
     CliMutationOutcome,
@@ -157,7 +157,10 @@ def _write_mcp_config(config: McpConfigFile) -> str | None:
 
 
 def default_claude_run(request: CliMutationRunRequest) -> CliMutationOutcome:
-    """Invoke Claude Code headlessly under the resolved authentication mode, mapping its stream-json output."""
+    """Invoke Claude Code headlessly under the resolved authentication mode, mapping its stream-json output.
+
+    The run ends when Claude Code reports its result with no background task pending, even if the process lingers.
+    """
     mode = resolve_claude_auth_mode()
     if mode is None:
         return CliMutationOutcome(status="error", error_detail=claude_missing_auth_detail())
@@ -171,19 +174,23 @@ def default_claude_run(request: CliMutationRunRequest) -> CliMutationOutcome:
         if write_error is not None:
             return CliMutationOutcome(status="error", error_detail=write_error)
 
+    tracker = ClaudeTurnTracker()
     completed = run_cli_process(
         _build_argv(request.model, mode, rendered.flags),
         request,
         env=_env_for_mode(request.env, mode),
         binary="claude",
         install_hint=_INSTALL_HINT,
+        stop_when=tracker,
     )
     if isinstance(completed, CliMutationOutcome):
         return completed
 
     stdout_text, stderr_text = decode_output(completed)
+    # Once the turn is over the result event decides the outcome, not the exit code of a process stopped after it.
+    returncode = 0 if tracker.finished else int(completed.returncode)
 
-    return classify_claude_output(int(completed.returncode), stdout_text, stderr_text)
+    return classify_claude_output(returncode, stdout_text, stderr_text)
 
 
 def _render_for_request(

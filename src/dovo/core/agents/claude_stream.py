@@ -6,6 +6,7 @@ import json
 import re
 
 from dovo.common.tool_policy import ToolCapability
+from dovo.core.agents.claude_policy import CLAUDE_SCHEDULING_TOOLS
 from dovo.core.agents.cli_mutation import CliMutationOutcome, unknown_option_detail
 from dovo.core.agents.models import AgentDenial
 
@@ -77,6 +78,48 @@ def _parse_events(stdout_text: str) -> tuple[list[dict[str, object]], str | None
             events.append(parsed)
 
     return events, first_failure
+
+
+class ClaudeTurnTracker:
+    """Tell from Claude Code stream-json stdout lines when the agent's turn is over.
+
+    The turn is over at a result event while no background task is pending. A task is pending from its
+    system/task_started event until its system/task_notification event, whatever its status; a result that arrives
+    while one is pending does not end the turn, since Claude Code resumes it when the task reports.
+    """
+
+    def __init__(self) -> None:
+        self._pending: set[str] = set()
+        self._finished = False
+
+    @property
+    def finished(self) -> bool:
+        """Return whether a result arrived with no background task pending."""
+        return self._finished
+
+    def __call__(self, line: str) -> bool:
+        """Track one stdout line and return whether the turn is over."""
+        parsed = _parse_line(line.strip())
+        if isinstance(parsed, str):
+            return self._finished
+
+        self._track_task(parsed)
+        if parsed.get("type") == "result" and not self._pending:
+            self._finished = True
+
+        return self._finished
+
+    def _track_task(self, event: dict[str, object]) -> None:
+        """Add a started task to the pending set and remove a task that reported."""
+        task_id = event.get("task_id")
+        if event.get("type") != "system" or not isinstance(task_id, str):
+            return
+
+        subtype = event.get("subtype")
+        if subtype == "task_started":
+            self._pending.add(task_id)
+        elif subtype == "task_notification":
+            self._pending.discard(task_id)
 
 
 def _terminal_result(events: list[dict[str, object]]) -> dict[str, object] | None:
@@ -215,6 +258,8 @@ def _denied_results(events: list[dict[str, object]]) -> dict[str, str]:
 def _collect_denials(events: list[dict[str, object]], terminal: dict[str, object]) -> list[AgentDenial]:
     """Return the terminal result's structured denials followed by event denials not already covered.
 
+    Refused scheduling tools are left out: Dovo always denies them, so their refusal is not a denial the step reports.
+
     A structured denial whose denied tool_result carries the bare deny-rule wording is upgraded to by_rule, since the
     structured entry alone never says why the call was denied.
     """
@@ -241,7 +286,7 @@ def _collect_denials(events: list[dict[str, object]], terminal: dict[str, object
             )
         )
 
-    return denials
+    return [denial for denial in denials if denial.tool not in CLAUDE_SCHEDULING_TOOLS]
 
 
 def _is_rule_denial(text: str | None) -> bool:

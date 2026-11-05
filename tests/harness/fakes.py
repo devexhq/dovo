@@ -192,14 +192,23 @@ PROVIDER_FINISHED_STREAMS: Final[dict[str, Callable[[str], bytes]]] = {
 
 
 class StreamingAgentRunner:
-    """Typed stand-in for stream_isolated_process that replays canned lines through the stream callbacks it receives."""
+    """Typed stand-in for stream_isolated_process that replays canned lines through the stream callbacks it receives.
 
-    def __init__(self, *, stdout_lines: list[str], stderr_lines: list[str], completed_stdout: bytes) -> None:
+    Each stdout line also reaches stop_when, after on_stdout_line, the way the real runner checks it; stopped_at
+    records the first line it accepted.
+    """
+
+    def __init__(
+        self, *, stdout_lines: list[str], stderr_lines: list[str], completed_stdout: bytes, returncode: int = 0
+    ) -> None:
         self._stdout_lines = stdout_lines
         self._stderr_lines = stderr_lines
         self._completed_stdout = completed_stdout
+        self._returncode = returncode
         self.received_stdout_callback: Callable[[str], None] | None = None
         self.received_stderr_callback: Callable[[str], None] | None = None
+        self.received_stop_when: Callable[[str], bool] | None = None
+        self.stopped_at: str | None = None
 
     def __call__(
         self,
@@ -211,16 +220,22 @@ class StreamingAgentRunner:
         timeout_seconds: float,
         on_stdout_line: Callable[[str], None] | None = None,
         on_stderr_line: Callable[[str], None] | None = None,
+        stop_when: Callable[[str], bool] | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         self.received_stdout_callback = on_stdout_line
         self.received_stderr_callback = on_stderr_line
-        if on_stdout_line is not None:
-            for line in self._stdout_lines:
+        self.received_stop_when = stop_when
+        for line in self._stdout_lines:
+            if on_stdout_line is not None:
                 on_stdout_line(line)
+            if stop_when is not None and stop_when(line) and self.stopped_at is None:
+                self.stopped_at = line
         if on_stderr_line is not None:
             for line in self._stderr_lines:
                 on_stderr_line(line)
-        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=self._completed_stdout, stderr=b"")
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=self._returncode, stdout=self._completed_stdout, stderr=b""
+        )
 
 
 class FakeAgentProvider(BaseAgentProvider):
