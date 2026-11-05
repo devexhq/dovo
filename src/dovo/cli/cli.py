@@ -117,11 +117,10 @@ class DovoTyperGroup(TyperGroup):
     def invoke(self, ctx: "Context") -> object:
         """Capture help flags and the requested format, announce lock waits in it, then run the command, reporting a failure no command result carries and exiting 1."""
         raw_args = [*getattr(ctx, "_protected_args", []), *getattr(ctx, "args", [])]
+        ctx.ensure_object(dict)
         if raw_args:
-            ctx.ensure_object(dict)
             ctx.obj["is_help"] = any(a in ("--help", "-h") for a in raw_args)
         output_format = _requested_format(raw_args)
-        ctx.ensure_object(dict)
         ctx.obj["output_format"] = output_format
         WorkspaceLock.set_default_on_wait(_lock_wait_notifier(output_format))
         try:
@@ -194,14 +193,13 @@ def _ensure_run_workspace(path: Path | None, output_format: OutputFormatOptions)
     if result is None or result.error_code is None:
         return
     if output_format == OutputFormatOptions.JSON:
-        event = ErrorEvent(
-            title="Initialization Failed",
+        fields = FailureFields(
             error_code=result.error_code,
             errors=result.errors,
             remediations=result.remediations,
             diagnostics=result.diagnostics,
         )
-        ui_dispatcher.dispatch(event, output_format=output_format)
+        _report_failure("Initialization Failed", fields, output_format)
     else:
         ui_dispatcher.dispatch(result)
     exit_for(result)
