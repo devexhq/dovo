@@ -14,6 +14,7 @@ from typing import IO, Any, Final
 
 DEFAULT_GRACE_PERIOD_SECONDS: float = 2.0
 _POST_KILL_JOIN_SECONDS: Final[float] = 5.0
+_STOP_CONFIRM_SECONDS: Final[float] = 5.0
 
 
 def get_isolated_process_kwargs() -> dict[str, Any]:
@@ -124,34 +125,60 @@ def terminate_process_tree(
 
 
 class ProcessRegistry:
-    """Thread-safe registry tracking active subprocess.Popen instances."""
+    """Thread-safe registry tracking active subprocess.Popen instances and the process groups they started.
+
+    A group stays recorded after its process is unregistered while any process of it is still alive, so stop_all
+    can stop and confirm every group the run started; terminate_all and stop_all forget every recorded group.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._processes: dict[subprocess.Popen[Any], int] = {}
+        self._started: set[int] = set()
 
     def register(self, proc: subprocess.Popen[Any], *, pgid: int | None = None) -> None:
-        """Register an active subprocess with optional explicit PGID."""
+        """Register an active subprocess with optional explicit PGID, recording its process group."""
         resolved_pgid = pgid if pgid is not None else proc.pid
         with self._lock:
             self._processes[proc] = resolved_pgid
+            self._started.add(resolved_pgid)
 
     def unregister(self, proc: subprocess.Popen[Any]) -> None:
-        """Unregister a completed subprocess."""
+        """Unregister a completed subprocess, forgetting its process group once no process of it is alive."""
         with self._lock:
-            self._processes.pop(proc, None)
+            pgid = self._processes.pop(proc, None)
+            if pgid is not None and not is_process_group_alive(pgid):
+                self._started.discard(pgid)
 
     def terminate_all(self, *, grace_seconds: float = 0.5) -> None:
-        """Terminate all registered subprocesses and their process trees."""
+        """Terminate all registered subprocesses and their process trees, and forget every recorded process group."""
         with self._lock:
             active = list(self._processes.items())
             self._processes.clear()
+            self._started.clear()
 
         for proc, pgid in active:
-            try:
-                terminate_process_tree(proc, grace_seconds=grace_seconds, pgid=pgid)
-            except Exception:
-                pass
+            _terminate_quietly(proc, pgid, grace_seconds)
+
+    def stop_all(self, *, grace_seconds: float = 0.5) -> list[int]:
+        """Stop every registered subprocess and recorded process group, then return the sorted groups still alive.
+
+        Each live group gets SIGTERM, grace_seconds, then SIGKILL; the wait for them to be gone lasts at most
+        _STOP_CONFIRM_SECONDS after the kill. With nothing recorded it returns [] without waiting.
+        """
+        with self._lock:
+            active = list(self._processes.items())
+            recorded = self._started | {pgid for _, pgid in active}
+            self._processes.clear()
+            self._started.clear()
+
+        for proc, pgid in active:
+            _terminate_quietly(proc, pgid, grace_seconds)
+        handled = {pgid for _, pgid in active}
+        for pgid in sorted(recorded - handled):
+            if is_process_group_alive(pgid):
+                _terminate_quietly(pgid, pgid, grace_seconds)
+        return _await_groups_gone(sorted(recorded), time.monotonic() + _STOP_CONFIRM_SECONDS)
 
     def __len__(self) -> int:
         with self._lock:
@@ -159,6 +186,26 @@ class ProcessRegistry:
 
 
 process_registry = ProcessRegistry()
+
+
+def _terminate_quietly(
+    proc: subprocess.Popen[bytes] | subprocess.Popen[str] | int, pgid: int, grace_seconds: float
+) -> None:
+    """Terminate proc's process tree, ignoring any error: the caller confirms the outcome separately or not at all."""
+    try:
+        terminate_process_tree(proc, grace_seconds=grace_seconds, pgid=pgid)
+    except Exception:
+        # Deliberately swallowed: common/ has no error sink, and stop_all reports a survivor by checking the group.
+        pass
+
+
+def _await_groups_gone(pgids: Sequence[int], deadline: float) -> list[int]:
+    """Poll pgids until none is alive or the monotonic deadline passes, and return those still alive."""
+    alive = [pgid for pgid in pgids if is_process_group_alive(pgid)]
+    while alive and time.monotonic() < deadline:
+        time.sleep(0.05)
+        alive = [pgid for pgid in alive if is_process_group_alive(pgid)]
+    return alive
 
 
 def _cleanup_process_streams(proc: subprocess.Popen[Any]) -> None:

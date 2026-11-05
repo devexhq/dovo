@@ -351,6 +351,7 @@ class RunOutcome(BaseModel):
     status: SessionStatus
     step_results: list[StepRecord] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
     worktree_kept: bool = False

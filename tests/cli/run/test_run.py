@@ -34,7 +34,7 @@ from tests.harness import FakeAgentRunner, UnfixableAgentRunner
 from tests.harness.builders import init_git_repository
 from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.diagnostic_log import details_line, unwrapped
-from tests.harness.fakes import fixed_clock, fixed_new_id
+from tests.harness.fakes import fixed_clock, fixed_new_id, use_virtual_process_time
 from tests.harness.lock import lock_timeout_reported, raise_lock_timeout
 from tests.harness.run_result import RUN_RESULT, RunResultPayload, json_events, run_result_payload
 from tests.harness.sessions import fail_reconciliation_list
@@ -1512,3 +1512,72 @@ class RunResultCliTests:
                 "diagnostics": [],
             },
         }
+
+
+def _interrupt_on_second_step(_observer: object, idx: int, *_args: object) -> None:
+    """Stand in for DispatcherRunObserver.on_step_start, as Ctrl-C would once the second step starts."""
+    if idx == 2:
+        raise KeyboardInterrupt
+
+
+def _run_with_a_surviving_group(
+    cli_runner: CliRunner, workspace: Path, monkeypatch: pytest.MonkeyPatch, *extra: str
+) -> tuple[int, str, int]:
+    """Run a blueprint whose first step records its process group and whose second is interrupted, with that group never reported gone; return the exit code, stdout and the group id."""
+    pid_file = workspace / "s1.pid"
+    write_runnable_blueprint(
+        workspace,
+        key="survivor-task",
+        steps=[{"id": "s1", "run": f"echo $$ > '{pid_file}'"}, {"id": "s2", "run": "true"}],
+    )
+    monkeypatch.setattr(DispatcherRunObserver, "on_step_start", _interrupt_on_second_step)
+    monkeypatch.setattr("dovo.common.process.is_process_group_alive", lambda _pgid: True)
+    use_virtual_process_time(monkeypatch)
+
+    result = cli_runner.invoke(
+        app, ["-p", str(workspace), "run", "survivor-task", "--no-worktree", "--session-id", "s-1", *extra]
+    )
+    return result.exit_code, result.stdout, int(pid_file.read_text())
+
+
+class RunInterruptSurvivorCliTests:
+    """Typer runner tests for #1313: an interrupted run whose process group survives the stop ends failed."""
+
+    def test_json_survivor_fails_the_run_and_its_in_flight_step_with_a_kill_remediation(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        exit_code, stdout, pgid = _run_with_a_surviving_group(
+            cli_runner, cli_workspace, monkeypatch, "--format", "json"
+        )
+        shown = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", "s-1", "--format", "json"])
+
+        payload = run_result_payload(stdout)
+        steps = json.loads(shown.stdout.splitlines()[-1])["payload"]["steps"]
+        assert exit_code == 130
+        assert _outcome(payload) == (
+            False,
+            "SESSION_PROCESS_STOP_FAILED",
+            [f"Run interrupted, but process group {pgid} is still running."],
+            "s-1",
+            "survivor-task",
+            "failed",
+            None,
+        )
+        assert payload["remediations"] == [
+            {
+                "message": f"Its processes may still be running; stop them with 'kill -9 -{pgid}'",
+                "command": f"kill -9 -{pgid}",
+            }
+        ]
+        assert [(step["step_id"], step["state"]) for step in steps] == [("s1", "completed"), ("s2", "failed")]
+
+    def test_terminal_survivor_prints_run_failed_with_the_group_and_its_kill_command(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        exit_code, stdout, pgid = _run_with_a_surviving_group(cli_runner, cli_workspace, monkeypatch)
+
+        output = unwrapped(stdout)
+        assert exit_code == 130
+        assert "RunFailed" in output
+        assert unwrapped(f"Run interrupted, but process group {pgid} is still running.") in output
+        assert unwrapped(f"kill -9 -{pgid}") in output

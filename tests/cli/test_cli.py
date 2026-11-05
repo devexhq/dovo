@@ -453,8 +453,9 @@ class RunCliTests:
 
     @pytest.fixture(autouse=True)
     def _restore_signal_handlers(self) -> Iterator[None]:
-        """Restore the worker's SIGINT/SIGTERM handlers that run_cli() replaces."""
-        saved = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
+        """Restore the worker's SIGINT, SIGTERM and SIGHUP handlers that run_cli() replaces."""
+        replaced = [signal.SIGINT, signal.SIGTERM, *([signal.SIGHUP] if hasattr(signal, "SIGHUP") else [])]
+        saved = {signum: signal.getsignal(signum) for signum in replaced}
         yield
         for signum, handler in saved.items():
             signal.signal(signum, handler)

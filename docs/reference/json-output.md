@@ -139,7 +139,7 @@ Every command's exit code comes from its result:
 | --- | --- |
 | `0` | The result has no `error_code`. This includes a paused run, a declined delete confirmation, every `dovo status` report and a `dovo doctor` report whose checks only warn or skip. |
 | `2` | A usage error, or a code decided only from the command's own arguments: `PROJECT_ID_INVALID`, `CONFIG_KEY_PATH_INVALID`, `AGENT_ENV_OVERRIDE_INVALID` or `INTERACTION_ARGUMENTS_INVALID`. |
-| `130`, `143` | A `dovo run` or `dovo resume` you interrupt (`RUN_CANCELLED`): `128` plus the signal number, `130` for Ctrl-C (`SIGINT`) and `143` for `SIGTERM`. The run result prints first. |
+| `130`, `143`, `129` | A `dovo run` or `dovo resume` you interrupt (`RUN_CANCELLED`, or `SESSION_PROCESS_STOP_FAILED` when a process group it started survived the stop): `128` plus the signal number, `130` for Ctrl-C (`SIGINT`), `143` for `SIGTERM` and `129` for a closed terminal (`SIGHUP`). The run result prints first. |
 | `1` | Every other `error_code`, and every `error` event. |
 
 Each command page lists its own conditions under **Exit codes**.
