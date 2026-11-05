@@ -274,7 +274,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
             watch.stop()
             return provider_error_response(
                 duration_seconds=watch.elapsed_seconds, detail=f"Failed to resolve worktree baseline: {exc}"
-            )
+            ).model_copy(update={"error_code": exc.error_code})
 
         spec = self._provider_spec()
         env, withheld = self._build_run_env(request)
@@ -348,7 +348,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 detail=f"Failed to capture worktree diff: {exc}",
                 raw_text=outcome.result_text,
                 mutation_baseline_ref=baseline,
-            )
+            ).model_copy(update={"error_code": exc.error_code})
 
         unfixable = self._unfixable_outcome(request, diff, outcome, baseline, duration_seconds, git=git)
         if unfixable is not None:
@@ -391,7 +391,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         *,
         git: GitRunner,
     ) -> AgentResponse:
-        """Save the rejected edit, then discard it and return PROVIDER_ERROR carrying the validation failure's message, its record in diagnostics, the saved path, and any discard failure; a failed save leaves the worktree untouched."""
+        """Save the rejected edit, then discard it and return PROVIDER_ERROR carrying the validation failure's code and message, its record in diagnostics, the saved path, and any discard failure; a failed save leaves the worktree untouched."""
         saved, notes, discard_detail = _save_and_discard(request, baseline, git=git)
         response = provider_error_response(
             duration_seconds=duration_seconds,
@@ -403,6 +403,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
 
         return response.model_copy(
             update={
+                "error_code": failure.error_code,
                 "rejected_patch_path": str(saved) if saved is not None else None,
                 "diagnostics": error_diagnostics(failure.diagnostic),
             }

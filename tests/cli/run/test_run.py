@@ -811,10 +811,15 @@ class RunCliRetentionIntegrationTests:
         )
 
 
+def _without_duration(payload: dict[str, object]) -> dict[str, object]:
+    """Return payload without its wall-clock duration_seconds."""
+    return {key: value for key, value in payload.items() if key != "duration_seconds"}
+
+
 class RunCliUnfixableAgentIntegrationTests:
     """Typer runner integration tests for an agent step whose agent reports the task unfixable."""
 
-    def test_run_cli_agent_reporting_unfixable_fails_run_and_keeps_worktree(
+    def test_run_cli_agent_reporting_unfixable_fails_run_keeps_worktree_and_shows_its_code(
         self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("GH_TOKEN", "test-token")
@@ -838,6 +843,36 @@ class RunCliUnfixableAgentIntegrationTests:
         ]
         assert row.status == SessionStatus.FAILED
         assert paths.worktree_dir(row.session_id).is_dir()
+        shown = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "session", "show", row.session_id, "--format", "json"]
+        )
+        (step_row,) = json.loads(shown.stdout)["payload"]["steps"]
+        assert _without_duration(step_done) == {
+            "idx": 1,
+            "total": 1,
+            "step_id": "plan",
+            "ok": False,
+            "exit_code": 201,
+            "error_message": "Agent reported the task unfixable: no SSH key",
+            "error_code": "AGENT_TASK_UNFIXABLE",
+        }
+        assert _without_duration(step_row) == {
+            "kind": "step",
+            "step_id": "plan",
+            "name": None,
+            "state": "failed",
+            "attempts": 1,
+            "exit_code": 201,
+            "error_message": "Agent reported the task unfixable: no SSH key",
+            "error_code": "AGENT_TASK_UNFIXABLE",
+            "rejected_patch_path": None,
+            "loop_id": None,
+            "iteration": None,
+            "iterations": None,
+            "skip_cause": None,
+            "branch": None,
+            "if_id": None,
+        }
 
 
 class RunEnvFlagsCliIntegrationTests:

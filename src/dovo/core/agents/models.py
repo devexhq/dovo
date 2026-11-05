@@ -11,6 +11,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy
@@ -229,6 +230,7 @@ class AgentResponse(BaseModel):
     duration_seconds: float = 0.0
     errors: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
+    error_code: ErrorCode | None = None  # the failure's code; None for a proposed patch or no change
     mutation_baseline_ref: str | None = None
     env_withheld: list[str] = Field(default_factory=list)
     rejected_patch_path: str | None = None
@@ -246,10 +248,12 @@ class AgentResponse(BaseModel):
 class AgentAttempt:
     """Classified result of one agent attempt before an adapter turns it into a caller-specific outcome.
 
-    errors carry provider error text; diagnostics carry error-level diagnostic-log records for the caller's diagnostics, never its error text.
+    errors carry provider error text; error_code is the failure's code, None when the attempt completed; diagnostics carry
+    error-level diagnostic-log records for the caller's diagnostics, never its error text.
     """
 
     status: AgentResponseStatus
+    error_code: ErrorCode | None = None
     summary: str | None = None
     unfixable_reason: str | None = None
     touched_files: list[str] = field(default_factory=list)

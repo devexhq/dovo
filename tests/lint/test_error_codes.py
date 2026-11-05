@@ -83,6 +83,8 @@ STATES: Final[tuple[str, ...]] = (
     "STALE",
     "ORPHANED",
     "CRASHED",
+    "UNFIXABLE",
+    "BLOCKED",
 )
 
 _FOREIGN_RAISE_FIXTURE: Final[str] = """
