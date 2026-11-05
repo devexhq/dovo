@@ -48,6 +48,7 @@ def _item_view(name: str, item_type: str) -> CatalogItemView:
 
 
 _EMPTY_VIEW = CatalogListView(
+    ok=True,
     item_type="blueprint",
     items=[],
     type_filter="blueprint",
@@ -109,7 +110,14 @@ WITH_ERRORS = FormatterCase(
     data=CatalogListResult(
         item_type=_BP, error_code=ErrorCode.CATALOG_WRITE_FAILED, errors=["Failed to write catalog index."]
     ),
-    view=_EMPTY_VIEW.model_copy(update={"type_filter": None, "errors": ["Failed to write catalog index."]}),
+    view=_EMPTY_VIEW.model_copy(
+        update={
+            "ok": False,
+            "error_code": ErrorCode.CATALOG_WRITE_FAILED,
+            "type_filter": None,
+            "errors": ["Failed to write catalog index."],
+        }
+    ),
     render_expectations=["Failed to write catalog index."],
 )
 
@@ -133,6 +141,8 @@ PAYLOAD_CASES = [
     pytest.param(
         WITH_WARNINGS,
         {
+            "ok": True,
+            "error_code": None,
             "errors": [],
             "warnings": ["Failed to parse corrupted.yml"],
             "remediations": [],
@@ -157,6 +167,8 @@ PAYLOAD_CASES = [
     pytest.param(
         EMPTY_ITEMS,
         {
+            "ok": True,
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],

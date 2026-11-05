@@ -124,16 +124,17 @@ class ArtifactsDownloadCliIntegrationTests:
         assert json.loads(result.stdout) == {
             "event_type": "ArtifactDownloadResult",
             "payload": {
+                "ok": True,
+                "error_code": None,
+                "errors": [],
+                "warnings": [],
+                "remediations": [],
+                "diagnostics": [],
                 "session_id": "wf_one",
                 "name": "dist-packages",
                 "dest": str(dest),
                 "revision": 1,
                 "file_count": 1,
-                "errors": [],
-                "warnings": [],
-                "error_code": None,
-                "remediations": [],
-                "diagnostics": [],
             },
         }
 
@@ -162,16 +163,17 @@ class ArtifactsDownloadCliIntegrationTests:
         assert json.loads(result.stdout) == {
             "event_type": "ArtifactDownloadResult",
             "payload": {
+                "ok": False,
+                "error_code": "ARTIFACT_NOT_FOUND",
+                "errors": ["Artifact 'missing' not found for session 'wf_one'"],
+                "warnings": [],
+                "remediations": [],
+                "diagnostics": [],
                 "session_id": "wf_one",
                 "name": "missing",
                 "dest": "",
                 "revision": 0,
                 "file_count": 0,
-                "errors": ["Artifact 'missing' not found for session 'wf_one'"],
-                "warnings": [],
-                "error_code": "ARTIFACT_NOT_FOUND",
-                "remediations": [],
-                "diagnostics": [],
             },
         }
 

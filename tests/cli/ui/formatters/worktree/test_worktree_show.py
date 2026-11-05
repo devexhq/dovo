@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_show import WorktreeShowFormatter
+from dovo.cli.ui.formatters.worktree.worktree_views import WorktreeShowView
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
@@ -31,25 +32,35 @@ _RECORD = WorktreeRecord(
     updated_at="2026-08-31T20:00:00Z",
 )
 
-FOUND_ACTIVE = FormatterCase.identity(
+FOUND_ACTIVE = FormatterCase(
     data=WorktreeShowResult(
         worktree=_RECORD,
         disk_present=True,
     ),
+    view=WorktreeShowView(ok=True, worktree=_RECORD, disk_present=True),
     render_expectations=[_RECORD.id, "test-worktree", _RECORD.branch_name, _RECORD.base_commit],
 )
 
-RECONCILED_MISSING_DISK = FormatterCase.identity(
+RECONCILED_MISSING_DISK = FormatterCase(
     data=WorktreeShowResult(
         worktree=_RECORD,
         disk_present=False,
         reconciled=True,
     ),
+    view=WorktreeShowView(ok=True, worktree=_RECORD, disk_present=False, reconciled=True),
     render_expectations=[_RECORD.id, "test-worktree", _RECORD.branch_name, _RECORD.base_commit],
 )
 
-NOT_FOUND = FormatterCase.identity(
+NOT_FOUND = FormatterCase(
     data=WorktreeShowResult(
+        error_code=ErrorCode.WORKTREE_NOT_FOUND,
+        errors=["Worktree 'dovo_missing' not found."],
+        remediations=[
+            Remediation(message="Run 'dovo worktree list' to see known worktrees", command="dovo worktree list")
+        ],
+    ),
+    view=WorktreeShowView(
+        ok=False,
         error_code=ErrorCode.WORKTREE_NOT_FOUND,
         errors=["Worktree 'dovo_missing' not found."],
         remediations=[
@@ -69,8 +80,14 @@ _RECORD_LOG = DiagnosticRecord(
     level=DiagnosticLevel.ERROR,
 )
 
-INTERNAL_ERROR = FormatterCase.identity(
+INTERNAL_ERROR = FormatterCase(
     data=WorktreeShowResult(
+        error_code=ErrorCode.INTERNAL_ERROR,
+        errors=["Unexpected error during worktree.show: database is locked"],
+        diagnostics=[_RECORD_LOG],
+    ),
+    view=WorktreeShowView(
+        ok=False,
         error_code=ErrorCode.INTERNAL_ERROR,
         errors=["Unexpected error during worktree.show: database is locked"],
         diagnostics=[_RECORD_LOG],
@@ -92,6 +109,12 @@ WORKTREE_SHOW_PAYLOAD_CASES = [
     pytest.param(
         FOUND_ACTIVE,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "worktree": {
                 "id": "dovo_test1234",
                 "project_id": "proj-a",
@@ -105,27 +128,23 @@ WORKTREE_SHOW_PAYLOAD_CASES = [
             },
             "disk_present": True,
             "reconciled": False,
-            "warnings": [],
-            "errors": [],
-            "error_code": None,
-            "remediations": [],
-            "diagnostics": [],
         },
         id="found_active",
     ),
     pytest.param(
         NOT_FOUND,
         {
-            "worktree": None,
-            "disk_present": False,
-            "reconciled": False,
-            "warnings": [],
-            "errors": ["Worktree 'dovo_missing' not found."],
+            "ok": False,
             "error_code": "WORKTREE_NOT_FOUND",
+            "errors": ["Worktree 'dovo_missing' not found."],
+            "warnings": [],
             "remediations": [
                 {"message": "Run 'dovo worktree list' to see known worktrees", "command": "dovo worktree list"}
             ],
             "diagnostics": [],
+            "worktree": None,
+            "disk_present": False,
+            "reconciled": False,
         },
         id="not_found",
     ),
@@ -138,13 +157,13 @@ class WorktreeShowFormatterTests:
     @pytest.mark.parametrize(("case", "expected_payload"), WORKTREE_SHOW_PAYLOAD_CASES)
     def test_json_payload_matches_published_shape(
         self,
-        case: FormatterCase[WorktreeShowResult, WorktreeShowResult],
+        case: FormatterCase[WorktreeShowResult, WorktreeShowView],
         expected_payload: dict[str, Any],
     ) -> None:
         assert_json_payload_matches_published_shape(WorktreeShowFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", WORKTREE_SHOW_CASES)
     def test_rich_render_shows_every_view_value(
-        self, case: FormatterCase[WorktreeShowResult, WorktreeShowResult]
+        self, case: FormatterCase[WorktreeShowResult, WorktreeShowView]
     ) -> None:
         assert_rich_render_shows_every_view_value(WorktreeShowFormatter, case.data, case.render_expectations)

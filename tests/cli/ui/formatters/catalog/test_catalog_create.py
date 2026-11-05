@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.catalog.catalog_create import CatalogCreateFormatter
+from dovo.cli.ui.formatters.catalog.catalog_views import CatalogCreateView
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.catalog.models import (
@@ -46,23 +47,37 @@ _USER_RECORD = CatalogRecord(
 )
 _USER_RESOLVED_PATH = Path("/home/user/.dovo/user/catalog/blueprints/user-blueprint.yml")
 
-CREATED_BLUEPRINT = FormatterCase.identity(
+CREATED_BLUEPRINT = FormatterCase(
     data=CatalogCreateResult(item_type=CatalogItemType.BLUEPRINT, item=_RECORD, resolved_path=_REPO_RESOLVED_PATH),
+    view=CatalogCreateView(
+        ok=True, item_type=CatalogItemType.BLUEPRINT, item=_RECORD, resolved_path=_REPO_RESOLVED_PATH
+    ),
     render_expectations=["blueprint", "test-blueprint", "repo", ".dovo/catalog/blueprints/test-blueprint.yml"],
 )
 
-CREATED_USER_BLUEPRINT = FormatterCase.identity(
+CREATED_USER_BLUEPRINT = FormatterCase(
     data=CatalogCreateResult(item_type=CatalogItemType.BLUEPRINT, item=_USER_RECORD, resolved_path=_USER_RESOLVED_PATH),
+    view=CatalogCreateView(
+        ok=True, item_type=CatalogItemType.BLUEPRINT, item=_USER_RECORD, resolved_path=_USER_RESOLVED_PATH
+    ),
     render_expectations=["blueprint", "user-blueprint", "user", str(_USER_RESOLVED_PATH)],
 )
 
-CREATION_ERROR = FormatterCase.identity(
+CREATION_ERROR = FormatterCase(
     data=CatalogCreateResult(
         item_type=CatalogItemType.BLUEPRINT,
         error_code=ErrorCode.CATALOG_ALREADY_EXISTS,
         item=None,
         errors=["Naming collision on blueprint."],
         remediations=[Remediation(message="Choose a different name")],
+    ),
+    view=CatalogCreateView(
+        ok=False,
+        error_code=ErrorCode.CATALOG_ALREADY_EXISTS,
+        errors=["Naming collision on blueprint."],
+        remediations=[Remediation(message="Choose a different name")],
+        item_type=CatalogItemType.BLUEPRINT,
+        item=None,
     ),
     render_expectations=["Naming collision on blueprint.", "Choose a different name"],
 )
@@ -77,11 +92,12 @@ CATALOG_CREATE_PAYLOAD_CASES = [
     pytest.param(
         CREATED_BLUEPRINT,
         {
+            "ok": True,
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],
             "diagnostics": [],
-            "error_code": None,
             "item_type": "blueprint",
             "item": {
                 "key": "test-blueprint",
@@ -100,11 +116,12 @@ CATALOG_CREATE_PAYLOAD_CASES = [
     pytest.param(
         CREATION_ERROR,
         {
+            "ok": False,
+            "error_code": "CATALOG_ALREADY_EXISTS",
             "errors": ["Naming collision on blueprint."],
             "warnings": [],
             "remediations": [{"message": "Choose a different name", "command": None}],
             "diagnostics": [],
-            "error_code": "CATALOG_ALREADY_EXISTS",
             "item_type": "blueprint",
             "item": None,
             "resolved_path": None,
@@ -120,13 +137,13 @@ class CatalogCreateFormatterTests:
     @pytest.mark.parametrize(("case", "expected_payload"), CATALOG_CREATE_PAYLOAD_CASES)
     def test_json_payload_matches_published_shape(
         self,
-        case: FormatterCase[CatalogCreateResult, CatalogCreateResult],
+        case: FormatterCase[CatalogCreateResult, CatalogCreateView],
         expected_payload: dict[str, Any],
     ) -> None:
         assert_json_payload_matches_published_shape(CatalogCreateFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", CATALOG_CREATE_CASES)
     def test_rich_render_shows_every_view_value(
-        self, case: FormatterCase[CatalogCreateResult, CatalogCreateResult]
+        self, case: FormatterCase[CatalogCreateResult, CatalogCreateView]
     ) -> None:
         assert_rich_render_shows_every_view_value(CatalogCreateFormatter, case.data, case.render_expectations)

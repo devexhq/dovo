@@ -46,6 +46,15 @@ def _record_recovered(exc: Exception, context: dict[str, str | None]) -> None:
     record_exception(exc, level=DiagnosticLevel.DEBUG, operation="worktree.prune", context=context)
 
 
+def _prune_status(items: list[PrunedItem], *, failed: bool) -> WorktreePruneStatus:
+    """Return what the run did: partial_failure when an item failed, nothing_to_prune when none was found, else pruned."""
+    if failed:
+        return WorktreePruneStatus.PARTIAL_FAILURE
+    if not items:
+        return WorktreePruneStatus.NOTHING_TO_PRUNE
+    return WorktreePruneStatus.PRUNED
+
+
 class WorktreePruner:
     """Safe cleanup executor for stale worktrees, orphaned directories, and temporary branches."""
 
@@ -323,7 +332,7 @@ class WorktreePruner:
                 errors.append(res.error)
 
         return WorktreePruneResult(
-            status=WorktreePruneStatus.PARTIAL_FAILURE if errors else WorktreePruneStatus.OK,
+            status=_prune_status(processed_items, failed=bool(errors)),
             dry_run=dry_run,
             force=force,
             items=processed_items,

@@ -8,46 +8,58 @@ from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
+from dovo.cli.ui.formatters.header import header_fields
 from dovo.cli.ui.formatters.worktree.common import build_worktree_detail_table
+from dovo.cli.ui.formatters.worktree.worktree_views import WorktreeShowView
 from dovo.common.error_codes import ErrorCode
 from dovo.core.worktree.models import WorktreeShowResult
 
 
-def _format_show_error_panel(data: WorktreeShowResult) -> Panel:
+def _format_show_error_panel(view: WorktreeShowView) -> Panel:
     """Format error panel for non-ok worktree show results."""
-    if data.error_code == ErrorCode.WORKTREE_NOT_FOUND:
+    if view.error_code == ErrorCode.WORKTREE_NOT_FOUND:
         return build_error_panel(
             "Worktree Not Found",
-            data.errors,
+            view.errors,
             "Worktree not found.",
-            remediations=data.remediations,
+            remediations=view.remediations,
         )
 
     return build_error_panel(
         "Worktree Show Failed",
-        data.errors,
+        view.errors,
         "Failed to show worktree.",
-        remediations=data.remediations,
+        remediations=view.remediations,
     )
 
 
-def _format_show_rich(data: WorktreeShowResult) -> RenderableType:
+def _format_show_rich(view: WorktreeShowView) -> RenderableType:
     """Render the key-value detail table, with the reconciled note, or the error panel."""
-    if data.ok and data.worktree is not None:
-        table = build_worktree_detail_table(data.worktree, disk_present=data.disk_present)
-        if data.reconciled:
+    if view.ok and view.worktree is not None:
+        table = build_worktree_detail_table(view.worktree, disk_present=view.disk_present)
+        if view.reconciled:
             return Group(
                 table,
                 Text("Note: worktree directory is missing; status updated to 'cleaned'.", style="dim"),
             )
         return table
 
-    return _format_show_error_panel(data)
+    return _format_show_error_panel(view)
 
 
-class WorktreeShowFormatter(ComponentFormatter[WorktreeShowResult]):
+class WorktreeShowFormatter(ComponentFormatter[WorktreeShowResult, WorktreeShowView]):
     """Formatter for worktree show command results."""
 
+    def transform(self, data: WorktreeShowResult) -> WorktreeShowView:
+        """Derive the view: the result header, then the worktree and its disk state."""
+        return WorktreeShowView(
+            **header_fields(data),
+            worktree=data.worktree,
+            disk_present=data.disk_present,
+            reconciled=data.reconciled,
+        )
+
     def to_rich(self, data: WorktreeShowResult) -> RenderableType:
-        """Render key-value detail table or error status, followed by diagnostic_lines(data.diagnostics)."""
-        return with_diagnostics(_format_show_rich(data), data.diagnostics)
+        """Render key-value detail table or error status, followed by diagnostic_lines(view.diagnostics)."""
+        view = self.transform(data)
+        return with_diagnostics(_format_show_rich(view), view.diagnostics)

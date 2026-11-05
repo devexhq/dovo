@@ -9,6 +9,7 @@ from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel
+from dovo.cli.ui.formatters.header import header_fields
 from dovo.cli.ui.formatters.session.session_views import SessionLogsView
 from dovo.common.error_codes import ErrorCode
 from dovo.core.sessions import LogsShowResult, SessionLogEvent
@@ -56,16 +57,12 @@ class SessionLogsFormatter(ComponentFormatter[LogsShowResult, SessionLogsView]):
     def transform(self, data: LogsShowResult) -> SessionLogsView:
         """Derive the presentation-ready view from LogsShowResult."""
         return SessionLogsView(
+            **header_fields(data),
             session_id=data.session_id,
             lines=list(data.lines),
             events=list(data.events),
             available_steps=list(data.available_steps),
             available_attempts=list(data.available_attempts),
-            errors=list(data.errors),
-            warnings=list(data.warnings),
-            remediations=list(data.remediations),
-            error_code=data.error_code,
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: LogsShowResult) -> RenderableType:

@@ -67,14 +67,15 @@ class ConfigValidateCliIntegrationTests:
         assert json.loads(res.stdout) == {
             "event_type": "ConfigValidationResult",
             "payload": {
-                "config_path": str(config_path),
-                "raw": raw_payload,
-                "config": raw_payload,
+                "ok": True,
                 "error_code": None,
                 "errors": [],
                 "warnings": [],
                 "remediations": [],
                 "diagnostics": [],
+                "config_path": str(config_path),
+                "raw": raw_payload,
+                "config": raw_payload,
             },
         }
 
@@ -93,14 +94,15 @@ class ConfigValidateCliIntegrationTests:
         assert json.loads(res.stdout) == {
             "event_type": "ConfigValidationResult",
             "payload": {
-                "config_path": str(config_path),
-                "raw": None,
-                "config": None,
+                "ok": False,
                 "error_code": "CONFIG_NOT_FOUND",
                 "errors": [f"Configuration file not found at '{config_path}'."],
                 "warnings": [],
                 "remediations": [{"message": "Run 'dovo init' to create '.dovo/config.json'", "command": "dovo init"}],
                 "diagnostics": [],
+                "config_path": str(config_path),
+                "raw": None,
+                "config": None,
             },
         }
 

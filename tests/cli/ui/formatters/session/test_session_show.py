@@ -26,6 +26,7 @@ from tests.harness.formatter import (
 
 def _make_session_show_view(**overrides: object) -> SessionShowView:
     defaults: dict[str, object] = {
+        "ok": overrides.get("error_code") is None,
         "session_id": "sess-12345678",
         "session": session_summary_view(),
         "log_files": [],
@@ -271,6 +272,12 @@ HISTORY_SHOW_PAYLOAD_CASES = [
     pytest.param(
         RUN_WITH_STEPS,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "session_id": "sess-12345678",
             "session": {
                 "session_id": "sess-12345678",
@@ -378,17 +385,18 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             ],
             "worktree_kept": None,
             "worktree_path": None,
-            "errors": [],
-            "warnings": [],
-            "remediations": [],
-            "error_code": None,
-            "diagnostics": [],
         },
         id="run_with_steps",
     ),
     pytest.param(
         RUN_WITH_GUARDED_STEPS,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "session_id": "sess-12345678",
             "session": {
                 "session_id": "sess-12345678",
@@ -460,17 +468,23 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             ],
             "worktree_kept": None,
             "worktree_path": None,
-            "errors": [],
-            "warnings": [],
-            "remediations": [],
-            "error_code": None,
-            "diagnostics": [],
         },
         id="run_with_guarded_steps",
     ),
     pytest.param(
         RUN_WITH_STEP_READ_FAILURE,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": ["Unexpected error during engine.session_show: boom"],
+            "remediations": [],
+            "diagnostics": [
+                {
+                    "event_id": "exc_3f9a1c07b2de",
+                    "log_path": "/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json",
+                }
+            ],
             "session_id": "sess-12345678",
             "session": {
                 "session_id": "sess-12345678",
@@ -487,22 +501,20 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "steps": [],
             "worktree_kept": None,
             "worktree_path": None,
-            "errors": [],
-            "warnings": ["Unexpected error during engine.session_show: boom"],
-            "remediations": [],
-            "error_code": None,
-            "diagnostics": [
-                {
-                    "event_id": "exc_3f9a1c07b2de",
-                    "log_path": "/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json",
-                }
-            ],
         },
         id="run_with_step_read_failure",
     ),
     pytest.param(
         NOT_FOUND,
         {
+            "ok": False,
+            "error_code": "SESSION_NOT_FOUND",
+            "errors": ["Session 'nonexistent-sess' not found."],
+            "warnings": [],
+            "remediations": [
+                {"message": "Run 'dovo session list' to view past sessions", "command": "dovo session list"}
+            ],
+            "diagnostics": [],
             "session_id": "nonexistent-sess",
             "session": None,
             "log_files": [],
@@ -510,13 +522,6 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "steps": [],
             "worktree_kept": None,
             "worktree_path": None,
-            "errors": ["Session 'nonexistent-sess' not found."],
-            "warnings": [],
-            "remediations": [
-                {"message": "Run 'dovo session list' to view past sessions", "command": "dovo session list"}
-            ],
-            "error_code": "SESSION_NOT_FOUND",
-            "diagnostics": [],
         },
         id="not_found",
     ),

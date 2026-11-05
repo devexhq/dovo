@@ -18,11 +18,6 @@ class WorktreeListResult(BaseResult):
 
     worktrees: list[WorktreeRecord] = Field(default_factory=list)
 
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is None."""
-        return self.error_code is None
-
 
 class WorktreeShowResult(BaseResult):
     """Structured result for ``dovo worktree show`` before rendering."""
@@ -30,11 +25,6 @@ class WorktreeShowResult(BaseResult):
     worktree: WorktreeRecord | None = None
     disk_present: bool = False
     reconciled: bool = False
-
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is None."""
-        return self.error_code is None
 
 
 class WorktreeSession(BaseModel):
@@ -58,11 +48,6 @@ class WorktreeCreateResult(BaseResult):
 
     session: WorktreeSession | None = None
 
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is None."""
-        return self.error_code is None
-
 
 class WorktreeApplyStrategy(StrEnum):
     """Supported strategies for applying worktree changes to the main workspace."""
@@ -81,11 +66,6 @@ class WorktreeApplyResult(BaseResult):
     cleaned_up: bool = False
     commit_sha: str | None = None
 
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is None."""
-        return self.error_code is None
-
 
 class WorktreeDiffResult(BaseResult):
     """Structured result of inspecting worktree diffs; a failure is reported by error_code."""
@@ -94,11 +74,6 @@ class WorktreeDiffResult(BaseResult):
     diff_text: str = ""
     stat_text: str = ""
     files_changed: list[str] = Field(default_factory=list)
-
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is None."""
-        return self.error_code is None
 
 
 class StaleWorktreeCategory(StrEnum):
@@ -164,11 +139,6 @@ class WorktreeCleanupResult(BaseResult):
 
     worktree_id: str = ""
 
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is None."""
-        return self.error_code is None
-
 
 @dataclass(frozen=True, slots=True)
 class WorktreeRemoval:
@@ -187,10 +157,11 @@ class PruneAction(StrEnum):
 
 
 class WorktreePruneStatus(StrEnum):
-    """Outcome status for worktree prune execution."""
+    """What a worktree prune run did; a scan that fails before any item is processed has no status."""
 
-    OK = "ok"
-    PARTIAL_FAILURE = "partial_failure"
+    PRUNED = "pruned"  # every stale item found was pruned, or under dry run would be; skipped items included
+    NOTHING_TO_PRUNE = "nothing_to_prune"  # no stale item was found
+    PARTIAL_FAILURE = "partial_failure"  # at least one item could not be pruned
 
 
 class PrunedItem(BaseModel):
@@ -211,15 +182,10 @@ class PrunedItem(BaseModel):
 class WorktreePruneResult(BaseResult):
     """Structured result of worktree pruning execution."""
 
-    status: WorktreePruneStatus | None = WorktreePruneStatus.OK
+    status: WorktreePruneStatus | None
     dry_run: bool = False
     force: bool = False
     items: list[PrunedItem] = Field(default_factory=list)
-
-    @property
-    def ok(self) -> bool:
-        """Return True when prune reported no failure; partial_failure is not ok."""
-        return self.error_code is None
 
     @property
     def pruned_items(self) -> list[PrunedItem]:
@@ -260,8 +226,3 @@ class WorktreeDeleteResult(BaseResult):
     deleted: bool = False
     already_cleaned: bool = False
     cancelled: bool = False
-
-    @property
-    def ok(self) -> bool:
-        """True exactly when error_code is None."""
-        return self.error_code is None

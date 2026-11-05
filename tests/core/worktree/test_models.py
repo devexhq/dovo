@@ -25,7 +25,7 @@ class WorktreePruneResultOkTests:
     @pytest.mark.parametrize(
         ("status", "error_code", "ok"),
         [
-            pytest.param(WorktreePruneStatus.OK, None, True, id="ok"),
+            pytest.param(WorktreePruneStatus.PRUNED, None, True, id="pruned"),
             pytest.param(
                 WorktreePruneStatus.PARTIAL_FAILURE, ErrorCode.WORKTREE_PRUNE_FAILED, False, id="partial_failure"
             ),

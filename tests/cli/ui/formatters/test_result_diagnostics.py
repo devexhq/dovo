@@ -55,6 +55,7 @@ from dovo.core.worktree import (
     WorktreeDiffResult,
     WorktreeListResult,
     WorktreePruneResult,
+    WorktreePruneStatus,
     WorktreeShowResult,
 )
 from dovo.engine.models import BlueprintRunResult
@@ -146,7 +147,7 @@ SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
     WorkspaceInitResult: lambda: WorkspaceInitResult(
         error_code=ErrorCode.INTERNAL_ERROR, errors=["boom"], diagnostics=[RECORD]
     ),
-    WorktreePruneResult: lambda: WorktreePruneResult(diagnostics=[RECORD]),
+    WorktreePruneResult: lambda: WorktreePruneResult(status=WorktreePruneStatus.NOTHING_TO_PRUNE, diagnostics=[RECORD]),
     WorktreeShowResult: lambda: WorktreeShowResult(
         error_code=ErrorCode.WORKTREE_NOT_FOUND, errors=["boom"], diagnostics=[RECORD]
     ),

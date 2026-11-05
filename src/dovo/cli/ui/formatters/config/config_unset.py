@@ -7,21 +7,34 @@ from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
+from dovo.cli.ui.formatters.config.config_views import ConfigUnsetView
+from dovo.cli.ui.formatters.header import header_fields
 from dovo.core.config.mutate import ConfigUnsetResult
 
 
-class ConfigUnsetFormatter(ComponentFormatter[ConfigUnsetResult]):
+class ConfigUnsetFormatter(ComponentFormatter[ConfigUnsetResult, ConfigUnsetView]):
     """Formatter for configuration removal results."""
+
+    def transform(self, data: ConfigUnsetResult) -> ConfigUnsetView:
+        """Derive the view: the result header, then the key and the value it held."""
+        return ConfigUnsetView(
+            **header_fields(data),
+            config_path=data.config_path,
+            key=data.key,
+            existed=data.existed,
+            previous_value=data.previous_value,
+        )
 
     def to_rich(self, data: ConfigUnsetResult) -> RenderableType:
         """Render configuration removal confirmation or error panel."""
-        if data.error_code is None:
-            return Text.from_markup(f"[bold green]✔  Config unset: {data.key}[/bold green]")
+        view = self.transform(data)
+        if view.error_code is None:
+            return Text.from_markup(f"[bold green]✔  Config unset: {view.key}[/bold green]")
 
         panel = build_error_panel(
             "Config Error",
-            data.errors,
+            view.errors,
             "Failed to update configuration.",
-            remediations=data.remediations,
+            remediations=view.remediations,
         )
-        return with_diagnostics(panel, data.diagnostics)
+        return with_diagnostics(panel, view.diagnostics)

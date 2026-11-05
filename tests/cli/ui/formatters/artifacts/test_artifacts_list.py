@@ -49,6 +49,7 @@ _SECOND_RECORD = ArtifactRecord(
 WITH_MULTIPLE_ARTIFACTS = FormatterCase(
     data=ArtifactsListResult(artifacts=[_RECORD, _SECOND_RECORD]),
     view=ArtifactsListView(
+        ok=True,
         artifacts=[
             ArtifactRowView(
                 name="dist-packages",
@@ -82,29 +83,35 @@ WITH_MULTIPLE_ARTIFACTS = FormatterCase(
                 size_display="2.00 KB",
                 expires_at=None,
             ),
-        ]
+        ],
     ),
 )
 
 WITH_ARTIFACT = FormatterCase(
     data=ArtifactsListResult(artifacts=[_RECORD]),
-    view=ArtifactsListView(artifacts=[WITH_MULTIPLE_ARTIFACTS.view.artifacts[0]]),
+    view=ArtifactsListView(ok=True, artifacts=[WITH_MULTIPLE_ARTIFACTS.view.artifacts[0]]),
 )
 
 WITH_LEGACY_ARTIFACT = FormatterCase(
     data=ArtifactsListResult(artifacts=[_SECOND_RECORD]),
-    view=ArtifactsListView(artifacts=[WITH_MULTIPLE_ARTIFACTS.view.artifacts[1]]),
+    view=ArtifactsListView(ok=True, artifacts=[WITH_MULTIPLE_ARTIFACTS.view.artifacts[1]]),
 )
 
 EMPTY = FormatterCase(
     data=ArtifactsListResult(artifacts=[]),
-    view=ArtifactsListView(artifacts=[]),
+    view=ArtifactsListView(ok=True, artifacts=[]),
 )
 
 ARTIFACTS_LIST_PAYLOAD_CASES = [
     pytest.param(
         WITH_ARTIFACT,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "artifacts": [
                 {
                     "name": "dist-packages",
@@ -123,16 +130,18 @@ ARTIFACTS_LIST_PAYLOAD_CASES = [
                     "expires_at": None,
                 }
             ],
-            "errors": [],
-            "warnings": [],
-            "remediations": [],
-            "diagnostics": [],
         },
         id="populated",
     ),
     pytest.param(
         WITH_LEGACY_ARTIFACT,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "artifacts": [
                 {
                     "name": "test-reports",
@@ -151,16 +160,20 @@ ARTIFACTS_LIST_PAYLOAD_CASES = [
                     "expires_at": None,
                 }
             ],
-            "errors": [],
-            "warnings": [],
-            "remediations": [],
-            "diagnostics": [],
         },
         id="legacy_row",
     ),
     pytest.param(
         EMPTY,
-        {"artifacts": [], "errors": [], "warnings": [], "remediations": [], "diagnostics": []},
+        {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
+            "artifacts": [],
+        },
         id="empty",
     ),
 ]

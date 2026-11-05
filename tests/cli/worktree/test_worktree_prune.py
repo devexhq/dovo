@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.core.git.exceptions import git_command_error
 from dovo.core.git.models import GitProcessOutput
+from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreePruneStatus
 from dovo.core.worktree.services.detector import WorktreeDetector
 from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
@@ -55,13 +56,14 @@ class WorktreePruneCliIntegrationTests:
         assert len(dispatch_spy) == 1
 
         payload = dispatch_spy[0]
-        assert payload.status == WorktreePruneStatus.OK
+        assert payload.status == WorktreePruneStatus.NOTHING_TO_PRUNE
         assert payload.dry_run == dry_run
         assert payload.force == force
         assert len(payload.items) == 0
         assert len(payload.errors) == 0
 
     def test_worktree_prune_cli_renders_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        """Nothing stale with --dry-run emits status "nothing_to_prune", exit 0 and the six-field header first."""
         result = cli_runner.invoke(
             app, ["-p", str(cli_workspace), "worktree", "prune", "--dry-run", "--format", "json"]
         )
@@ -70,20 +72,44 @@ class WorktreePruneCliIntegrationTests:
         assert json.loads(result.stdout) == {
             "event_type": "WorktreePruneResult",
             "payload": {
-                "status": "ok",
+                "ok": True,
+                "error_code": None,
+                "errors": [],
+                "warnings": [],
+                "remediations": [],
+                "diagnostics": [],
+                "status": "nothing_to_prune",
                 "dry_run": True,
                 "force": False,
                 "items": [],
                 "pruned_count": 0,
                 "skipped_count": 0,
                 "failed_count": 0,
-                "error_code": None,
-                "errors": [],
-                "warnings": [],
-                "remediations": [],
-                "diagnostics": [],
             },
         }
+
+    @pytest.mark.parametrize("dry_run", [False, True], ids=["pruned", "dry-run"])
+    def test_worktree_prune_cli_stale_branch_json_reports_pruned(
+        self, cli_runner: CliRunner, cli_workspace: Path, dry_run: bool
+    ) -> None:
+        """A stale branch emits status "pruned" and exit 0; the branch is deleted, or kept under --dry-run."""
+        branch = "dovo/dovo_stale"
+        subprocess.run(["git", "branch", branch], cwd=cli_workspace, check=True, capture_output=True)
+        args = ["-p", str(cli_workspace), "worktree", "prune", "--format", "json"]
+
+        result = cli_runner.invoke(app, [*args, "--dry-run"] if dry_run else args)
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["ok"] is True
+        assert payload["error_code"] is None
+        assert payload["status"] == "pruned"
+        assert payload["dry_run"] is dry_run
+        assert [item["identifier"] for item in payload["items"]] == [branch]
+        assert payload["pruned_count"] == 1
+        assert payload["failed_count"] == 0
+        remaining = GitRunner().list_branches(cli_workspace, pattern="dovo/dovo_*")
+        assert (branch in remaining) is dry_run
 
     @pytest.mark.parametrize(
         "case",

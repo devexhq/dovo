@@ -83,29 +83,14 @@ class InteractionResolveResult(BaseResult):
 
     request: InteractionRequest | None = None
 
-    @property
-    def ok(self) -> bool:
-        """Return True when no error code was reported."""
-        return self.error_code is None
-
 
 class InteractionAnswerResult(BaseResult):
     """Result of validating or parsing an answer; `answer` is the normalized answer on success."""
 
     answer: InteractionAnswer | None = None
 
-    @property
-    def ok(self) -> bool:
-        """Return True when no error code was reported."""
-        return self.error_code is None
-
 
 class HeadlessArgumentsResult(BaseResult):
     """Result of combining the resume answer flags and files into one HeadlessAnswerInput."""
 
     supplied: HeadlessAnswerInput | None = None
-
-    @property
-    def ok(self) -> bool:
-        """Return True when no error code was reported."""
-        return self.error_code is None

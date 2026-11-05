@@ -68,11 +68,6 @@ class InputResolveResult(BaseResult):
     values: dict[str, str | int | bool] = Field(default_factory=dict)
     missing: list[str] = Field(default_factory=list)
 
-    @property
-    def ok(self) -> bool:
-        """Return True when no error code was reported."""
-        return self.error_code is None
-
 
 @dataclass(frozen=True, slots=True)
 class StepOutputValue:

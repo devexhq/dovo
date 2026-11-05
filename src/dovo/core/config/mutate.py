@@ -24,11 +24,6 @@ class ConfigSetResult(BaseResult):
     key: str
     value: Any = None
 
-    @property
-    def ok(self) -> bool:
-        """Return True exactly when error_code is None."""
-        return self.error_code is None
-
 
 class ConfigUnsetResult(BaseResult):
     """Result of `Config.unset`: whether the key existed and its previous value, plus any failure."""
@@ -37,11 +32,6 @@ class ConfigUnsetResult(BaseResult):
     key: str
     existed: bool
     previous_value: Any = None
-
-    @property
-    def ok(self) -> bool:
-        """Return True exactly when error_code is None."""
-        return self.error_code is None
 
 
 @dataclass(frozen=True, slots=True)

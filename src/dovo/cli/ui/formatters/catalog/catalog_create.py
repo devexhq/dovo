@@ -8,7 +8,9 @@ from rich.console import RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.cli.ui.formatters.catalog.catalog_views import CatalogCreateView
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
+from dovo.cli.ui.formatters.header import header_fields
 from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogCreateResult, CatalogTier
 
@@ -16,33 +18,43 @@ from dovo.core.catalog.models import CatalogCreateResult, CatalogTier
 def _display_path(tier: CatalogTier, rel_path: Path, resolved_path: Path) -> str:
     """Return the repo-relative display path for REPO tier, or the plain absolute path otherwise.
 
-    Kept out of transform(): this formatter's transform is identity, so whatever it returned would
-    also become the JSON payload's `resolved_path`, overwriting the raw absolute path JSON must keep.
+    Kept out of transform(): the view is also the JSON payload, so a display path stored there would overwrite the
+    raw absolute `resolved_path` JSON must keep.
     """
     if tier == CatalogTier.REPO:
         return (Path(".dovo") / "catalog" / rel_path).as_posix()
     return str(resolved_path)
 
 
-def _render(data: CatalogCreateResult) -> RenderableType:
+def _render(view: CatalogCreateView) -> RenderableType:
     """Render blueprint creation confirmation or failure panel."""
-    if data.errors or not data.ok or data.item is None or data.resolved_path is None:
+    if view.errors or not view.ok or view.item is None or view.resolved_path is None:
         return build_error_panel(
             "Catalog Creation Failed",
-            data.errors,
+            view.errors,
             "Catalog creation failed.",
-            remediations=data.remediations,
+            remediations=view.remediations,
         )
 
-    item_type = enum_value(data.item.item_type)
-    tier = enum_value(data.item.tier)
-    path = _display_path(data.item.tier, data.item.path, data.resolved_path)
-    return Text(f"Created {item_type} '{data.item.name}' (tier: {tier}) at '{path}'.")
+    item_type = enum_value(view.item.item_type)
+    tier = enum_value(view.item.tier)
+    path = _display_path(view.item.tier, view.item.path, view.resolved_path)
+    return Text(f"Created {item_type} '{view.item.name}' (tier: {tier}) at '{path}'.")
 
 
-class CatalogCreateFormatter(ComponentFormatter[CatalogCreateResult]):
+class CatalogCreateFormatter(ComponentFormatter[CatalogCreateResult, CatalogCreateView]):
     """Formatter for catalog create command results."""
+
+    def transform(self, data: CatalogCreateResult) -> CatalogCreateView:
+        """Derive the view: the result header, then the created item and its resolved path."""
+        return CatalogCreateView(
+            **header_fields(data),
+            item_type=data.item_type,
+            item=data.item,
+            resolved_path=data.resolved_path,
+        )
 
     def to_rich(self, data: CatalogCreateResult) -> RenderableType:
         """Render blueprint creation confirmation or failure panel, followed by diagnostic_lines(diagnostics)."""
-        return with_diagnostics(_render(data), data.diagnostics)
+        view = self.transform(data)
+        return with_diagnostics(_render(view), view.diagnostics)

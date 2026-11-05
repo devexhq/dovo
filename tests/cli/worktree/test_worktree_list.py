@@ -90,12 +90,13 @@ class WorktreeListCliIntegrationTests:
         assert json.loads(result.stdout) == {
             "event_type": "WorktreeListResult",
             "payload": {
-                "worktrees": [],
+                "ok": True,
                 "error_code": None,
                 "errors": [],
                 "warnings": [],
                 "remediations": [],
                 "diagnostics": [],
+                "worktrees": [],
             },
         }
 

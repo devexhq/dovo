@@ -140,11 +140,12 @@ class BlueprintCreateCliTests:
 
         assert result.exit_code == 1
         assert json.loads(result.stdout)["payload"] == {
+            "ok": False,
+            "error_code": "CATALOG_TIER_CONFLICT",
             "errors": ["--user and --global are mutually exclusive."],
             "warnings": [],
             "remediations": [{"message": "Pass at most one of --user and --global.", "command": None}],
             "diagnostics": [],
-            "error_code": "CATALOG_TIER_CONFLICT",
             "item_type": "blueprint",
             "item": None,
             "resolved_path": None,

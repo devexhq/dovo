@@ -46,7 +46,7 @@ class BaseResult(BaseModel):
     """Base DTO for operation results.
 
     error_code is a published ErrorCode, set exactly when errors is non-empty; a result where they disagree is refused
-    when it is built.
+    when it is built. ok is true exactly when error_code is None, and no command result defines its own.
     """
 
     model_config = {"extra": "forbid", "strict": True}
@@ -63,6 +63,11 @@ class BaseResult(BaseModel):
         if bool(self.errors) != (self.error_code is not None):
             raise ValueError(ERROR_CODE_MISMATCH_MESSAGE)
         return self
+
+    @property
+    def ok(self) -> bool:
+        """True exactly when error_code is None."""
+        return self.error_code is None
 
 
 class FailurePolicy(StrEnum):

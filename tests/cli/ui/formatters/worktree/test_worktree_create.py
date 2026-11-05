@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_create import WorktreeCreateFormatter
+from dovo.cli.ui.formatters.worktree.worktree_views import WorktreeCreateView
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
@@ -29,13 +30,20 @@ _SESSION = WorktreeSession(
     created_at="2026-08-31T20:00:00Z",
 )
 
-CREATED_OK = FormatterCase.identity(
+CREATED_OK = FormatterCase(
     data=WorktreeCreateResult(session=_SESSION),
+    view=WorktreeCreateView(ok=True, session=_SESSION),
     render_expectations=[_SESSION.session_id, _SESSION.target_branch],
 )
 
-FAILED_GIT = FormatterCase.identity(
+FAILED_GIT = FormatterCase(
     data=WorktreeCreateResult(
+        error_code=ErrorCode.GIT_FAILED,
+        errors=["Git checkout failed."],
+        remediations=[Remediation(message="Check git status and branch name")],
+    ),
+    view=WorktreeCreateView(
+        ok=False,
         error_code=ErrorCode.GIT_FAILED,
         errors=["Git checkout failed."],
         remediations=[Remediation(message="Check git status and branch name")],
@@ -43,7 +51,7 @@ FAILED_GIT = FormatterCase.identity(
     render_expectations=["Git checkout failed.", "Fix:", "- Check git status and branch name"],
 )
 
-CREATED_WITH_DIAGNOSTICS = FormatterCase.identity(
+CREATED_WITH_DIAGNOSTICS = FormatterCase(
     data=WorktreeCreateResult(
         session=_SESSION,
         warnings=["Failed to persist worktree metadata to the local database: boom"],
@@ -54,6 +62,18 @@ CREATED_WITH_DIAGNOSTICS = FormatterCase.identity(
                 level=DiagnosticLevel.ERROR,
             )
         ],
+    ),
+    view=WorktreeCreateView(
+        ok=True,
+        warnings=["Failed to persist worktree metadata to the local database: boom"],
+        diagnostics=[
+            DiagnosticRecord(
+                event_id="exc_3f9a1c07b2de",
+                log_path=Path("/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json"),
+                level=DiagnosticLevel.ERROR,
+            )
+        ],
+        session=_SESSION,
     ),
     render_expectations=[
         _SESSION.session_id,
@@ -72,6 +92,12 @@ WORKTREE_CREATE_PAYLOAD_CASES = [
     pytest.param(
         CREATED_OK,
         {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [],
+            "remediations": [],
+            "diagnostics": [],
             "session": {
                 "session_id": "dovo_create123",
                 "target_branch": "dovo/create123",
@@ -83,23 +109,19 @@ WORKTREE_CREATE_PAYLOAD_CASES = [
                 "wip_applied": False,
                 "wip_paths": [],
             },
-            "warnings": [],
-            "errors": [],
-            "error_code": None,
-            "remediations": [],
-            "diagnostics": [],
         },
         id="created_ok",
     ),
     pytest.param(
         FAILED_GIT,
         {
-            "session": None,
-            "warnings": [],
-            "errors": ["Git checkout failed."],
+            "ok": False,
             "error_code": "GIT_FAILED",
+            "errors": ["Git checkout failed."],
+            "warnings": [],
             "remediations": [{"message": "Check git status and branch name", "command": None}],
             "diagnostics": [],
+            "session": None,
         },
         id="failed_git",
     ),
@@ -112,13 +134,13 @@ class WorktreeCreateFormatterTests:
     @pytest.mark.parametrize(("case", "expected_payload"), WORKTREE_CREATE_PAYLOAD_CASES)
     def test_json_payload_matches_published_shape(
         self,
-        case: FormatterCase[WorktreeCreateResult, WorktreeCreateResult],
+        case: FormatterCase[WorktreeCreateResult, WorktreeCreateView],
         expected_payload: dict[str, Any],
     ) -> None:
         assert_json_payload_matches_published_shape(WorktreeCreateFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", WORKTREE_CREATE_CASES)
     def test_rich_render_shows_every_view_value(
-        self, case: FormatterCase[WorktreeCreateResult, WorktreeCreateResult]
+        self, case: FormatterCase[WorktreeCreateResult, WorktreeCreateView]
     ) -> None:
         assert_rich_render_shows_every_view_value(WorktreeCreateFormatter, case.data, case.render_expectations)

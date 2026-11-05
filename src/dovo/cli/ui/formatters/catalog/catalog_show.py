@@ -15,6 +15,7 @@ from dovo.cli.ui.formatters.catalog.catalog_views import (
     CatalogTemplateView,
 )
 from dovo.cli.ui.formatters.common import build_error_panel, with_diagnostics
+from dovo.cli.ui.formatters.header import header_fields
 from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogShowResult, CatalogTier
 
@@ -99,16 +100,12 @@ class CatalogShowFormatter(ComponentFormatter[CatalogShowResult, CatalogShowView
         ]
 
         return CatalogShowView(
+            **header_fields(data),
             item_type=enum_value(data.item_type),
             item=item_view,
             content=data.content,
             template_matches=template_matches,
             catalog_path_relative=catalog_path_relative,
-            error_code=data.error_code,
-            errors=data.errors,
-            warnings=data.warnings,
-            remediations=data.remediations,
-            diagnostics=list(data.diagnostics),
         )
 
     def to_rich(self, data: CatalogShowResult) -> RenderableType:

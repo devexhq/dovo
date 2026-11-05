@@ -5,10 +5,11 @@ from __future__ import annotations
 from .artifacts_download import ArtifactDownloadFormatter
 from .artifacts_list import ArtifactsListFormatter
 from .artifacts_prune import ArtifactsPruneFormatter
-from .artifacts_views import ArtifactRowView, ArtifactsListView, ArtifactsPruneView
+from .artifacts_views import ArtifactDownloadView, ArtifactRowView, ArtifactsListView, ArtifactsPruneView
 
 __all__ = [
     "ArtifactDownloadFormatter",
+    "ArtifactDownloadView",
     "ArtifactRowView",
     "ArtifactsListFormatter",
     "ArtifactsListView",
