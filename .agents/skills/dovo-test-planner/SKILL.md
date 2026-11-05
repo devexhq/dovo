@@ -130,6 +130,7 @@ Select test tiers appropriate to the module:
 | Functions reading/writing filesystem or DB | Unit + Integration |
 | Subprocess execution or step-execution loops | Integration primary, Unit for edge cases |
 | Multi-collaborator orchestration | Integration for workflows, Unit for error injection |
+| A command, flag, exit code, terminal text or JSON field a person sees from the installed binary | The tiers above, plus one end-to-end scenario under `e2e/` (R13) |
 
 Plan a separate test class per tier/scenario group with a descriptive suffix (e.g. `RunStepsExecutionTests`, `RunStepsFailurePolicyTests`, `RunStepsRobustnessTests`). Do not use monolithic classes across tier boundaries.
 
@@ -163,7 +164,7 @@ Banned names: `test_ok`, `test_success`, `test_basic`, `test_default`, `test_wor
 
 ### Contract Docstring
 
-Give a method a one-line docstring only when it states a fact the test name does not: an exact literal, an ordering or interaction contract, or the inputs behind a parametrized case. Omit the docstring when the name and the assertion already say it. The execution tier follows from the test file path (`docs/agents/testing.md#the-four-execution-tiers`), so never write it into the docstring.
+Give a method a one-line docstring only when it states a fact the test name does not: an exact literal, an ordering or interaction contract, or the inputs behind a parametrized case. Omit the docstring when the name and the assertion already say it. The execution tier follows from the test file path (`docs/agents/testing.md#the-five-execution-tiers`), so never write it into the docstring.
 
 - Open with an imperative verb ("Return", "Raise", "Exit 1 with", "Emit") that states the outcome.
 - State the exact contract outcome (exit codes, status enums, return values, wire dicts) and the condition behind it.

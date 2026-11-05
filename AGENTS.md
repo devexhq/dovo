@@ -125,8 +125,13 @@ ID, with the `path:line` that breaks it.
   can observe it, plus one wiring test above it. *Why:* contract tests survive
   refactors; implementation tests block them.
 - **R13. Every command has runner tests for success, a failure path,
-  `--format json` and each option it binds.** *Why:* the CLI runner is the only
-  tier that proves a flag is wired through.
+  `--format json` and each option it binds, and every outcome a person can
+  observe from the installed binary (a command, a flag, an exit code, a
+  terminal text or a JSON field) has one end-to-end scenario in `e2e/`, added
+  or updated in the same change.** An outcome a person cannot observe from the
+  binary gets no scenario. *Why:* the CLI runner is the only tier that proves a
+  flag is wired through, and the end-to-end suite is the only one that proves
+  the installed binary still behaves as the docs say.
 - **R14. Formatter tests pin the transform view and the exact JSON dict.**
   Render tests assert that the view's values appear, not layout, colour or
   widths. *Why:* values and JSON are the contract; layout is cosmetic.

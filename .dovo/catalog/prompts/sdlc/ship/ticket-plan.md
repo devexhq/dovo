@@ -32,7 +32,7 @@ Choose one disposition accepted by [ship_state.py](../../../scripts/sdlc/ship/sh
    - Outcomes (`O-n`), decisions (`D-n`), binding values, and constraints being implemented
    - Chosen approach, settled technical decisions, and code evidence (`path:line`)
    - Ordered implementation and test steps anchored to real paths or explicitly new files
-   - Mapping from each outcome/constraint to the code and tests that verify it
+   - Mapping from each outcome/constraint to the code and tests that verify it, naming the end-to-end scenario under `e2e/` for every outcome a person can observe from the installed binary (R13)
    - Any unresolved human decision (`ask`) or boundary split proposal (`blocked`)
 2. Write `.agentic/ship/stage.json`:
 
