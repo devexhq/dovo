@@ -294,44 +294,45 @@ class SessionRunner:
                 blueprint_key=self._row.blueprint_key,
             ),
         )
+        executed: RunOutcome | None = None
         try:
-            outcome = self._apply_worktree_changes(self._execute())
+            executed = self._execute()
+            outcome = self._apply_worktree_changes(executed)
         except KeyboardInterrupt:
-            outcome = self._interrupted()
+            outcome = self._interrupted(executed)
         except BaseException:
             # No record here: Engine's catch_failure records an unexpected exception after cleanup and writes the
             # failure; the close writes whether it kept the worktree, which only it knows.
-            closed = self._close(self._failed_before_record())
+            closed = self._close(self._bare_outcome(SessionStatus.FAILED))
             self._record_run_end(closed, closed.worktree_kept)
             safe_notify(self._observer, "on_run_completed", closed)
             raise
 
         return self._close(self._record_end(outcome))
 
-    def _failed_before_record(self) -> RunOutcome:
-        """Return the bare FAILED outcome the workspace closes with when the run raised before its end was recorded."""
+    def _bare_outcome(self, status: SessionStatus) -> RunOutcome:
+        """Return the outcome of a run that ended in status before the coordinator returned one: the session, its worktree, and the setup warnings and records."""
         worktree = self._worktree
         return RunOutcome(
-            status=SessionStatus.FAILED,
-            worktree_path=worktree.worktree_path if worktree is not None else self._context.target_dir,
-            session_id=self._row.session_id,
-            worktree_id=worktree.session_id if worktree is not None else None,
-        )
-
-    def _interrupted(self) -> RunOutcome:
-        """Stop the run's processes and return the outcome the interrupt ends the run with, after the setup warnings and records."""
-        stop = stop_interrupted_run()
-        worktree = self._worktree
-        return RunOutcome(
-            status=stop.status,
-            errors=list(stop.errors),
-            remediations=list(stop.remediations),
-            error_code=stop.error_code,
+            status=status,
             warnings=list(self._setup_warnings),
             diagnostics=list(self._setup_diagnostics),
             worktree_path=worktree.worktree_path if worktree is not None else self._context.target_dir,
             session_id=self._row.session_id,
             worktree_id=worktree.session_id if worktree is not None else None,
+        )
+
+    def _interrupted(self, executed: RunOutcome | None) -> RunOutcome:
+        """Stop the run's processes and return the outcome the interrupt ends the run with: the executed outcome, when the coordinator had returned one, in the stop's status with its errors, remediations and code."""
+        stop = stop_interrupted_run()
+        base = executed if executed is not None else self._bare_outcome(stop.status)
+        return base.model_copy(
+            update={
+                "status": stop.status,
+                "errors": list(stop.errors),
+                "remediations": list(stop.remediations),
+                "error_code": stop.error_code,
+            }
         )
 
     def _record_end(self, outcome: RunOutcome) -> RunOutcome:
@@ -366,11 +367,19 @@ class SessionRunner:
         )
 
     def _apply_worktree_changes(self, outcome: RunOutcome) -> RunOutcome:
-        """Auto-apply worktree changes on a completed run, copying the apply's warnings, errors, code and records, marking the run FAILED when apply fails, and recording whether it failed."""
+        """Auto-apply worktree changes on a completed run, copying the apply's warnings, errors, code and records, marking the run FAILED when apply fails, and recording whether it failed.
+
+        An interrupt during the apply counts as a failed apply, so the close keeps the worktree that holds the only
+        copy of the completed work.
+        """
         if outcome.status != SessionStatus.COMPLETED:
             return outcome
 
-        result = self._workspace.handle_auto_apply(self._manager, self._worktree)
+        try:
+            result = self._workspace.handle_auto_apply(self._manager, self._worktree)
+        except KeyboardInterrupt:
+            self._apply_failed = self._worktree is not None
+            raise
         if result is None:
             return outcome
 

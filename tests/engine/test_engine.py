@@ -868,24 +868,30 @@ class EngineRunInterruptTests:
         )
         assert (row.status, row.error_message) == (SessionStatus.CANCELLED, "Execution cancelled by user.")
 
-    def test_interrupt_during_auto_apply_records_cancelled_and_removes_worktree(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize("discard", [False, True])
+    def test_interrupt_during_auto_apply_records_cancelled_and_keeps_the_worktree(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, discard: bool
     ) -> None:
-        """With the worktree apply of a completed --auto-apply run interrupted, return CANCELLED, leave the row cancelled, and remove the worktree."""
+        """With the worktree apply of a completed --auto-apply run interrupted, return CANCELLED with the completed step's result, and keep the worktree holding the work, even with --discard."""
         paths, sessions = _git_engine(tmp_path)
         blueprint = _catalog_blueprint(paths, "apply-interrupt", [{"id": "s1", "run": "echo change > tracked.txt"}])
         monkeypatch.setattr(Worktree, "apply", _raise_interrupt)
 
         outcome = _engine(paths, sessions).run(
-            blueprint, RunRequest(session_id="apply-interrupt", use_worktree=True, auto_apply=True)
+            blueprint, RunRequest(session_id="apply-interrupt", use_worktree=True, auto_apply=True, discard=discard)
         )
 
         row = sessions.get("apply-interrupt")
         assert row is not None
-        assert (outcome.status, outcome.error_code) == (SessionStatus.CANCELLED, ErrorCode.RUN_CANCELLED)
-        assert (row.status, row.worktree_kept) == (SessionStatus.CANCELLED, False)
-        assert outcome.worktree_path != paths.root_dir
-        assert not outcome.worktree_path.exists()
+        assert (outcome.status, outcome.error_code, outcome.errors) == (
+            SessionStatus.CANCELLED,
+            ErrorCode.RUN_CANCELLED,
+            ["Execution cancelled by user."],
+        )
+        assert [(result.step_id, result.status) for result in outcome.step_results] == [("s1", "completed")]
+        assert (row.status, row.worktree_kept, outcome.worktree_kept) == (SessionStatus.CANCELLED, True, True)
+        assert outcome.worktree_path == paths.worktree_dir("apply-interrupt")
+        assert (outcome.worktree_path / "tracked.txt").read_text(encoding="utf-8") == "change\n"
 
     def test_interrupt_during_close_records_cancelled_with_the_worktree_kept(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
