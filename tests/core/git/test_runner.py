@@ -268,6 +268,10 @@ class GitRunnerExecTests:
             pytest.param("1.5", 1.5, "1.5s", id="override"),
             pytest.param("soon", 120, "120s", id="not_a_number"),
             pytest.param("0", 120, "120s", id="not_positive"),
+            pytest.param("nan", 120, "120s", id="nan"),
+            pytest.param("inf", 120, "120s", id="infinite"),
+            pytest.param("1e300", 120, "120s", id="huge"),
+            pytest.param("86400", 86400, "86400s", id="one_day"),
         ],
     )
     def test_exec_bounds_git_by_dovo_git_timeout_seconds(
@@ -278,7 +282,7 @@ class GitRunnerExecTests:
         timeout: float,
         named: str,
     ) -> None:
-        """Pass DOVO_GIT_TIMEOUT_SECONDS, or 120 when it is unset or not a positive number, to subprocess.run and name it in the GIT_TIMEOUT message."""
+        """Pass DOVO_GIT_TIMEOUT_SECONDS, or 120 when it is unset or not a positive number up to one day, to subprocess.run and name it in the GIT_TIMEOUT message."""
         timeouts: list[object] = []
 
         def _time_out(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:

@@ -182,7 +182,8 @@ class Status:
     def collect(self) -> DovoStatusResult:
         """Reconcile stale sessions, then probe git, config, catalog, database and worktrees and derive warnings, remediations, initialization and health.
 
-        diagnostics lists the records of the reconciliation, git, database and worktree failures caught, in that order.
+        diagnostics lists the records of the reconciliation, git, config, catalog, database and worktree failures caught,
+        in that order.
 
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
@@ -233,6 +234,8 @@ class Status:
             diagnostics=[
                 *error_diagnostics(reconciliation.diagnostic),
                 *error_diagnostics(git_status.diagnostic),
+                *config_status.diagnostics,
+                *catalog_status.diagnostics,
                 *error_diagnostics(database_status.diagnostic),
                 *error_diagnostics(worktree_status.diagnostic),
             ],

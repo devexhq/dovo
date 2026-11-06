@@ -37,7 +37,7 @@ class GitStatusInfo(BaseModel):
 
 
 class ConfigStatusInfo(BaseModel):
-    """Configuration file health and parsed model."""
+    """Configuration file health and parsed model, with the records the config load wrote for its failure."""
 
     model_config = {"extra": "forbid", "strict": True}
 
@@ -48,10 +48,11 @@ class ConfigStatusInfo(BaseModel):
     config: DovoConfig | None = None
     errors: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)  # error-level records only
 
 
 class CatalogStatusInfo(BaseModel):
-    """Catalog blueprint directory health."""
+    """Catalog blueprint directory health, with the records of catalog files that could not be read."""
 
     model_config = {"extra": "forbid", "strict": True}
 
@@ -62,6 +63,7 @@ class CatalogStatusInfo(BaseModel):
     steps_count: int
     invalid_items: int
     item_names: list[str] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
 class DatabaseStatusInfo(BaseModel):

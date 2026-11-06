@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import subprocess
@@ -17,6 +18,7 @@ from dovo.core.git.models import GitBytesOutput, GitProcessOutput, GitWorktreeEn
 
 _BRANCH_UNKNOWN_CODES: Final = frozenset({ErrorCode.GIT_BINARY_MISSING, ErrorCode.GIT_FAILED})
 _GIT_TIMEOUT_ENV: Final = "DOVO_GIT_TIMEOUT_SECONDS"
+_MAX_GIT_TIMEOUT_SECONDS: Final = 86400.0  # one day; larger values overflow the subprocess wait
 _STATUS_EMPTY_CODES: Final = frozenset({ErrorCode.GIT_BINARY_MISSING, ErrorCode.GIT_FAILED})
 _CONFLICT_PATTERNS: Final = (
     re.compile(r"^error:\s+patch failed:\s+([^:]+)"),
@@ -143,7 +145,7 @@ def extract_conflicts(stderr: str) -> list[str]:
 
 
 def _git_timeout_seconds() -> float:
-    """Return DOVO_GIT_TIMEOUT_SECONDS read now when it is a positive number, else GIT_SUBPROCESS_TIMEOUT_SECONDS."""
+    """Return DOVO_GIT_TIMEOUT_SECONDS read now when it is a positive number up to one day, else GIT_SUBPROCESS_TIMEOUT_SECONDS."""
     raw_override = os.environ.get(_GIT_TIMEOUT_ENV)
     if raw_override is None:
         return GIT_SUBPROCESS_TIMEOUT_SECONDS
@@ -151,7 +153,9 @@ def _git_timeout_seconds() -> float:
         override = float(raw_override)
     except ValueError:
         return GIT_SUBPROCESS_TIMEOUT_SECONDS
-    return override if override > 0 else GIT_SUBPROCESS_TIMEOUT_SECONDS
+    if not math.isfinite(override) or not 0 < override <= _MAX_GIT_TIMEOUT_SECONDS:
+        return GIT_SUBPROCESS_TIMEOUT_SECONDS
+    return override
 
 
 @contextmanager

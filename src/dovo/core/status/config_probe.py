@@ -8,7 +8,7 @@ from dovo.core.status.models import ConfigStatusInfo
 
 
 def probe_config(paths: WorkspacePaths) -> ConfigStatusInfo:
-    """Load config.json read-only and return its load error code, parsed model, errors and remediations."""
+    """Load config.json read-only and return its load error code, parsed model, errors, remediations and the load's records."""
     result = Config(paths).load()
     return ConfigStatusInfo(
         error_code=result.error_code,
@@ -18,4 +18,5 @@ def probe_config(paths: WorkspacePaths) -> ConfigStatusInfo:
         config=result.config,
         errors=result.errors,
         remediations=result.remediations,
+        diagnostics=result.diagnostics,
     )
