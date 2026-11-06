@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
 
 from dovo.common.clock import Clock
-from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
+from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.interrupt import deferred_interrupts
 from dovo.common.lock import WorkspaceLock
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvOverrides
@@ -21,21 +25,21 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.inputs import InputResolveResult
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.core.sessions import current_process_started_at
+from dovo.engine.cancellation import InterruptStop, stop_interrupted_run
 from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.loader import EngineLoader
 from dovo.engine.models import (
     DefinitionsManifest,
     FailurePrompter,
     InteractionPrompter,
-    LifecycleUpdate,
     RunObserver,
     RunOutcome,
     RunRequest,
     RunStartConfig,
 )
 from dovo.engine.preset_prompter import PresetInteractionPrompter
+from dovo.engine.run_end import record_persist_failure, record_run_end, status_write_failure
 from dovo.engine.session import drive_run
-from dovo.engine.state_models import ExecutionStateTree
 from dovo.engine.state_store import SessionStateStore
 from dovo.engine.writer import get_session_dir, snapshot_definitions
 
@@ -83,29 +87,25 @@ class Engine:
         caller_worktree = True if req.use_worktree is None else req.use_worktree
         effective_worktree = caller_worktree and blueprint.use_worktree
         config = self._build_start_config(req, resolved.values, effective_worktree, manifest)
-        start_failure = self._start_run(blueprint, sid, config, manifest, engine_warnings, engine_diagnostics)
-        if start_failure is not None:
-            return start_failure
+        with _run_guard("engine.run", sid) as guard:
+            start_failure = self._start_run(blueprint, sid, config, manifest, engine_warnings, engine_diagnostics)
+            if start_failure is not None:
+                return start_failure
+            guard.outcome = drive_run(
+                self.paths,
+                self.db,
+                sid,
+                git=self.git,
+                clock=self.clock,
+                new_id=self.new_id,
+                observer=req.observer,
+                prompter=req.failure_prompter,
+                interaction_prompter=req.interaction_prompter,
+                no_tty=req.no_tty,
+                env_overrides=req.env_overrides,
+            )
 
-        outcome = drive_run(
-            self.paths,
-            self.db,
-            sid,
-            git=self.git,
-            clock=self.clock,
-            new_id=self.new_id,
-            observer=req.observer,
-            prompter=req.failure_prompter,
-            interaction_prompter=req.interaction_prompter,
-            no_tty=req.no_tty,
-            env_overrides=req.env_overrides,
-        )
-        finish_diagnostics: list[DiagnosticRecord] = []
-        self._finish_run(sid, outcome, engine_warnings, finish_diagnostics)
-
-        return self._finalize_outcome(
-            outcome, sid, engine_warnings, prior=engine_diagnostics, finish=finish_diagnostics
-        )
+        return self._end_run(sid, self._guarded_outcome(guard, sid), engine_warnings, prior=engine_diagnostics)
 
     def resume(
         self,
@@ -133,29 +133,71 @@ class Engine:
                 interaction_prompter = PresetInteractionPrompter(preset, interaction_prompter)
             self._mark_running(session_id, engine_warnings, prior_diagnostics)
 
-        outcome = drive_run(
-            self.paths,
-            self.db,
-            session_id,
-            git=self.git,
-            clock=self.clock,
-            new_id=self.new_id,
-            observer=observer,
-            prompter=failure_prompter,
-            interaction_prompter=interaction_prompter,
-            no_tty=no_tty,
-            env_overrides=env_overrides,
-        )
-        finish_diagnostics: list[DiagnosticRecord] = []
-        self._finish_run(session_id, outcome, engine_warnings, finish_diagnostics)
+        with _run_guard("engine.resume", session_id) as guard:
+            guard.outcome = drive_run(
+                self.paths,
+                self.db,
+                session_id,
+                git=self.git,
+                clock=self.clock,
+                new_id=self.new_id,
+                observer=observer,
+                prompter=failure_prompter,
+                interaction_prompter=interaction_prompter,
+                no_tty=no_tty,
+                env_overrides=env_overrides,
+            )
 
-        return self._finalize_outcome(
-            outcome,
+        return self._end_run(
             session_id,
+            self._guarded_outcome(guard, session_id),
             engine_warnings,
             prior=prior_diagnostics,
-            finish=finish_diagnostics,
             leading_warnings=validation_warnings,
+        )
+
+    def _guarded_outcome(self, guard: _RunGuard, session_id: str) -> RunOutcome:
+        """Return the driven outcome, or the outcome an interrupt or a caught failure ends the session's run with."""
+        if guard.stop is not None:
+            return RunOutcome(
+                status=guard.stop.status,
+                errors=list(guard.stop.errors),
+                remediations=list(guard.stop.remediations),
+                error_code=guard.stop.error_code,
+                worktree_path=self.path,
+                session_id=session_id,
+            )
+        if guard.failure is not None:
+            return RunOutcome(
+                status=SessionStatus.FAILED,
+                worktree_path=self.path,
+                session_id=session_id,
+                **guard.failure.result_fields(),
+            )
+        if guard.outcome is None:
+            raise RuntimeError(f"Run '{session_id}' ended without an outcome, an interrupt or a failure.")
+        return guard.outcome
+
+    def _end_run(
+        self,
+        session_id: str,
+        outcome: RunOutcome,
+        warnings: list[str],
+        *,
+        prior: Sequence[DiagnosticRecord],
+        leading_warnings: Sequence[str] = (),
+    ) -> RunOutcome:
+        """Write the run's final status with interrupts deferred, then return the outcome with Engine's warnings and records."""
+        finish: list[DiagnosticRecord] = []
+        try:
+            with deferred_interrupts():
+                record_run_end(SessionStateStore(self.db, self.paths, session_id), outcome, warnings, finish)
+        except KeyboardInterrupt:
+            # A signal received during the final write is already recorded, and ends the process once the run
+            # result is printed; the run itself has ended, so there is nothing left to stop.
+            pass
+        return self._finalize_outcome(
+            outcome, session_id, warnings, prior=prior, finish=finish, leading_warnings=leading_warnings
         )
 
     def _start_run(
@@ -172,7 +214,7 @@ class Engine:
             try:
                 self._insert_running(blueprint, session_id, config)
             except Exception as exc:
-                diagnostics.extend(_record_persist_failure(exc, session_id))
+                diagnostics.extend(record_persist_failure(exc, session_id))
                 message = f"Failed to record run start in database: {exc}"
                 return self._failed_outcome(
                     session_id, [message], warnings, diagnostics=diagnostics, error_code=ErrorCode.INTERNAL_ERROR
@@ -184,14 +226,14 @@ class Engine:
                 error_code, message = error.error_code, error.message
             except Exception as exc:
                 error_code, message = ErrorCode.INTERNAL_ERROR, f"Failed to initialize run state: {exc}"
-                diagnostics.extend(_record_persist_failure(exc, session_id))
+                diagnostics.extend(record_persist_failure(exc, session_id))
             else:
                 return None
 
             try:
                 self.db.update_status(session_id, SessionStatus.FAILED, error_message=message)
             except Exception as exc:
-                diagnostics.extend(_record_persist_failure(exc, session_id))
+                diagnostics.extend(record_persist_failure(exc, session_id))
             return self._failed_outcome(session_id, [message], warnings, diagnostics=diagnostics, error_code=error_code)
 
     def _failed_outcome(
@@ -251,45 +293,6 @@ class Engine:
         except GitError:
             return None
 
-    def _finalize_row(self, session_id: str, outcome: RunOutcome, warnings: list[str]) -> None:
-        """Persist the outcome through the state store, or straight onto the row when it has no readable state."""
-        error_message = outcome.errors[0] if outcome.errors else None
-        store = SessionStateStore(self.db, self.paths, session_id)
-        state = _load_for_finalize(store, warnings)
-        if state is None:
-            self.db.update_status(
-                session_id,
-                outcome.status,
-                error_message=error_message,
-                worktree_id=outcome.worktree_id,
-                worktree_kept=outcome.worktree_kept,
-            )
-            return
-
-        try:
-            store.save(
-                state,
-                warnings,
-                LifecycleUpdate(
-                    run_status=outcome.status,
-                    error_message=error_message,
-                    worktree_id=outcome.worktree_id,
-                    worktree_kept=outcome.worktree_kept,
-                ),
-            )
-        except EngineError as error:
-            warnings.append(error.message)
-
-    def _finish_run(
-        self, session_id: str, outcome: RunOutcome, warnings: list[str], diagnostics: list[DiagnosticRecord]
-    ) -> None:
-        """Finalize the row under the workspace lock, recording persistence failures as warnings and their records in diagnostics."""
-        with WorkspaceLock(self.paths.lock_file):
-            try:
-                self._finalize_row(session_id, outcome, warnings)
-            except Exception as exc:
-                warnings.append(_status_write_failure(exc, session_id, diagnostics))
-
     def _insert_running(self, blueprint: Blueprint, session_id: str, config: RunStartConfig) -> None:
         """Insert a RUNNING row carrying the resolved run configuration."""
         self.db.create(
@@ -343,29 +346,25 @@ class Engine:
                 session_id, SessionStatus.RUNNING, pid=os.getpid(), pid_started_at=current_process_started_at()
             )
         except Exception as exc:
-            warnings.append(_status_write_failure(exc, session_id, diagnostics))
+            warnings.append(status_write_failure(exc, session_id, diagnostics))
 
 
-def _record_persist_failure(exc: Exception, session_id: str) -> list[DiagnosticRecord]:
-    """Record exc at error level under engine.persist and return its record as a diagnostics list."""
-    return error_diagnostics(
-        record_exception(
-            exc, level=DiagnosticLevel.ERROR, operation="engine.persist", context={"session_id": session_id}
-        )
-    )
+@dataclass
+class _RunGuard:
+    """What ended a started run: the outcome it was driven to, the stop an interrupt made, or the failure it raised."""
+
+    outcome: RunOutcome | None = None
+    stop: InterruptStop | None = None
+    failure: Failure | None = None
 
 
-def _status_write_failure(exc: Exception, session_id: str, diagnostics: list[DiagnosticRecord]) -> str:
-    """Add the failed run status write's record to diagnostics and return its warning, the message alone."""
-    diagnostics.extend(_record_persist_failure(exc, session_id))
-    return f"Failed to update run status in database: {exc}"
-
-
-def _load_for_finalize(store: SessionStateStore, warnings: list[str]) -> ExecutionStateTree | None:
-    """Return the run's state, or None after appending the load failure to warnings; a row without state stays quiet."""
-    try:
-        return store.load(warnings)
-    except EngineError as error:
-        if error.error_code is not ErrorCode.SESSION_STATE_MISSING:
-            warnings.append(error.message)
-        return None
+@contextmanager
+def _run_guard(operation: str, session_id: str) -> Generator[_RunGuard]:
+    """Yield a guard that records an interrupt in the block as its stop and any other failure, caught once under operation, as its failure; a lock timeout propagates."""
+    guard = _RunGuard()
+    with catch_failure(operation, session_id=session_id) as caught:
+        try:
+            yield guard
+        except KeyboardInterrupt:
+            guard.stop = stop_interrupted_run()
+    guard.failure = caught.failure

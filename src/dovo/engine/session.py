@@ -18,6 +18,7 @@ from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.core.worktree import Worktree, WorktreeSession
+from dovo.engine.cancellation import stop_interrupted_run
 from dovo.engine.coordinator import RunCoordinator
 from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.executors.session_log import append_session_log_event
@@ -31,6 +32,7 @@ from dovo.engine.models import (
     RunSettings,
 )
 from dovo.engine.notify import safe_notify
+from dovo.engine.run_end import record_run_end
 from dovo.engine.state_store import SessionStateStore
 from dovo.engine.workspace import Workspace
 
@@ -278,7 +280,11 @@ class SessionRunner:
         )
 
     def run(self) -> RunOutcome:
-        """Execute the run, auto-apply worktree changes, and close the workspace, returning the final outcome."""
+        """Execute the run, auto-apply worktree changes, record how the run ended, and close the workspace, returning the final outcome.
+
+        An interrupt outside the coordinator's own handling stops the run's processes and ends it as
+        stop_interrupted_run decides. The status is written before the close, so a close that fails still leaves it.
+        """
         append_session_log_event(
             self._context.session_log_dir,
             SessionLogEvent(
@@ -289,13 +295,39 @@ class SessionRunner:
         )
         try:
             outcome = self._apply_worktree_changes(self._execute())
+        except KeyboardInterrupt:
+            outcome = self._interrupted()
         except BaseException:
-            # No record here: the runner's catch_failure records an unexpected exception after cleanup.
+            # No record here: Engine's catch_failure records an unexpected exception after cleanup.
             closed = self._close(RunOutcome(status=SessionStatus.FAILED, worktree_path=self._context.target_dir))
             safe_notify(self._observer, "on_run_completed", closed)
             raise
 
-        return self._close(outcome)
+        return self._close(self._record_end(outcome))
+
+    def _interrupted(self) -> RunOutcome:
+        """Stop the run's processes and return the outcome the interrupt ends the run with, after the setup warnings and records."""
+        stop = stop_interrupted_run()
+        worktree = self._worktree
+        return RunOutcome(
+            status=stop.status,
+            errors=list(stop.errors),
+            remediations=list(stop.remediations),
+            error_code=stop.error_code,
+            warnings=list(self._setup_warnings),
+            diagnostics=list(self._setup_diagnostics),
+            worktree_path=worktree.worktree_path if worktree is not None else self._context.target_dir,
+            session_id=self._row.session_id,
+            worktree_id=worktree.session_id if worktree is not None else None,
+        )
+
+    def _record_end(self, outcome: RunOutcome) -> RunOutcome:
+        """Write the run's final status before the workspace closes, adding any write failure's warning and record to the outcome."""
+        warnings = list(outcome.warnings)
+        diagnostics = list(outcome.diagnostics)
+        store = SessionStateStore(self._sessions, self._paths, self._row.session_id)
+        record_run_end(store, outcome, warnings, diagnostics, closed=False)
+        return outcome.model_copy(update={"warnings": warnings, "diagnostics": diagnostics})
 
     def _execute(self) -> RunOutcome:
         """Run the coordinator against the opened context, prefixing the setup warnings and records onto its outcome."""

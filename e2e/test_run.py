@@ -10,7 +10,16 @@ from pathlib import Path
 import pytest
 
 from dovo.common.process import is_process_group_alive
-from e2e.conftest import DOVO_HOME, DovoProcessStarter, DovoRunner, parse_json, run_result, write_blueprint
+from e2e.conftest import (
+    DOVO_HOME,
+    DovoProcessStarter,
+    DovoRunner,
+    find_event,
+    parse_events,
+    parse_json,
+    run_result,
+    write_blueprint,
+)
 from tests.harness.poll import wait_until
 
 
@@ -449,6 +458,112 @@ steps:
         assert not is_process_group_alive(pgid)
         assert "Run Cancelled" in stdout
         assert _session_status(run_dovo, initialized_project, "stubborn-1") == "cancelled"
+
+    def test_run_interrupted_during_worktree_setup_prints_its_run_result(
+        self,
+        start_dovo: DovoProcessStarter,
+        run_dovo: DovoRunner,
+        initialized_project: Path,
+        tmp_path: Path,
+    ) -> None:
+        """SIGINT `dovo run --format json` while a post-checkout hook delays the worktree creation; the last line is a run result naming the cancelled session, and `session show` reads cancelled."""
+        marker = tmp_path / "hook-started"
+        hook = initialized_project / ".git" / "hooks" / "post-checkout"
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text(f"#!/bin/sh\ntouch '{marker}'\nsleep 4\n", encoding="utf-8")
+        hook.chmod(0o755)
+        _write_step_blueprint(run_dovo, initialized_project, "setup-bp", "true")
+
+        process = start_dovo(
+            ["run", "setup-bp", "--session-id", "setup-1", "--format", "json"], cwd=initialized_project
+        )
+        assert wait_until(marker.exists, timeout=10)
+        process.send_signal(signal.SIGINT)
+        stdout, _ = process.communicate(timeout=15)
+
+        payload = run_result(stdout)
+        assert process.returncode == -signal.SIGINT
+        assert (payload["error_code"], payload["session_id"], payload["session_status"]) == (
+            "RUN_CANCELLED",
+            "setup-1",
+            "cancelled",
+        )
+        assert _session_status(run_dovo, initialized_project, "setup-1") == "cancelled"
+
+    def test_run_interrupted_inside_loop_records_loop_cancelled(
+        self,
+        start_dovo: DovoProcessStarter,
+        run_dovo: DovoRunner,
+        initialized_project: Path,
+        tmp_path: Path,
+    ) -> None:
+        """SIGINT `dovo run` while a loop body step sleeps; `session show` lists no row running and the loop row cancelled."""
+        pid_file = tmp_path / "body.pid"
+        write_blueprint(
+            initialized_project,
+            "loop-bp",
+            f"""version: "1.0"
+name: loop-bp
+id: loop-bp
+steps:
+  - id: loop
+    type: loop
+    max_iterations: 2
+    until:
+      - "iteration.index >= 2"
+    do:
+      - id: body
+        run: echo $$ > '{pid_file}' && exec sleep 20
+""",
+            runner=run_dovo,
+        )
+
+        process = start_dovo(["run", "loop-bp", "--no-worktree", "--session-id", "loop-1"], cwd=initialized_project)
+        assert wait_until(lambda: pid_file.exists() and pid_file.read_text().endswith("\n"), timeout=10)
+        process.send_signal(signal.SIGINT)
+        process.communicate(timeout=15)
+
+        show = run_dovo(["session", "show", "loop-1", "--format", "json"], cwd=initialized_project)
+        payload = parse_json(show.stdout).get("payload", {})
+        assert isinstance(payload, dict)
+        steps = payload.get("steps", [])
+        assert isinstance(steps, list)
+        assert process.returncode == -signal.SIGINT
+        assert "running" not in [step.get("state") for step in steps]
+        assert [step.get("state") for step in steps if step.get("step_id") == "loop"] == ["cancelled"]
+
+
+@pytest.mark.e2e
+@pytest.mark.fixture
+class RunStepErrorCliTests:
+    """E2E tests for a step whose execution fails with an unexpected error."""
+
+    def test_non_utf8_step_output_fails_the_step_and_names_the_session(
+        self, run_dovo: DovoRunner, initialized_project: Path
+    ) -> None:
+        """A step writing non-UTF-8 bytes to $DOVO_OUTPUT fails with INTERNAL_ERROR, the run result names the failed session, and `dovo resume` does not run the step again."""
+        _write_step_blueprint(
+            run_dovo, initialized_project, "bad-output-bp", "printf 'K=\\377\\376\\n' > \"$DOVO_OUTPUT\""
+        )
+
+        result = run_dovo(
+            ["run", "bad-output-bp", "--no-worktree", "--session-id", "bad-1", "--format", "json"],
+            cwd=initialized_project,
+        )
+        resumed = run_dovo(["resume", "bad-1", "--format", "json"], cwd=initialized_project)
+
+        step_done = find_event(result.stdout, "run.step_done").get("payload", {})
+        assert isinstance(step_done, dict)
+        payload = run_result(result.stdout)
+        assert result.exit_code == 1
+        assert (step_done.get("ok"), step_done.get("error_code")) == (False, "INTERNAL_ERROR")
+        assert (payload["session_id"], payload["blueprint_name"], payload["session_status"]) == (
+            "bad-1",
+            "bad-output-bp",
+            "failed",
+        )
+        assert _session_status(run_dovo, initialized_project, "bad-1") == "failed"
+        assert "run.step_start" not in [event.get("event_type") for event in parse_events(resumed.stdout)]
 
 
 def _write_step_blueprint(run_dovo: DovoRunner, project: Path, name: str, command: str) -> None:

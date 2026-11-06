@@ -125,6 +125,31 @@ class ExecutionStateTree(BaseModel):
     manifest: DefinitionsManifest
     nodes: list[ExecutionPlanNode] = Field(default_factory=list)
 
+    def settle_started_nodes(self, state: NodeState) -> bool:
+        """Set every RUNNING or PAUSED node, if-branch step, loop iteration and loop body step to state; return whether any changed."""
+        changed = [_settle(item, state) for node in self.nodes for item in _with_descendants(node)]
+        return any(changed)
+
+
+_STARTED_NODE_STATES = frozenset({NodeState.RUNNING, NodeState.PAUSED})
+
+
+def _with_descendants(node: ExecutionPlanNode) -> list[ExecutionPlanNode | ExecutionIterationRecord]:
+    """Return node, then an if block's branch steps, or each of a loop's iterations followed by its body steps."""
+    if isinstance(node, ExecutionIfNode):
+        return [node, *node.steps]
+    if isinstance(node, ExecutionLoopNode):
+        return [node, *(item for iteration in node.iterations for item in (iteration, *iteration.steps))]
+    return [node]
+
+
+def _settle(node: ExecutionPlanNode | ExecutionIterationRecord, state: NodeState) -> bool:
+    """Set node to state when it is RUNNING or PAUSED; return whether it changed."""
+    if node.state not in _STARTED_NODE_STATES:
+        return False
+    node.state = state
+    return True
+
 
 class SessionLifecycle(BaseModel):
     """Row-derived lifecycle outcome embedded in session.json."""

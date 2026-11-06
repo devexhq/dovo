@@ -1293,6 +1293,9 @@ _APPROVE_INTERACTION: dict[str, object] = {
 }
 
 
+_NON_UTF8_OUTPUT = "printf 'K=\\377\\376\\n' > \"$DOVO_OUTPUT\""
+
+
 def _interrupt_on_step_start(*_args: object, **_kwargs: object) -> None:
     """Stand in for DispatcherRunObserver.on_step_start, as Ctrl-C would while a step runs."""
     raise KeyboardInterrupt
@@ -1429,6 +1432,71 @@ class RunResultCliTests:
         assert (payload["session_id"], payload["blueprint_name"]) == ("s-1", "fail-task")
         assert payload["errors"][0].startswith("Step 's1' failed")
 
+    def test_step_unexpected_error_emits_step_done_and_named_run_result(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        """A step writing non-UTF-8 bytes to $DOVO_OUTPUT emits its failed run.step_done with INTERNAL_ERROR, then a run result naming the failed session."""
+        write_runnable_blueprint(cli_workspace, key="bad-output", steps=[{"id": "s1", "run": _NON_UTF8_OUTPUT}])
+
+        result = cli_runner.invoke(
+            app,
+            ["-p", str(cli_workspace), "run", "bad-output", "--no-worktree", "--session-id", "s-1", "--format", "json"],
+        )
+
+        events = json_events(result.stdout)
+        step_done = [event["payload"] for event in events if event["event_type"] == "run.step_done"]
+        payload = run_result_payload(result.stdout)
+        assert result.exit_code == 1
+        assert step_done == [
+            {
+                "idx": 1,
+                "total": 1,
+                "step_id": "s1",
+                "ok": False,
+                "exit_code": 1,
+                "duration_seconds": 0.0,
+                "error_message": "Unexpected error during engine.step: "
+                "'utf-8' codec can't decode byte 0xff in position 2: invalid start byte",
+                "error_code": "INTERNAL_ERROR",
+            }
+        ]
+        assert events[-1]["event_type"] == RUN_RESULT
+        assert (payload["error_code"], payload["session_id"], payload["blueprint_name"], payload["session_status"]) == (
+            "RUN_STEP_FAILED",
+            "s-1",
+            "bad-output",
+            "failed",
+        )
+
+    @pytest.mark.parametrize("output_format", ["terminal", "json"])
+    def test_interrupt_during_worktree_setup_prints_run_cancelled(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch, output_format: str
+    ) -> None:
+        """An interrupt while the worktree is created ends with the cancelled run result, not 'Aborted!'."""
+        monkeypatch.setattr(Worktree, "create", _interrupt_on_step_start)
+        write_runnable_blueprint(cli_workspace, key="setup-task", steps=[{"id": "s1", "run": "true"}])
+
+        result = cli_runner.invoke(
+            app,
+            ["-p", str(cli_workspace), "run", "setup-task", "--session-id", "s-1", "--format", output_format],
+        )
+
+        assert result.exit_code == 130
+        assert "Aborted!" not in result.output
+        if output_format == "terminal":
+            assert "RunCancelled" in unwrapped(result.stdout)
+            return
+        assert json_events(result.stdout)[-1]["event_type"] == RUN_RESULT
+        assert _outcome(run_result_payload(result.stdout)) == (
+            False,
+            "RUN_CANCELLED",
+            ["Execution cancelled by user."],
+            "s-1",
+            "setup-task",
+            "cancelled",
+            None,
+        )
+
     def test_json_stream_has_no_replaced_events(
         self, cli_runner: CliRunner, cli_workspace: Path, frozen_diagnostic_clock: Path
     ) -> None:
@@ -1482,7 +1550,7 @@ class RunResultCliTests:
     def test_discard_lock_timeout_ends_with_error_event_only(
         self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A lock timeout while a completed run's worktree is discarded ends the invocation with the error event only."""
+        """A lock timeout while a completed run's worktree is discarded ends the invocation with the error event only, and the session already reads completed."""
 
         def _lock_timeout(*_args: object, **_kwargs: object) -> None:
             raise LockTimeoutError("lock held")
@@ -1490,9 +1558,13 @@ class RunResultCliTests:
         monkeypatch.setattr(Worktree, "cleanup", _lock_timeout)
         write_runnable_blueprint(cli_workspace, key="json-task", steps=[{"id": "s1", "run": "true"}])
 
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "json-task", "--format", "json"])
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "run", "json-task", "--session-id", "s-1", "--format", "json"]
+        )
+        shown = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", "s-1", "--format", "json"])
 
         events = json_events(result.stdout)
+        assert json.loads(shown.stdout.splitlines()[-1])["payload"]["session"]["status"] == "completed"
         assert result.exit_code == 1
         assert RUN_RESULT not in {event["event_type"] for event in events}
         assert events[-1] == {

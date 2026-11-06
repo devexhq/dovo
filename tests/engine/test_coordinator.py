@@ -485,6 +485,68 @@ class CoordinatorExecuteTests:
         state = _state(engine_paths, sessions_repo, "ctrl-c")
         assert [node.state for node in state.nodes] == [NodeState.CANCELLED, NodeState.PENDING]
 
+    def test_unexpected_step_error_records_failed_step_with_internal_error(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With StepExecution.run raising RuntimeError, fail the leaf with an INTERNAL_ERROR attempt result reported as its step_done, end the run FAILED with RUN_STEP_FAILED, and carry the engine.step record."""
+
+        def _boom(self: StepExecution) -> StepRecord:
+            raise RuntimeError("bad output")
+
+        monkeypatch.setattr(StepExecution, "run", _boom)
+        observer = RecordingRunObserver()
+
+        outcome = _run_new(engine_paths, sessions_repo, "raises", [_step("a", "true")], observer=observer)
+
+        message = "Unexpected error during engine.step: bad output"
+        leaf = _leaf(_state(engine_paths, sessions_repo, "raises"), "a")
+        result = _last_result(leaf)
+        assert (leaf.state, result.status, result.error_code, result.error_message) == (
+            NodeState.FAILED,
+            "failed",
+            ErrorCode.INTERNAL_ERROR,
+            message,
+        )
+        assert [call for call in observer.calls if call[0] == "step_done"] == [("step_done", 1, 1, "a", "failed")]
+        assert (outcome.status, outcome.error_code, outcome.errors) == (
+            SessionStatus.FAILED,
+            ErrorCode.RUN_STEP_FAILED,
+            [f"Step 'a' failed: {message}"],
+        )
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+
+    def test_unexpected_step_error_follows_on_failure_continue(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With step 'a' raising under on_failure continue, leave it IGNORED with INTERNAL_ERROR and run step 'b'."""
+        real_run = StepExecution.run
+
+        def _raise_for_a(self: StepExecution) -> StepRecord:
+            if self.step.id == "a":
+                raise RuntimeError("bad output")
+            return real_run(self)
+
+        monkeypatch.setattr(StepExecution, "run", _raise_for_a)
+
+        outcome = _run_new(
+            engine_paths,
+            sessions_repo,
+            "raises-continue",
+            [_step("a", "true", on_failure="continue"), _step("b", "true")],
+        )
+
+        state = _state(engine_paths, sessions_repo, "raises-continue")
+        assert outcome.status == SessionStatus.COMPLETED
+        assert (_leaf(state, "a").state, _last_result(_leaf(state, "a")).error_code) == (
+            NodeState.IGNORED,
+            ErrorCode.INTERNAL_ERROR,
+        )
+        assert _leaf(state, "b").state == NodeState.COMPLETED
+
     def test_keyboard_interrupt_after_loop_body_completes_keeps_leaf_completed(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
@@ -1636,6 +1698,31 @@ class CoordinatorLoopTerminalTests:
         assert (outcome.error_code, outcome.errors) == (ErrorCode.RUN_STEP_FAILED, [f"Step 's' failed: {_FAIL_DETAIL}"])
         loop = _loop_node(_state(engine_paths, sessions_repo, "loop-abort"))
         assert (loop.iterations[0].state, loop.state) == (NodeState.FAILED, NodeState.FAILED)
+
+    def test_interrupt_inside_loop_body_cancels_loop_and_iteration(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With a loop body step interrupted, commit the body leaf, its iteration and the loop CANCELLED."""
+        monkeypatch.setattr(StepExecution, "run", _raise_keyboard_interrupt)
+
+        outcome = _run_new(engine_paths, sessions_repo, "loop-ctrl-c", [_loop("loop", [_step("s", "sleep 20")])])
+
+        loop = _loop_node(_state(engine_paths, sessions_repo, "loop-ctrl-c"))
+        assert outcome.status == SessionStatus.CANCELLED
+        assert (
+            loop.state,
+            [it.state for it in loop.iterations],
+            [leaf.state for leaf in loop.iterations[0].steps],
+        ) == (
+            NodeState.CANCELLED,
+            [NodeState.CANCELLED],
+            [NodeState.CANCELLED],
+        )
+
+
+def _raise_keyboard_interrupt(self: StepExecution) -> StepRecord:
+    """Stand in for StepExecution.run as Ctrl-C interrupts it."""
+    raise KeyboardInterrupt
 
 
 class CoordinatorLoopCeilingTests:
