@@ -41,7 +41,9 @@ class LiveDisplayManagerLoopTests:
         manager.handle_step_start(
             StepStartEvent(idx=1, total=2, step_id="run-tests", name="run-tests", command="pytest")
         )
-        manager.handle_step_done(StepDoneEvent(idx=1, total=2, step_id="run-tests", ok=False, exit_code=127))
+        manager.handle_step_done(
+            StepDoneEvent(idx=1, total=2, step_id="run-tests", status="failed", attempts=1, exit_code=127)
+        )
         assert len(manager.steps) == 1
 
         manager.handle_loop_lifecycle(
@@ -155,7 +157,15 @@ class LiveStepElapsedTests:
         manager = _manager()
         manager.handle_step_start(StepStartEvent(idx=1, total=1, step_id="build", name="build"))
         manager.handle_step_done(
-            StepDoneEvent(idx=1, total=1, step_id="build", ok=True, exit_code=0, duration_seconds=event_duration)
+            StepDoneEvent(
+                idx=1,
+                total=1,
+                step_id="build",
+                status="completed",
+                attempts=1,
+                exit_code=0,
+                duration_seconds=event_duration,
+            )
         )
 
         rendered = render_rich(build_live_step_table(manager.steps))

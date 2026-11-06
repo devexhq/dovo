@@ -20,12 +20,13 @@ STEP_SUCCESS = FormatterCase.identity(
         idx=1,
         total=3,
         step_id="step-1",
-        ok=True,
+        status="completed",
+        attempts=1,
         exit_code=0,
         duration_seconds=1.5,
         error_message=None,
     ),
-    render_expectations=["step-1", "1", "3"],
+    render_expectations=["step-1", "1", "3", "COMPLETED"],
 )
 
 STEP_FAILURE = FormatterCase.identity(
@@ -33,18 +34,36 @@ STEP_FAILURE = FormatterCase.identity(
         idx=2,
         total=3,
         step_id="step-2",
-        ok=False,
+        status="failed",
+        attempts=3,
         exit_code=1,
         duration_seconds=0.8,
         error_message="Process crashed",
         error_code=ErrorCode.STEP_COMMAND_FAILED,
+        rejected_patch_path="/tmp/rejected.patch",
     ),
     render_expectations=["step-2", "2", "3", "Process crashed"],
+)
+
+STEP_IGNORED = FormatterCase.identity(
+    data=StepDoneEvent(
+        idx=3,
+        total=3,
+        step_id="step-3",
+        status="ignored",
+        attempts=1,
+        exit_code=1,
+        duration_seconds=0.2,
+        error_message="Lint failed",
+        error_code=ErrorCode.STEP_COMMAND_FAILED,
+    ),
+    render_expectations=["step-3", "3", "COMPLETED"],
 )
 
 STEP_DONE_CASES = [
     pytest.param(STEP_SUCCESS, id="step_success"),
     pytest.param(STEP_FAILURE, id="step_failure"),
+    pytest.param(STEP_IGNORED, id="step_ignored"),
 ]
 
 STEP_DONE_PAYLOAD_CASES = [
@@ -54,11 +73,13 @@ STEP_DONE_PAYLOAD_CASES = [
             "idx": 1,
             "total": 3,
             "step_id": "step-1",
-            "ok": True,
+            "status": "completed",
+            "attempts": 1,
             "exit_code": 0,
             "duration_seconds": 1.5,
             "error_message": None,
             "error_code": None,
+            "rejected_patch_path": None,
         },
         id="step_success",
     ),
@@ -68,13 +89,31 @@ STEP_DONE_PAYLOAD_CASES = [
             "idx": 2,
             "total": 3,
             "step_id": "step-2",
-            "ok": False,
+            "status": "failed",
+            "attempts": 3,
             "exit_code": 1,
             "duration_seconds": 0.8,
             "error_message": "Process crashed",
             "error_code": "STEP_COMMAND_FAILED",
+            "rejected_patch_path": "/tmp/rejected.patch",
         },
         id="step_failure",
+    ),
+    pytest.param(
+        STEP_IGNORED,
+        {
+            "idx": 3,
+            "total": 3,
+            "step_id": "step-3",
+            "status": "ignored",
+            "attempts": 1,
+            "exit_code": 1,
+            "duration_seconds": 0.2,
+            "error_message": "Lint failed",
+            "error_code": "STEP_COMMAND_FAILED",
+            "rejected_patch_path": None,
+        },
+        id="step_ignored",
     ),
 ]
 

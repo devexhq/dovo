@@ -106,8 +106,9 @@ class HistoryListResult(BaseResult):
 class StepRunSummary(BaseModel):
     """One step, loop or if-block row summarising a session's persisted execution state.
 
-    skip_cause is set on a row a `when` guard skipped; branch is set on an if-block row that started; if_id is set
-    on each row of a step the chosen branch holds.
+    A step row's status, exit_code, duration_seconds and error fields are its last attempt's, and attempts counts
+    every try including retries. skip_cause is set on a row a `when` guard skipped; branch is set on an if-block row
+    that started; if_id is set on each row of a step the chosen branch holds.
     """
 
     model_config = {"extra": "forbid", "strict": True}
@@ -116,6 +117,7 @@ class StepRunSummary(BaseModel):
     step_id: str
     name: str | None = None
     state: str
+    status: str | None = None
     attempts: int | None = None
     exit_code: int | None = None
     duration_seconds: float | None = None

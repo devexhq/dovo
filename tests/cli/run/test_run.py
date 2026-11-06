@@ -841,7 +841,7 @@ class RunCliRetentionIntegrationTests:
         events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
         step_done = next(event["payload"] for event in events if event["event_type"] == "run.step_done")
         assert result.exit_code == 1
-        assert (step_done["step_id"], step_done["ok"], step_done["exit_code"]) == ("s1", False, 1)
+        assert (step_done["step_id"], step_done["status"], step_done["exit_code"]) == ("s1", "failed", 1)
         assert (step_done["error_message"], step_done["error_code"]) == (
             "Command failed with exit code 1.",
             "STEP_COMMAND_FAILED",
@@ -853,10 +853,67 @@ def _without_duration(payload: dict[str, object]) -> dict[str, object]:
     return {key: value for key, value in payload.items() if key != "duration_seconds"}
 
 
+_SHARED_STEP_KEYS = (
+    "step_id",
+    "status",
+    "attempts",
+    "exit_code",
+    "duration_seconds",
+    "error_message",
+    "error_code",
+    "rejected_patch_path",
+)
+
+
+def _shared_step_fields(payload: dict[str, object]) -> dict[str, object]:
+    """Return the step keys every view carries, taken from payload."""
+    return {key: payload[key] for key in _SHARED_STEP_KEYS}
+
+
+def _saved_last_result(cli_workspace: Path, session_id: str) -> dict[str, object]:
+    """Return the saved record of the first node's last attempt in the session's session.json."""
+    session_dir = initialized_workspace_paths(cli_workspace).session_dir(session_id)
+    state = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+    return state["nodes"][0]["attempts"][-1]["result"]
+
+
+class RunCliStepViewsIntegrationTests:
+    """A step reports the same fields in run.step_done, the saved session.json and dovo session show."""
+
+    def test_run_cli_retried_step_reports_the_same_fields_live_saved_and_shown(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        retried: dict[str, object] = {"id": "s1", "run": "exit 1", "on_failure": {"action": "retry", "max_retries": 3}}
+        write_runnable_blueprint(cli_workspace, key="retry-task", steps=[retried])
+
+        result = cli_runner.invoke(
+            app,
+            ["-p", str(cli_workspace), "run", "retry-task", "--no-worktree", "--session-id", "r-1", "--format", "json"],
+        )
+        shown = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", "r-1", "--format", "json"])
+
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+        step_done = next(event["payload"] for event in events if event["event_type"] == "run.step_done")
+        saved = _saved_last_result(cli_workspace, "r-1")
+        step_row = json.loads(shown.stdout)["payload"]["steps"][0]
+        assert result.exit_code == 1
+        assert _without_duration(_shared_step_fields(step_done)) == {
+            "step_id": "s1",
+            "status": "failed",
+            "attempts": 3,
+            "exit_code": 1,
+            "error_message": "Command failed with exit code 1.",
+            "error_code": "STEP_COMMAND_FAILED",
+            "rejected_patch_path": None,
+        }
+        assert _shared_step_fields(saved) == _shared_step_fields(step_done)
+        assert _shared_step_fields(step_row) == _shared_step_fields(step_done)
+
+
 class RunCliUnfixableAgentIntegrationTests:
     """Typer runner integration tests for an agent step whose agent reports the task unfixable."""
 
-    def test_run_cli_agent_reporting_unfixable_fails_run_keeps_worktree_and_shows_its_code(
+    def test_run_cli_agent_reporting_unfixable_reports_the_same_code_live_saved_and_shown(
         self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("GH_TOKEN", "test-token")
@@ -888,16 +945,20 @@ class RunCliUnfixableAgentIntegrationTests:
             "idx": 1,
             "total": 1,
             "step_id": "plan",
-            "ok": False,
+            "status": "failed",
+            "attempts": 1,
             "exit_code": 201,
             "error_message": "Agent reported the task unfixable: no SSH key",
             "error_code": "AGENT_TASK_UNFIXABLE",
+            "rejected_patch_path": None,
         }
+        assert _saved_last_result(cli_workspace, row.session_id)["error_code"] == "AGENT_TASK_UNFIXABLE"
         assert _without_duration(step_row) == {
             "kind": "step",
             "step_id": "plan",
             "name": None,
             "state": "failed",
+            "status": "failed",
             "attempts": 1,
             "exit_code": 201,
             "error_message": "Agent reported the task unfixable: no SSH key",
@@ -1471,12 +1532,14 @@ class RunResultCliTests:
                 "idx": 1,
                 "total": 1,
                 "step_id": "s1",
-                "ok": False,
+                "status": "failed",
+                "attempts": 1,
                 "exit_code": 1,
                 "duration_seconds": 0.0,
                 "error_message": "Unexpected error during engine.step: "
                 "'utf-8' codec can't decode byte 0xff in position 2: invalid start byte",
                 "error_code": "INTERNAL_ERROR",
+                "rejected_patch_path": None,
             }
         ]
         assert events[-1]["event_type"] == RUN_RESULT

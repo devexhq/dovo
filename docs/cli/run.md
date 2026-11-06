@@ -66,7 +66,7 @@ The `path` of a `cleanup` event (including with `--format json`) is relative to 
 
 ### Step failure codes
 
-With `--format json`, each step that finishes prints a `run.step_done` event carrying `idx`, `total`, `step_id`, `ok`, `exit_code`, `duration_seconds`, `error_message` and `error_code`; `dovo resume` prints the same event. `error_code` is `null` for a step that completed. A failed step carries one of the codes below, or, when it failed because something it used failed, that failure's code: `CATALOG_NOT_FOUND` for a `uses:` step that does not exist, an `ARTIFACT_*` code for an artifact that cannot be published, downloaded or inlined, an `ASK_*` code for an `ask` prompt that cannot be built, or, for an agent step, the `PATCH_*` code its edit failed validation with (`PATCH_FILE_COUNT_EXCEEDED` for an edit over `max_files`, for example), or the `GIT_*` code of a git command on its worktree that failed (`GIT_TIMEOUT` when it timed out, `GIT_FAILED` for most other failures). A step continued past with `on_failure: continue`, or with `continue` at a failure prompt, keeps its code, and a retried step carries the code of its last attempt. [`dovo session show`](session.md#dovo-session-show) reports the same code for each step.
+With `--format json`, each step that finishes prints a `run.step_done` event with the keys under [Step done keys](#step-done-keys); `dovo resume` prints the same event. `error_code` is `null` for a step that completed. A failed step carries one of the codes below, or, when it failed because something it used failed, that failure's code: `CATALOG_NOT_FOUND` for a `uses:` step that does not exist, an `ARTIFACT_*` code for an artifact that cannot be published, downloaded or inlined, an `ASK_*` code for an `ask` prompt that cannot be built, or, for an agent step, the `PATCH_*` code its edit failed validation with (`PATCH_FILE_COUNT_EXCEEDED` for an edit over `max_files`, for example), or the `GIT_*` code of a git command on its worktree that failed (`GIT_TIMEOUT` when it timed out, `GIT_FAILED` for most other failures). A step continued past with `on_failure: continue`, or with `continue` at a failure prompt, keeps its code, and a retried step carries the code of its last attempt. [`dovo session show`](session.md#dovo-session-show) reports the same code for each step.
 
 | Code | Cause |
 | --- | --- |
@@ -90,6 +90,23 @@ With `--format json`, each step that finishes prints a `run.step_done` event car
 | `AGENT_TASK_BLOCKED` | The agent was blocked by its tool permissions and made no change. |
 | `AGENT_PROVIDER_FAILED` | Any other agent provider failure, such as a missing credential, a provider that exited with an error, or an unreadable unfixable report. |
 | `INTERNAL_ERROR` | An internal command, or an agent provider, failed with an unexpected error, an agent step's output could not be delivered, or the step itself failed with an unexpected error, such as writing bytes that are not UTF-8 to `$DOVO_OUTPUT`. Its `error_message` is `Unexpected error during engine.step: <error>`. Like any failed step it follows its `on_failure` policy, and `dovo resume` does not run it again. |
+
+### Step done keys
+
+| Key | Description |
+| --- | --- |
+| `idx` | The step's position in the run, counting from 1. |
+| `total` | How many steps the run has. |
+| `step_id` | The step id. |
+| `status` | `completed`, `failed`, or `ignored` for a failed step continued past with `on_failure: continue`. |
+| `attempts` | How many times the step ran, counting every retry. |
+| `exit_code` | The exit code of the step's last attempt. |
+| `duration_seconds` | The duration of the step's last attempt, or `null`. |
+| `error_message` | Why the step's last attempt failed, with secrets redacted, or `null`. |
+| `error_code` | The code of that failure (see [Step failure codes](#step-failure-codes)), or `null` on a completed step. |
+| `rejected_patch_path` | The saved discarded edit of an agent step's last attempt, or `null`. |
+
+Every key except `idx` and `total` has the same name and value in the step's row of [`dovo session show`](session.md#step-keys), with one exception: the event prints before a failure prompt is answered, so a step continued past with `continue` at that prompt prints `failed`, and the session then records it `ignored`, with `(user continued after prompt_user)` appended to its `error_message`. The event leaves out the step's name, which `run.step_start` carries; a `when` skip, which `run.step_skipped` reports; an `if` block's branch, which `run.if_branch` reports; and the step's state, loop and iteration, which `dovo session show` reports. A step's output is read with [`dovo logs`](session.md#dovo-session-logs).
 
 ### Run result
 

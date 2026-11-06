@@ -137,11 +137,13 @@ class DispatcherRunObserver(RunObserver):
                 idx=idx,
                 total=total,
                 step_id=result.step_id,
-                ok=result.ok,
+                status=result.status,
+                attempts=result.attempts,
                 exit_code=result.exit_code,
                 duration_seconds=result.duration_seconds,
                 error_message=result.error_message,
                 error_code=result.error_code,
+                rejected_patch_path=result.rejected_patch_path,
             )
         )
 

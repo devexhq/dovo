@@ -14,14 +14,16 @@ from dovo.cli.ui.events import (
     ConditionOutcomeView,
     IfBranchEvent,
     LoopLifecycleEvent,
+    StepDoneEvent,
     StepOutputEvent,
     StepSkippedEvent,
     WorktreeLifecycleEvent,
 )
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.agents import AgentProgressKind
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
-from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult
+from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult, StepRecord
 from dovo.engine.models import IfBranch, IfBranchNotice, SkipCause, StepSkipNotice
 from tests.harness.builders import StepBuilder
 
@@ -88,6 +90,42 @@ class DispatcherRunObserverOutputTests:
 
         assert dispatcher.events == [
             StepOutputEvent(step_id="plan", line=line.rstrip("\n"), stream=stream, agent_summary=expected_summary)
+        ]
+
+
+class DispatcherRunObserverStepDoneTests:
+    """Dispatch of step completion events by DispatcherRunObserver.on_step_done."""
+
+    def test_step_done_event_carries_the_record_shared_step_fields(self) -> None:
+        dispatcher = _RecordingDispatcher()
+        record = StepRecord(
+            step_id="plan",
+            status="ignored",
+            exit_code=1,
+            stdout="out",
+            stderr="err",
+            duration_seconds=2.5,
+            attempts=3,
+            error_message="Patch rejected",
+            error_code=ErrorCode.PATCH_FILE_COUNT_EXCEEDED,
+            rejected_patch_path="/storage/plan.patch",
+        )
+
+        DispatcherRunObserver(dispatcher).on_step_done(2, 4, StepBuilder.agent("plan").with_id("plan").build(), record)
+
+        assert dispatcher.events == [
+            StepDoneEvent(
+                idx=2,
+                total=4,
+                step_id="plan",
+                status="ignored",
+                attempts=3,
+                exit_code=1,
+                duration_seconds=2.5,
+                error_message="Patch rejected",
+                error_code=ErrorCode.PATCH_FILE_COUNT_EXCEEDED,
+                rejected_patch_path="/storage/plan.patch",
+            )
         ]
 
 

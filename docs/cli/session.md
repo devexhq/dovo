@@ -83,9 +83,10 @@ When a session has no recorded execution state, the command prints `No step data
 | `step_id` | The step, loop or `if` block id. |
 | `name` | The name it sets, or `null`. |
 | `state` | Its state, such as `completed`, `failed` or `skipped`. |
-| `attempts` | How many attempts the step made; `null` on a loop or `if` row. |
+| `status` | The outcome of the step's last attempt: `completed`, `failed` or `ignored`; `null` on a loop or `if` row, or a step with no result. |
+| `attempts` | How many times the step ran, counting every retry; `null` on a loop or `if` row. |
 | `exit_code` | The exit code of the step's last attempt, or `null`. |
-| `duration_seconds` | The total duration of the step's attempts, or `null`. |
+| `duration_seconds` | The duration of the step's last attempt, or `null`. |
 | `error_message` | Why the step's last attempt failed, with secrets redacted, or `null`. |
 | `error_code` | The code of that failure, such as `STEP_COMMAND_FAILED` or `STEP_TIMEOUT` (see [Step failure codes](run.md#step-failure-codes)); `null` on a completed step, a loop or `if` row, or a step with no result. |
 | `rejected_patch_path` | The saved discarded edit of the step's last attempt, or `null`. |
@@ -95,6 +96,8 @@ When a session has no recorded execution state, the command prints `No step data
 | `skip_cause` | `when_false` or `when_unresolved` on a row a `when` list skipped; `null` on a row that was not skipped. |
 | `branch` | `then`, `else` or `none` on an `if` row that started; otherwise `null`. |
 | `if_id` | The `if` block each step of its chosen branch belongs to, or `null`. |
+
+`step_id`, `status`, `attempts`, `exit_code`, `duration_seconds`, `error_message`, `error_code` and `rejected_patch_path` carry the same values as the step's [`run.step_done`](run.md#step-done-keys) event, except that a step continued past at a failure prompt is `ignored` here and `failed` in the event. The other keys describe the row and its state and appear only here; the event's `idx` and `total` appear only while the run is live. A step's stdout and stderr are read with [`dovo logs`](#dovo-session-logs); its outputs and warnings are kept in the session's saved run state (`session.json`), which carries every key above under the step's last attempt.
 
 ### Arguments
 

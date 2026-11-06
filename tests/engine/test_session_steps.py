@@ -83,7 +83,7 @@ class SummarizeSessionStepsTests:
             (f"step-{state.value}", state.value) for state in NodeState
         ]
 
-    def test_leaf_with_retries_sums_duration_and_uses_last_attempt(self) -> None:
+    def test_leaf_with_retried_attempts_reports_the_last_attempt(self) -> None:
         leaf = ExecutionLeafNode(
             id="flaky",
             name="Flaky step",
@@ -108,10 +108,42 @@ class SummarizeSessionStepsTests:
                 step_id="flaky",
                 name="Flaky step",
                 state="completed",
+                status="completed",
                 attempts=2,
                 exit_code=0,
-                duration_seconds=3.5,
+                duration_seconds=2.0,
                 error_message="recovered with warning",
+            )
+        ]
+
+    def test_leaf_whose_one_attempt_retried_in_place_counts_every_try(self) -> None:
+        leaf = ExecutionLeafNode(
+            id="flaky",
+            state=NodeState.FAILED,
+            attempts=[
+                _attempt(
+                    3,
+                    exit_code=1,
+                    duration_seconds=0.5,
+                    error_message="still failing",
+                    error_code=ErrorCode.STEP_COMMAND_FAILED,
+                )
+            ],
+        )
+
+        steps = summarize_session_steps(_record([leaf]), _REDACTOR)
+
+        assert steps == [
+            StepRunSummary(
+                kind="step",
+                step_id="flaky",
+                state="failed",
+                status="failed",
+                attempts=3,
+                exit_code=1,
+                duration_seconds=0.5,
+                error_message="still failing",
+                error_code=ErrorCode.STEP_COMMAND_FAILED,
             )
         ]
 
@@ -206,6 +238,7 @@ class SummarizeSessionStepsTests:
                 kind="step",
                 step_id="ship",
                 state="completed",
+                status="completed",
                 attempts=1,
                 exit_code=0,
                 duration_seconds=2.0,

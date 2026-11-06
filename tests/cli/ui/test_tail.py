@@ -43,20 +43,21 @@ class CollapsingTailDisplayTests:
         assert "[1/3] Build (make)" in console_buffer.getvalue()
 
     @pytest.mark.parametrize(
-        ("ok", "expected_glyph"),
+        ("status", "expected_glyph"),
         [
-            pytest.param(True, "✔", id="completed"),
-            pytest.param(False, "✖", id="failed"),
+            pytest.param("completed", "✔", id="completed"),
+            pytest.param("ignored", "✔", id="ignored"),
+            pytest.param("failed", "✖", id="failed"),
         ],
     )
     def test_handle_step_done_erases_tail_and_prints_summary(
-        self, ok: bool, expected_glyph: str, capsys: pytest.CaptureFixture[str]
+        self, status: str, expected_glyph: str, capsys: pytest.CaptureFixture[str]
     ) -> None:
         display, console_buffer = _display(tail_size=2)
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L1"))
 
         display.handle_step_done(
-            StepDoneEvent(idx=1, total=1, step_id="s1", ok=ok, exit_code=0 if ok else 1, duration_seconds=1.23)
+            StepDoneEvent(idx=1, total=1, step_id="s1", status=status, attempts=1, exit_code=1, duration_seconds=1.23)
         )
 
         assert capsys.readouterr().err.endswith((_CURSOR_UP + _ERASE_LINE) * 1)
