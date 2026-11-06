@@ -64,6 +64,7 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
             config_error_code=data.config.error_code,
             config_path_relative=display_path(data.config.config_path, data.root_dir),
             git_branch=git_branch,
+            git_error_code=data.git.error_code,
             git_is_dirty=data.git.is_dirty,
             uncommitted_files=data.git.uncommitted_files,
             agent_model=agent_model,

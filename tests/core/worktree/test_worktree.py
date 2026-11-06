@@ -17,7 +17,7 @@ from dovo.common.filesystem.services import resolve_global_paths
 from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
 from dovo.core.db import WorktreeRecord, WorktreesRepository
-from dovo.core.git.exceptions import git_command_error
+from dovo.core.git.exceptions import GitError, git_command_error
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeCleanupResult
 from dovo.core.worktree.services.detector import WorktreeDetector
@@ -134,6 +134,21 @@ class WorktreeCreateEntrypointTests:
         assert event["exception_type"] == "TypeError"
         assert not (worktree_workspace_paths.worktrees_dir / "dovo_typeerror").exists()
         assert not GitRunner().branch_exists(worktree_workspace, "dovo/dovo_typeerror")
+
+    def test_create_git_timeout_reading_the_branch_returns_git_timeout(
+        self, worktree_workspace_paths: WorkspacePaths
+    ) -> None:
+        """Return error_code GIT_TIMEOUT and no session, instead of branching from the default base ref, when git branch --show-current times out."""
+        message = "Git timed out after 120s ('git branch --show-current')"
+        git = FakeGitRunner({("branch", "--show-current"): GitError(ErrorCode.GIT_TIMEOUT, message)})
+        worktree = Worktree(worktree_workspace_paths, git=git, clock=fixed_clock, new_id=fixed_new_id)
+
+        result = worktree.create(session_id="dovo_timeout")
+
+        assert result.error_code == ErrorCode.GIT_TIMEOUT
+        assert result.errors == [message]
+        assert result.session is None
+        assert not (worktree_workspace_paths.worktrees_dir / "dovo_timeout").exists()
 
     def test_create_unexpected_failure_with_unwritable_log_has_empty_diagnostics(
         self, worktree_workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch

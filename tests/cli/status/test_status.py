@@ -145,6 +145,37 @@ class StatusCliIntegrationTests:
             {"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}
         ]
 
+    def test_status_cli_json_git_timeout_reports_timeout_not_missing_repository(
+        self,
+        cli_runner: CliRunner,
+        status_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Exit 0 with status degraded, git_error_code GIT_TIMEOUT, git_branch null, the timeout warning and remediation, and one diagnostics entry."""
+        message = "Git timed out after 120s ('git rev-parse --is-inside-work-tree')"
+        timeout = GitError(ErrorCode.GIT_TIMEOUT, message)
+        use_fake_git(monkeypatch, FakeGitRunner({("rev-parse", "--is-inside-work-tree"): timeout}))
+
+        result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", "json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["status"] == "degraded"
+        assert payload["git_error_code"] == "GIT_TIMEOUT"
+        assert payload["git_branch"] is None
+        assert message in payload["warnings"]
+        assert payload["remediations"] == [
+            {
+                "message": (
+                    "Check for git lock files, credential prompts, or stuck git processes, then retry, "
+                    "or raise 'DOVO_GIT_TIMEOUT_SECONDS' for a slow repository."
+                ),
+                "command": None,
+            }
+        ]
+        assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]
+
     def test_status_cli_json_reports_reconciled_stale_session(
         self, cli_runner: CliRunner, status_workspace: Path
     ) -> None:

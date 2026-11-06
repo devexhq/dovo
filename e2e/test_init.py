@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from e2e.conftest import DOVO_HOME, DovoRunner, parse_events, parse_json
+from e2e.conftest import DOVO_HOME, DovoRunner, hanging_git_env, parse_events, parse_json
 
 
 @pytest.mark.e2e
@@ -175,6 +175,24 @@ class InitCliTests:
         assert payload.get("status") == "ok"
         assert payload.get("config_error_code") is None
         assert "config_status" not in payload
+
+    def test_status_hanging_git_reports_git_timeout_not_missing_repository(
+        self, run_dovo: DovoRunner, initialized_project: Path, tmp_path: Path
+    ) -> None:
+        """Exit 0 degraded with git_error_code GIT_TIMEOUT, git_branch null, no 'git init' remediation and one diagnostics entry."""
+        result = run_dovo(
+            ["status", "--format", "json"], cwd=initialized_project, env=hanging_git_env(tmp_path / "slow-git")
+        )
+
+        assert result.exit_code == 0
+        payload = parse_json(result.stdout)["payload"]
+        assert isinstance(payload, dict)
+        assert payload["status"] == "degraded"
+        assert payload["git_error_code"] == "GIT_TIMEOUT"
+        assert payload["git_branch"] is None
+        assert "Git timed out after 1s ('git rev-parse --is-inside-work-tree')" in payload["warnings"]
+        assert all(remediation["command"] != "git init" for remediation in payload["remediations"])
+        assert len(payload["diagnostics"]) == 1
 
     def test_verbose_status_json_writes_only_json_lines(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
         result = run_dovo(["-v", "status", "--format", "json"], cwd=initialized_project)

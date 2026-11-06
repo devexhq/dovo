@@ -10,11 +10,12 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.common.error_codes import ErrorCode
 from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.models import DEFAULT_AGENT
 from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
 from dovo.core.diagnostics.checks.git_repo import GitRepoCheck
-from dovo.core.git import git_command_error
+from dovo.core.git import GitError, git_command_error
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
 from tests.harness.exit_codes import OUTPUT_FORMATS
 from tests.harness.fakes import FakeGitRunner, use_fake_git
@@ -204,6 +205,26 @@ class DoctorCliIntegrationTests:
         assert payload["remediations"] == check_payload["remediations"]
         assert check_payload["check_id"] == "git.repo"
         assert check_payload["error_code"] == "DOCTOR_GIT_REPO_NOT_FOUND"
+
+    def test_doctor_cli_json_git_timeout_reports_timeout_with_its_record(
+        self, cli_runner: CliRunner, cli_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 with DOCTOR_GIT_TIMEOUT, not DOCTOR_GIT_REPO_NOT_FOUND, and the record in the check's and top-level diagnostics when git times out."""
+        timeout = GitError(ErrorCode.GIT_TIMEOUT, "Git timed out after 120s ('git rev-parse --is-inside-work-tree')")
+        use_fake_git(monkeypatch, FakeGitRunner({("rev-parse", "--is-inside-work-tree"): timeout}))
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "doctor", "--category", "git", "--format", "json"])
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        check_payload = payload["checks"][0]
+        record_json = {"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}
+        assert check_payload["error_code"] == "DOCTOR_GIT_TIMEOUT"
+        assert check_payload["message"] == (
+            f"Git timed out in '{cli_workspace}': Git timed out after 120s ('git rev-parse --is-inside-work-tree')"
+        )
+        assert check_payload["diagnostics"] == [record_json]
+        assert payload["diagnostics"] == [record_json]
 
     def test_doctor_cli_json_crashed_check_reports_diagnostics(
         self, cli_runner: CliRunner, cli_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch

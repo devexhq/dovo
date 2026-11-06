@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import subprocess
@@ -15,7 +16,9 @@ from dovo.common.error_codes import ErrorCode
 from dovo.core.git.exceptions import GitError, git_command_error
 from dovo.core.git.models import GitBytesOutput, GitProcessOutput, GitWorktreeEntry
 
-_BRANCH_UNKNOWN_CODES: Final = frozenset({ErrorCode.GIT_BINARY_MISSING, ErrorCode.GIT_TIMEOUT, ErrorCode.GIT_FAILED})
+_BRANCH_UNKNOWN_CODES: Final = frozenset({ErrorCode.GIT_BINARY_MISSING, ErrorCode.GIT_FAILED})
+_GIT_TIMEOUT_ENV: Final = "DOVO_GIT_TIMEOUT_SECONDS"
+_MAX_GIT_TIMEOUT_SECONDS: Final = 86400.0  # one day; larger values overflow the subprocess wait
 _STATUS_EMPTY_CODES: Final = frozenset({ErrorCode.GIT_BINARY_MISSING, ErrorCode.GIT_FAILED})
 _CONFLICT_PATTERNS: Final = (
     re.compile(r"^error:\s+patch failed:\s+([^:]+)"),
@@ -141,9 +144,23 @@ def extract_conflicts(stderr: str) -> list[str]:
     return sorted(conflicts)
 
 
+def _git_timeout_seconds() -> float:
+    """Return DOVO_GIT_TIMEOUT_SECONDS read now when it is a positive number up to one day, else GIT_SUBPROCESS_TIMEOUT_SECONDS."""
+    raw_override = os.environ.get(_GIT_TIMEOUT_ENV)
+    if raw_override is None:
+        return GIT_SUBPROCESS_TIMEOUT_SECONDS
+    try:
+        override = float(raw_override)
+    except ValueError:
+        return GIT_SUBPROCESS_TIMEOUT_SECONDS
+    if not math.isfinite(override) or not 0 < override <= _MAX_GIT_TIMEOUT_SECONDS:
+        return GIT_SUBPROCESS_TIMEOUT_SECONDS
+    return override
+
+
 @contextmanager
-def _spawn_failures(args: Sequence[str], path: Path) -> Generator[None]:
-    """Map the subprocess.run failures of `git <args>` in path to GitError.
+def _spawn_failures(args: Sequence[str], path: Path, timeout: float) -> Generator[None]:
+    """Map the subprocess.run failures of `git <args>` in path, bounded by timeout seconds, to GitError.
 
     Raises:
         GitError: With GIT_WORKDIR_MISSING when path is not a directory, chained to the OSError.
@@ -166,7 +183,7 @@ def _spawn_failures(args: Sequence[str], path: Path) -> Generator[None]:
     except subprocess.TimeoutExpired as exc:
         raise GitError(
             ErrorCode.GIT_TIMEOUT,
-            f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git {' '.join(args)}')",
+            f"Git timed out after {timeout:g}s ('git {' '.join(args)}')",
         ) from exc
 
 
@@ -186,7 +203,7 @@ class GitRunner:
         input_text: str | None = None,
         env: Mapping[str, str] | None = None,
     ) -> GitProcessOutput:
-        """Start `git <args>` in path, bounded by GIT_SUBPROCESS_TIMEOUT_SECONDS, and return its result for any exit code.
+        """Start `git <args>` in path, bounded by DOVO_GIT_TIMEOUT_SECONDS or else GIT_SUBPROCESS_TIMEOUT_SECONDS, and return its result for any exit code.
 
         Args:
             args: Command arguments after ``git``.
@@ -202,7 +219,8 @@ class GitRunner:
             GitError: With GIT_BINARY_MISSING when git binary is not found, or GIT_TIMEOUT when subprocess.run
                 times out.
         """
-        with _spawn_failures(args, path):
+        timeout = _git_timeout_seconds()
+        with _spawn_failures(args, path, timeout):
             proc = subprocess.run(
                 ["git", *args],
                 cwd=str(path),
@@ -210,7 +228,7 @@ class GitRunner:
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
+                timeout=timeout,
                 env=_merged_env(env),
             )
         return GitProcessOutput(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
@@ -237,14 +255,15 @@ class GitRunner:
         Raises:
             GitError: With GIT_WORKDIR_MISSING, GIT_BINARY_MISSING or GIT_TIMEOUT, as exec raises them.
         """
-        with _spawn_failures(args, path):
+        timeout = _git_timeout_seconds()
+        with _spawn_failures(args, path, timeout):
             proc = subprocess.run(
                 ["git", *args],
                 cwd=str(path),
                 input=input_bytes,
                 capture_output=True,
                 check=False,
-                timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
+                timeout=timeout,
                 env=_merged_env(env),
             )
         return GitBytesOutput(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
@@ -304,7 +323,11 @@ class GitRunner:
         return result.stdout.rstrip("\r\n")
 
     def get_current_branch(self, path: Path) -> str:
-        """Extract current active Git branch, returning 'HEAD (detached)', or 'unknown' when git is missing, times out or fails."""
+        """Extract current active Git branch, returning 'HEAD (detached)', or 'unknown' when git is missing or fails.
+
+        Raises:
+            GitError: With GIT_TIMEOUT when git times out, or GIT_WORKDIR_MISSING when path is not a directory.
+        """
         try:
             branch = self.run(["branch", "--show-current"], path=path).strip()
             return branch if branch else "HEAD (detached)"

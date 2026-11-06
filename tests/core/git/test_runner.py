@@ -236,6 +236,71 @@ class GitRunnerExecTests:
 
         assert excinfo.value is failure
 
+    def test_get_current_branch_propagates_git_timeout(self, tmp_path: Path) -> None:
+        """Raise the GitError(GIT_TIMEOUT) git branch --show-current raised instead of returning "unknown"."""
+        failure = GitError(ErrorCode.GIT_TIMEOUT, "Git timed out after 120s ('git branch --show-current')")
+        fake = FakeGitRunner({("branch", "--show-current"): failure})
+
+        with pytest.raises(GitError) as excinfo:
+            fake.get_current_branch(tmp_path)
+
+        assert excinfo.value is failure
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            pytest.param(GitError(ErrorCode.GIT_BINARY_MISSING, "git not found"), id="binary_missing"),
+            pytest.param(GitProcessOutput(128, "", "fatal: not a git repository"), id="git_failed"),
+        ],
+    )
+    def test_get_current_branch_returns_unknown_when_git_is_missing_or_fails(
+        self, tmp_path: Path, failure: GitProcessOutput | Exception
+    ) -> None:
+        """Return "unknown" when git branch --show-current finds no git binary or exits non-zero."""
+        fake = FakeGitRunner({("branch", "--show-current"): failure})
+
+        assert fake.get_current_branch(tmp_path) == "unknown"
+
+    @pytest.mark.parametrize(
+        ("override", "timeout", "named"),
+        [
+            pytest.param(None, 120, "120s", id="unset"),
+            pytest.param("1.5", 1.5, "1.5s", id="override"),
+            pytest.param("soon", 120, "120s", id="not_a_number"),
+            pytest.param("0", 120, "120s", id="not_positive"),
+            pytest.param("nan", 120, "120s", id="nan"),
+            pytest.param("inf", 120, "120s", id="infinite"),
+            pytest.param("1e300", 120, "120s", id="huge"),
+            pytest.param("86400", 86400, "86400s", id="one_day"),
+        ],
+    )
+    def test_exec_bounds_git_by_dovo_git_timeout_seconds(
+        self,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        override: str | None,
+        timeout: float,
+        named: str,
+    ) -> None:
+        """Pass DOVO_GIT_TIMEOUT_SECONDS, or 120 when it is unset or not a positive number up to one day, to subprocess.run and name it in the GIT_TIMEOUT message."""
+        timeouts: list[object] = []
+
+        def _time_out(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+            timeouts.append(kwargs["timeout"])
+            raise subprocess.TimeoutExpired(cmd=["git", "status"], timeout=1)
+
+        if override is None:
+            monkeypatch.delenv("DOVO_GIT_TIMEOUT_SECONDS", raising=False)
+        else:
+            monkeypatch.setenv("DOVO_GIT_TIMEOUT_SECONDS", override)
+        monkeypatch.setattr("dovo.core.git.runner.subprocess.run", _time_out)
+
+        with pytest.raises(GitError) as excinfo:
+            GitRunner().exec(["status"], git_repo)
+
+        assert timeouts == [timeout]
+        assert excinfo.value.message == f"Git timed out after {named} ('git status')"
+
     @pytest.mark.parametrize(
         "code",
         [

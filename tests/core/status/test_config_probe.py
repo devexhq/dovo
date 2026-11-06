@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
+import pytest
+
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.git.runner import GitRunner
-from dovo.core.status import Status
+from dovo.core.status import Status, WorkspaceHealth
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.status_workspace import BuildStatusWorkspace
 from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
@@ -48,3 +54,24 @@ class ConfigProbeTests:
         assert result.config.remediations == [Remediation(message="Repair JSON syntax, or restore from backup")]
         assert any("Malformed config.json" in w for w in result.warnings)
         assert result.remediations == [Remediation(message="Repair JSON syntax, or restore from backup")]
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_collect_unreadable_config_lists_the_config_read_record(
+        self, status_workspace: BuildStatusWorkspace, frozen_diagnostic_clock: Path
+    ) -> None:
+        """With config.json at mode 0, report CONFIG_UNREADABLE and list the config.read record in diagnostics."""
+        workspace = status_workspace()
+        paths = initialized_workspace_paths(workspace)
+        paths.config_file.chmod(0)
+
+        try:
+            result = Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
+        finally:
+            paths.config_file.chmod(0o600)
+
+        record = diagnostic_record(frozen_diagnostic_clock)
+        assert result.status is WorkspaceHealth.DEGRADED
+        assert result.config.error_code == ErrorCode.CONFIG_UNREADABLE
+        assert result.config.diagnostics == [record]
+        assert result.diagnostics == [record]
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "config.read"

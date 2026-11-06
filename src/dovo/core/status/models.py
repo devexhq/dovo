@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import BaseResult, Remediation
 from dovo.core.config.models import DovoConfig
 
@@ -21,7 +23,7 @@ class WorkspaceHealth(StrEnum):
 
 
 class GitStatusInfo(BaseModel):
-    """Git repository branch and working tree status."""
+    """Git repository branch and working tree status, with the code, warning and record of a git that could not be read."""
 
     model_config = {"extra": "forbid", "strict": True}
 
@@ -29,10 +31,13 @@ class GitStatusInfo(BaseModel):
     branch: str
     is_dirty: bool
     uncommitted_files: int
+    error_code: ErrorCode | None = None  # GIT_TIMEOUT or GIT_BINARY_MISSING; None outside a repository
+    warning: str | None = None
+    diagnostic: DiagnosticRecord | None = None
 
 
 class ConfigStatusInfo(BaseModel):
-    """Configuration file health and parsed model."""
+    """Configuration file health and parsed model, with the records the config load wrote for its failure."""
 
     model_config = {"extra": "forbid", "strict": True}
 
@@ -43,10 +48,11 @@ class ConfigStatusInfo(BaseModel):
     config: DovoConfig | None = None
     errors: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)  # error-level records only
 
 
 class CatalogStatusInfo(BaseModel):
-    """Catalog blueprint directory health."""
+    """Catalog blueprint directory health, with the records of catalog files that could not be read."""
 
     model_config = {"extra": "forbid", "strict": True}
 
@@ -57,10 +63,11 @@ class CatalogStatusInfo(BaseModel):
     steps_count: int
     invalid_items: int
     item_names: list[str] = Field(default_factory=list)
+    diagnostics: list[DiagnosticRecord] = Field(default_factory=list)
 
 
 class DatabaseStatusInfo(BaseModel):
-    """Centralized SQLite database status and run metrics."""
+    """Centralized SQLite database status and run metrics, with the record of a failed read."""
 
     model_config = {"extra": "forbid", "strict": True}
 
@@ -68,16 +75,19 @@ class DatabaseStatusInfo(BaseModel):
     db_path: Path
     is_accessible: bool
     total_sessions: int = 0
+    diagnostic: DiagnosticRecord | None = None
 
 
 class WorktreeStatusInfo(BaseModel):
-    """Worktree inventory and concurrency metrics."""
+    """Worktree inventory and concurrency metrics, with the warning and record of a failed database read."""
 
     model_config = {"extra": "forbid", "strict": True}
 
     active_worktrees: int
     total_worktrees: int
     max_active_worktrees: int
+    warning: str | None = None
+    diagnostic: DiagnosticRecord | None = None
 
 
 class DovoStatusResult(BaseResult):
