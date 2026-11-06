@@ -15,7 +15,7 @@ from dovo.engine.executors.models import AskResolution, StepExecutionContext, St
 
 
 def resolve_ask_request(context: StepExecutionContext) -> AskResolution:
-    """Interpolate the message, resolve the interaction, and return the request, or a settled result for failures and empty multiselects."""
+    """Interpolate the message, resolve the interaction, add its diagnostics to the run's, and return the request, or a settled result for failures and empty multiselects."""
     step = context.step
     spec = step.interaction
     if spec is None:
@@ -47,6 +47,7 @@ def resolve_ask_request(context: StepExecutionContext) -> AskResolution:
         return _failed_resolution(step.id, error.error_code, error.message)
 
     resolved = Interaction(context.artifact_store, _redactor(context)).resolve(step.id, spec, message)
+    context.diagnostics.extend(resolved.diagnostics)
     if resolved.error_code is not None:
         return _failed_resolution(step.id, resolved.error_code, resolved.errors[0])
     if resolved.request is None:

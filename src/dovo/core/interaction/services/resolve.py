@@ -6,11 +6,14 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from dovo.common.error_codes import ErrorCode
 from dovo.common.redact import SecretRedactor
 from dovo.core.artifacts.models import ArtifactManifest
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import OPTION_VALUE_RE, CommentPolicy, InteractionSpec, OptionsFrom
+from dovo.core.interaction.exceptions import InteractionError
 from dovo.core.interaction.models import (
     PREVIEW_MAX_BYTES,
     PREVIEW_MAX_LINES,
@@ -35,10 +38,15 @@ class _LocatedArtifact:
 def resolve_request(
     step_id: str, spec: InteractionSpec, message: str, store: ArtifactStore | None, redactor: SecretRedactor
 ) -> InteractionResolveResult:
-    """Resolve an authored interaction into a request, or a failed result carrying the ASK_* code."""
+    """Resolve an authored interaction into a request, or a failed result carrying the ASK_* code.
+
+    Raises:
+        InteractionError: ASK_ARTIFACT_MANIFEST_UNREADABLE or ASK_OPTIONS_ARTIFACT_MANIFEST_UNREADABLE when the
+            manifest of the displayed or options_from artifact cannot be read or is not a valid manifest.
+    """
     artifact: RequestArtifact | None = None
     if spec.artifact is not None:
-        located = _locate_artifact(store, spec.artifact)
+        located = _locate_artifact(store, spec.artifact, ErrorCode.ASK_ARTIFACT_MANIFEST_UNREADABLE)
         if located is None:
             return _failed(
                 ErrorCode.ASK_ARTIFACT_NOT_FOUND,
@@ -85,21 +93,43 @@ def _failed(code: ErrorCode, message: str) -> InteractionResolveResult:
     return InteractionResolveResult(error_code=code, errors=[message])
 
 
-def _locate_artifact(store: ArtifactStore | None, name: str) -> _LocatedArtifact | None:
-    """Return the latest revision's number, digest, directory and manifest, or None when absent."""
+def _locate_artifact(store: ArtifactStore | None, name: str, unreadable_code: ErrorCode) -> _LocatedArtifact | None:
+    """Return the latest revision's number, digest, directory and manifest, or None when absent.
+
+    Raises:
+        InteractionError: unreadable_code when the revision's manifest cannot be read or is not a valid manifest.
+    """
     if store is None:
         return None
     references = store.resolve_references({name: ("revision", "digest", "dir")}).references.get(name)
     if references is None:
         return None
     directory = Path(references["dir"])
-    try:
-        manifest = ArtifactManifest.model_validate_json((directory / "manifest.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+    manifest = _read_manifest(directory / "manifest.json", name, unreadable_code)
     return _LocatedArtifact(
         revision=int(references["revision"]), digest=references["digest"], directory=directory, manifest=manifest
     )
+
+
+def _read_manifest(manifest_path: Path, name: str, code: ErrorCode) -> ArtifactManifest:
+    """Parse the manifest at manifest_path, raising InteractionError with code and a message saying what is wrong."""
+    try:
+        text = manifest_path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise InteractionError(code, f"Artifact '{name}' has a manifest that cannot be read: {error}.") from error
+    except UnicodeDecodeError as error:
+        raise InteractionError(code, f"Artifact '{name}' has a manifest that is not UTF-8 text: {error}.") from None
+    try:
+        return ArtifactManifest.model_validate_json(text)
+    except ValidationError as error:
+        raise InteractionError(code, f"Artifact '{name}' has an invalid manifest: {_first_problem(error)}.") from None
+
+
+def _first_problem(error: ValidationError) -> str:
+    """Return the first validation problem as `location: message`, or the message alone when it has no location."""
+    problem = error.errors()[0]
+    location = ".".join(str(part) for part in problem["loc"])
+    return f"{location}: {problem['msg']}" if location else problem["msg"]
 
 
 def _artifact_preview(located: _LocatedArtifact, redactor: SecretRedactor) -> list[str]:
@@ -147,7 +177,7 @@ def _options_from_artifact(
     options_from: OptionsFrom, store: ArtifactStore | None, default_policy: CommentPolicy
 ) -> tuple[list[RequestOption], InteractionResolveResult | None]:
     """Load and validate the options_from file; return the options or a failed result."""
-    located = _locate_artifact(store, options_from.artifact)
+    located = _locate_artifact(store, options_from.artifact, ErrorCode.ASK_OPTIONS_ARTIFACT_MANIFEST_UNREADABLE)
     if located is None:
         return [], _failed(
             ErrorCode.ASK_OPTIONS_ARTIFACT_NOT_FOUND,

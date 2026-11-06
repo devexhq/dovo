@@ -678,6 +678,94 @@ class RunStepErrorCliTests:
 
 @pytest.mark.e2e
 @pytest.mark.fixture
+class RunAskDamagedManifestCliTests:
+    """E2E tests for an ask step whose artifact is published but has a damaged manifest."""
+
+    @pytest.mark.parametrize(
+        ("damage", "message", "diagnostic_count"),
+        [
+            pytest.param(
+                "printf x > {manifest}",
+                "Artifact 'plan' has an invalid manifest: Invalid JSON: expected value at line 1 column 1.",
+                0,
+                id="corrupt",
+            ),
+            pytest.param(
+                "rm {manifest} && mkdir {manifest}",
+                "Artifact 'plan' has a manifest that cannot be read: [Errno 21] Is a directory: '{manifest}'.",
+                1,
+                id="unreadable",
+            ),
+        ],
+    )
+    def test_damaged_manifest_fails_the_ask_with_its_own_code(
+        self, run_dovo: DovoRunner, initialized_project: Path, damage: str, message: str, diagnostic_count: int
+    ) -> None:
+        """An ask step on an artifact whose manifest.json is damaged fails with ASK_ARTIFACT_MANIFEST_UNREADABLE, not as a missing artifact, and an OS read failure is in the run's diagnostics."""
+        session_id = f"ask-manifest-{diagnostic_count}"
+        manifest = (
+            DOVO_HOME
+            / "storage"
+            / "projects"
+            / _get_project_id(initialized_project)
+            / "artifacts"
+            / session_id
+            / "plan"
+            / "1"
+            / "manifest.json"
+        )
+        write_blueprint(
+            initialized_project,
+            "ask-manifest-bp",
+            f"""version: "1.0"
+name: ask-manifest-bp
+id: ask-manifest-bp
+steps:
+  - id: write
+    run: echo hi > PLAN.md
+    artifacts:
+      - name: plan
+        path: PLAN.md
+  - id: corrupt
+    run: {json.dumps(damage.format(manifest=manifest))}
+  - id: approve
+    type: ask
+    interaction:
+      mode: confirm
+      message: Approve the plan?
+      artifact: plan
+""",
+            runner=run_dovo,
+        )
+
+        result = run_dovo(
+            ["run", "ask-manifest-bp", "--no-worktree", "--session-id", session_id, "--format", "json"],
+            cwd=initialized_project,
+        )
+
+        approve = [
+            event.get("payload", {})
+            for event in parse_events(result.stdout)
+            if event.get("event_type") == "run.step_done"
+        ][-1]
+        assert isinstance(approve, dict)
+        payload = run_result(result.stdout)
+        diagnostics = payload.get("diagnostics")
+        assert isinstance(diagnostics, list)
+        assert (approve.get("step_id"), approve.get("error_code"), approve.get("error_message")) == (
+            "approve",
+            "ASK_ARTIFACT_MANIFEST_UNREADABLE",
+            message.format(manifest=manifest),
+        )
+        assert (result.exit_code, payload.get("error_code"), len(diagnostics)) == (
+            1,
+            "RUN_STEP_FAILED",
+            diagnostic_count,
+        )
+
+
+@pytest.mark.e2e
+@pytest.mark.fixture
 class RunStepViewsCliTests:
     """E2E tests for a step reporting the same fields live, in session.json and in `dovo session show`."""
 

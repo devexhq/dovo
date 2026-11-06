@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -17,6 +18,7 @@ from dovo.engine.executors import evaluate_condition
 from dovo.engine.executors.ask_step import complete_ask_step, resolve_ask_request
 from dovo.engine.executors.models import PreviousStepMetadata, StepExecutionContext
 from tests.conftest import PublishArtifact
+from tests.harness.diagnostic_log import diagnostic_record
 
 _MESSAGE = "Approve ${{ inputs.feature }} ({{ steps.plan.outputs.title }}, {{ artifacts.plan.revision }})?"
 _OPTIONS_FROM = {
@@ -109,6 +111,30 @@ class AskStepExecutorTests:
             ErrorCode.ASK_OPTIONS_ARTIFACT_NOT_FOUND,
         )
         assert "for options_from was not found." in (resolution.result.error_message or "")
+
+    def test_unreadable_artifact_manifest_fails_the_step_and_adds_its_record_to_the_run(
+        self,
+        engine_paths: WorkspacePaths,
+        artifact_store: ArtifactStore,
+        publish_artifact: PublishArtifact,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        publish_artifact("plan", {"PLAN.md": "plan"})
+        manifest = (
+            Path(artifact_store.resolve_references({"plan": ("dir",)}).references["plan"]["dir"]) / "manifest.json"
+        )
+        manifest.unlink()
+        manifest.mkdir()
+        context = _context(engine_paths, artifact_store, {"mode": "confirm", "message": "Go?", "artifact": "plan"})
+
+        resolution = resolve_ask_request(context)
+
+        assert resolution.result is not None
+        assert (resolution.result.status, resolution.result.error_code) == (
+            "failed",
+            ErrorCode.ASK_ARTIFACT_MANIFEST_UNREADABLE,
+        )
+        assert context.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
 
     def test_message_with_uninlinable_content_becomes_failed_step_result(
         self, engine_paths: WorkspacePaths, artifact_store: ArtifactStore, publish_artifact: PublishArtifact

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
+from dovo.common.exceptions import catch_failure
 from dovo.common.redact import SecretRedactor
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import CommentPolicy, InteractionSpec
@@ -38,8 +39,18 @@ class Interaction:
         self._redactor = redactor
 
     def resolve(self, step_id: str, spec: InteractionSpec, message: str) -> InteractionResolveResult:
-        """Resolve spec into a request, loading options and the displayed artifact and masking displayed text."""
-        return resolve_request(step_id, spec, message, self._store, self._redactor)
+        """Resolve spec into a request, loading options and the displayed artifact and masking displayed text.
+
+        An artifact whose manifest cannot be read or is not a valid manifest fails with
+        ASK_ARTIFACT_MANIFEST_UNREADABLE, or ASK_OPTIONS_ARTIFACT_MANIFEST_UNREADABLE for options_from, and an
+        operating-system read failure is recorded in the result's diagnostics.
+        """
+        with catch_failure("interaction.resolve", step=step_id) as caught:
+            return resolve_request(step_id, spec, message, self._store, self._redactor)
+        failure = caught.failure
+        if failure is None:
+            raise RuntimeError(f"Resolving the interaction of '{step_id}' neither returned a result nor raised.")
+        return InteractionResolveResult(**failure.result_fields())
 
     @staticmethod
     def comment_policy(request: InteractionRequest, selected: Sequence[str]) -> CommentPolicy:
