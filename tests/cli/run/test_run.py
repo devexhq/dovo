@@ -562,6 +562,44 @@ class RunCliIntegrationTests:
             ["Ignoring unrecognized option '--bogus'.", "Ignoring unexpected argument '1'."],
         )
 
+    @pytest.mark.parametrize(
+        ("inputs", "warning"),
+        [
+            pytest.param(
+                ["-i", "a=x", "-i", "b=y", "-i", "nope=1"], "Ignoring unknown input override 'nope'.", id="overrides"
+            ),
+            pytest.param(["--a", "x", "--b", "y", "--zzz"], "Ignoring unrecognized option '--zzz'.", id="aliases"),
+        ],
+    )
+    def test_run_cli_json_rejected_inputs_report_every_error_and_warning(
+        self, cli_runner: CliRunner, cli_workspace: Path, inputs: list[str], warning: str
+    ) -> None:
+        """Exit 1 with both integer errors and the ignored-token warning, whether inputs are overrides or aliases."""
+        write_runnable_blueprint(cli_workspace, key="counts", steps=[{"id": "s1", "run": "true"}])
+        blueprint_path = cli_workspace / ".dovo" / "catalog" / "blueprints" / "counts.yml"
+        blueprint_path.write_text(
+            blueprint_path.read_text(encoding="utf-8").replace(
+                "steps:",
+                "inputs:\n  a:\n    type: integer\n    aliases: ['--a']\n"
+                "  b:\n    type: integer\n    aliases: ['--b']\nsteps:",
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "run", "counts", "--no-worktree", *inputs, "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = run_result_payload(result.stdout)
+        assert (payload["error_code"], payload["errors"], payload["warnings"], payload["session_id"]) == (
+            "BLUEPRINT_INPUT_INVALID",
+            ["Input 'a' expects an integer, got 'x'.", "Input 'b' expects an integer, got 'y'."],
+            [warning],
+            None,
+        )
+
     def test_run_cli_config_show_and_run_observe_identical_merged_config(
         self,
         cli_runner: CliRunner,

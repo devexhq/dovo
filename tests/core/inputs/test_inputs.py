@@ -6,6 +6,7 @@ import pytest
 
 import dovo.core.inputs
 from dovo.common.error_codes import ErrorCode
+from dovo.common.models import Remediation
 from dovo.core.inputs import InputType, ParameterInput, resolve_inputs
 
 
@@ -26,24 +27,25 @@ def _sample_declarations() -> dict[str, ParameterInput]:
 
 
 MALFORMED_SYNTAX_CASES = [
-    pytest.param(["-i", "malformed_token"], id="short_input_flag_space"),
-    pytest.param(["--input", "malformed_token"], id="long_input_flag_space"),
-    pytest.param(["-i=malformed_token"], id="short_input_flag_equals"),
-    pytest.param(["--input=malformed_token"], id="long_input_flag_equals"),
+    pytest.param(["-i", "malformed_token"], "-i", id="short_input_flag_space"),
+    pytest.param(["--input", "malformed_token"], "--input", id="long_input_flag_space"),
+    pytest.param(["-i=malformed_token"], "-i", id="short_input_flag_equals"),
+    pytest.param(["--input=malformed_token"], "--input", id="long_input_flag_equals"),
 ]
 
 
 class InputSyntaxValidationTests:
     """Unit tests verifying CLI input syntax validation and diagnostic formatting."""
 
-    @pytest.mark.parametrize("cli_args", MALFORMED_SYNTAX_CASES)
-    def test_resolve_inputs_invalid_syntax_names_malformed_token(self, cli_args: list[str]) -> None:
+    @pytest.mark.parametrize(("cli_args", "flag"), MALFORMED_SYNTAX_CASES)
+    def test_resolve_inputs_invalid_syntax_names_malformed_token(self, cli_args: list[str], flag: str) -> None:
         result = resolve_inputs(_sample_declarations(), name="deploy", cli_args=cli_args)
 
         assert result.values == {}
         assert result.missing == []
         assert result.error_code == ErrorCode.BLUEPRINT_INPUT_INVALID
-        assert result.errors == ["Invalid input syntax 'malformed_token'. Expected key=value (e.g. -i message=value)."]
+        assert result.errors == ["Invalid input syntax 'malformed_token'."]
+        assert result.remediations == [Remediation(message=f"Pass each input as '{flag} <name>=<value>'")]
         assert result.warnings == []
 
     def test_resolve_inputs_warns_on_unrecognized_cli_options(self) -> None:
@@ -168,6 +170,32 @@ class InputResolutionOutcomeTests:
         assert result.errors == errors
         assert result.warnings == warnings
 
+    @pytest.mark.parametrize(
+        ("cli_args", "warning"),
+        [
+            pytest.param(
+                ["-i", "a=x", "-i", "b=y", "-i", "nope=1"], "Ignoring unknown input override 'nope'.", id="overrides"
+            ),
+            pytest.param(["--a", "x", "--b=y", "--zzz"], "Ignoring unrecognized option '--zzz'.", id="aliases"),
+        ],
+    )
+    def test_resolve_inputs_reports_every_rejected_value_with_the_parse_warnings(
+        self, cli_args: list[str], warning: str
+    ) -> None:
+        declarations = {
+            "a": ParameterInput(type=InputType.INTEGER, aliases=["--a"]),
+            "b": ParameterInput(type=InputType.INTEGER, aliases=["--b"]),
+        }
+
+        result = resolve_inputs(declarations, name="deploy", cli_args=cli_args)
+
+        assert result.error_code == ErrorCode.BLUEPRINT_INPUT_INVALID
+        assert result.errors == [
+            "Input 'a' expects an integer, got 'x'.",
+            "Input 'b' expects an integer, got 'y'.",
+        ]
+        assert result.warnings == [warning]
+
     def test_resolve_inputs_warns_on_unknown_override_key(self) -> None:
         result = resolve_inputs(_sample_declarations(), name="deploy", cli_args=["-m", "x", "-i", "nope=1"])
 
@@ -198,9 +226,9 @@ class InputResolutionOutcomeTests:
         assert result.values == {"allow_empty": False}
         assert result.ok is False
         assert result.error_code == ErrorCode.BLUEPRINT_INPUT_INVALID
-        assert result.errors == [
-            "Missing required input 'message' for 'deploy'.\n\nUsage:\n"
-            "  dovo run deploy -m <value>\n  dovo run deploy -i message=<value>"
+        assert result.errors == ["Missing required input 'message' for 'deploy'."]
+        assert result.remediations == [
+            Remediation(message="Run 'dovo run deploy -m <message>'", command="dovo run deploy -m <message>")
         ]
 
 
@@ -223,9 +251,9 @@ class InputsPackageTests:
             "build_providers",
             "coerce_input_value",
             "find_placeholders",
-            "format_missing_inputs_error",
             "interpolate_step_fields",
             "interpolate_string",
+            "missing_inputs_remediation",
             "parse_cli_input_args",
             "placeholder_texts",
             "read_json_path",

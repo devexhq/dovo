@@ -5,7 +5,7 @@ from __future__ import annotations
 from dovo.common.error_codes import ErrorCode
 from dovo.core.inputs.models import InputResolveResult, ParameterInput
 from dovo.core.inputs.parser import parse_cli_input_args
-from dovo.core.inputs.renderer import format_missing_inputs_error
+from dovo.core.inputs.renderer import missing_inputs_remediation
 
 
 def _apply_defaults_and_overrides(
@@ -42,8 +42,9 @@ def resolve_inputs(
 ) -> InputResolveResult:
     """Parse CLI args, apply overrides/defaults, and collect missing required inputs.
 
-    A syntax or type error, or a missing required input, is reported as BLUEPRINT_INPUT_INVALID; a missing input's
-    error is the usage message for the blueprint called name.
+    Every syntax or type error, or every missing required input, is reported as BLUEPRINT_INPUT_INVALID with the
+    parse's warnings; a missing input's error names it and the blueprint called name, and one remediation runs the
+    blueprint again with a value for each.
     """
     parsed = parse_cli_input_args(cli_args or [], declarations)
     if not parsed.ok:
@@ -56,7 +57,8 @@ def resolve_inputs(
     return InputResolveResult(
         values=values,
         missing=missing,
-        errors=[format_missing_inputs_error(name=name, missing=missing, declarations=declarations)],
+        errors=[f"Missing required input '{item}' for '{name}'." for item in missing],
+        remediations=[missing_inputs_remediation(name=name, missing=missing, declarations=declarations)],
         error_code=ErrorCode.BLUEPRINT_INPUT_INVALID,
         warnings=list(parsed.warnings),
     )

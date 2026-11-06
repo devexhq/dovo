@@ -592,8 +592,11 @@ class BlueprintResumeAnswerTests:
         ).execute()
 
         assert result.error_code == ErrorCode.INTERACTION_ANSWER_INVALID
-        assert result.errors == [
-            "'maybe' is not a valid answer for prompt 'approve'.\nFix: use one of: approve, revise, deny"
+        assert result.errors == ["'maybe' is not a valid answer for prompt 'approve'."]
+        assert [item.message for item in result.remediations] == [
+            "Pass '--answer approve=approve'",
+            "Pass '--answer approve=revise'",
+            "Pass '--answer approve=deny'",
         ]
         row = sessions_repo.get("ask-1")
         assert row is not None

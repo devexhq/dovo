@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.error_codes import ErrorCode
+from dovo.common.models import Remediation
 from dovo.core.catalog.definitions import CommentPolicy
 from dovo.core.interaction import (
     HeadlessAnswerInput,
@@ -53,7 +54,12 @@ def _request(
     )
 
 
-_CHOICE_ERROR = "'{value}' is not a valid answer for prompt 'approve'.\nFix: use one of: approve, revise, deny"
+_CHOICE_ERROR = "'{value}' is not a valid answer for prompt 'approve'."
+_CHOICE_FIXES = [
+    Remediation(message="Pass '--answer approve=approve'"),
+    Remediation(message="Pass '--answer approve=revise'"),
+    Remediation(message="Pass '--answer approve=deny'"),
+]
 
 
 class ValidateAnswerTests:
@@ -113,6 +119,7 @@ class ValidateAnswerTests:
 
         assert result.error_code == ErrorCode.INTERACTION_ANSWER_INVALID
         assert result.errors == [expected_error]
+        assert result.remediations == _CHOICE_FIXES
 
     def test_text_mode_trims_text(self) -> None:
         result = validate_answer(_request("text", options=[]), InteractionAnswer(text="  use sqlite \n"))
@@ -127,7 +134,8 @@ class ValidateAnswerTests:
     def test_text_mode_requires_non_empty_text(self, answer: InteractionAnswer) -> None:
         result = validate_answer(_request("text", options=[]), answer)
 
-        assert result.errors == ["Prompt 'approve' requires non-empty text.\nFix: pass --answer approve=<text>."]
+        assert result.errors == ["Prompt 'approve' requires non-empty text."]
+        assert result.remediations == [Remediation(message="Pass '--answer approve=<text>'")]
 
     @pytest.mark.parametrize(
         ("policy", "comment", "expected_comment"),
@@ -154,13 +162,13 @@ class ValidateAnswerTests:
             pytest.param(
                 "required",
                 None,
-                "Prompt 'approve' answered 'revise' requires a comment.\nFix: pass --comment or --comment-file.",
+                "Prompt 'approve' answered 'revise' requires a comment.",
                 id="required_missing",
             ),
             pytest.param(
                 "required",
                 "  ",
-                "Prompt 'approve' answered 'revise' requires a comment.\nFix: pass --comment or --comment-file.",
+                "Prompt 'approve' answered 'revise' requires a comment.",
                 id="required_blank",
             ),
             pytest.param("optional", "x" * 8001, "Comment is too long (max 8000 characters).", id="too_long"),
@@ -174,6 +182,16 @@ class ValidateAnswerTests:
         result = validate_answer(request, InteractionAnswer(selected=["revise"], comment=comment))
 
         assert result.errors == [expected_error]
+
+    def test_missing_required_comment_lists_comment_flags_as_remediations(self) -> None:
+        request = _request(options=_options("approve", "revise", policy="required"))
+
+        result = validate_answer(request, InteractionAnswer(selected=["revise"]))
+
+        assert result.remediations == [
+            Remediation(message="Pass '--comment <comment>'"),
+            Remediation(message="Pass '--comment-file <path>'"),
+        ]
 
     def test_effective_policy_picks_chosen_option_then_strictest_then_default(self) -> None:
         options = [
@@ -212,32 +230,36 @@ class ParseHeadlessAnswerTests:
         assert result.answer.text == "a=b, c"
 
     @pytest.mark.parametrize(
-        ("supplied", "expected_error"),
+        ("supplied", "expected_error", "expected_remediations"),
         [
             pytest.param(
                 HeadlessAnswerInput(step_id="approve", value="maybe"),
                 _CHOICE_ERROR.format(value="maybe"),
+                _CHOICE_FIXES,
                 id="unknown_value",
             ),
             pytest.param(
                 HeadlessAnswerInput(step_id="other", value="approve"),
-                "Prompt 'other' is not pending in this session.\nFix: use one of: approve",
+                "Prompt 'other' is not pending in this session.",
+                [Remediation(message="Pass '--answer approve=<value>'")],
                 id="unknown_step",
             ),
             pytest.param(
                 HeadlessAnswerInput(step_id="approve", value="approve", selected=["approve"]),
                 "Prompt 'approve' takes either a value or selected, not both.",
+                [],
                 id="value_and_selected",
             ),
         ],
     )
     def test_invalid_input_is_rejected_with_valid_choices(
-        self, supplied: HeadlessAnswerInput, expected_error: str
+        self, supplied: HeadlessAnswerInput, expected_error: str, expected_remediations: list[Remediation]
     ) -> None:
         result = parse_headless_answer(_request(), supplied)
 
         assert result.error_code == ErrorCode.INTERACTION_ANSWER_INVALID
         assert result.errors == [expected_error]
+        assert result.remediations == expected_remediations
 
     def test_comment_on_disabled_policy_is_discarded_with_warning(self) -> None:
         result = parse_headless_answer(
@@ -311,6 +333,26 @@ class ParseAnswerArgumentsTests:
         assert result.supplied is None
         assert len(result.errors) == 1
 
+    def test_invalid_answers_file_reports_every_rejected_key(self, tmp_path: Path) -> None:
+        answers_file = tmp_path / "answers.json"
+        answers_file.write_text('{"selected": "a", "extra": 1}', encoding="utf-8")
+
+        result = parse_answer_arguments(None, None, None, answers_file)
+
+        assert result.error_code == ErrorCode.INTERACTION_ARGUMENTS_INVALID
+        assert result.errors == [
+            "The answers file is invalid at 'step_id': Field required.",
+            "The answers file is invalid at 'selected': Input should be a valid list.",
+            "The answers file is invalid at 'extra': Extra inputs are not permitted.",
+        ]
+
+    def test_malformed_answer_puts_the_fix_in_remediations(self) -> None:
+        result = parse_answer_arguments("x", None, None, None)
+
+        assert result.error_code == ErrorCode.INTERACTION_ARGUMENTS_INVALID
+        assert result.errors == ["'x' is not a valid '--answer' value."]
+        assert result.remediations == [Remediation(message="Pass '--answer <step-id>=<value>'")]
+
     def test_comment_without_answer_names_the_flag_rule(self) -> None:
         result = parse_answer_arguments(None, "c", None, None)
 
@@ -338,6 +380,19 @@ class ParseAnswerArgumentsTests:
 
         assert result.error_code == ErrorCode.INTERACTION_ARGUMENT_FILE_UNREADABLE
         assert result.errors[0].startswith(f"Cannot read '{missing}': ")
+
+    @pytest.mark.parametrize(
+        "flag", [pytest.param("comment", id="comment_file"), pytest.param("answers", id="answers_file")]
+    )
+    def test_argument_file_that_is_not_utf8_reports_file_unreadable(self, tmp_path: Path, flag: str) -> None:
+        binary = tmp_path / "binary.bin"
+        binary.write_bytes(b"\xff\xfe")
+        comment_file, answers_file = (binary, None) if flag == "comment" else (None, binary)
+
+        result = parse_answer_arguments("s=v" if flag == "comment" else None, None, comment_file, answers_file)
+
+        assert result.error_code == ErrorCode.INTERACTION_ARGUMENT_FILE_UNREADABLE
+        assert result.errors == [f"Cannot read '{binary}': it is not UTF-8 text."]
 
 
 class BuildOutputsTests:

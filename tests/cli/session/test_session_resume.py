@@ -428,6 +428,9 @@ class SessionResumeAskCliIntegrationTests:
             pytest.param(
                 "unreadable_comment_file", 1, "INTERACTION_ARGUMENT_FILE_UNREADABLE", id="unreadable_comment_file"
             ),
+            pytest.param(
+                "non_utf8_comment_file", 1, "INTERACTION_ARGUMENT_FILE_UNREADABLE", id="non_utf8_comment_file"
+            ),
             pytest.param("answer_rejected_by_prompt", 1, "INTERACTION_ANSWER_INVALID", id="answer_rejected_by_prompt"),
         ],
     )
@@ -448,6 +451,8 @@ class SessionResumeAskCliIntegrationTests:
         broken_file.write_text("{not json", encoding="utf-8")
         text_file = tmp_path / "comment.txt"
         text_file.write_text("c", encoding="utf-8")
+        binary_file = tmp_path / "binary.bin"
+        binary_file.write_bytes(b"\xff\xfe")
         flags = {
             "answers_file_with_answer": ["--answers-file", str(valid_file), "--answer", "approve=approve"],
             "comment_with_comment_file": [
@@ -462,6 +467,7 @@ class SessionResumeAskCliIntegrationTests:
             "unreadable_answers_file": ["--answers-file", str(tmp_path / "missing.json")],
             "unreadable_comment_file": ["--answer", "approve=revise", "--comment-file", str(tmp_path / "missing.txt")],
             "invalid_json_answers_file": ["--answers-file", str(broken_file)],
+            "non_utf8_comment_file": ["--answer", "approve=revise", "--comment-file", str(binary_file)],
             "answer_rejected_by_prompt": ["--answer", "approve=not-an-option"],
         }[case]
 
@@ -736,6 +742,23 @@ class SessionResumeResultCliTests:
         assert len(payload["errors"]) == 1
         assert (payload["session_id"], payload["blueprint_name"], payload["session_status"]) == (None, None, None)
         assert _session_status(cli_workspace, session_id) == SessionStatus.PAUSED
+
+    def test_json_malformed_answer_reports_the_fix_as_a_remediation(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        session_id = _seed_paused_ask(cli_workspace)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "resume", session_id, "--answer", "x", "--format", "json"]
+        )
+
+        assert result.exit_code == 2
+        payload = run_result_payload(result.stdout)
+        assert (payload["error_code"], payload["errors"], payload["remediations"]) == (
+            "INTERACTION_ARGUMENTS_INVALID",
+            ["'x' is not a valid '--answer' value."],
+            [{"message": "Pass '--answer <step-id>=<value>'", "command": None}],
+        )
 
     @pytest.mark.parametrize(
         ("flags", "exit_code"),

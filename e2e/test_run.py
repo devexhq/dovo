@@ -107,6 +107,53 @@ steps:
             "Ignoring unexpected argument '1'.",
         ]
 
+    @pytest.mark.parametrize(
+        ("inputs", "warning"),
+        [
+            pytest.param(
+                ["-i", "a=x", "-i", "b=y", "-i", "nope=1"], "Ignoring unknown input override 'nope'.", id="overrides"
+            ),
+            pytest.param(["--a", "x", "--b", "y", "--zzz"], "Ignoring unrecognized option '--zzz'.", id="aliases"),
+        ],
+    )
+    def test_run_rejected_inputs_report_every_error_and_warning(
+        self, run_dovo: DovoRunner, initialized_project: Path, inputs: list[str], warning: str
+    ) -> None:
+        write_blueprint(
+            initialized_project,
+            "integer-inputs-bp",
+            """version: "1.0"
+name: integer-inputs-bp
+id: integer-inputs-bp
+inputs:
+  a:
+    type: integer
+    aliases:
+      - "--a"
+  b:
+    type: integer
+    aliases:
+      - "--b"
+steps:
+  - id: step-1
+    run: "true"
+""",
+            runner=run_dovo,
+        )
+
+        result = run_dovo(
+            ["run", "integer-inputs-bp", "--no-worktree", *inputs, "--format", "json"],
+            cwd=initialized_project,
+        )
+
+        assert result.exit_code == 1
+        payload = run_result(result.stdout)
+        assert (payload.get("error_code"), payload.get("errors"), payload.get("warnings")) == (
+            "BLUEPRINT_INPUT_INVALID",
+            ["Input 'a' expects an integer, got 'x'.", "Input 'b' expects an integer, got 'y'."],
+            [warning],
+        )
+
     def test_run_no_worktree_persists_completed_session(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
         write_blueprint(
             initialized_project,
@@ -373,6 +420,8 @@ steps:
         assert result.exit_code == 1
         combined_output = f"{result.stdout}\n{result.stderr}"
         assert "Missing required input 'required_param'" in combined_output
+        assert "Usage:" not in combined_output
+        assert "dovo run required-input-bp --required-param <required-param>" in combined_output
 
         hist_res = run_dovo(["session", "list", "--format", "json"], cwd=initialized_project)
         assert hist_res.exit_code == 0

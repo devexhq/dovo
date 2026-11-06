@@ -516,17 +516,17 @@ class EngineLoaderResolveAnswersTests:
         [
             pytest.param(
                 HeadlessAnswerInput(step_id="other", value="approve"),
-                "Prompt 'other' is not pending in this session.\nFix: use one of: approve",
+                "Prompt 'other' is not pending in this session.",
                 id="unknown_step",
             ),
             pytest.param(
                 HeadlessAnswerInput(step_id="approve", value="maybe"),
-                "'maybe' is not a valid answer for prompt 'approve'.\nFix: use one of: approve, revise, deny",
+                "'maybe' is not a valid answer for prompt 'approve'.",
                 id="unknown_value",
             ),
             pytest.param(
                 HeadlessAnswerInput(step_id="approve", value="revise"),
-                "Prompt 'approve' answered 'revise' requires a comment.\nFix: pass --comment or --comment-file.",
+                "Prompt 'approve' answered 'revise' requires a comment.",
                 id="missing_required_comment",
             ),
             pytest.param(

@@ -12,6 +12,7 @@ from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
+from dovo.common.models import Remediation
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
@@ -452,11 +453,44 @@ class BlueprintRunServiceLoadTests:
 
         assert result.session_id is None
         assert result.error_code == ErrorCode.BLUEPRINT_INPUT_INVALID
-        assert result.errors == [
-            "Missing required input 'target' for 'needs-input'.\n\nUsage:\n  dovo run needs-input -i target=<value>"
+        assert result.errors == ["Missing required input 'target' for 'needs-input'."]
+        assert result.remediations == [
+            Remediation(
+                message="Run 'dovo run needs-input -i target=<target>'",
+                command="dovo run needs-input -i target=<target>",
+            )
         ]
         assert result.diagnostics == []
         assert not frozen_diagnostic_clock.parent.parent.exists()
+        assert sessions_repo.list() == []
+
+    def test_execute_rejected_inputs_return_every_error_and_parse_warning(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        write_runnable_blueprint(engine_paths.root_dir, key="counts", steps=[{"id": "a", "run": "true"}])
+        blueprint_path = engine_paths.root_dir / ".dovo" / "catalog" / "blueprints" / "counts.yml"
+        blueprint_path.write_text(
+            blueprint_path.read_text(encoding="utf-8").replace(
+                "steps:", "inputs:\n  a:\n    type: integer\n  b:\n    type: integer\nsteps:", 1
+            ),
+            encoding="utf-8",
+        )
+
+        result = BlueprintRunService(
+            name="counts",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            no_worktree=True,
+            cli_args=["-i", "a=x", "-i", "b=y", "-i", "nope=1"],
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        ).execute()
+
+        assert result.session_id is None
+        assert result.error_code == ErrorCode.BLUEPRINT_INPUT_INVALID
+        assert result.errors == ["Input 'a' expects an integer, got 'x'.", "Input 'b' expects an integer, got 'y'."]
+        assert result.warnings == ["Ignoring unknown input override 'nope'."]
         assert sessions_repo.list() == []
 
     def test_execute_malformed_input_returns_blueprint_input_invalid(

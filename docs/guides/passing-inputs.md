@@ -108,13 +108,12 @@ Placeholders are replaced in these step fields:
 
 ## Input Validation & Error Handling
 
-If a required input is missing or fails type validation, Dovo reports an error before creating the worktree:
+If a required input is missing or fails type validation, Dovo reports an error before creating the worktree. Each rejected value is its own error, each ignored `-i` override is a warning, and the fix is listed separately:
 
 ```text
 Error: Missing required input 'api_token' for 'test-runner'.
-
-Usage:
-  dovo run test-runner -i api_token=<value>
+Fix:
+- Run 'dovo run test-runner -i api_token=<api-token>'
 ```
 
 ---
