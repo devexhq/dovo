@@ -23,7 +23,7 @@ dovo step ls [--format terminal|json]
 
 ### `dovo step create`
 
-Creates a new step file, seeded from the packaged `default.yml` scaffold. By default it writes under the REPO tier (`.dovo/catalog/steps/<name>.yml`). Pass `--user` to write into the USER tier (`~/.dovo/user/catalog/steps/<name>.yml`) or `--global` for the GLOBAL tier (`~/.dovo/global/catalog/steps/<name>.yml`) instead; the two flags are mutually exclusive: passing both fails with `--user and --global are mutually exclusive.`, exits `1` (`CATALOG_TIER_CONFLICT` with `--format json`) and writes no file.
+Creates a new step file, seeded from the packaged `default.yml` scaffold. By default it writes under the REPO tier (`.dovo/catalog/steps/<name>.yml`). Pass `--user` to write into the USER tier (`~/.dovo/user/catalog/steps/<name>.yml`) or `--global` for the GLOBAL tier (`~/.dovo/global/catalog/steps/<name>.yml`) instead; the two flags are mutually exclusive: passing both fails with `--user and --global are mutually exclusive.`, exits `2` (`CATALOG_TIER_CONFLICT` with `--format json`) and writes no file.
 
 ```bash
 dovo step create --name <name> [--user | --global] [--format terminal|json]
@@ -62,7 +62,7 @@ Exits `0` when the definition is valid and `1` on any failure, including a targe
 Every `dovo step` subcommand exits by its result's `error_code`:
 
 - `0`: the command succeeded, including a `delete` whose confirmation you decline.
-- `2`: a usage error, such as a missing required option or an unknown option.
+- `2`: a usage error, such as a missing required option or an unknown option, or `CATALOG_TIER_CONFLICT` (`create` with `--user` and `--global`).
 - `1`: every other failure, such as `CATALOG_NOT_FOUND` or a definition that fails `validate`, and every failure reported as an `error` event: a workspace without a valid `.dovo/project.json`, a configuration that does not load, a workspace lock timeout or an unexpected error.
 
 See [JSON Output](../reference/json-output.md#exit-codes) for the rule every command follows.

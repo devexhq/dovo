@@ -7,7 +7,7 @@ from typing import Annotated
 
 import typer
 
-from dovo.cli.context import CliContext
+from dovo.cli.context import cli_context
 from dovo.cli.options import FormatOption
 from dovo.cli.outcome import exit_for
 from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
@@ -49,7 +49,7 @@ def session_callback(
 ) -> None:
     """List, inspect and resume blueprint execution sessions; with no subcommand, list them."""
     if ctx.invoked_subcommand is None:
-        context: CliContext = ctx.obj["context"]
+        context = cli_context(ctx)
         result = session_list_command(
             context,
             limit=limit,
@@ -79,7 +79,7 @@ def session_list(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
     """List past blueprint execution sessions."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = session_list_command(
         context,
         limit=limit,
@@ -98,7 +98,7 @@ def session_show(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
     """Show detailed metadata and error messages for a session."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = session_show_command(
         context,
         session_id,
@@ -123,7 +123,7 @@ def session_logs(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
     """Show a session's timeline, or one step's raw stdout/stderr with --step."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = session_logs_command(
         context,
         session_id,
@@ -157,7 +157,7 @@ def session_diff(
     """View syntax-highlighted unified diff for a session."""
     if patch and format == OutputFormatOptions.JSON:
         ctx.fail("--patch cannot be combined with --format json.")
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = session_diff_command(
         context,
         session_id=session_id,
@@ -215,7 +215,7 @@ def session_resume(
     ] = DisplayFormatOptions.ANSI,
 ) -> None:
     """Resume a paused blueprint execution session."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = session_resume_command(
         context,
         session_id=session_id,

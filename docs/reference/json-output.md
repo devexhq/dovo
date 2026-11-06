@@ -129,7 +129,9 @@ An unexpected error reports `A fatal unexpected error occurred. Details: <error>
 
 ## Usage errors
 
-An unknown option, a missing required option, a value an option does not accept (such as `--format nope` or `dovo run --env-mode bogus`) and a rejected combination (such as `dovo run --keep --discard`) are usage errors. They print a usage message, never a JSON event, even with `--format json`, and exit `2`.
+An unknown option, a missing required option, a value an option does not accept (such as `--format nope` or `dovo run --env-mode bogus`) and a rejected combination (such as `dovo run --keep --discard`) are usage errors. They print a usage message, never a JSON event, even with `--format json`, and exit `2`, whether or not the workspace is initialized or its configuration loads.
+
+`dovo run` is the only command that accepts options and arguments it does not declare: it passes them to the blueprint as inputs. One that matches no declared input is not a usage error: the run ignores it and its result carries the warning `Ignoring unrecognized option '<option>'.`, or `Ignoring unexpected argument '<argument>'.` for a bare value, so `dovo run <blueprint> --bogus 1` warns about both `--bogus` and `1`. A declared input given a value its type rejects, or a required input left out, fails the run with `BLUEPRINT_INPUT_INVALID` and exits `1`.
 
 ## Exit codes
 
@@ -138,7 +140,7 @@ Every command's exit code comes from its result:
 | Exit | When |
 | --- | --- |
 | `0` | The result has no `error_code`. This includes a paused run, a declined delete confirmation, every `dovo status` report and a `dovo doctor` report whose checks only warn or skip. |
-| `2` | A usage error, or a code decided only from the command's own arguments: `PROJECT_ID_INVALID`, `CONFIG_KEY_PATH_INVALID`, `AGENT_ENV_OVERRIDE_INVALID` or `INTERACTION_ARGUMENTS_INVALID`. |
+| `2` | A usage error, or a code decided only from the command's own arguments: `PROJECT_ID_INVALID`, `CONFIG_KEY_PATH_INVALID`, `AGENT_ENV_OVERRIDE_INVALID`, `INTERACTION_ARGUMENTS_INVALID` or `CATALOG_TIER_CONFLICT`. |
 | `130`, `143`, `129` | A `dovo run` or `dovo resume` you interrupt (`RUN_CANCELLED`, or `SESSION_PROCESS_STOP_FAILED` when a process group it started survived the stop): `128` plus the signal number, `130` for Ctrl-C (`SIGINT`), `143` for `SIGTERM` and `129` for a closed terminal (`SIGHUP`). The run result prints first. |
 | `1` | Every other `error_code`, and every `error` event. |
 

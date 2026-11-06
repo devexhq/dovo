@@ -42,3 +42,28 @@ class CliSmokeTests:
         assert result.exit_code != 0
         assert "not a valid Git repository" in result.stdout or "not a valid Git repository" in result.stderr
         assert not (clean_e2e_env / ".dovo").exists()
+
+
+@pytest.mark.e2e
+@pytest.mark.fixture
+class UsageErrorCliTests:
+    """End-to-end tests that a usage error wins over an uninitialized workspace."""
+
+    def test_usage_error_in_uninitialized_repo_exits_two_with_usage(
+        self, run_dovo: DovoRunner, git_project: Path
+    ) -> None:
+        result = run_dovo(["worktree", "list", "--format", "nope"], cwd=git_project)
+
+        assert result.exit_code == 2
+        assert "Invalid value for '--format'" in result.stderr
+        assert "Workspace is not initialized" not in result.stdout
+        assert not (git_project / ".dovo" / "project.json").exists()
+
+    def test_run_keep_discard_in_uninitialized_repo_exits_two_without_initializing(
+        self, run_dovo: DovoRunner, git_project: Path
+    ) -> None:
+        result = run_dovo(["run", "anything", "--keep", "--discard"], cwd=git_project)
+
+        assert result.exit_code == 2
+        assert "mutually exclusive" in result.stderr
+        assert not (git_project / ".dovo" / "project.json").exists()

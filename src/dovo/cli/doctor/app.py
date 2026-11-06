@@ -6,7 +6,7 @@ from typing import Annotated
 
 import typer
 
-from dovo.cli.context import CliContext
+from dovo.cli.context import cli_context
 from dovo.cli.options import FormatOption
 from dovo.cli.outcome import exit_for
 from dovo.common.models import OutputFormatOptions
@@ -36,7 +36,7 @@ def doctor_callback(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
     """Run registered diagnostic checks, dispatch the report, and exit 1 when any check failed (warnings exit 0)."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx, load_config=False)
 
     categories = [category] if category is not None else None
     result = doctor_command(context, categories=categories, output_format=format)

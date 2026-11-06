@@ -2,7 +2,7 @@ from typing import Annotated
 
 import typer
 
-from dovo.cli.context import CliContext
+from dovo.cli.context import cli_context
 from dovo.cli.options import FormatOption
 from dovo.cli.outcome import exit_for
 from dovo.common.models import OutputFormatOptions
@@ -44,7 +44,7 @@ def worktree_create(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Create an isolated git worktree."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = worktree_create_command(context, name=name, base_ref=base_ref, wip=wip, output_format=format)
     exit_for(result)
 
@@ -63,7 +63,7 @@ def worktree_list(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """List tracked worktrees and their lifecycle status."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = worktree_list_command(
         context,
         status=status.value if status is not None else None,
@@ -79,7 +79,7 @@ def worktree_show(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Show full detail for one tracked worktree."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = worktree_show_command(context, worktree_id, output_format=format)
     exit_for(result)
 
@@ -100,7 +100,7 @@ def worktree_prune(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Safely prune stale worktrees, orphaned directories, and temporary branches."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = worktree_prune_command(context, dry_run=dry_run, force=force, output_format=format)
     exit_for(result)
 
@@ -117,7 +117,7 @@ def worktree_delete(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Delete a worktree and branch after confirmation."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = worktree_delete_command(context, worktree_id, force=force, output_format=format)
     exit_for(result)
 
@@ -159,7 +159,7 @@ def worktree_apply(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Apply changes from an isolated worktree back into the main workspace."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = worktree_apply_command(
         context,
         worktree_id,
@@ -185,6 +185,6 @@ def worktree_diff(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Inspect differences between worktree and base commit."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = worktree_diff_command(context, worktree_id, stat=stat, output_format=format)
     exit_for(result)

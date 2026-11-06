@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import typer
@@ -11,9 +12,12 @@ if TYPE_CHECKING:
     # TyperGroup.invoke is annotated with Typer's vendored click Context, which has no public name.
     from typer._click.core import Context
 
-from dovo.cli.context import CliContext
+from dovo.cli.context import cli_context, ensure_lazy_project_init
 from dovo.cli.options import FormatOption
 from dovo.cli.outcome import exit_for
+from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.cli.ui.events import ErrorEvent
+from dovo.common.filesystem import Filesystem
 from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
 
 from .commands.root import run_command
@@ -43,6 +47,28 @@ run_app = typer.Typer(
         "ignore_unknown_options": True,
     },
 )
+
+
+def _ensure_run_workspace(path: Path | None, output_format: OutputFormatOptions) -> None:
+    """Auto-initialize the workspace for `dovo run`; on failure report it and exit by its error_code.
+
+    Under JSON output the failure is the `error` event, since no run has started; otherwise the init result's panel.
+    """
+    result = ensure_lazy_project_init(Filesystem(path))
+    if result is None or result.error_code is None:
+        return
+    if output_format == OutputFormatOptions.JSON:
+        event = ErrorEvent(
+            title="Initialization Failed",
+            error_code=result.error_code,
+            errors=result.errors,
+            remediations=result.remediations,
+            diagnostics=result.diagnostics,
+        )
+        ui_dispatcher.dispatch(event, output_format=output_format)
+    else:
+        ui_dispatcher.dispatch(result)
+    exit_for(result)
 
 
 @run_app.callback(invoke_without_command=True)
@@ -106,7 +132,8 @@ def run_callback(
     if keep and discard:
         raise typer.BadParameter("--keep and --discard are mutually exclusive.")
 
-    context: CliContext = ctx.obj["context"]
+    _ensure_run_workspace(ctx.obj["path"], format)
+    context = cli_context(ctx)
     result = run_command(
         context,
         name=name,

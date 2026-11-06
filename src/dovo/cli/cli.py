@@ -16,8 +16,6 @@ if TYPE_CHECKING:
     # TyperGroup is annotated with Typer's vendored click types, which have no public name.
     from typer._click.core import Command, Context
 
-from dovo.cli.context import CliContext, ensure_lazy_project_init
-from dovo.cli.outcome import exit_for
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.cli.ui.events import ErrorEvent, LockWaitEvent, MessageEvent, WelcomeBannerEvent
 from dovo.common.diagnostic_log import DiagnosticLevel, bind_cli_command, record_exception, reset_cli_command
@@ -27,7 +25,6 @@ from dovo.common.exceptions import (
     escaped_failure_fields,
     fatal_failure_fields,
 )
-from dovo.common.filesystem import Filesystem
 from dovo.common.interrupt import install_interrupt_handlers, reraise_interrupt_signal
 from dovo.common.lock import LockTimeoutError, LockWaitNotifier, WorkspaceLock
 from dovo.common.models import OutputFormatOptions
@@ -36,9 +33,6 @@ from dovo.core.config import ConfigError
 
 # Package Metadata matching our PyPI footprint
 __version__ = get_version()
-
-# Commands that tolerate a missing or broken config (see CliContext.build's load_config param); a project identity is still required
-NON_STRICT_CONFIG_COMMANDS = {"config", "doctor", "init", "status"}
 
 # Each command group's module and Typer app, in help order. A group is imported the first time it is looked up (to
 # run it, or to list it for help or completion), so a command does not pay for importing every other group.
@@ -99,7 +93,7 @@ class LazyCommands(MutableMapping[str, "Command"]):
 
 
 class DovoTyperGroup(TyperGroup):
-    """Root group that loads command groups lazily and captures subcommand args for context initialization."""
+    """Root group that loads command groups lazily and reports the failures no command result carries."""
 
     @property
     def commands(self) -> MutableMapping[str, "Command"]:
@@ -115,11 +109,9 @@ class DovoTyperGroup(TyperGroup):
         return list(self.commands)
 
     def invoke(self, ctx: "Context") -> object:
-        """Capture help flags and the requested format, announce lock waits in it, then run the command, reporting a failure no command result carries and exiting 1."""
+        """Capture the requested format, announce lock waits in it, then run the command, reporting a failure no command result carries and exiting 1."""
         raw_args = [*getattr(ctx, "_protected_args", []), *getattr(ctx, "args", [])]
         ctx.ensure_object(dict)
-        if raw_args:
-            ctx.obj["is_help"] = any(a in ("--help", "-h") for a in raw_args)
         output_format = _requested_format(raw_args)
         ctx.obj["output_format"] = output_format
         WorkspaceLock.set_default_on_wait(_lock_wait_notifier(output_format))
@@ -184,27 +176,6 @@ def version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-def _ensure_run_workspace(path: Path | None, output_format: OutputFormatOptions) -> None:
-    """Auto-initialize the workspace for `dovo run`; on failure report it and exit by its error_code.
-
-    Under JSON output the failure is the `error` event, since no run has started; otherwise the init result's panel.
-    """
-    result = ensure_lazy_project_init(Filesystem(path))
-    if result is None or result.error_code is None:
-        return
-    if output_format == OutputFormatOptions.JSON:
-        fields = FailureFields(
-            error_code=result.error_code,
-            errors=result.errors,
-            remediations=result.remediations,
-            diagnostics=result.diagnostics,
-        )
-        _report_failure("Initialization Failed", fields, output_format)
-    else:
-        ui_dispatcher.dispatch(result)
-    exit_for(result)
-
-
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -237,7 +208,7 @@ def main(
         ),
     ] = None,
 ):
-    """Global configuration wrapper managing shared application context."""
+    """Stash the global options for the subcommand, which builds its CLI context once its own arguments have parsed."""
     # Stash verbose and path settings inside the runtime context dict for downstream commands
     ctx.ensure_object(dict)
     token = bind_cli_command(ctx.invoked_subcommand)
@@ -255,14 +226,6 @@ def main(
         ui_dispatcher.dispatch(
             MessageEvent(message="[TELEMETRY] Global verbose tracking layer active.", style="dim yellow"),
             output_format=output_format,
-        )
-
-    # 2. Build the shared CLI context for every real subcommand invocation
-    if not ctx.obj.get("is_help", False) and ctx.invoked_subcommand != "init":
-        if ctx.invoked_subcommand == "run":
-            _ensure_run_workspace(path, output_format)
-        ctx.obj["context"] = CliContext.build(
-            path=path, load_config=ctx.invoked_subcommand not in NON_STRICT_CONFIG_COMMANDS
         )
 
 

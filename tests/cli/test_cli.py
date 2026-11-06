@@ -482,6 +482,8 @@ class RunCliTests:
             pytest.param("version", 0, id="version"),
             pytest.param("usage-error", 2, id="usage-error"),
             pytest.param("usage-error-json", 2, id="usage-error-json"),
+            pytest.param("usage-error-uninitialized", 2, id="usage-error-uninitialized"),
+            pytest.param("usage-error-json-uninitialized", 2, id="usage-error-json-uninitialized"),
             pytest.param("workspace-failure", 1, id="workspace-failure"),
         ],
     )
@@ -501,6 +503,16 @@ class RunCliTests:
             "version": lambda: ["--version"],
             "usage-error": lambda: ["-p", str(cli_workspace), "worktree", "list", "--format", "nope"],
             "usage-error-json": lambda: ["-p", str(cli_workspace), "worktree", "list", "--format", "json", "--bogus"],
+            "usage-error-uninitialized": lambda: ["-p", str(git_repo), "worktree", "list", "--format", "nope"],
+            "usage-error-json-uninitialized": lambda: [
+                "-p",
+                str(git_repo),
+                "worktree",
+                "list",
+                "--format",
+                "json",
+                "--bogus",
+            ],
             "workspace-failure": lambda: ["-p", str(git_repo), "worktree", "list"],
         }
         monkeypatch.setattr(sys, "argv", ["dovo", *argv_for[case]()])
@@ -634,7 +646,7 @@ class IdentityGuardCliTests:
 
 
 class ConfigTolerantCommandsPostInitTests:
-    """NON_STRICT_CONFIG_COMMANDS keep reporting once an identity exists."""
+    """The config, doctor and status commands keep reporting once an identity exists, whatever the config."""
 
     @pytest.mark.parametrize(
         "config_text",
@@ -832,3 +844,92 @@ class FormatOptionCliTests:
         assert result.exit_code == 2
         assert result.stdout == ""
         assert expected in click.unstyle(result.stderr)
+
+
+def _initialized_workspace(tmp_path: Path) -> Path:
+    """Return a fully initialized workspace with git, config and database."""
+    return WorkspaceBuilder(tmp_path / "workspace").with_git().build()
+
+
+def _uninitialized_repository(tmp_path: Path) -> Path:
+    """Return a git repository with no .dovo/ directory."""
+    repository = tmp_path / "repository"
+    init_git_repository(repository)
+    return repository
+
+
+def _missing_config_workspace(tmp_path: Path) -> Path:
+    """Return a workspace with a valid project identity and no config.json."""
+    return WorkspaceBuilder(tmp_path / "workspace").with_git().without_config().build()
+
+
+def _malformed_config_workspace(tmp_path: Path) -> Path:
+    """Return a workspace with a valid project identity and a config.json that is not JSON."""
+    workspace = _missing_config_workspace(tmp_path)
+    (workspace / ".dovo" / "config.json").write_text("{not valid json", encoding="utf-8")
+    return workspace
+
+
+_WORKSPACE_STATES = [
+    pytest.param(_initialized_workspace, id="initialized"),
+    pytest.param(_uninitialized_repository, id="uninitialized"),
+    pytest.param(_missing_config_workspace, id="missing-config"),
+    pytest.param(_malformed_config_workspace, id="malformed-config"),
+]
+
+
+class UsageErrorPrecedenceCliTests:
+    """A usage error exits 2 with the usage message before the workspace or its config is read."""
+
+    @pytest.mark.parametrize("workspace_state", _WORKSPACE_STATES)
+    @pytest.mark.parametrize(
+        ("argv", "expected"),
+        [
+            pytest.param(["worktree", "list", "--format", "nope"], "Invalid value for '--format'", id="bad-value"),
+            pytest.param(["worktree", "list", "--format", "JSON"], "Invalid value for '--format'", id="bad-case"),
+            pytest.param(
+                ["worktree", "list", "--bogus", "--format", "json"], "No such option: --bogus", id="unknown-option"
+            ),
+            pytest.param(["worktree", "show"], "Missing argument", id="missing-argument"),
+            pytest.param(["status", "--bogus"], "No such option: --bogus", id="status-unknown-option"),
+            pytest.param(["config", "show", "--bogus"], "No such option: --bogus", id="config-unknown-option"),
+            pytest.param(
+                ["run", "x", "--keep", "--discard", "--format", "json"], "mutually exclusive", id="run-combination"
+            ),
+        ],
+    )
+    def test_usage_error_exits_two_whatever_the_workspace_state(
+        self,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        workspace_state: Callable[[Path], Path],
+        argv: list[str],
+        expected: str,
+    ) -> None:
+        workspace = workspace_state(tmp_path)
+
+        result = cli_runner.invoke(app, ["-p", str(workspace), *argv])
+
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        stderr = click.unstyle(result.stderr)
+        assert "Usage:" in stderr
+        assert expected in stderr
+
+    def test_run_usage_error_in_uninitialized_repo_does_not_initialize(
+        self, cli_runner: CliRunner, git_repo: Path
+    ) -> None:
+        result = cli_runner.invoke(app, ["-p", str(git_repo), "run", "x", "--keep", "--discard"])
+
+        assert result.exit_code == 2
+        assert not (git_repo / ".dovo").exists()
+
+    @pytest.mark.parametrize("command", [param for param in COMMANDS_WITH_FORMAT if param.values[0] != ["run", "x"]])
+    def test_unknown_option_is_a_usage_error_on_every_command_but_run(
+        self, cli_runner: CliRunner, cli_workspace: Path, command: list[str]
+    ) -> None:
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), *command, "--bogus"])
+
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert "No such option: --bogus" in click.unstyle(result.stderr)

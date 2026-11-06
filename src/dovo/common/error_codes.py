@@ -194,5 +194,6 @@ ARGUMENT_ERROR_CODES: Final[frozenset[ErrorCode]] = frozenset(
         ErrorCode.CONFIG_KEY_PATH_INVALID,
         ErrorCode.AGENT_ENV_OVERRIDE_INVALID,
         ErrorCode.INTERACTION_ARGUMENTS_INVALID,
+        ErrorCode.CATALOG_TIER_CONFLICT,
     }
 )

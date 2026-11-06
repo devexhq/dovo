@@ -121,7 +121,7 @@ class BlueprintCreateCliTests:
     def test_user_and_global_together_is_tier_conflict_json(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """Exit 1 with the CATALOG_TIER_CONFLICT JSON naming item_type 'blueprint' and no both-blueprint.yml in any tier."""
+        """Exit 2 with the CATALOG_TIER_CONFLICT JSON naming item_type 'blueprint' and no both-blueprint.yml in any tier."""
         result = cli_runner.invoke(
             app,
             [
@@ -138,7 +138,7 @@ class BlueprintCreateCliTests:
             ],
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert json.loads(result.stdout)["payload"] == {
             "ok": False,
             "error_code": "CATALOG_TIER_CONFLICT",
