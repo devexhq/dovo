@@ -414,14 +414,16 @@ class CheckEnvPassthroughFlagTests:
             pytest.param("A\x00B", id="nul"),
         ],
     )
-    def test_invalid_entry_raises_env_override_invalid_with_the_fixed_message(self, entry: str) -> None:
+    def test_invalid_entry_raises_env_override_invalid_with_the_example_as_a_remediation(self, entry: str) -> None:
         with pytest.raises(AgentError) as raised:
             check_env_passthrough_flag(["OK", entry])
 
         assert raised.value.error_code is ErrorCode.AGENT_ENV_OVERRIDE_INVALID
         assert raised.value.message == (
-            f"Invalid --env-passthrough value '{entry}': use a variable name or a prefix ending in a single '*'. "
-            "Fix: for example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'."
+            f"Invalid --env-passthrough value '{entry}': use a variable name or a prefix ending in a single '*'."
+        )
+        assert raised.value.remediations == (
+            Remediation(message="For example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'"),
         )
 
 

@@ -247,12 +247,16 @@ class WorkspaceSetupTests:
         with pytest.raises(EngineError) as raised:
             second.setup([], [])
 
-        assert (raised.value.error_code, raised.value.message) == (
+        assert (raised.value.error_code, raised.value.message, raised.value.remediations) == (
             ErrorCode.WORKTREE_CAPACITY_EXCEEDED,
-            "Git worktree creation failed: Maximum active worktrees reached (1/1).\n"
-            "Fix:\n"
-            "- Remove a kept worktree with 'dovo worktree delete <worktree-id>' (see 'dovo worktree list')\n"
-            "- Raise 'worktree.max_active_worktrees' in '.dovo/config.json'",
+            "Git worktree creation failed: Maximum active worktrees reached (1/1).",
+            (
+                Remediation(
+                    message="Remove a kept worktree with 'dovo worktree delete <worktree-id>' (see 'dovo worktree list')",
+                    command="dovo worktree delete <worktree-id>",
+                ),
+                Remediation(message="Raise 'worktree.max_active_worktrees' in '.dovo/config.json'"),
+            ),
         )
 
 

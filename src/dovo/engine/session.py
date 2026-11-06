@@ -168,11 +168,12 @@ def _workspace_context(
 def _setup_failed(
     error: EngineError, warnings: list[str], diagnostics: list[DiagnosticRecord], worktree_path: Path
 ) -> RunOutcome:
-    """Build the FAILED outcome for a run whose workspace could not be set up, carrying the error's code and message."""
+    """Build the FAILED outcome for a run whose workspace could not be set up, carrying the error's code, message and remediations."""
     return RunOutcome(
         status=SessionStatus.FAILED,
         errors=[error.message],
         error_code=error.error_code,
+        remediations=list(error.remediations),
         warnings=warnings,
         diagnostics=diagnostics,
         worktree_kept=False,

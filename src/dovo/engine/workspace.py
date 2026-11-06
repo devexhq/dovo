@@ -9,7 +9,6 @@ from pathlib import Path
 
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.error_codes import ErrorCode
-from dovo.common.formatters import format_remediations
 from dovo.common.models import Remediation
 from dovo.common.redact import SecretRedactor
 from dovo.common.utils import display_path
@@ -32,14 +31,10 @@ from dovo.engine.storage_bridge import create_storage_bridge, remove_storage_bri
 from dovo.engine.writer import get_session_dir, write_session_diff
 
 
-def _creation_failure_message(create_result: WorktreeCreateResult) -> str:
-    """Return `Git worktree creation failed: <detail>` plus the result's `Fix:` block when it has remediations."""
+def _creation_failure(create_result: WorktreeCreateResult, error_code: ErrorCode) -> EngineError:
+    """Return the error_code EngineError `Git worktree creation failed: <detail>`, carrying the result's remediations."""
     detail = create_result.errors[0] if create_result.errors else "Worktree creation failed."
-    message = f"Git worktree creation failed: {detail}"
-    if create_result.remediations:
-        message += "\n" + format_remediations(create_result.remediations)
-
-    return message
+    return EngineError(error_code, f"Git worktree creation failed: {detail}", create_result.remediations)
 
 
 def _kept_remediations(path: str, worktree_id: str) -> list[Remediation]:
@@ -103,7 +98,7 @@ class Workspace:
             Tuple of (target_dir, manager, session); manager and session are None when the run uses no worktree.
 
         Raises:
-            EngineError: With the failure's own code when the worktree cannot be set up.
+            EngineError: With the failure's own code and remediations when the worktree cannot be set up.
         """
         if not self.context.use_worktree:
             target_dir = self.context.cwd.resolve()
@@ -123,7 +118,7 @@ class Workspace:
         create_result = manager.create(session_id=self.context.session_id)
         diagnostics.extend(create_result.diagnostics)
         if create_result.error_code is not None:
-            raise EngineError(create_result.error_code, _creation_failure_message(create_result))
+            raise _creation_failure(create_result, create_result.error_code)
         session = create_result.session
         if session is None:
             raise RuntimeError("Worktree creation succeeded without a worktree session.")

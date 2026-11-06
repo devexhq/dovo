@@ -12,6 +12,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
 from dovo.common.mcp_servers import McpServerDefinition
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import default_tool_policy
 from dovo.core.agents.models import (
@@ -26,7 +27,7 @@ from dovo.core.config import Config, ConfigLoadResult
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions.services.read_logs import read_session_log_events
-from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeCleanupResult
+from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeCleanupResult, WorktreeCreateResult
 from dovo.engine.coordinator import RunCoordinator
 from dovo.engine.executors.agent_step import WORKTREE_REQUIRED_MESSAGE
 from dovo.engine.executors.models import (
@@ -178,6 +179,29 @@ class DriveRunWorktreeTests:
         assert outcome.errors[0].startswith("Git worktree creation failed:")
         assert not (engine_workspace / "a.ran").exists()
         assert [call for call in observer.calls if str(call[0]).startswith("run_")] == [("run_completed", outcome)]
+
+    def test_worktree_creation_failure_carries_its_remediations_in_the_outcome(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fix = Remediation(message="Raise 'worktree.max_active_worktrees' in '.dovo/config.json'")
+        failed = WorktreeCreateResult(
+            error_code=ErrorCode.WORKTREE_CAPACITY_EXCEEDED,
+            errors=["Maximum active worktrees reached (1/1)."],
+            remediations=[fix],
+        )
+        monkeypatch.setattr(Worktree, "create", lambda self, *args, **kwargs: failed)
+        seed_new_session(
+            engine_paths, sessions_repo, session_id="full", steps=[_step("a", "touch a.ran")], use_worktree=True
+        )
+
+        outcome = _drive(engine_paths, sessions_repo, "full")
+
+        assert (outcome.status, outcome.error_code, outcome.errors, outcome.remediations) == (
+            SessionStatus.FAILED,
+            ErrorCode.WORKTREE_CAPACITY_EXCEEDED,
+            ["Git worktree creation failed: Maximum active worktrees reached (1/1)."],
+            [fix],
+        )
 
 
 class DriveRunStorageBridgeTests:

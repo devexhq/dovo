@@ -641,7 +641,7 @@ def _stub_attempt(monkeypatch: pytest.MonkeyPatch, attempt: AgentAttempt) -> lis
 
 
 _FILTERED_LINE = "  ! Agent environment filtered: 3 variables withheld.\n"
-_FIX_LINE = "  ! Fix: add names to agents.copilot.env_passthrough or pass --env-passthrough NAME.\n"
+_WITHHELD_FIX = Remediation(message="Add names to agents.copilot.env_passthrough or pass --env-passthrough NAME")
 
 
 class ExecuteAgentStepToolsTests:
@@ -731,8 +731,31 @@ class ExecuteAgentStepEnvTests:
         outcome = _run(git_repo, session_log_dir=log_dir, on_output=lambda stream, line: emitted.append((stream, line)))
 
         assert outcome.exit_code == 202
-        assert [line for stream, line in emitted if stream == "stderr"] == [_FILTERED_LINE, _FIX_LINE]
+        assert [line for stream, line in emitted if stream == "stderr"] == [_FILTERED_LINE]
+        assert outcome.remediations == [_WITHHELD_FIX]
         assert len((log_dir / "session.log").read_text(encoding="utf-8").splitlines()) == 1
+
+    def test_withheld_fix_follows_the_attempts_own_remediations(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        own = Remediation(message="Run 'copilot update'", command="copilot update")
+        _stub_attempt(
+            monkeypatch,
+            AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, remediations=[own], env_withheld=["A"]),
+        )
+
+        outcome = _run(git_repo)
+
+        assert outcome.remediations == [own, _WITHHELD_FIX]
+
+    def test_completed_attempt_with_withheld_names_carries_no_remediation(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.NO_OP, env_withheld=["A", "B", "C"]))
+
+        outcome = _run(git_repo)
+
+        assert outcome.remediations == []
 
     def test_withheld_report_without_a_session_log_dir_still_prints_the_console_line(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
