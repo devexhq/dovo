@@ -471,7 +471,7 @@ class DriveRunCleanupTests:
     def test_close_lock_timeout_propagates_after_final_status_is_written(
         self, git_paths: WorkspacePaths, git_runs: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """With Worktree.cleanup timing out on the workspace lock, raise LockTimeoutError with the row already completed."""
+        """With Worktree.cleanup timing out on the workspace lock, raise LockTimeoutError with the row already completed and its worktree, still on disk, recorded kept."""
 
         def _lock_timeout(*args: object, **kwargs: object) -> None:
             raise LockTimeoutError("lock held")
@@ -484,7 +484,8 @@ class DriveRunCleanupTests:
 
         row = git_runs.get("close-lock")
         assert row is not None
-        assert row.status == SessionStatus.COMPLETED
+        assert (row.status, row.worktree_kept) == (SessionStatus.COMPLETED, True)
+        assert git_paths.worktree_dir("close-lock").is_dir()
 
     def test_cleanup_failure_after_step_failure_still_reports_failed(
         self,

@@ -36,6 +36,8 @@ When the run ends, the worktree is kept or removed by the run status and the fla
 
 A `paused` run always keeps its worktree so `dovo resume` can reopen it, and so does a run whose `--auto-apply` hit a conflict, because the worktree holds the only copy of the work that could not be applied. `--discard` does not override either.
 
+A run that ends before it could remove its worktree, because an interrupt, an unexpected error or a workspace lock timeout stopped it while closing, leaves the worktree on disk, and `dovo session show` reports it `kept`.
+
 A kept failed worktree prints where it is and how to inspect or remove it:
 
 ```text

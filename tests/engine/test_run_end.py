@@ -71,7 +71,7 @@ class RecordRunEndTests:
         outcome = RunOutcome(status=status, errors=["stopped"], worktree_path=engine_paths.root_dir)
         warnings: list[str] = []
 
-        record_run_end(store, outcome, warnings, [])
+        record_run_end(store, outcome, warnings, [], worktree_kept=None)
 
         row = sessions_repo.get("end-1")
         assert row is not None
@@ -84,7 +84,7 @@ class RecordRunEndTests:
         store = _seed_paused_leaf(engine_paths, sessions_repo, "paused-1")
         outcome = RunOutcome(status=SessionStatus.PAUSED, worktree_path=engine_paths.root_dir)
 
-        record_run_end(store, outcome, [], [])
+        record_run_end(store, outcome, [], [], worktree_kept=None)
 
         row = sessions_repo.get("paused-1")
         assert row is not None
@@ -92,23 +92,23 @@ class RecordRunEndTests:
         assert isinstance(leaf, ExecutionLeafNode)
         assert (row.status, leaf.state) == (SessionStatus.PAUSED, NodeState.PAUSED)
 
-    def test_before_close_leaves_worktree_kept_unchanged(
+    def test_worktree_kept_none_leaves_the_row_flag_unchanged(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """Written with closed=False, keep the row's worktree_kept; written after the close, set it from the outcome."""
+        """Written with worktree_kept None, keep the row's flag; written with False, set it, both with the status."""
         store = _seed_paused_leaf(engine_paths, sessions_repo, "kept-1")
         sessions_repo.update_status("kept-1", SessionStatus.RUNNING, worktree_kept=True)
         outcome = RunOutcome(status=SessionStatus.COMPLETED, worktree_path=engine_paths.root_dir)
 
-        record_run_end(store, outcome, [], [], closed=False)
-        before_close = sessions_repo.get("kept-1")
-        record_run_end(store, outcome, [], [])
-        after_close = sessions_repo.get("kept-1")
+        record_run_end(store, outcome, [], [], worktree_kept=None)
+        unchanged = sessions_repo.get("kept-1")
+        record_run_end(store, outcome, [], [], worktree_kept=False)
+        removed = sessions_repo.get("kept-1")
 
-        assert before_close is not None
-        assert after_close is not None
-        assert (before_close.status, before_close.worktree_kept) == (SessionStatus.COMPLETED, True)
-        assert after_close.worktree_kept is False
+        assert unchanged is not None
+        assert removed is not None
+        assert (unchanged.status, unchanged.worktree_kept) == (SessionStatus.COMPLETED, True)
+        assert removed.worktree_kept is False
 
     def test_write_failure_is_a_warning_with_its_record(
         self,
@@ -128,7 +128,11 @@ class RecordRunEndTests:
         diagnostics: list[DiagnosticRecord] = []
 
         record_run_end(
-            store, RunOutcome(status=SessionStatus.FAILED, worktree_path=engine_paths.root_dir), warnings, diagnostics
+            store,
+            RunOutcome(status=SessionStatus.FAILED, worktree_path=engine_paths.root_dir),
+            warnings,
+            diagnostics,
+            worktree_kept=None,
         )
 
         assert warnings == ["Failed to update run status in database: disk full"]

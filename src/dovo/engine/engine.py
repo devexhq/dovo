@@ -7,6 +7,7 @@ import os
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 from dovo.common.clock import Clock
 from dovo.common.diagnostic_log import DiagnosticRecord
@@ -105,7 +106,7 @@ class Engine:
                 env_overrides=req.env_overrides,
             )
 
-        return self._end_run(sid, self._guarded_outcome(guard, sid), engine_warnings, prior=engine_diagnostics)
+        return self._end_run(sid, guard, engine_warnings, prior=engine_diagnostics)
 
     def resume(
         self,
@@ -149,49 +150,67 @@ class Engine:
             )
 
         return self._end_run(
-            session_id,
-            self._guarded_outcome(guard, session_id),
-            engine_warnings,
-            prior=prior_diagnostics,
-            leading_warnings=validation_warnings,
+            session_id, guard, engine_warnings, prior=prior_diagnostics, leading_warnings=validation_warnings
         )
 
     def _guarded_outcome(self, guard: _RunGuard, session_id: str) -> RunOutcome:
-        """Return the driven outcome, or the outcome an interrupt or a caught failure ends the session's run with."""
+        """Return the driven outcome, or the outcome an interrupt or a caught failure ends the session's run with, at the worktree its row names."""
         if guard.stop is not None:
+            worktree_path, worktree_id = self._row_worktree(session_id)
             return RunOutcome(
                 status=guard.stop.status,
                 errors=list(guard.stop.errors),
                 remediations=list(guard.stop.remediations),
                 error_code=guard.stop.error_code,
-                worktree_path=self.path,
+                worktree_path=worktree_path,
                 session_id=session_id,
+                worktree_id=worktree_id,
             )
         if guard.failure is not None:
+            worktree_path, worktree_id = self._row_worktree(session_id)
             return RunOutcome(
                 status=SessionStatus.FAILED,
-                worktree_path=self.path,
+                worktree_path=worktree_path,
                 session_id=session_id,
+                worktree_id=worktree_id,
                 **guard.failure.result_fields(),
             )
         if guard.outcome is None:
             raise RuntimeError(f"Run '{session_id}' ended without an outcome, an interrupt or a failure.")
         return guard.outcome
 
+    def _row_worktree(self, session_id: str) -> tuple[Path, str | None]:
+        """Return the worktree path and id the session's row names, or the project root and None when it has no worktree."""
+        row = self.db.get(session_id)
+        if row is None or row.worktree_id is None:
+            return self.path, None
+        return self.paths.worktree_dir(row.worktree_id), row.worktree_id
+
     def _end_run(
         self,
         session_id: str,
-        outcome: RunOutcome,
+        guard: _RunGuard,
         warnings: list[str],
         *,
         prior: Sequence[DiagnosticRecord],
         leading_warnings: Sequence[str] = (),
     ) -> RunOutcome:
-        """Write the run's final status with interrupts deferred, then return the outcome with Engine's warnings and records."""
+        """Write the run's final status with interrupts deferred, then return the outcome with Engine's warnings and records.
+
+        Only a driven outcome closed the workspace, so only it writes worktree_kept; an interrupt's or a failure's
+        outcome leaves the flag the close, or the write before it, recorded.
+        """
+        outcome = self._guarded_outcome(guard, session_id)
         finish: list[DiagnosticRecord] = []
         try:
             with deferred_interrupts():
-                record_run_end(SessionStateStore(self.db, self.paths, session_id), outcome, warnings, finish)
+                record_run_end(
+                    SessionStateStore(self.db, self.paths, session_id),
+                    outcome,
+                    warnings,
+                    finish,
+                    worktree_kept=outcome.worktree_kept if guard.outcome is not None else None,
+                )
         except KeyboardInterrupt:
             # A signal received during the final write is already recorded, and ends the process once the run
             # result is printed; the run itself has ended, so there is nothing left to stop.

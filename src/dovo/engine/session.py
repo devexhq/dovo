@@ -283,7 +283,8 @@ class SessionRunner:
         """Execute the run, auto-apply worktree changes, record how the run ended, and close the workspace, returning the final outcome.
 
         An interrupt outside the coordinator's own handling stops the run's processes and ends it as
-        stop_interrupted_run decides. The status is written before the close, so a close that fails still leaves it.
+        stop_interrupted_run decides. The status is written before the close, with the worktree recorded kept, so a
+        close that fails or is interrupted still leaves both; the close then records whether it kept the worktree.
         """
         append_session_log_event(
             self._context.session_log_dir,
@@ -298,12 +299,24 @@ class SessionRunner:
         except KeyboardInterrupt:
             outcome = self._interrupted()
         except BaseException:
-            # No record here: Engine's catch_failure records an unexpected exception after cleanup.
-            closed = self._close(RunOutcome(status=SessionStatus.FAILED, worktree_path=self._context.target_dir))
+            # No record here: Engine's catch_failure records an unexpected exception after cleanup and writes the
+            # failure; the close writes whether it kept the worktree, which only it knows.
+            closed = self._close(self._failed_before_record())
+            self._record_run_end(closed, closed.worktree_kept)
             safe_notify(self._observer, "on_run_completed", closed)
             raise
 
         return self._close(self._record_end(outcome))
+
+    def _failed_before_record(self) -> RunOutcome:
+        """Return the bare FAILED outcome the workspace closes with when the run raised before its end was recorded."""
+        worktree = self._worktree
+        return RunOutcome(
+            status=SessionStatus.FAILED,
+            worktree_path=worktree.worktree_path if worktree is not None else self._context.target_dir,
+            session_id=self._row.session_id,
+            worktree_id=worktree.session_id if worktree is not None else None,
+        )
 
     def _interrupted(self) -> RunOutcome:
         """Stop the run's processes and return the outcome the interrupt ends the run with, after the setup warnings and records."""
@@ -322,11 +335,15 @@ class SessionRunner:
         )
 
     def _record_end(self, outcome: RunOutcome) -> RunOutcome:
-        """Write the run's final status before the workspace closes, adding any write failure's warning and record to the outcome."""
+        """Write the run's final status before the workspace closes, recording a worktree it has as kept until the close removes it, and add any write failure's warning and record to the outcome."""
+        return self._record_run_end(outcome, True if outcome.worktree_id is not None else None)
+
+    def _record_run_end(self, outcome: RunOutcome, worktree_kept: bool | None) -> RunOutcome:
+        """Write the outcome's status and worktree_kept to the run's row and state, adding any write failure's warning and record to the outcome."""
         warnings = list(outcome.warnings)
         diagnostics = list(outcome.diagnostics)
         store = SessionStateStore(self._sessions, self._paths, self._row.session_id)
-        record_run_end(store, outcome, warnings, diagnostics, closed=False)
+        record_run_end(store, outcome, warnings, diagnostics, worktree_kept=worktree_kept)
         return outcome.model_copy(update={"warnings": warnings, "diagnostics": diagnostics})
 
     def _execute(self) -> RunOutcome:

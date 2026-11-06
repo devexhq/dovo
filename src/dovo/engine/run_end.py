@@ -20,18 +20,19 @@ def record_run_end(
     warnings: list[str],
     diagnostics: list[DiagnosticRecord],
     *,
-    closed: bool = True,
+    worktree_kept: bool | None,
 ) -> None:
-    """Under the workspace lock, settle a cancelled or failed run's started nodes and write the outcome's status, error and worktree fields.
+    """Under the workspace lock, settle a cancelled or failed run's started nodes and write the outcome's status, error and worktree id, and worktree_kept unless it is None.
 
-    Before the workspace is closed (closed False), worktree_kept is left unchanged, since the close decides it. A
-    write failure is appended to warnings and its record to diagnostics; a lock timeout propagates.
+    Only the workspace close knows whether the worktree was kept: a write before it passes True for a worktree the
+    run has, so an interrupted or timed-out close leaves it recorded kept, and a write that did not close passes
+    None. A write failure is appended to warnings and its record to diagnostics; a lock timeout propagates.
     """
     lifecycle = LifecycleUpdate(
         run_status=outcome.status,
         error_message=outcome.errors[0] if outcome.errors else None,
         worktree_id=outcome.worktree_id,
-        worktree_kept=outcome.worktree_kept if closed else None,
+        worktree_kept=worktree_kept,
     )
     with WorkspaceLock(store.paths.lock_file):
         try:

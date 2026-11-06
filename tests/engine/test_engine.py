@@ -887,8 +887,10 @@ class EngineRunInterruptTests:
         assert outcome.worktree_path != paths.root_dir
         assert not outcome.worktree_path.exists()
 
-    def test_interrupt_during_close_records_cancelled(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """With the diff capture of a completed run interrupted, return CANCELLED and leave the row cancelled."""
+    def test_interrupt_during_close_records_cancelled_with_the_worktree_kept(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the diff capture of a completed run interrupted, return CANCELLED at the worktree and record the row cancelled with the worktree, still on disk, kept."""
         paths, sessions = _git_engine(tmp_path)
         blueprint = _catalog_blueprint(paths, "close-interrupt", [{"id": "s1", "run": "true"}])
         monkeypatch.setattr(Workspace, "capture_and_persist_diff", _raise_interrupt)
@@ -898,7 +900,9 @@ class EngineRunInterruptTests:
         row = sessions.get("close-1")
         assert row is not None
         assert (outcome.status, outcome.error_code) == (SessionStatus.CANCELLED, ErrorCode.RUN_CANCELLED)
-        assert row.status == SessionStatus.CANCELLED
+        assert (row.status, row.worktree_id, row.worktree_kept) == (SessionStatus.CANCELLED, "close-1", True)
+        assert (outcome.worktree_id, outcome.worktree_path) == ("close-1", paths.worktree_dir("close-1"))
+        assert outcome.worktree_path.is_dir()
         assert _node_states(paths, sessions, "close-1") == [NodeState.COMPLETED]
 
     def test_interrupt_with_a_surviving_group_outside_a_step_fails_with_process_stop_failed(
@@ -929,7 +933,7 @@ class EngineRunInterruptTests:
     def test_unexpected_error_outside_a_step_records_failed_with_internal_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """With the auto-apply raising RuntimeError, return FAILED with INTERNAL_ERROR for the session and its engine.run record, and leave the row failed."""
+        """With the auto-apply raising RuntimeError, return FAILED with INTERNAL_ERROR for the session at its worktree, record its engine.run record, and leave the row failed with the worktree the failure kept."""
         paths, sessions = _git_engine(tmp_path)
         blueprint = _catalog_blueprint(paths, "apply-error", [{"id": "s1", "run": "true"}])
 
@@ -952,8 +956,31 @@ class EngineRunInterruptTests:
         )
         assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.run"
-        assert row.status == SessionStatus.FAILED
+        assert (row.status, row.worktree_id, row.worktree_kept) == (SessionStatus.FAILED, "error-1", True)
+        assert (outcome.worktree_id, outcome.worktree_path) == ("error-1", paths.worktree_dir("error-1"))
+        assert outcome.worktree_path.is_dir()
         assert NodeState.RUNNING not in _node_states(paths, sessions, "error-1")
+
+    def test_unexpected_error_outside_a_step_records_a_discarded_worktree_removed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the auto-apply of a --discard run raising RuntimeError, record the row failed with the worktree removed."""
+        paths, sessions = _git_engine(tmp_path)
+        blueprint = _catalog_blueprint(paths, "apply-error", [{"id": "s1", "run": "true"}])
+
+        def _boom(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("apply broke")
+
+        monkeypatch.setattr(Workspace, "handle_auto_apply", _boom)
+
+        outcome = _engine(paths, sessions).run(
+            blueprint, RunRequest(session_id="error-2", use_worktree=True, auto_apply=True, discard=True)
+        )
+
+        row = sessions.get("error-2")
+        assert row is not None
+        assert (outcome.status, row.status, row.worktree_kept) == (SessionStatus.FAILED, SessionStatus.FAILED, False)
+        assert not paths.worktree_dir("error-2").exists()
 
     def test_interrupt_during_resume_setup_records_cancelled(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
