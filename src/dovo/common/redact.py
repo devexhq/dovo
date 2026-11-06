@@ -6,7 +6,11 @@ import os
 import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    # Annotation only: dovo.common.models imports the diagnostic log, which imports this module.
+    from dovo.common.models import Remediation
 
 SECRET_ENV_SUFFIXES: Final[tuple[str, ...]] = ("_KEY", "_TOKEN", "_SECRET", "_PASSWORD", "_AUTH")
 MIN_SECRET_LENGTH: Final[int] = 6
@@ -136,6 +140,18 @@ class SecretRedactor:
             text = pattern.sub(REDACTED_PLACEHOLDER, text)
 
         return text
+
+    def redact_remediations(self, remediations: Sequence[Remediation]) -> list[Remediation]:
+        """Return copies of ``remediations`` with each message and command masked."""
+        return [
+            remediation.model_copy(
+                update={
+                    "message": self.redact_text(remediation.message),
+                    "command": None if remediation.command is None else self.redact_text(remediation.command),
+                }
+            )
+            for remediation in remediations
+        ]
 
     def _mask_match(self, match: re.Match[str]) -> str:
         """Label a secret value; an existing placeholder matches first and is returned unchanged."""

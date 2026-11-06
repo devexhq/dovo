@@ -10,6 +10,7 @@ from rich.console import Console, RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.events import StepDoneEvent, StepOutputEvent, StepStartEvent, WorktreeLifecycleEvent
+from dovo.common.formatters import format_remediations
 
 DEFAULT_TAIL_SIZE = 10
 _ERASE_LINE = "\033[2K\r"
@@ -62,10 +63,10 @@ class CollapsingTailDisplay:
         self._reprint_tail()
 
     def handle_step_done(self, event: StepDoneEvent) -> None:
-        """Erase the tail block and print a permanent summary line.
+        """Erase the tail block and print a permanent summary line, followed by a failed step's Fix: block.
 
         Args:
-            event: StepDoneEvent carrying completion status and duration.
+            event: StepDoneEvent carrying completion status, duration and remediations.
         """
         self._erase_tail()
         self._tail.clear()
@@ -73,10 +74,14 @@ class CollapsingTailDisplay:
         if event.ok:
             duration = event.duration_seconds if event.duration_seconds is not None else 0.0
             summary = Text.from_markup(f"[bold green]✔[/] [{event.idx}/{event.total}] {event.step_id}  {duration:.2f}s")
-        else:
-            detail = event.error_message or f"exit code {event.exit_code}"
-            summary = Text.from_markup(f"[bold red]✖[/] [{event.idx}/{event.total}] {event.step_id}  {detail}")
-        self.console.print(summary)
+            self.console.print(summary)
+            return
+
+        detail = event.error_message or f"exit code {event.exit_code}"
+        self.console.print(Text.from_markup(f"[bold red]✖[/] [{event.idx}/{event.total}] {event.step_id}  {detail}"))
+        fix = format_remediations(event.remediations)
+        if fix:
+            self.console.print(Text(fix))
 
     def handle_worktree(self, event: WorktreeLifecycleEvent, rendered: RenderableType) -> None:
         """Print a worktree lifecycle notice above any active tail.

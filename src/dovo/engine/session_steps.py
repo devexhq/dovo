@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import ValidationError
 
 from dovo.common.error_codes import ErrorCode
+from dovo.common.models import Remediation
 from dovo.common.redact import SecretRedactor
 from dovo.core.db import SessionRecord
 from dovo.core.sessions import StepRunSummary
@@ -101,6 +102,7 @@ def _leaf_summary(
         duration_seconds=None if last is None else last.duration_seconds,
         error_message=_last_error_message(leaf.attempts, redactor),
         error_code=_last_error_code(leaf.attempts),
+        remediations=_last_remediations(leaf.attempts, redactor),
         rejected_patch_path=_last_rejected_patch_path(leaf.attempts, redactor),
         loop_id=loop_id,
         iteration=iteration,
@@ -134,6 +136,14 @@ def _last_error_code(attempts: list[StepAttemptRecord]) -> ErrorCode | None:
         return None
 
     return attempts[-1].result.error_code
+
+
+def _last_remediations(attempts: list[StepAttemptRecord], redactor: SecretRedactor) -> list[Remediation]:
+    """Return the redacted remediations of the last attempt, [] when it has no result."""
+    if not attempts or attempts[-1].result is None:
+        return []
+
+    return redactor.redact_remediations(attempts[-1].result.remediations)
 
 
 def _last_rejected_patch_path(attempts: list[StepAttemptRecord], redactor: SecretRedactor) -> str | None:

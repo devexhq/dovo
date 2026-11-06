@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.engine.executors.models import (
     AgentProgressSink,
@@ -92,6 +93,37 @@ class StepExecutionRedactionTests:
         logged = (log_dir / "01_plan_attempt_1.stdout.log").read_text(encoding="utf-8")
         assert logged == "token [REDACTED:ANTHROPIC_API_KEY]\n"
         assert "sk-ant-secret-value-123" not in logged
+
+    def test_record_carries_masked_remediations(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Mask a secret in a failed outcome's remediation message and command on the record."""
+        monkeypatch.setenv("DEPLOY_TOKEN", "s3cr3t-value")
+
+        def _runner(
+            step: StepDefinition,
+            worktree: Path,
+            on_output: OutputCallback | None,
+            on_agent_line: OutputCallback | None,
+            progress: AgentProgressSink,
+            metadata: ExecutionMetadata,
+        ) -> StepDispatchOutcome:
+            return StepDispatchOutcome(
+                status="failed",
+                exit_code=203,
+                stdout="",
+                stderr="",
+                error_message="denied",
+                remediations=[Remediation(message="Use s3cr3t-value", command="login s3cr3t-value")],
+            )
+
+        step = StepBuilder.agent("plan").with_id("plan").build()
+
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, agent_runner=_runner, diagnostics=[])
+        ).run()
+
+        assert result.remediations == [
+            Remediation(message="Use [REDACTED:DEPLOY_TOKEN]", command="login [REDACTED:DEPLOY_TOKEN]")
+        ]
 
     @pytest.mark.parametrize(
         ("name", "value", "listed"),

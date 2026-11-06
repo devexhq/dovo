@@ -15,6 +15,7 @@ from e2e.conftest import DOVO_HOME, DovoRunner, parse_json, write_blueprint
 CLAUDE_CREDENTIAL_ENVS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY")
 AMBIENT_SECRET_NAME = "DOVO_E2E_AMBIENT_TOKEN"
 AMBIENT_SECRET_VALUE = "e2e-fake-ambient-value-5531"
+_WORKTREE_FIX = "Remove '--no-worktree' and run the blueprint with a worktree"
 
 
 def _claude_unavailable_reason() -> str | None:
@@ -89,10 +90,31 @@ class AgentStepWorktreeCliTests:
         )
 
         assert result.exit_code == 1
-        assert "Agent steps require an active git worktree." in result.stdout
-        assert "Fix: remove --no-worktree and run the blueprint with a worktree." in result.stdout
+        assert "Agent steps require an active git worktree.\nFix:\n- " + _WORKTREE_FIX in result.stdout
         step = _agent_step(run_dovo, initialized_project, "sess-agent-no-wt")
         assert (step["state"], step["exit_code"], step["error_code"]) == ("failed", 203, "STEP_WORKTREE_MISSING")
+        assert (step["error_message"], step["remediations"]) == (
+            "Agent steps require an active git worktree.",
+            [{"message": _WORKTREE_FIX, "command": None}],
+        )
+
+    def test_agent_step_without_worktree_reports_remediations_in_json(
+        self, run_dovo: DovoRunner, initialized_project: Path
+    ) -> None:
+        _write_agent_blueprint(initialized_project, "agent-no-wt", "    prompt: Reply with the word done.\n", run_dovo)
+
+        result = run_dovo(
+            ["run", "agent-no-wt", "--no-worktree", "--no-tty", "--session-id", "sess-agent-json", "--format", "json"],
+            cwd=initialized_project,
+        )
+
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+        step_done = next(event["payload"] for event in events if event["event_type"] == "run.step_done")
+        step = _agent_step(run_dovo, initialized_project, "sess-agent-json")
+        assert result.exit_code == 1
+        assert step_done["error_message"] == "Agent steps require an active git worktree."
+        assert step_done["remediations"] == [{"message": _WORKTREE_FIX, "command": None}]
+        assert step["remediations"] == step_done["remediations"]
 
 
 @pytest.mark.e2e

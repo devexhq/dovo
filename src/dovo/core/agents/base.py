@@ -10,9 +10,9 @@ from dovo.common.redact import SecretRedactor
 from dovo.common.timing import Stopwatch
 from dovo.core.agents.credentials import missing_credential_error, resolve_credential
 from dovo.core.agents.environment import forwarded_env_secrets, validate_agent_env_request
-from dovo.core.agents.models import AgentProgress, AgentRequest, AgentResponse
+from dovo.core.agents.models import AgentProgress, AgentRequest, AgentResponse, ProviderFailure
 from dovo.core.agents.redaction import build_response_redactor, redact_agent_response
-from dovo.core.agents.responses import provider_error_response
+from dovo.core.agents.responses import provider_error_response, with_remediations
 from dovo.core.agents.tools import check_policy_support
 
 
@@ -38,34 +38,32 @@ class BaseAgentProvider(abc.ABC):
         missing = self._credential_preflight()
         if missing is not None:
             watch.stop()
-            return provider_error_response(duration_seconds=watch.elapsed_seconds, detail=missing)
+            response = provider_error_response(duration_seconds=watch.elapsed_seconds, detail=missing.message)
+            return with_remediations(response, missing.remediations)
 
-        override_error = self._env_preflight(request)
-        if override_error is not None:
-            watch.stop()
-            return provider_error_response(duration_seconds=watch.elapsed_seconds, errors=[override_error])
+        failure = self._env_preflight(request) or self._tool_policy_preflight(request)
+        if failure is None:
+            return None
 
-        policy_error = self._tool_policy_preflight(request)
-        if policy_error is not None:
-            watch.stop()
-            return provider_error_response(duration_seconds=watch.elapsed_seconds, errors=[policy_error])
+        watch.stop()
+        response = provider_error_response(duration_seconds=watch.elapsed_seconds, errors=[failure.message])
 
-        return None
+        return with_remediations(response, failure.remediations)
 
-    def _tool_policy_preflight(self, request: AgentRequest) -> str | None:
-        """Return the unsupported message for a descriptor that cannot enforce the request's policy, or the adapter's own rejection, else None."""
+    def _tool_policy_preflight(self, request: AgentRequest) -> ProviderFailure | None:
+        """Return the unsupported failure for a descriptor that cannot enforce the request's policy, or the adapter's own rejection, else None."""
         spec = self._provider_spec()
         if spec is None:
             return None
 
         return check_policy_support(spec, request.tools) or self._policy_unsupported(request)
 
-    def _policy_unsupported(self, request: AgentRequest) -> str | None:
+    def _policy_unsupported(self, request: AgentRequest) -> ProviderFailure | None:
         """Return why this adapter cannot render the request's policy, or None; the default accepts."""
         return None
 
-    def _env_preflight(self, request: AgentRequest) -> str | None:
-        """Return the fixed environment-override conflict message when a literal passthrough or step env entry is reserved, else None."""
+    def _env_preflight(self, request: AgentRequest) -> ProviderFailure | None:
+        """Return the fixed environment-override conflict failure when a literal passthrough or step env entry is reserved, else None."""
         spec = self._provider_spec()
 
         return None if spec is None else validate_agent_env_request(spec, request, spec.token)
@@ -87,8 +85,8 @@ class BaseAgentProvider(abc.ABC):
         """Return this provider's registered descriptor, or None when it declares none."""
         return None
 
-    def _credential_preflight(self) -> str | None:
-        """Return the canonical missing-credential diagnostic when no declared alternative is usable, else None."""
+    def _credential_preflight(self) -> ProviderFailure | None:
+        """Return the canonical missing-credential failure when no declared alternative is usable, else None."""
         spec = self._provider_spec()
         if spec is None or not spec.credential_envs:
             return None
@@ -101,8 +99,8 @@ class BaseAgentProvider(abc.ABC):
 
         return self._missing_credential_detail(spec)
 
-    def _missing_credential_detail(self, spec: ProviderSpec) -> str:
-        """Return the diagnostic for a provider with no usable credential; the default names ``credential_envs``."""
+    def _missing_credential_detail(self, spec: ProviderSpec) -> ProviderFailure:
+        """Return the failure for a provider with no usable credential; the default names ``credential_envs``."""
         return missing_credential_error(spec)
 
 

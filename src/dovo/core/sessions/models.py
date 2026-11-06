@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
-from dovo.common.models import BaseResult
+from dovo.common.models import BaseResult, Remediation
 from dovo.core.db import SessionRecord
 
 
@@ -123,6 +123,7 @@ class StepRunSummary(BaseModel):
     duration_seconds: float | None = None
     error_message: str | None = None
     error_code: ErrorCode | None = None
+    remediations: list[Remediation] = Field(default_factory=list)
     rejected_patch_path: str | None = None
     loop_id: str | None = None
     iteration: int | None = None

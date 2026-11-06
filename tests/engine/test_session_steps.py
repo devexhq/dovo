@@ -8,7 +8,7 @@ import pytest
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
-from dovo.common.models import FailurePolicy
+from dovo.common.models import FailurePolicy, Remediation
 from dovo.common.redact import SecretRedactor
 from dovo.common.timing import TimeSpan
 from dovo.core.db import SessionRecord, SessionsRepository
@@ -349,7 +349,7 @@ class SummarizeSessionStepsErrorCodeTests:
         assert [(row.step_id, row.error_code) for row in steps] == [("flaky", ErrorCode.STEP_TIMEOUT)]
 
     def test_state_saved_without_error_code_and_with_legacy_keys_reports_none(self) -> None:
-        """Load a step result saved with errors and remediations but no error_code, and report error_code None."""
+        """Load a step result saved with errors and remediations but no error_code, and report error_code None and no remediations."""
         leaf = ExecutionLeafNode(
             id="old", state=NodeState.FAILED, attempts=[_attempt(1, exit_code=1, duration_seconds=1.0)]
         )
@@ -362,4 +362,25 @@ class SummarizeSessionStepsErrorCodeTests:
 
         steps = summarize_session_steps(legacy, _REDACTOR)
 
-        assert [(row.step_id, row.state, row.error_code) for row in steps] == [("old", "failed", None)]
+        assert [(row.step_id, row.state, row.error_code, row.remediations) for row in steps] == [
+            ("old", "failed", None, [])
+        ]
+
+
+class SummarizeSessionStepsRemediationTests:
+    def test_step_row_carries_last_attempt_remediations(self) -> None:
+        """Report the masked remediations of the last attempt only."""
+        redactor = SecretRedactor.from_environment(env={"DB_PIN": "1234"}, credential_envs=("DB_PIN",))
+        first = _attempt(1, exit_code=1, duration_seconds=1.0, error_message="first")
+        last = _attempt(2, exit_code=1, duration_seconds=1.0, error_message="last")
+        assert first.result is not None
+        assert last.result is not None
+        first.result.remediations = [Remediation(message="Retry the first attempt")]
+        last.result.remediations = [Remediation(message="Log in with pin 1234", command="login --pin 1234")]
+        leaf = ExecutionLeafNode(id="deploy", state=NodeState.FAILED, attempts=[first, last])
+
+        steps = summarize_session_steps(_record([leaf]), redactor)
+
+        assert steps[0].remediations == [
+            Remediation(message="Log in with pin [REDACTED:DB_PIN]", command="login --pin [REDACTED:DB_PIN]")
+        ]

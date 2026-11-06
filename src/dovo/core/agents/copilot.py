@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.cli_mutation import (
@@ -15,24 +16,29 @@ from dovo.core.agents.cli_mutation import (
     CliMutationOutcome,
     CliMutationRunRequest,
     decode_output,
+    failure_outcome,
+    reports_unknown_option,
     run_cli_process,
-    unknown_option_detail,
 )
 from dovo.core.agents.copilot_progress import map_copilot_line
 from dovo.core.agents.credentials import missing_credential_error, resolve_credential
-from dovo.core.agents.models import AgentDenial, AgentInvocationContext, AgentRequest
+from dovo.core.agents.models import AgentDenial, AgentInvocationContext, AgentRequest, ProviderFailure
 from dovo.core.agents.tools import (
     PolicyRoots,
     resolve_policy_roots,
-    tool_policy_unsupported_message,
+    tool_policy_unsupported,
 )
 
 COPILOT_TOKEN_ENVS = ("GH_TOKEN", "GITHUB_TOKEN")
 COPILOT_CONTROL_ENVS = ("COPILOT_MODEL", "COPILOT_ALLOW_ALL", "COPILOT_GITHUB_TOKEN", "COPILOT_HOME")
-_UPDATE_REQUIRED_DETAIL = (
-    "Installed GitHub Copilot CLI lacks a required tool-policy control. "
-    "Fix: run `copilot update` or reinstall the GitHub Copilot CLI."
+_UPDATE_REQUIRED = ProviderFailure(
+    message="Installed GitHub Copilot CLI lacks a required tool-policy control.",
+    remediations=(
+        Remediation(message="Run 'copilot update'", command="copilot update"),
+        Remediation(message="Reinstall the GitHub Copilot CLI"),
+    ),
 )
+_INSTALL = Remediation(message="Install the GitHub CLI (https://cli.github.com)")
 _PATH_GLOB_ALL = (None, "**")
 _PATH_CAPABILITIES = (ToolCapability.READ, ToolCapability.WRITE)
 _COMMAND_CAPABILITIES = (ToolCapability.SHELL, ToolCapability.NETWORK)
@@ -185,9 +191,8 @@ def _parse_jsonl(stdout_text: str) -> tuple[str | None, int | None, str | None, 
 def _classify_copilot_output(completed_code: int, stdout_text: str, stderr_text: str) -> CliMutationOutcome:
     """Classify CLI process exit code and output text into a CliMutationOutcome."""
     if completed_code != 0:
-        update_detail = unknown_option_detail(stderr_text, _UPDATE_REQUIRED_DETAIL)
-        if update_detail is not None:
-            return CliMutationOutcome(status="error", error_detail=update_detail)
+        if reports_unknown_option(stderr_text):
+            return failure_outcome(_UPDATE_REQUIRED)
 
         detail = stderr_text.strip() or stdout_text.strip() or f"exit {completed_code}"
         return CliMutationOutcome(status="error", error_detail=detail)
@@ -523,11 +528,11 @@ def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
     """Invoke `gh copilot` with request.env plus the adapter-owned COPILOT_MODEL and map its JSONL stream into an outcome."""
     token = resolve_copilot_token()
     if token is None:
-        return CliMutationOutcome(status="error", error_detail=missing_credential_error(COPILOT_PROVIDER_SPEC))
+        return failure_outcome(missing_credential_error(COPILOT_PROVIDER_SPEC))
 
     rendered = _render_for_request(request.tools, request.worktree_path, request.invocation, load_user_mcp_config())
     if isinstance(rendered, str):
-        return CliMutationOutcome(status="error", error_detail=tool_policy_unsupported_message("copilot"))
+        return failure_outcome(tool_policy_unsupported("copilot"))
 
     # Keep prompt off argv to avoid OS argument length limits on large payloads.
     cmd = ["gh", "copilot", "--", "-p", "", "--output-format", "json", "--silent", *rendered.flags]
@@ -542,7 +547,7 @@ def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
         request,
         env=env,
         binary="gh",
-        install_hint="install the GitHub CLI (https://cli.github.com)",
+        install=_INSTALL,
     )
     if isinstance(completed, CliMutationOutcome):
         return completed
@@ -563,11 +568,11 @@ class CopilotAgentAdapter(CliDirectMutationAdapter):
         """Return the provider identifier string."""
         return "copilot"
 
-    def _policy_unsupported(self, request: AgentRequest) -> str | None:
-        """Return the unsupported message when Copilot cannot preserve the request's policy."""
+    def _policy_unsupported(self, request: AgentRequest) -> ProviderFailure | None:
+        """Return the unsupported failure when Copilot cannot preserve the request's policy."""
         rendered = _render_for_request(request.tools, request.worktree_path, request.invocation, load_user_mcp_config())
 
-        return tool_policy_unsupported_message("copilot") if isinstance(rendered, str) else None
+        return tool_policy_unsupported("copilot") if isinstance(rendered, str) else None
 
     def _default_run(self, request: CliMutationRunRequest) -> CliMutationOutcome:
         """Execute Copilot CLI against mutation request."""

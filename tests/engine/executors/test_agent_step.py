@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.error_codes import ErrorCode
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentAttempt,
@@ -24,10 +25,10 @@ from dovo.core.agents import (
     BaseAgentProvider,
     ResolvedAgentSettings,
     default_tool_policy,
-    tool_policy_unsupported_message,
+    tool_policy_unsupported,
 )
 from dovo.core.agents.models import AgentDenial
-from dovo.core.agents.responses import blocked_response, provider_error_response
+from dovo.core.agents.responses import blocked_response, provider_error_response, timeout_response
 from dovo.core.agents.scratch import scratch_unavailable_message
 from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
@@ -52,6 +53,7 @@ from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.permissions import deny_entry_creation
 
 _NO_OP_SUMMARY = "Inspected the repository; no edits were required."
+_SCRATCH_REMEDIATION = Remediation(message="Restore access to the session temp directory or correct its storage path.")
 _METADATA = ExecutionMetadata(step=StepMetadata(id="plan", name="plan", index=1))
 
 
@@ -159,11 +161,11 @@ class ExecuteAgentStepToolPolicyFailureTests:
                 ),
                 204,
                 "blocked",
-                ["Agent run was blocked by tool permissions", "tools: {allow: [{capability: shell}]}"],
+                ["Agent run was blocked by tool permissions"],
                 id="blocked",
             ),
             pytest.param(
-                provider_error_response(duration_seconds=1.0, errors=[tool_policy_unsupported_message("copilot")]),
+                provider_error_response(duration_seconds=1.0, errors=[tool_policy_unsupported("copilot").message]),
                 203,
                 "provider_error",
                 ["cannot enforce the requested tool policy"],
@@ -187,6 +189,64 @@ class ExecuteAgentStepToolPolicyFailureTests:
         assert (outcome.status, outcome.exit_code) == ("failed", exit_code)
         assert _summary(outcome)["status"] == summary_status
         assert [fragment for fragment in stderr_fragments if fragment not in outcome.stderr] == []
+
+
+class ExecuteAgentStepRemediationTests:
+    @pytest.mark.parametrize(
+        ("case", "expected_message", "expected_remediations"),
+        [
+            pytest.param(
+                "missing-worktree",
+                WORKTREE_REQUIRED_MESSAGE,
+                [Remediation(message="Remove '--no-worktree' and run the blueprint with a worktree")],
+                id="missing-worktree",
+            ),
+            pytest.param(
+                "scratch-unavailable",
+                scratch_unavailable_message("plan", "the session temp directory is unavailable"),
+                [_SCRATCH_REMEDIATION],
+                id="scratch-unavailable",
+            ),
+            pytest.param(
+                "provider-attempt",
+                "Agent timed out after 45s (provider=copilot).",
+                [Remediation(message="Raise 'timeout_seconds' on the agent step")],
+                id="provider-attempt",
+            ),
+        ],
+    )
+    def test_failed_attempt_remediations_reach_the_outcome_and_message_has_no_fix(
+        self,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        case: str,
+        expected_message: str,
+        expected_remediations: list[Remediation],
+    ) -> None:
+        """Fail with an error_message free of fix text and the attempt's fixes in remediations."""
+        _use_provider(
+            monkeypatch,
+            FakeAgentProvider(timeout_response(provider="copilot", timeout_seconds=45, duration_seconds=1.0)),
+        )
+        step = StepBuilder.agent("Plan the change").with_id("plan").with_timeout(45).build()
+        outcome = execute_agent_step(
+            step,
+            agent=_settings(),
+            worktree_path=git_repo,
+            worktree_active=case != "missing-worktree",
+            session_tmp_dir=None if case == "scratch-unavailable" else _session_tmp_dir(git_repo),
+            main_checkout=git_repo,
+            session_log_dir=None,
+            session_dir=None,
+            metadata=_METADATA,
+            on_output=None,
+            on_agent_line=None,
+            progress=RecordingProgressSink(),
+        )
+
+        assert outcome.status == "failed"
+        assert outcome.error_message == expected_message
+        assert outcome.remediations == expected_remediations
 
 
 def _record_direct_attempts(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
@@ -452,10 +512,10 @@ class ExecuteAgentStepScratchTests:
         assert outcome.status == "failed"
         assert outcome.exit_code == 203
         assert outcome.error_code == ErrorCode.AGENT_SCRATCH_UNAVAILABLE
-        assert outcome.error_message == (
-            scratch_unavailable_message(step.id, "the session temp directory is unavailable")
-            + "\nFix:\n- Restore access to the session temp directory or correct its storage path."
+        assert outcome.error_message == scratch_unavailable_message(
+            step.id, "the session temp directory is unavailable"
         )
+        assert outcome.remediations == [_SCRATCH_REMEDIATION]
         assert requested == []
 
     def test_directory_creation_failure_leaves_worktree_files_unchanged(
@@ -470,10 +530,7 @@ class ExecuteAgentStepScratchTests:
 
         assert outcome.exit_code == 203
         assert "Cannot prepare private scratch for agent step" in (outcome.error_message or "")
-        assert (outcome.error_message or "").splitlines()[1:] == [
-            "Fix:",
-            "- Restore access to the session temp directory or correct its storage path.",
-        ]
+        assert outcome.remediations == [_SCRATCH_REMEDIATION]
         assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.agent_step"
         assert requested == []

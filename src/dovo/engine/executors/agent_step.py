@@ -10,6 +10,7 @@ from typing import Final
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import catch_failure
+from dovo.common.models import Remediation
 from dovo.common.timing import Stopwatch
 from dovo.core.agents import (
     AgentAttempt,
@@ -22,7 +23,6 @@ from dovo.core.agents import (
     resolve_tool_policy,
     run_direct_attempt,
 )
-from dovo.core.agents.responses import errors_with_fix_block
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.metadata import metadata_to_env
@@ -38,9 +38,8 @@ from dovo.engine.executors.models import (
 )
 from dovo.engine.executors.session_log import append_session_log_event
 
-WORKTREE_REQUIRED_MESSAGE = (
-    "Agent steps require an active git worktree.\nFix: remove --no-worktree and run the blueprint with a worktree."
-)
+WORKTREE_REQUIRED_MESSAGE = "Agent steps require an active git worktree."
+WORKTREE_REQUIRED_REMEDIATION = Remediation(message="Remove '--no-worktree' and run the blueprint with a worktree")
 MISSING_SETTINGS_MESSAGE = (
     "Agent step has no resolved agent settings "
     "(default_agent, agents.<provider>.model, agents.<provider>.endpoint, agents.<provider>.temperature, "
@@ -73,7 +72,13 @@ def execute_agent_step(
     }
     if not worktree_active:
         return _to_outcome(
-            _provider_error(ErrorCode.STEP_WORKTREE_MISSING, WORKTREE_REQUIRED_MESSAGE), on_output, context=context
+            _provider_error(
+                ErrorCode.STEP_WORKTREE_MISSING,
+                WORKTREE_REQUIRED_MESSAGE,
+                remediations=[WORKTREE_REQUIRED_REMEDIATION],
+            ),
+            on_output,
+            context=context,
         )
 
     if agent is None:
@@ -134,7 +139,7 @@ def _allocate_scratch(
     main_checkout: Path,
     context: DiagnosticContext,
 ) -> AgentInvocationContext | AgentAttempt:
-    """Return the attempt's private paths, or the provider_error attempt carrying the failure's code, message, Fix: block, and record."""
+    """Return the attempt's private paths, or the provider_error attempt carrying the failure's code, message, remediations, and record."""
     with catch_failure("engine.agent_step", **context) as caught:
         invocation = allocate_invocation_paths(
             invocation_id=new_invocation_id(),
@@ -144,11 +149,7 @@ def _allocate_scratch(
             main_checkout=main_checkout,
         )
     if caught.failure is not None:
-        return _provider_error(
-            caught.failure.error_code,
-            *errors_with_fix_block([caught.failure.message], caught.failure.remediations),
-            diagnostics=error_diagnostics(caught.failure.diagnostic),
-        )
+        return AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, **caught.failure.result_fields())
     return invocation
 
 
@@ -255,14 +256,14 @@ def _report_withheld_fix(attempt: AgentAttempt, provider: str, on_output: Output
 
 
 def _provider_error(
-    error_code: ErrorCode, *errors: str, diagnostics: list[DiagnosticRecord] | None = None
+    error_code: ErrorCode, message: str, *, remediations: list[Remediation] | None = None
 ) -> AgentAttempt:
-    """Build a provider_error attempt carrying error_code, the given errors, and any diagnostic records."""
+    """Build a provider_error attempt carrying error_code, the message, and any remediations."""
     return AgentAttempt(
         status=AgentResponseStatus.PROVIDER_ERROR,
         error_code=error_code,
-        errors=list(errors),
-        diagnostics=diagnostics or [],
+        errors=[message],
+        remediations=remediations or [],
     )
 
 
@@ -325,6 +326,7 @@ def _to_outcome(
             summary,
             _failure_text(attempt),
             error_code=attempt.error_code,
+            remediations=attempt.remediations,
             rejected_patch_path=attempt.rejected_patch_path,
             diagnostics=diagnostics,
         )
@@ -353,10 +355,11 @@ def _failed_outcome(
     message: str,
     *,
     error_code: ErrorCode | None,
+    remediations: list[Remediation] | None = None,
     rejected_patch_path: str | None = None,
     diagnostics: list[DiagnosticRecord],
 ) -> StepDispatchOutcome:
-    """Build the failed dispatch outcome carrying the summary status's mapped exit code, its line and outputs, the diagnostic, error_code, any saved rejected-edit path, and the attempt's records."""
+    """Build the failed dispatch outcome carrying the summary status's mapped exit code, its line and outputs, the diagnostic, error_code, its remediations, any saved rejected-edit path, and the attempt's records."""
     return StepDispatchOutcome(
         status="failed",
         exit_code=AGENT_OUTCOME_EXIT_CODES[summary.status],
@@ -364,6 +367,7 @@ def _failed_outcome(
         stderr=message,
         error_message=message,
         error_code=error_code,
+        remediations=remediations or [],
         rejected_patch_path=rejected_patch_path,
         diagnostics=diagnostics,
         outputs=summary.as_outputs(),

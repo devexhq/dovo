@@ -29,15 +29,7 @@ def redact_agent_response(response: AgentResponse, redactor: SecretRedactor) -> 
     return response.model_copy(
         update={
             "errors": [redactor.redact_text(error) for error in response.errors],
-            "remediations": [
-                remediation.model_copy(
-                    update={
-                        "message": redactor.redact_text(remediation.message),
-                        "command": None if remediation.command is None else redactor.redact_text(remediation.command),
-                    }
-                )
-                for remediation in response.remediations
-            ],
+            "remediations": redactor.redact_remediations(response.remediations),
             "raw_text": None if response.raw_text is None else redactor.redact_text(response.raw_text),
             "summary": None if response.summary is None else redactor.redact_text(response.summary),
             "unfixable_reason": (

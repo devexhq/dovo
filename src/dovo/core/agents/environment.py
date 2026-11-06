@@ -10,10 +10,11 @@ from typing import Final, Protocol
 from urllib.parse import urlsplit
 
 from dovo.common.error_codes import ErrorCode
+from dovo.common.models import Remediation
 from dovo.common.redact import suffix_secrets
 from dovo.core.agents.credentials import resolve_credential_entry
 from dovo.core.agents.exceptions import AgentError
-from dovo.core.agents.models import ENV_PASSTHROUGH_PATTERN, AgentRequest
+from dovo.core.agents.models import ENV_PASSTHROUGH_PATTERN, AgentRequest, ProviderFailure
 
 BASE_ENV_NAMES: Final[tuple[str, ...]] = ("PATH", "HOME", "USER", "LANG", "LC_ALL", "TMPDIR", "TERM")
 WINDOWS_ENV_NAMES: Final[tuple[str, ...]] = (
@@ -116,10 +117,10 @@ def env_filtered_prompt_line(provider: str) -> str:
     )
 
 
-def validate_agent_env_request(spec: _EnvDescriptor, request: AgentRequest, provider: str) -> str | None:
-    """Return the environment-override conflict message for the first reserved name in literal passthrough or step env.
+def validate_agent_env_request(spec: _EnvDescriptor, request: AgentRequest, provider: str) -> ProviderFailure | None:
+    """Return the environment-override conflict failure for the first reserved name in literal passthrough or step env.
 
-    The message names agents.<provider>.env_passthrough; None means no entry is reserved.
+    Its remediations name agents.<provider>.env_passthrough and the step's env; None means no entry is reserved.
     """
     reserved = _reserved_names(spec, request)
     literal_passthrough = {entry for entry in request.env_passthrough if not entry.endswith("*")}
@@ -129,9 +130,12 @@ def validate_agent_env_request(spec: _EnvDescriptor, request: AgentRequest, prov
 
     name = min(conflicts)
 
-    return (
-        f"Agent environment override '{name}' conflicts with provider or Dovo controls. "
-        f"Fix: remove it from agents.{provider}.env_passthrough or the agent step's env."
+    return ProviderFailure(
+        message=f"Agent environment override '{name}' conflicts with provider or Dovo controls.",
+        remediations=(
+            Remediation(message=f"Remove '{name}' from 'agents.{provider}.env_passthrough'"),
+            Remediation(message=f"Remove '{name}' from the agent step's 'env'"),
+        ),
     )
 
 

@@ -39,7 +39,7 @@ from dovo.core.agents.tools import (
     default_tool_policy,
     resolve_policy_roots,
     resolve_tool_policy,
-    tool_policy_unsupported_message,
+    tool_policy_unsupported,
 )
 
 __all__ = [
@@ -78,6 +78,6 @@ __all__ = [
     "resolve_policy_roots",
     "resolve_tool_policy",
     "run_direct_attempt",
-    "tool_policy_unsupported_message",
+    "tool_policy_unsupported",
     "validate_request_patch",
 ]

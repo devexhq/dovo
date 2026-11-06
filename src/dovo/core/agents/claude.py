@@ -11,6 +11,7 @@ from typing import Final, Literal
 
 from dovo.common.filesystem import Filesystem
 from dovo.common.mcp_servers import McpServerDefinition
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.claude_mcp import load_user_claude_mcp_servers
@@ -22,12 +23,13 @@ from dovo.core.agents.cli_mutation import (
     CliMutationOutcome,
     CliMutationRunRequest,
     decode_output,
+    failure_outcome,
     run_cli_process,
 )
 from dovo.core.agents.credentials import resolve_credential_entry
 from dovo.core.agents.environment import WITHHELD_ENV_NAME, build_probe_env, format_withheld_report
-from dovo.core.agents.models import AgentInvocationContext, AgentRequest
-from dovo.core.agents.tools import resolve_policy_roots, tool_policy_unsupported_message
+from dovo.core.agents.models import AgentInvocationContext, AgentRequest, ProviderFailure
+from dovo.core.agents.tools import resolve_policy_roots, tool_policy_unsupported
 
 CLAUDE_CREDENTIAL_ENVS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY")
 CLAUDE_CONTROL_ENVS = (
@@ -40,13 +42,16 @@ CLAUDE_CONTROL_ENVS = (
     "CLAUDE_CODE_USE_FOUNDRY",
 )
 ClaudeAuthMode = Literal["cli", "oauth", "key"]
-CLAUDE_AUTH_FIX = (
-    "run `claude auth login`, export CLAUDE_CODE_OAUTH_TOKEN=... (from `claude setup-token`) "
-    "or export ANTHROPIC_API_KEY=..."
+CLAUDE_AUTH_MISSING = ProviderFailure(
+    message="Claude Code is not authenticated.",
+    remediations=(
+        Remediation(message="Run 'claude auth login'", command="claude auth login"),
+        Remediation(message="Set 'CLAUDE_CODE_OAUTH_TOKEN' to a token from 'claude setup-token'"),
+        Remediation(message="Set 'ANTHROPIC_API_KEY'"),
+    ),
 )
-CLAUDE_AUTH_MISSING_DETAIL = f"Claude Code is not authenticated. Fix: {CLAUDE_AUTH_FIX}"
 
-_INSTALL_HINT = "install Claude Code (https://code.claude.com/docs)"
+_INSTALL = Remediation(message="Install Claude Code (https://code.claude.com/docs)")
 _BASE_ARGV: Final = ("claude", "-p", "--output-format", "stream-json", "--verbose")
 _AUTH_FLAGS: Final[Mapping[ClaudeAuthMode, tuple[str, ...]]] = {"cli": (), "oauth": (), "key": ("--bare",)}
 _MODE_CREDENTIALS: Final[Mapping[ClaudeAuthMode, tuple[str, ...]]] = {
@@ -119,15 +124,15 @@ def claude_auth_label() -> str | None:
     return None if mode is None else _AUTH_LABELS[mode]
 
 
-def claude_missing_auth_detail() -> str:
-    """Return the diagnostic for a Claude Code that cannot authenticate.
+def claude_missing_auth() -> ProviderFailure:
+    """Return the failure for a Claude Code that cannot authenticate.
 
-    A `claude` missing from PATH reports the install fix instead of the authentication fix.
+    A `claude` missing from PATH carries the install remediation instead of the authentication remediations.
     """
     if shutil.which("claude") is None:
-        return f"claude is not installed or not on PATH. Fix: {_INSTALL_HINT}"
+        return ProviderFailure(message="claude is not installed or not on PATH.", remediations=(_INSTALL,))
 
-    return CLAUDE_AUTH_MISSING_DETAIL
+    return CLAUDE_AUTH_MISSING
 
 
 def _env_for_mode(env: Mapping[str, str], mode: ClaudeAuthMode) -> dict[str, str]:
@@ -163,11 +168,11 @@ def default_claude_run(request: CliMutationRunRequest) -> CliMutationOutcome:
     """
     mode = resolve_claude_auth_mode()
     if mode is None:
-        return CliMutationOutcome(status="error", error_detail=claude_missing_auth_detail())
+        return failure_outcome(claude_missing_auth())
 
     rendered = _render_for_request(request.tools, request.worktree_path, request.invocation, request.mcp_servers)
     if isinstance(rendered, str):
-        return CliMutationOutcome(status="error", error_detail=tool_policy_unsupported_message("claude"))
+        return failure_outcome(tool_policy_unsupported("claude"))
 
     if rendered.mcp_config is not None:
         write_error = _write_mcp_config(rendered.mcp_config)
@@ -180,7 +185,7 @@ def default_claude_run(request: CliMutationRunRequest) -> CliMutationOutcome:
         request,
         env=_env_for_mode(request.env, mode),
         binary="claude",
-        install_hint=_INSTALL_HINT,
+        install=_INSTALL,
         stop_when=tracker,
     )
     if isinstance(completed, CliMutationOutcome):
@@ -227,11 +232,11 @@ def _explicit_claude_name(name: str, request: AgentRequest) -> bool:
 class ClaudeAgentAdapter(CliDirectMutationAdapter):
     """Run Claude Code through the shared direct-mutation base."""
 
-    def _policy_unsupported(self, request: AgentRequest) -> str | None:
-        """Return the unsupported message when Claude Code cannot preserve the request's policy."""
+    def _policy_unsupported(self, request: AgentRequest) -> ProviderFailure | None:
+        """Return the unsupported failure when Claude Code cannot preserve the request's policy."""
         rendered = _render_for_request(request.tools, request.worktree_path, request.invocation, request.mcp_servers)
 
-        return tool_policy_unsupported_message("claude") if isinstance(rendered, str) else None
+        return tool_policy_unsupported("claude") if isinstance(rendered, str) else None
 
     def _build_run_env(self, request: AgentRequest) -> tuple[dict[str, str], list[str]]:
         """Return the base env minus inherited CLAUDE_* names the user did not ask for, reporting them as withheld."""
@@ -252,9 +257,9 @@ class ClaudeAgentAdapter(CliDirectMutationAdapter):
         """Return the Claude descriptor."""
         return CLAUDE_PROVIDER_SPEC
 
-    def _missing_credential_detail(self, spec: ProviderSpec) -> str:
-        """Return the install or authentication diagnostic for a missing Claude login."""
-        return claude_missing_auth_detail()
+    def _missing_credential_detail(self, spec: ProviderSpec) -> ProviderFailure:
+        """Return the install or authentication failure for a missing Claude login."""
+        return claude_missing_auth()
 
     def _provider_name(self) -> str:
         """Return the provider identifier string."""

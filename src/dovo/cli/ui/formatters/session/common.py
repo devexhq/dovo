@@ -10,6 +10,7 @@ from rich.table import Table
 from rich.text import Text
 
 from dovo.cli.ui.formatters.session.session_views import SessionSummaryView
+from dovo.common.formatters import format_remediations
 from dovo.common.utils import display_path, enum_value
 from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.sessions import DiffResult, StepRunSummary
@@ -208,5 +209,15 @@ def _step_cells(row: StepRunSummary, position: int) -> tuple[str, ...]:
 
 
 def build_step_error_lines(steps: Sequence[StepRunSummary]) -> list[Text]:
-    """Return one '• <step id>: <message>' line per row that has an error_message."""
-    return [Text(f"• {row.step_id}: {row.error_message}") for row in steps if row.error_message]
+    """Return one '• <step id>: <message>' line per row that has an error_message, each followed by the row's Fix: block when it has remediations."""
+    lines: list[Text] = []
+    for row in steps:
+        if not row.error_message:
+            continue
+
+        lines.append(Text(f"• {row.step_id}: {row.error_message}"))
+        fix = format_remediations(row.remediations)
+        if fix:
+            lines.append(Text(fix))
+
+    return lines

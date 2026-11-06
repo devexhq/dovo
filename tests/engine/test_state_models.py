@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from dovo.common.error_codes import ErrorCode
-from dovo.common.models import FailurePolicy
+from dovo.common.models import FailurePolicy, Remediation
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import InteractionRequest, RequestOption
 from dovo.engine.executors.models import StepRecord
@@ -32,6 +32,16 @@ _MANIFEST = DefinitionsManifest(
 
 def _manifest_dict() -> dict[str, object]:
     return _MANIFEST.model_dump()
+
+
+def _tree_with_result(result: StepRecord) -> ExecutionStateTree:
+    """Return a one-leaf tree whose single attempt holds result."""
+    leaf = ExecutionLeafNode(
+        id=result.step_id,
+        state=NodeState.FAILED,
+        attempts=[StepAttemptRecord(number=1, span=SEEDED_SPAN, result=result)],
+    )
+    return ExecutionStateTree(revision=1, manifest=_MANIFEST, nodes=[leaf])
 
 
 class ExecutionStateTreeTests:
@@ -114,7 +124,7 @@ class ExecutionStateTreeTests:
         assert [attempt.result for attempt in loaded.attempts] == [failed]
 
     def test_step_record_round_trips_its_published_code(self) -> None:
-        """Round-trip a failed record's INTERNAL_ERROR through JSON, dumping no errors or remediations key."""
+        """Round-trip a failed record's INTERNAL_ERROR and remediations through JSON, dumping no errors or diagnostics key."""
         failed = StepRecord(
             step_id="publish",
             status="failed",
@@ -124,19 +134,35 @@ class ExecutionStateTreeTests:
             duration_seconds=0.1,
             error_message="Failed to publish artifact 'plan': boom",
             error_code=ErrorCode.INTERNAL_ERROR,
+            remediations=[Remediation(message="Run 'make publish'", command="make publish")],
         )
-        leaf = ExecutionLeafNode(
-            id="publish",
-            state=NodeState.FAILED,
-            attempts=[StepAttemptRecord(number=1, span=SEEDED_SPAN, result=failed)],
-        )
-        tree = ExecutionStateTree(revision=1, manifest=_MANIFEST, nodes=[leaf])
+        tree = _tree_with_result(failed)
 
         dumped = tree.model_dump(mode="json")["nodes"][0]["attempts"][0]["result"]
 
         assert ExecutionStateTree.model_validate_json(tree.model_dump_json()) == tree
         assert dumped["error_code"] == "INTERNAL_ERROR"
-        assert {"errors", "remediations", "diagnostics"} & dumped.keys() == set()
+        assert dumped["remediations"] == [{"message": "Run 'make publish'", "command": "make publish"}]
+        assert {"errors", "diagnostics"} & dumped.keys() == set()
+
+    def test_record_saved_without_remediations_loads_with_none(self) -> None:
+        """Load a record dumped before steps kept their fixes, with no remediations key, as one with remediations []."""
+        failed = StepRecord(
+            step_id="publish",
+            status="failed",
+            exit_code=1,
+            stdout="",
+            stderr="",
+            duration_seconds=0.1,
+            error_message="boom",
+            error_code=ErrorCode.STEP_COMMAND_FAILED,
+        )
+        saved = _tree_with_result(failed).model_dump(mode="json")
+        del saved["nodes"][0]["attempts"][0]["result"]["remediations"]
+
+        loaded = ExecutionStateTree.model_validate_json(json.dumps(saved))
+
+        assert loaded == _tree_with_result(failed)
 
     def test_skipped_leaf_round_trips_with_its_skip_record(self) -> None:
         skip = StepSkip(cause=SkipCause.WHEN_UNRESOLVED, expression="steps.a.exit_code == 0")

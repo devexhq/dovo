@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
-from dovo.common.models import BaseResult
+from dovo.common.models import BaseResult, Remediation
 from dovo.core.agents.models import AgentProgress, AgentProgressKind, AgentResponseStatus
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition, StepType
@@ -120,7 +120,7 @@ class ExecutionMetadata(BaseModel):
 DiagnosticContext = Mapping[str, str | int | float | bool | None]
 
 
-_LEGACY_STEP_RESULT_KEYS: Final[frozenset[str]] = frozenset({"errors", "remediations", "diagnostics"})
+_LEGACY_STEP_RESULT_KEYS: Final[frozenset[str]] = frozenset({"errors", "diagnostics"})
 
 
 class StepDispatchOutcome(BaseModel):
@@ -134,6 +134,7 @@ class StepDispatchOutcome(BaseModel):
     stderr: str
     error_message: str | None = None
     error_code: ErrorCode | None = None
+    remediations: list[Remediation] = Field(default_factory=list)
     attempts: int = 1
     rejected_patch_path: str | None = None
     diagnostics: list[DiagnosticRecord] = Field(
@@ -286,8 +287,9 @@ class AgentStepSummary(BaseModel):
 class StepRecord(BaseModel):
     """A step's normalized outcome inside a run: a record, not a command result, so a failed step's text is its error_message.
 
-    error_code is a published ErrorCode or None, and needs no errors. A state saved while step results still held
-    errors, remediations and diagnostics loads with those keys dropped.
+    error_code is a published ErrorCode or None, and needs no errors. remediations are the fixes for a failed step, kept
+    out of error_message. A state saved while step results still held errors, remediations and diagnostics loads with
+    those keys dropped, and a record saved before it kept remediations loads with none.
     """
 
     model_config = {"extra": "forbid", "strict": True}
@@ -301,6 +303,7 @@ class StepRecord(BaseModel):
     attempts: int = 1
     error_message: str | None = None
     error_code: ErrorCode | None = None
+    remediations: list[Remediation] = Field(default_factory=list)
     outputs: dict[str, str] = Field(default_factory=dict)
     rejected_patch_path: str | None = None
     warnings: list[str] = Field(default_factory=list)
@@ -308,10 +311,15 @@ class StepRecord(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def drop_legacy_result_keys(cls, data: object) -> object:
-        """Drop the errors, remediations and diagnostics keys a step result saved before it became a record holds."""
+        """Drop the errors, remediations and diagnostics keys a step result saved before it became a record holds.
+
+        Every such result held errors and a record never does, so remediations are dropped only beside errors and a
+        record keeps its own.
+        """
         if not isinstance(data, dict):
             return data
-        return {key: value for key, value in data.items() if key not in _LEGACY_STEP_RESULT_KEYS}
+        dropped = _LEGACY_STEP_RESULT_KEYS | ({"remediations"} if "errors" in data else set())
+        return {key: value for key, value in data.items() if key not in dropped}
 
     @property
     def ok(self) -> bool:

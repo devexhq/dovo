@@ -9,15 +9,16 @@ from typing import Literal
 
 import pytest
 
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentInvocationContext,
     AgentResponseStatus,
     PolicyRoots,
     default_tool_policy,
-    tool_policy_unsupported_message,
+    tool_policy_unsupported,
 )
-from dovo.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest
+from dovo.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest, failure_outcome
 from dovo.core.agents.copilot import (
     COPILOT_PROVIDER_SPEC,
     CopilotAgentAdapter,
@@ -40,6 +41,8 @@ from tests.harness import (
 )
 
 _ALLOW_ALL = ToolPolicy(allow_all=True)
+_CREDENTIAL_REMEDIATIONS = [Remediation(message="Set 'GH_TOKEN'"), Remediation(message="Set 'GITHUB_TOKEN'")]
+_INSTALL_REMEDIATION = Remediation(message="Install the GitHub CLI (https://cli.github.com)")
 
 
 @pytest.fixture(autouse=True)
@@ -78,10 +81,8 @@ class CopilotAuthTests:
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
-        assert resp.errors == [
-            "Agent provider error: missing GH_TOKEN or GITHUB_TOKEN. "
-            "Fix: export GH_TOKEN=... or export GITHUB_TOKEN=..."
-        ]
+        assert resp.errors == ["Agent provider error: missing GH_TOKEN or GITHUB_TOKEN."]
+        assert resp.remediations == _CREDENTIAL_REMEDIATIONS
 
 
 class CopilotRunProgressTests:
@@ -157,7 +158,7 @@ def _run_default_copilot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tup
 
 
 class CopilotRunTests:
-    def test_missing_token_returns_missing_credential_error_without_running_gh(
+    def test_missing_token_outcome_carries_credential_remediations(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv("GH_TOKEN", raising=False)
@@ -171,7 +172,8 @@ class CopilotRunTests:
 
         assert outcome == CliMutationOutcome(
             status="error",
-            error_detail="missing GH_TOKEN or GITHUB_TOKEN. Fix: export GH_TOKEN=... or export GITHUB_TOKEN=...",
+            error_detail="missing GH_TOKEN or GITHUB_TOKEN.",
+            remediations=_CREDENTIAL_REMEDIATIONS,
         )
         assert runner.calls == []
 
@@ -205,9 +207,8 @@ class CopilotRunTests:
 
         assert outcome.status == "error"
         assert outcome.result_text is None
-        assert outcome.error_detail == (
-            "gh is not installed or not on PATH: gh. Fix: install the GitHub CLI (https://cli.github.com)"
-        )
+        assert outcome.error_detail == "gh is not installed or not on PATH: gh"
+        assert outcome.remediations == [_INSTALL_REMEDIATION]
 
 
 class CopilotInvokeOutcomeTests:
@@ -223,28 +224,35 @@ class CopilotInvokeOutcomeTests:
         assert resp.errors[0].splitlines()[0] == "Agent timed out after 10s (provider=copilot)."
 
     @pytest.mark.parametrize(
-        ("runner", "expected_error"),
+        ("runner", "expected_error", "expected_remediations"),
         [
             pytest.param(
                 FakeAgentRunner().raising(FileNotFoundError("gh")),
-                "Agent provider error: gh is not installed or not on PATH: gh. "
-                "Fix: install the GitHub CLI (https://cli.github.com)",
+                "Agent provider error: gh is not installed or not on PATH: gh",
+                [_INSTALL_REMEDIATION],
                 id="gh-missing",
             ),
             pytest.param(
                 FakeAgentRunner().raising(OSError("exec failed")),
                 "Agent provider error: exec failed",
+                [],
                 id="os-error",
             ),
             pytest.param(
                 FakeAgentRunner().returning(returncode=1, stderr=b"gh failed"),
                 "Agent provider error: gh failed",
+                [],
                 id="non-zero-exit",
             ),
         ],
     )
     def test_invoke_maps_non_timeout_subprocess_failure_to_provider_error(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, runner: FakeAgentRunner, expected_error: str
+        self,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        runner: FakeAgentRunner,
+        expected_error: str,
+        expected_remediations: list[Remediation],
     ) -> None:
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
@@ -252,6 +260,7 @@ class CopilotInvokeOutcomeTests:
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == [expected_error]
+        assert resp.remediations == expected_remediations
 
 
 class CopilotDescriptorTests:
@@ -754,7 +763,8 @@ class CopilotPolicyRenderTests:
         response = CopilotAgentAdapter().invoke(builder.build())
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert response.errors == [tool_policy_unsupported_message("copilot")]
+        assert response.errors == [tool_policy_unsupported("copilot").message]
+        assert response.remediations == list(tool_policy_unsupported("copilot").remediations)
         assert runner.calls == []
 
     def _run_with_unknown_option_failure(
@@ -776,13 +786,17 @@ class CopilotPolicyRenderTests:
 
         return outcome, runner
 
-    def test_unknown_option_failure_returns_update_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_unknown_option_reports_update_remediations(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Return a detail without fix text and the update and reinstall remediations."""
         outcome, _ = self._run_with_unknown_option_failure(tmp_path, monkeypatch)
 
         assert outcome == CliMutationOutcome(
             status="error",
-            error_detail="Installed GitHub Copilot CLI lacks a required tool-policy control. "
-            "Fix: run `copilot update` or reinstall the GitHub Copilot CLI.",
+            error_detail="Installed GitHub Copilot CLI lacks a required tool-policy control.",
+            remediations=[
+                Remediation(message="Run 'copilot update'", command="copilot update"),
+                Remediation(message="Reinstall the GitHub Copilot CLI"),
+            ],
         )
 
     def test_unknown_option_failure_does_not_retry_without_restrictions(
@@ -810,7 +824,7 @@ class CopilotPolicyRenderTests:
             )
         )
 
-        assert outcome == CliMutationOutcome(status="error", error_detail=tool_policy_unsupported_message("copilot"))
+        assert outcome == failure_outcome(tool_policy_unsupported("copilot"))
         assert runner.calls == []
 
 
@@ -1027,7 +1041,8 @@ class CopilotMcpUnsupportedTests:
         response = CopilotAgentAdapter().invoke(request)
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert response.errors == [tool_policy_unsupported_message("copilot")]
+        assert response.errors == [tool_policy_unsupported("copilot").message]
+        assert response.remediations == list(tool_policy_unsupported("copilot").remediations)
         assert runner.calls == []
 
     def test_mcp_deny_without_a_pattern_is_rejected_before_spawn(
@@ -1046,5 +1061,5 @@ class CopilotMcpUnsupportedTests:
             )
         )
 
-        assert outcome == CliMutationOutcome(status="error", error_detail=tool_policy_unsupported_message("copilot"))
+        assert outcome == failure_outcome(tool_policy_unsupported("copilot"))
         assert runner.calls == []
