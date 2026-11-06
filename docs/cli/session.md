@@ -97,7 +97,7 @@ When a session has no recorded execution state, the command prints `No step data
 | `branch` | `then`, `else` or `none` on an `if` row that started; otherwise `null`. |
 | `if_id` | The `if` block each step of its chosen branch belongs to, or `null`. |
 
-`step_id`, `status`, `attempts`, `exit_code`, `duration_seconds`, `error_message`, `error_code` and `rejected_patch_path` carry the same values as the step's [`run.step_done`](run.md#step-done-keys) event, except that a step continued past at a failure prompt is `ignored` here and `failed` in the event. The other keys describe the row and its state and appear only here; the event's `idx` and `total` appear only while the run is live. A step's stdout and stderr are read with [`dovo logs`](#dovo-session-logs); its outputs and warnings are kept in the session's saved run state (`session.json`), which carries every key above under the step's last attempt.
+`step_id`, `status`, `attempts`, `exit_code`, `duration_seconds`, `error_message`, `error_code` and `rejected_patch_path` carry the same values as the step's [`run.step_done`](run.md#step-done-keys) event, except that a step continued past at a failure prompt is `ignored` here and `failed` in the event. The other keys describe the row and its state and appear only here; the event's `idx` and `total` appear only while the run is live. A step's stdout and stderr are read with [`dovo logs`](#dovo-session-logs); its outputs and warnings are kept in the session's saved run state (`session.json`), which carries the keys listed at the start of this paragraph under the step's last attempt.
 
 ### Arguments
 
