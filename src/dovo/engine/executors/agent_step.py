@@ -28,7 +28,6 @@ from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.metadata import metadata_to_env
 from dovo.engine.executors.models import (
-    AGENT_OUTCOME_EXIT_CODES,
     AgentProgressSink,
     AgentStepRunner,
     AgentStepSummary,
@@ -36,6 +35,7 @@ from dovo.engine.executors.models import (
     ExecutionMetadata,
     OutputCallback,
     StepDispatchOutcome,
+    agent_exit_code,
 )
 from dovo.engine.executors.session_log import append_session_log_event
 
@@ -138,7 +138,7 @@ def _allocate_scratch(
     main_checkout: Path,
     context: DiagnosticContext,
 ) -> AgentInvocationContext | AgentAttempt:
-    """Return the attempt's private paths, or the provider_error attempt carrying the failure's code, message, remediations, and record."""
+    """Return the attempt's private paths, or the failed attempt carrying the failure's code, message, remediations, and record."""
     with catch_failure("engine.agent_step", **context) as caught:
         invocation = allocate_invocation_paths(
             invocation_id=new_invocation_id(),
@@ -254,7 +254,7 @@ def _with_withheld_fix(attempt: AgentAttempt, provider: str) -> AgentAttempt:
 def _provider_error(
     error_code: ErrorCode, message: str, *, remediations: list[Remediation] | None = None
 ) -> AgentAttempt:
-    """Build a provider_error attempt carrying error_code, the message, and any remediations."""
+    """Build a failed attempt carrying error_code, the message, and any remediations."""
     return AgentAttempt(
         status=AgentResponseStatus.PROVIDER_ERROR,
         error_code=error_code,
@@ -263,10 +263,10 @@ def _provider_error(
     )
 
 
-def _summary(attempt: AgentAttempt, *, status: AgentResponseStatus | None = None) -> AgentStepSummary:
-    """Build the attempt's step summary, under status when given."""
+def _summary(attempt: AgentAttempt, *, failed: bool = False) -> AgentStepSummary:
+    """Build the attempt's step summary, naming its status only when the attempt completed and is not marked failed."""
     return AgentStepSummary(
-        status=status or attempt.status,
+        status=attempt.status if attempt.completed and not failed else None,
         summary=attempt.summary,
         unfixable_reason=attempt.unfixable_reason,
         touched_files=attempt.touched_files,
@@ -274,15 +274,16 @@ def _summary(attempt: AgentAttempt, *, status: AgentResponseStatus | None = None
 
 
 def _failure_text(attempt: AgentAttempt) -> str:
-    """Name the unfixable reason followed by any errors, else join the errors, else name the status."""
-    if attempt.status == AgentResponseStatus.UNFIXABLE:
+    """Name the unfixable reason followed by any errors, else join the errors, else name the error code."""
+    if attempt.error_code == ErrorCode.AGENT_TASK_UNFIXABLE:
         reason_line = f"Agent reported the task unfixable: {attempt.unfixable_reason or 'no reason given'}"
         return "\n".join([reason_line, *attempt.errors])
 
     if attempt.errors:
         return "\n".join(attempt.errors)
 
-    return f"Agent step ended with status '{attempt.status.value}'."
+    code = attempt.error_code.value if attempt.error_code is not None else "none"
+    return f"Agent step failed with error code '{code}'."
 
 
 def _emit_output(on_output: OutputCallback | None, stream_name: str, line: str) -> Exception | None:
@@ -329,7 +330,7 @@ def _to_outcome(
 
     if callback_error is not None:
         return _failed_outcome(
-            _summary(attempt, status=AgentResponseStatus.PROVIDER_ERROR),
+            _summary(attempt, failed=True),
             f"Agent output callback error: {callback_error}",
             error_code=ErrorCode.INTERNAL_ERROR,
             diagnostics=diagnostics,
@@ -337,7 +338,7 @@ def _to_outcome(
 
     return StepDispatchOutcome(
         status="completed",
-        exit_code=AGENT_OUTCOME_EXIT_CODES[attempt.status],
+        exit_code=0,
         stdout=line,
         stderr="",
         error_message=None,
@@ -355,10 +356,10 @@ def _failed_outcome(
     rejected_patch_path: str | None = None,
     diagnostics: list[DiagnosticRecord],
 ) -> StepDispatchOutcome:
-    """Build the failed dispatch outcome carrying the summary status's mapped exit code, its line and outputs, the diagnostic, error_code, its remediations, any saved rejected-edit path, and the attempt's records."""
+    """Build the failed dispatch outcome carrying the exit code derived from error_code, its line and outputs, the diagnostic, error_code, its remediations, any saved rejected-edit path, and the attempt's records."""
     return StepDispatchOutcome(
         status="failed",
-        exit_code=AGENT_OUTCOME_EXIT_CODES[summary.status],
+        exit_code=agent_exit_code(error_code),
         stdout=summary.model_dump_json() + "\n",
         stderr=message,
         error_message=message,

@@ -19,7 +19,7 @@ SUCCESS_SUMMARY_LINE = json.dumps(
     {"status": "no_op", "summary": "Wrote the plan.", "unfixable_reason": None, "touched_files": ["notes.txt"]}
 )
 FAILURE_SUMMARY_LINE = json.dumps(
-    {"status": "unfixable", "summary": None, "unfixable_reason": "no network", "touched_files": []}
+    {"status": None, "summary": None, "unfixable_reason": "no network", "touched_files": []}
 )
 
 STDOUT_LINE = FormatterCase.identity(
@@ -47,9 +47,9 @@ FAILURE_SUMMARY = FormatterCase.identity(
     data=StepOutputEvent(
         step_id="plan",
         line=FAILURE_SUMMARY_LINE,
-        agent_summary=AgentSummaryView(status="unfixable", succeeded=False, unfixable_reason="no network"),
+        agent_summary=AgentSummaryView(status="failed", succeeded=False, unfixable_reason="no network"),
     ),
-    render_expectations=["unfixable", "no network"],
+    render_expectations=["failed", "no network"],
 )
 
 JSON_LINE_WITHOUT_SUMMARY = FormatterCase.identity(

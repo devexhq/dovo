@@ -141,14 +141,17 @@ class AgentStepRunnerTests:
         assert len(provider.requests) == 2
 
     def test_exhausted_retries_fail_with_last_summary(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        _use_provider(monkeypatch, FakeAgentProvider(AgentResponse(status=AgentResponseStatus.TIMEOUT)))
+        _use_provider(
+            monkeypatch,
+            FakeAgentProvider(AgentResponse(status=AgentResponseStatus.TIMEOUT, error_code=ErrorCode.AGENT_TIMEOUT)),
+        )
 
         result = _run_agent_step(git_repo, StepBuilder.agent("plan").with_retry(max_retries=2, backoff_ms=0))
 
         assert result.status == "failed"
         assert result.attempts == 2
-        assert result.exit_code == 202
-        assert json.loads(result.stdout)["status"] == "timeout"
+        assert (result.exit_code, result.error_code) == (202, ErrorCode.AGENT_TIMEOUT)
+        assert json.loads(result.stdout)["status"] is None
 
     def test_retried_agent_step_carries_its_last_attempts_code(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -163,7 +166,7 @@ class AgentStepRunnerTests:
 
         assert (result.status, result.attempts, result.error_code) == ("failed", 2, ErrorCode.AGENT_TIMEOUT)
 
-    def test_continue_policy_ignores_unfixable_step_but_keeps_summary_status(
+    def test_continue_policy_ignores_unfixable_step_but_keeps_its_error_code(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _use_provider(
@@ -177,7 +180,7 @@ class AgentStepRunnerTests:
 
         assert result.status == "ignored"
         assert (result.exit_code, result.error_code) == (201, ErrorCode.AGENT_TASK_UNFIXABLE)
-        assert json.loads(result.stdout)["status"] == "unfixable"
+        assert json.loads(result.stdout)["status"] is None
 
     @pytest.mark.parametrize(
         ("response", "step_builder", "status", "expected_outputs"),
@@ -190,10 +193,10 @@ class AgentStepRunnerTests:
                 id="completed_no_op",
             ),
             pytest.param(
-                AgentResponse(status=AgentResponseStatus.UNFIXABLE),
+                AgentResponse(status=AgentResponseStatus.UNFIXABLE, error_code=ErrorCode.AGENT_TASK_UNFIXABLE),
                 StepBuilder.agent("plan").with_on_failure(FailurePolicy.CONTINUE),
                 "ignored",
-                {"status": "unfixable", "summary": "", "unfixable_reason": "", "touched_files": "[]"},
+                {"status": "", "summary": "", "unfixable_reason": "", "touched_files": "[]"},
                 id="continued_unfixable",
             ),
         ],

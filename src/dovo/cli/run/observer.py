@@ -44,7 +44,7 @@ def _agent_summary_view(step: StepDefinition, line: str) -> AgentSummaryView | N
         return None
 
     return AgentSummaryView(
-        status=summary.status.value,
+        status=summary.status.value if summary.status is not None else "failed",
         succeeded=summary.succeeded,
         summary=summary.summary,
         unfixable_reason=summary.unfixable_reason,

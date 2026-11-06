@@ -41,7 +41,6 @@ from dovo.engine.executors.agent_step import (
 )
 from dovo.engine.executors.metadata import metadata_to_env
 from dovo.engine.executors.models import (
-    AGENT_OUTCOME_EXIT_CODES,
     AgentProgressSink,
     ExecutionMetadata,
     StepDispatchOutcome,
@@ -136,22 +135,9 @@ def _no_op(summary: str | None = _NO_OP_SUMMARY, raw_text: str | None = None) ->
     return AgentResponse(status=AgentResponseStatus.NO_OP, summary=summary, raw_text=raw_text)
 
 
-class AgentOutcomeMappingTests:
-    def test_mapping_covers_every_status_with_issue_codes(self) -> None:
-        assert dict(AGENT_OUTCOME_EXIT_CODES) == {
-            AgentResponseStatus.PROPOSED_PATCH: 0,
-            AgentResponseStatus.NO_OP: 0,
-            AgentResponseStatus.UNFIXABLE: 201,
-            AgentResponseStatus.TIMEOUT: 202,
-            AgentResponseStatus.PROVIDER_ERROR: 203,
-            AgentResponseStatus.BLOCKED: 204,
-        }
-        assert set(AGENT_OUTCOME_EXIT_CODES) == set(AgentResponseStatus)
-
-
 class ExecuteAgentStepToolPolicyFailureTests:
     @pytest.mark.parametrize(
-        ("response", "exit_code", "summary_status", "stderr_fragments"),
+        ("response", "exit_code", "stderr_fragments"),
         [
             pytest.param(
                 blocked_response(
@@ -160,14 +146,12 @@ class ExecuteAgentStepToolPolicyFailureTests:
                     denials=[AgentDenial(tool="bash", message="denied", capability=ToolCapability.SHELL)],
                 ),
                 204,
-                "blocked",
                 ["Agent run was blocked by tool permissions"],
                 id="blocked",
             ),
             pytest.param(
                 provider_error_response(duration_seconds=1.0, errors=[tool_policy_unsupported("copilot").message]),
                 203,
-                "provider_error",
                 ["cannot enforce the requested tool policy"],
                 id="unsupported_policy",
             ),
@@ -179,7 +163,6 @@ class ExecuteAgentStepToolPolicyFailureTests:
         monkeypatch: pytest.MonkeyPatch,
         response: AgentResponse,
         exit_code: int,
-        summary_status: str,
         stderr_fragments: list[str],
     ) -> None:
         _use_provider(monkeypatch, FakeAgentProvider(response))
@@ -187,7 +170,7 @@ class ExecuteAgentStepToolPolicyFailureTests:
         outcome = _run(git_repo)
 
         assert (outcome.status, outcome.exit_code) == ("failed", exit_code)
-        assert _summary(outcome)["status"] == summary_status
+        assert _summary(outcome)["status"] is None
         assert [fragment for fragment in stderr_fragments if fragment not in outcome.stderr] == []
 
 
@@ -322,10 +305,11 @@ class ExecuteAgentStepOutputTests:
         )
 
     @pytest.mark.parametrize(
-        ("status", "code", "unfixable_reason", "errors", "expected_error"),
+        ("status", "error_code", "code", "unfixable_reason", "errors", "expected_error"),
         [
             pytest.param(
                 AgentResponseStatus.UNFIXABLE,
+                ErrorCode.AGENT_TASK_UNFIXABLE,
                 201,
                 "needs a human",
                 [],
@@ -334,6 +318,7 @@ class ExecuteAgentStepOutputTests:
             ),
             pytest.param(
                 AgentResponseStatus.UNFIXABLE,
+                ErrorCode.AGENT_TASK_UNFIXABLE,
                 201,
                 "needs a human",
                 ["Discarded edit saved to /tmp/x.patch."],
@@ -342,6 +327,7 @@ class ExecuteAgentStepOutputTests:
             ),
             pytest.param(
                 AgentResponseStatus.TIMEOUT,
+                ErrorCode.AGENT_TIMEOUT,
                 202,
                 None,
                 ["Agent timed out after 45s (provider=copilot)."],
@@ -350,6 +336,7 @@ class ExecuteAgentStepOutputTests:
             ),
             pytest.param(
                 AgentResponseStatus.PROVIDER_ERROR,
+                ErrorCode.AGENT_PROVIDER_FAILED,
                 203,
                 None,
                 ["Agent provider error: down"],
@@ -358,26 +345,28 @@ class ExecuteAgentStepOutputTests:
             ),
         ],
     )
-    def test_failure_statuses_fail_with_mapped_code_and_summary(
+    def test_failures_fail_with_the_error_code_exit_code_and_a_null_status(
         self,
         git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
         status: AgentResponseStatus,
+        error_code: ErrorCode,
         code: int,
         unfixable_reason: str | None,
         errors: list[str],
         expected_error: str,
     ) -> None:
-        response = AgentResponse(status=status, unfixable_reason=unfixable_reason, errors=errors)
+        response = AgentResponse(status=status, error_code=error_code, unfixable_reason=unfixable_reason, errors=errors)
         _use_provider(monkeypatch, FakeAgentProvider(response))
 
         outcome = _run(git_repo)
 
         assert outcome.status == "failed"
-        assert outcome.exit_code == code
+        assert (outcome.exit_code, outcome.error_code) == (code, error_code)
         assert outcome.stderr == expected_error
         assert outcome.error_message == expected_error
-        assert _summary(outcome)["status"] == status.value
+        assert _summary(outcome)["status"] is None
+        assert outcome.outputs["status"] == ""
         assert _summary(outcome)["unfixable_reason"] == unfixable_reason
 
     def test_proposed_patch_completes_with_exit_zero_and_sorted_touched_files(
@@ -428,7 +417,7 @@ class ExecuteAgentStepOutputTests:
         assert outcome.exit_code == 203
         assert outcome.error_message == "Agent output callback error: ui down"
         assert outcome.error_code == ErrorCode.INTERNAL_ERROR
-        assert _summary(outcome)["status"] == "provider_error"
+        assert _summary(outcome)["status"] is None
         assert _summary(outcome)["touched_files"] == ["a.txt"]
         assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
@@ -592,23 +581,23 @@ class ExecuteAgentStepScratchTests:
 
         assert (outcome.status, outcome.exit_code, outcome.error_code) == ("failed", 203, expected_code)
         assert outcome.error_message == outcome.stderr == expected_message
-        assert (
-            outcome.stdout == '{"status":"provider_error","summary":null,"unfixable_reason":null,"touched_files":[]}\n'
-        )
+        assert outcome.stdout == '{"status":null,"summary":null,"unfixable_reason":null,"touched_files":[]}\n'
         assert requested == []
         assert list(session_tmp.iterdir()) == []
 
     @pytest.mark.parametrize(
-        ("response_status", "exit_code"),
+        ("response", "exit_code"),
         [
-            pytest.param(AgentResponseStatus.TIMEOUT, 202, id="timeout"),
-            pytest.param(AgentResponseStatus.PROVIDER_ERROR, 203, id="provider-error"),
+            pytest.param(
+                timeout_response(provider="copilot", timeout_seconds=45, duration_seconds=1.0), 202, id="timeout"
+            ),
+            pytest.param(provider_error_response(duration_seconds=1.0, errors=["down"]), 203, id="provider-error"),
         ],
     )
     def test_provider_failures_leave_directories_in_place(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, response_status: AgentResponseStatus, exit_code: int
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, response: AgentResponse, exit_code: int
     ) -> None:
-        provider = FakeAgentProvider(AgentResponse(status=response_status, errors=["down"]))
+        provider = FakeAgentProvider(response)
         _use_provider(monkeypatch, provider)
 
         outcome = _run(git_repo)
@@ -723,7 +712,12 @@ class ExecuteAgentStepEnvTests:
     def test_withheld_report_is_emitted_for_a_timed_out_attempt(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.TIMEOUT, env_withheld=["A", "B", "C"]))
+        _stub_attempt(
+            monkeypatch,
+            AgentAttempt(
+                status=AgentResponseStatus.TIMEOUT, error_code=ErrorCode.AGENT_TIMEOUT, env_withheld=["A", "B", "C"]
+            ),
+        )
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
         emitted: list[tuple[str, str]] = []
@@ -843,6 +837,7 @@ class AgentStepRejectedPatchTests:
             monkeypatch,
             AgentAttempt(
                 status=AgentResponseStatus.PROVIDER_ERROR,
+                error_code=ErrorCode.PATCH_FILE_COUNT_EXCEEDED,
                 errors=["gate said no", "Discarded edit saved to P."],
                 rejected_patch_path="P",
             ),

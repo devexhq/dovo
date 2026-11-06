@@ -215,6 +215,8 @@ A `when` or `until` list, and an `if` block's `condition`, reject a syntacticall
 
 A `when` list holds condition expressions written exactly as loop `until` conditions are, such as `steps.check.exit_code == 0`. Any step kind and any loop can carry one, including steps inside a loop's `do`.
 
+A `steps.<id>` operand reads one of the step's fields: `status`, `exit_code`, `stdout`, `error_code` or `outputs.<key>`. `error_code` is the error code the step recorded, such as `AGENT_TIMEOUT`, or `""` when it recorded none, so `steps.fix.error_code == ""` is true for a step that succeeded.
+
 `dovo blueprint validate`, `dovo run` and `dovo resume` reject a blueprint, naming the step or loop, when:
 
 - a `when` list is empty or holds an invalid expression, including an unquoted value of more than one word; see [Load errors](#load-errors) for the full list of reasons;
@@ -262,24 +264,23 @@ A later step may reference the steps of either branch. A step of the branch that
 
 ## Agent step outcomes
 
-An agent step records one outcome per attempt.
+An agent step records one outcome per attempt. A failed attempt's `error_code` is the only thing that tells why it failed, and its exit code is derived from that code.
 
-| JSON status | Dispatch | Code |
+| `error_code` | Dispatch | Code |
 |---|---|---|
-| `proposed_patch` | `completed` | `0` |
-| `no_op` | `completed` | `0` |
-| `unfixable` | `failed` | `201` |
-| `timeout` | `failed` | `202` |
-| `provider_error` | `failed` | `203` |
-| `blocked` | `failed` | `204` |
+| none | `completed` | `0` |
+| `AGENT_TASK_UNFIXABLE` | `failed` | `201` |
+| `AGENT_TIMEOUT` | `failed` | `202` |
+| `AGENT_TASK_BLOCKED` | `failed` | `204` |
+| any other code | `failed` | `203` |
 
-`blocked` means the provider refused a tool call under the step's `tools` policy and left the worktree unchanged. The error names the refused tool and says whether to grant the capability or to remove or narrow the matching `deny` rule. If the agent still made edits despite a refusal, the step continues as normal.
+`AGENT_TASK_BLOCKED` means the provider refused a tool call under the step's `tools` policy and left the worktree unchanged. The error names the refused tool and says whether to grant the capability or to remove or narrow the matching `deny` rule. If the agent still made edits despite a refusal, the step continues as normal.
 
-A direct-mutation agent produces `unfixable` by writing `unfixable.txt` to its scratch directory (see [Private Scratch](../guides/agent-providers.md#private-scratch)).
+A direct-mutation agent produces `AGENT_TASK_UNFIXABLE` by writing `unfixable.txt` to its scratch directory (see [Private Scratch](../guides/agent-providers.md#private-scratch)).
 
-Preflight failures (inactive worktree, missing agent settings, blank prompt), provider exceptions, patches that fail to apply, and an output callback that raises all record `provider_error` with `203`.
+Every other failure exits `203` with its own code: a provider failure records `AGENT_PROVIDER_FAILED`, an inactive worktree `STEP_WORKTREE_MISSING`, missing agent settings `STEP_AGENT_SETTINGS_MISSING`, a blank prompt `STEP_PROMPT_EMPTY`, a patch that fails to apply a `PATCH_*` or `GIT_FAILED` code, and an unexpected error or an output callback that raises `INTERNAL_ERROR`.
 
-Stdout is always one JSON object followed by a newline, so `steps.<id>.outputs.status` can branch on it:
+Stdout is always one JSON object followed by a newline. Its `status` is `proposed_patch` or `no_op` when the attempt completed and `null` when it failed:
 
 ```json
 {"status":"no_op","summary":"Reviewed the changes; no edits were needed.","unfixable_reason":null,"touched_files":[]}
@@ -289,12 +290,14 @@ Stdout is always one JSON object followed by a newline, so `steps.<id>.outputs.s
 
 ```text
 steps.agent.outputs.status == "no_op"
-steps.agent.outputs.status == "provider_error"
+steps.agent.error_code == "AGENT_TIMEOUT"
+steps.agent.error_code == ""
 steps.agent.exit_code == 202
 ```
 
 - `no_op` succeeds with `0`. A planning or review step that finds nothing to change therefore completes, and `steps.<id>.outputs.status` is what tells `proposed_patch` from `no_op`.
-- The step also records the four summary fields as outputs, so `steps.<id>.outputs.status`, `summary`, `unfixable_reason` and `touched_files` read the same values in conditions and placeholders (see [Step Outputs](#step-outputs-dovo_output)). A `null` `summary` or `unfixable_reason` is recorded as an empty string, and `touched_files` as a JSON array string such as `["a.py", "b.py"]`. A `contains` condition on `touched_files` therefore matches text inside that string, so `contains "a.py"` also matches `ba.py`.
+- Branch on why an agent step failed with `steps.<id>.error_code`, which is `""` when the step recorded no error code. No agent output names a failure cause.
+- The step also records the four summary fields as outputs, so `steps.<id>.outputs.status`, `summary`, `unfixable_reason` and `touched_files` read the same values in conditions and placeholders (see [Step Outputs](#step-outputs-dovo_output)). A `null` `status`, `summary` or `unfixable_reason` is recorded as an empty string, and `touched_files` as a JSON array string such as `["a.py", "b.py"]`. A `contains` condition on `touched_files` therefore matches text inside that string, so `contains "a.py"` also matches `ba.py`.
 - These four outputs take precedence over a `$DOVO_OUTPUT` line with the same key: the step drops that line and records a warning naming the step and the key.
 - These codes are step outcomes recorded per attempt. `dovo run` keeps its own exit contract, and command and script step exit codes are unchanged.
 
