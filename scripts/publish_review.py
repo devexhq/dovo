@@ -489,7 +489,7 @@ def _rule_problem(finding: dict[str, object]) -> str | None:
         return None
     return (
         f"review.json finding {finding['id']} has rule {rule!r}, "
-        f"which is not null or one word such as R4, conventions or architecture{FINDINGS_FIX}"
+        f"which is not null or one word such as R-failures-as-results, conventions or architecture{FINDINGS_FIX}"
     )
 
 

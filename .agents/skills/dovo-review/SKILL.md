@@ -2,7 +2,7 @@
 name: dovo-review
 description: >-
   Review a Dovo CLI change for bugs and regressions first, then plan fidelity,
-  then violations of the AGENTS.md rules R1–R18, and write line-level findings
+  then violations of the AGENTS.md rules, and write line-level findings
   to .agentic/review.md and a machine-readable verdict to .agentic/review.json.
   Invoked as /dovo-review [<pr-number>] [--post].
 disable-model-invocation: true
@@ -42,7 +42,7 @@ A reviewer that shares the author's context inherits its blind spots. If this se
 
 ## 3. Load the context
 
-Read [AGENTS.md](../../../AGENTS.md), [docs/agents/code-conventions.md](../../../docs/agents/code-conventions.md), the [docs/agents/architecture/](../../../docs/agents/architecture/README.md) files for the areas the diff touches, and the exemplar nearest to each changed file, since R5 asks new code to look like it. Do not open `.agentic/plan.md` or `.agentic/implementation-report.md` yet: the bug hunt reads the diff alone, so the plan's choices cannot pass for correctness. Section 5 reads them.
+Read [AGENTS.md](../../../AGENTS.md), [docs/agents/code-conventions.md](../../../docs/agents/code-conventions.md), the [docs/agents/architecture/](../../../docs/agents/architecture/README.md) files for the areas the diff touches, and the exemplar nearest to each changed file, since R-follow-the-exemplars asks new code to look like it. Do not open `.agentic/plan.md` or `.agentic/implementation-report.md` yet: the bug hunt reads the diff alone, so the plan's choices cannot pass for correctness. Section 5 reads them.
 
 ## 4. Hunt for bugs
 
@@ -77,8 +77,8 @@ A plan decision is not evidence of correctness. When code that follows the plan 
 
 - **Contract coverage.** Give every outcome (`O-n`), decision (`D-n`) and Done when item of the issue (or of the plan's `## Requirements` list, absent an issue) a row, one per part (`O-7 (fixer)`) when the plan's Phases table splits it, and check each row obligation by obligation (each sentence a test could observe) against the phases and the test lines that cite it. A row is `met` only when every obligation is. Give each row a verdict against the whole change at the reviewed commit: `met` with the evidence (the test and the assertion that proves it, read from the assertion, not the test name, or the code path), `unmet` with what is missing, or `deferred` with the later step that owns it, such as CI. A row whose cited test stubs out what the requirement names is `unmet`. So is a row whose observable contract landed differently from the literal the issue's binding values or a phase's `### Code` pins: CLI behaviour and output, flags and help text, exit codes, `error_code` and status values, JSON fields, persisted formats, entrypoint signatures and result model fields, with their types and defaults ([planning.md](../../../docs/agents/planning.md) Step 1). There a "better" name than the plan's is still `unmet`. Every `unmet` row is also a BLOCKER finding with `rule` `null`, citing the requirement id. An internal shape the plan writes as code (a helper, private type or module name, a module's placement, a private signature) is the planner's best guess, not the contract: when it landed differently and the requirement's observable contract is met, the row is `met`, and the difference is a deviation (below), never a Blocking or Warning finding on its own.
 - The change meets the issue's outcomes, decisions and Done when; contract coverage above records each one.
-- Nothing landed that an issue the plan lists under `## Owned elsewhere` owns, unless the plan names it as a departure, or it is a sentence the change made false (R17).
-- Unrequested surface is surface that serves no outcome, decision or Done when item. It gets no finding when a rule requires it (R10 callers, R17 sentences) or the plan names it as a departure with an Open Question; otherwise it is a Warning when public and a Suggestion when internal.
+- Nothing landed that an issue the plan lists under `## Owned elsewhere` owns, unless the plan names it as a departure, or it is a sentence the change made false (R-docs-match-shipped-behaviour).
+- Unrequested surface is surface that serves no outcome, decision or Done when item. It gets no finding when a rule requires it (R-replace-internals-outright callers, R-docs-match-shipped-behaviour sentences) or the plan names it as a departure with an Open Question; otherwise it is a Warning when public and a Suggestion when internal.
 - Each test line in every phase names a test that exists and asserts the outcome the line states, and every new test file traces back to a test line.
 - Every phase's deletion ledger is executed.
 - Each difference from the plan appears under the report's Plan deviations. A documented deviation that is compliant goes under `Documented deviations`; one that breaks a rule or an observable contract is still a finding. An undocumented one is a finding for silent deviation: a Warning when it changes observable behaviour or lands outside the plan's scope, and a Suggestion to document it when it changes only an internal shape.
@@ -93,13 +93,13 @@ A `review.json` on disk is the previous round only when it reviewed this same ch
 
 ## 6. Check the rules
 
-Go through R1–R18 in [AGENTS.md](../../../AGENTS.md), the conventions in [docs/agents/code-conventions.md](../../../docs/agents/code-conventions.md) (naming, model placement, `Any` and type-ignore rules) and the entries in [docs/agents/architecture/](../../../docs/agents/architecture/README.md) for the areas the diff touches against the diff. Every entry binds new and changed code; existing code the diff does not change may predate it. Report **only violations**, each as a finding with the rule id (or `conventions` for a conventions-doc item, `architecture` for an architecture entry, naming the entry's file and heading) and the `path:line` that breaks it. Do not list rules that pass, and do not report a rule the diff cannot touch. A rule violation is Blocking unless it is cosmetic in context, in which case say why it is a Warning; a naming violation is a Nit. Copying a neighbour does not excuse a convention violation in new code: R5 asks new work to follow its neighbours' layout and idiom, not their mistakes.
+Go through the rules in [AGENTS.md](../../../AGENTS.md), the conventions in [docs/agents/code-conventions.md](../../../docs/agents/code-conventions.md) (naming, model placement, `Any` and type-ignore rules) and the entries in [docs/agents/architecture/](../../../docs/agents/architecture/README.md) for the areas the diff touches against the diff. Every entry binds new and changed code; existing code the diff does not change may predate it. Report **only violations**, each as a finding with the rule id (or `conventions` for a conventions-doc item, `architecture` for an architecture entry, naming the entry's file and heading) and the `path:line` that breaks it. Do not list rules that pass, and do not report a rule the diff cannot touch. A rule violation is Blocking unless it is cosmetic in context, in which case say why it is a Warning; a naming violation is a Nit. Copying a neighbour does not excuse a convention violation in new code: R-follow-the-exemplars asks new work to follow its neighbours' layout and idiom, not their mistakes.
 
 Do not re-check what tooling enforces: import direction, output routing, direct file writes, model strictness, ignore reasons and docstring presence are covered by `tests/lint/`, ruff and ty. Ruff `ANN401` rejects `Any` as a parameter or return annotation, and `tests/lint/test_explicit_any.py` caps the remaining explicit `Any` per file, so a change that raises an `ANY_BUDGET` entry must justify each new `Any` against the permitted list in `docs/agents/code-conventions.md`. Do flag a change that weakens that tooling: a new allowlist or baseline entry, a new per-file ignore, or a suppression.
 
 ## 7. Check the docs
 
-Work through [doc-adherence.md](doc-adherence.md) with the changed-file list. A missing required doc update is Blocking, and so is a doc sentence describing behaviour that was not built (R17). A doc update no gate required is a Suggestion to remove it.
+Work through [doc-adherence.md](doc-adherence.md) with the changed-file list. A missing required doc update is Blocking, and so is a doc sentence describing behaviour that was not built (R-docs-match-shipped-behaviour). A doc update no gate required is a Suggestion to remove it.
 
 ## 8. Write the report
 
@@ -126,7 +126,7 @@ Write `.agentic/review.md` (create `.agentic/` if needed), overwriting the previ
 
 | ID | Location | Rule | Issue | Fix |
 |---|---|---|---|---|
-| B1 | `path:line` | `R6` | What goes wrong, and when. | The concrete fix. |
+| B1 | `path:line` | `R-atomic-locked-writes` | What goes wrong, and when. | The concrete fix. |
 
 ### Warnings
 
@@ -170,7 +170,7 @@ Contract coverage reads "No contract: `.agentic/plan.md` absent" when there is n
 
 **Action** follows from the verdict and what is left. On `APPROVE` it is `none`, or `needs_human` when a Warning is left that only a person can settle. On `CHANGES REQUIRED` it is `fix` when every Blocking finding can be fixed inside the plan, `replan` when a Blocking finding needs a different design from the plan's, and `needs_human` when only a person can settle what is left. Only a person can settle a finding whose fix needs a decision the plan does not make, goes back on a decision the plan made, or needs evidence no agent here can obtain; name that decision in the one-sentence reason. A finding you send to a person in the report always sets `needs_human`, because the `ship` blueprint stops fixing only on `needs_human` or `replan`.
 
-`Rule` is an R-id, `conventions` for a `docs/agents/code-conventions.md` item, `architecture` for a `docs/agents/architecture/` entry, or `-` for a bug or plan finding with no rule behind it. An empty section keeps its heading with the line `none`. IDs are the tier letter plus a number from 1 within the tier, in row order, reassigned every round; the fixer and `scripts/publish_review.py` consume them.
+`Rule` is a rule name from AGENTS.md, `conventions` for a `docs/agents/code-conventions.md` item, `architecture` for a `docs/agents/architecture/` entry, or `-` for a bug or plan finding with no rule behind it. An empty section keeps its heading with the line `none`. IDs are the tier letter plus a number from 1 within the tier, in row order, reassigned every round; the fixer and `scripts/publish_review.py` consume them.
 
 Say `APPROVE` only with zero Blocking findings.
 
@@ -193,7 +193,7 @@ Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, 
   "plan": ".agentic/plan.md",
   "counts": { "blocking": 1, "warnings": 1, "suggestions": 0, "nits": 0 },
   "findings": [
-    { "id": "B1", "severity": "BLOCKER", "path": "src/dovo/core/sessions/sessions.py", "start_line": null, "line": 146, "rule": "R4", "summary": "Session.details lets SessionNotFound escape instead of returning a NOT_FOUND result.", "issue": "`Session.details` lets `SessionNotFound` propagate, so `dovo session show <unknown id>` exits with a traceback instead of exit 2.", "fix": "Catch the failure once with `catch_failure` in `Session.details` and return a result whose `error_code` is `NOT_FOUND`.", "also_affects": [] }
+    { "id": "B1", "severity": "BLOCKER", "path": "src/dovo/core/sessions/sessions.py", "start_line": null, "line": 146, "rule": "R-failures-as-results", "summary": "Session.details lets SessionNotFound escape instead of returning a NOT_FOUND result.", "issue": "`Session.details` lets `SessionNotFound` propagate, so `dovo session show <unknown id>` exits with a traceback instead of exit 2.", "fix": "Catch the failure once with `catch_failure` in `Session.details` and return a result whose `error_code` is `NOT_FOUND`.", "also_affects": [] }
   ],
   "coverage": [
     { "requirement": "O-1", "verdict": "met", "evidence": "tests/cli/session/test_session_show.py::test_missing asserts exit 2" }
@@ -214,7 +214,7 @@ Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, 
 - `verdict` is exactly `APPROVE` or `CHANGES_REQUIRED`, and is `APPROVE` iff `counts.blocking` is `0`. `action` is `none` or `needs_human` when `verdict` is `APPROVE`, and `fix`, `replan` or `needs_human` otherwise.
 - `head` is the full SHA of the reviewed commit (`git rev-parse HEAD` for a clean branch, the PR's head commit for a PR scope), or `null` when the scope is uncommitted.
 - `provenance` is `fresh_session` or `same_session`. `scope.kind` is `pr`, `uncommitted` or `branch`, and `scope.ref` is `#<n>` for a `pr` scope and `origin/<default>...HEAD` for a `branch` scope. `plan` is the plan path or `null`.
-- `findings` lists every finding, Blocking first, each with the `id` from its `review.md` row. `severity` is `BLOCKER`, `WARNING`, `SUGGESTION` or `NIT`; `rule` is an R-id, `conventions`, `architecture`, or `null`. `issue` and `fix` are the text of the row's Issue and Fix cells, with any `\|` a table cell needs written as `|`, each a non-empty string. `fix` is one or two sentences, since it is posted under Suggested fix. `line` and `start_line` come from the row's Location: `path:<n>` sets `line` to `<n>` and `start_line` to `null`, and `path:<start>-<end>` sets `start_line` to `<start>` and `line` to `<end>`, with `<start>` below `<end>`. `path` alone, or no location, sets both `line` and `start_line` to `null`. `also_affects` lists the other `path:line` or `path:<start>-<end>` locations the same problem appears at, and is `[]` when there are none. Every key is present. A finding has no `thread` and no `prompt`: `scripts/publish_review.py` renders each inline finding's prompt.
+- `findings` lists every finding, Blocking first, each with the `id` from its `review.md` row. `severity` is `BLOCKER`, `WARNING`, `SUGGESTION` or `NIT`; `rule` is a rule name from AGENTS.md, `conventions`, `architecture`, or `null`. `issue` and `fix` are the text of the row's Issue and Fix cells, with any `\|` a table cell needs written as `|`, each a non-empty string. `fix` is one or two sentences, since it is posted under Suggested fix. `line` and `start_line` come from the row's Location: `path:<n>` sets `line` to `<n>` and `start_line` to `null`, and `path:<start>-<end>` sets `start_line` to `<start>` and `line` to `<end>`, with `<start>` below `<end>`. `path` alone, or no location, sets both `line` and `start_line` to `null`. `also_affects` lists the other `path:line` or `path:<start>-<end>` locations the same problem appears at, and is `[]` when there are none. Every key is present. A finding has no `thread` and no `prompt`: `scripts/publish_review.py` renders each inline finding's prompt.
 - `coverage` has one entry per Contract coverage row; `verdict` is `met`, `unmet` or `deferred`. It is `[]` without a plan.
 - `history` has one entry per previous-round finding; `outcome` is `fixed`, `disputed` or `still_open`, and `now` is its new id when `still_open`, otherwise `null`. It is `[]` in round 1.
 - `rejected` and `checks` mirror Rejected findings and Review coverage's checks; each is `[]` when empty.

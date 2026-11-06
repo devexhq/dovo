@@ -19,17 +19,17 @@ gh issue view <number> --json number,title,body
 
 - Link the issue; do not copy its prose. Every outcome (`O-n`) and decision (`D-n`) appears by ID in the Requirements column of the `## Phases` table instead, and is cited by at least one test line. A requirement whose parts land in different phases is listed in each of those phases' Requirements cells with the part it covers in parentheses (`O-7 (reply)`, `O-7 (fixer)`), and each part is cited by at least one test line.
 - Do not copy the issue's **literal** contracts (its binding values: names, flags, JSON, and exact error and output strings) into the plan: cite the issue section that holds them (`#<n>, Binding values`). The implementing agent reads the issue alongside the plan. A phase's `### Code` holds only new public surface the issue does not pin literally (Step 4).
-- Copy each **Out of scope** item that names the issue owning it into `## Owned elsewhere` as a collision check (`#n owns <X>`): the plan does not do that work. It is not a ban, so a line the change would otherwise leave false is still fixed (R17). Never derive a `## Traps` bullet from the issue's scope.
+- Copy each **Out of scope** item that names the issue owning it into `## Owned elsewhere` as a collision check (`#n owns <X>`): the plan does not do that work. It is not a ban, so a line the change would otherwise leave false is still fixed (R-docs-match-shipped-behaviour). Never derive a `## Traps` bullet from the issue's scope.
 - The issue's observable contracts bind the plan: CLI behaviour and output, exit codes, persisted formats, entrypoint signatures, result models and the literal values tests assert. The issue names no internal shapes; the plan chooses them in Step 2. When grounding shows that an outcome or decision cannot hold as written, plan the better design: add an Open Question whose assumed answer is that design, cite the `path:line` that shows why, and name the departure under **What you're approving**. Never write a Trap that tells the implementer to work around the issue.
 - The issue's outcomes and decisions bind the plan as written. When following one literally would exclude behaviour of a foundation the change adopts (an `OSError` on Dovo's own state that `catch_failure` records, and the `diagnostics` entry that follows; see [architecture/exceptions.md](architecture/exceptions.md) and [architecture/diagnostics.md](architecture/diagnostics.md)), or would freeze wording nothing relies on, plan the better behaviour as a departure in the same way.
 - Absent an issue, quote the request in the opening paragraph and number the requirements you derive from it as outcomes (`O-1`, …) in a `## Requirements` list after `## What you're approving`.
 - Do not open or consult sibling or parent issues. An issue that needs more than one pull request is split with `/dovo-issue`, never planned whole. A parent issue (one with sub-issues) is never planned itself; plan its sub-issues one at a time.
-- Plan zero backwards-compatibility shims, aliases, or dual code paths unless the issue explicitly demands them (R10).
+- Plan zero backwards-compatibility shims, aliases, or dual code paths unless the issue explicitly demands them (R-replace-internals-outright).
 - If a detail is unspecified, choose the option matching the nearest existing pattern from Step 2, and add a numbered Open Question stating the assumed answer and the rejected alternative.
 
 ## Step 2: Ground yourself in the current code
 
-1. Read [AGENTS.md](../../AGENTS.md) (rules R1–R18 and exemplars).
+1. Read [AGENTS.md](../../AGENTS.md) (rules and exemplars).
 2. Ground against the current default branch and record its short sha and the date. Never ground against a branch whose base is not an ancestor of it.
 3. Read every function the change touches **and its callers**, and the mirrored tests. Name the closest existing implementation to mirror with `file:line` citations (signature + docstring only).
 4. Look for what the change alters or depends on beyond the issue's text, and record each finding in the plan:
@@ -44,8 +44,8 @@ gh issue view <number> --json number,title,body
 Write the file-by-file manifest into `## Artifact inventory` in the plan itself: every file and symbol each phase touches, with its phase. A reviewer reads it to see what the change touches, and the implementer reads it as the phase's work list.
 Group requirements into phases of one concern each (~400 changed lines or less, tests included):
 - Each phase passes `uv run dovo run quality` on its own, ships something and leaves no dead code.
-- Replacing an internal is phased as add, switch callers, delete, with the deletion phase planned up front in `### Deletion ledger` (R10).
-- Order phases by dependency, lower layers first (R1). A fix to existing behaviour that the change depends on is its own phase, first.
+- Replacing an internal is phased as add, switch callers, delete, with the deletion phase planned up front in `### Deletion ledger` (R-replace-internals-outright).
+- Order phases by dependency, lower layers first (R-imports-flow-one-way). A fix to existing behaviour that the change depends on is its own phase, first.
 - A phase over budget states, under the Phases table, why it cannot be split.
 - The `ship` implement stage lands every phase in one PR, so the phases together serve the issue's one responsibility. A plan whose phases mix kinds of change (a foundation and its adoption, or a behaviour change and a refactor) says so first under **What you're approving** and recommends splitting the issue with `/dovo-issue`.
 - Resolve every check now: no plan line or ledger entry may be conditional on a `grep` the implementer runs later.
@@ -54,7 +54,7 @@ Group requirements into phases of one concern each (~400 changed lines or less, 
 
 - **Code:** a phase's `### Code` holds only new public surface the issue does not already pin literally: a new public signature with type hints, a result model, an enum, a command's flag set. No stubs for private helpers, and no copy of a literal the issue's Binding values already hold; cite that issue section instead. A phase with no such surface says "None: the issue pins it (`#<n>, <section>`)".
 - **Tests:** one line per test, `TestClass.test_name (path) — O-n: <behaviour>`, citing every requirement it pins and stating the behaviour it checks in words. No bodies and no `raise NotImplementedError` stubs. Sibling cases are one parametrized test and stay one line; name its cases by what they cover ("parametrized over terminal and `--format json` output"), not by their ids. A test line gives no value you would have to derive to write it: no computed message, column number, full result tuple or model repr. Keep a literal only when the issue's binding values or a settled decision pins it. The implementing agent derives the expected values from the code and the issue when it writes each test.
-- **Commands:** every command a phase adds or changes gets the R13 matrix (success, a failure path, `--format json`, each option it binds) as test lines in that phase's `### Tests`, plus one end-to-end scenario under `e2e/` for each outcome a person can observe from the installed binary.
+- **Commands:** every command a phase adds or changes gets the R-runner-and-e2e-tests matrix (success, a failure path, `--format json`, each option it binds) as test lines in that phase's `### Tests`, plus one end-to-end scenario under `e2e/` for each outcome a person can observe from the installed binary.
 - **Decisions:** a phase's `### Decisions` lists only where the plan departs from the issue or from the nearest existing pattern; omit the heading when there is none.
 - **Numbers:** a line estimate or total appears once, or agrees everywhere it appears.
 - Keep every planned function under cognitive complexity $\le 10$.
@@ -146,7 +146,7 @@ Not needed: <surfaces checked and left alone, e.g. migration, result model, conf
 - `<TestClass>.<test_name>` (`<test file path>`) — O-<n>[, D-<m>]: <behaviour it checks, in words>.
 - `<TestClass>.<test_name>` (`<test file path>`) — O-<n>: <behaviour>, parametrized over <what the cases cover>.
 
-<For commands, the R13 matrix as test lines: success, a failure path, `--format json`, each option it binds, and the end-to-end scenario under `e2e/` for each outcome a person can observe from the installed binary.>
+<For commands, the R-runner-and-e2e-tests matrix as test lines: success, a failure path, `--format json`, each option it binds, and the end-to-end scenario under `e2e/` for each outcome a person can observe from the installed binary.>
 
 ---
 
@@ -158,7 +158,7 @@ Not needed: <surfaces checked and left alone, e.g. migration, result model, conf
 
 ## Step 5: Save and hand off
 
-1. Verify all planned paths, imports, public surface and phases against R1–R18 in [AGENTS.md](../../AGENTS.md). Then split every outcome and decision into its separate obligations, each sentence a test could observe, and check that each obligation lands in a phase's Requirements cell and is cited by at least one test line.
+1. Verify all planned paths, imports, public surface and phases against the rules in [AGENTS.md](../../AGENTS.md). Then split every outcome and decision into its separate obligations, each sentence a test could observe, and check that each obligation lands in a phase's Requirements cell and is cited by at least one test line.
 2. Write the plan document (and `.agentic/evidence.md` when used). In a `ship` run, an Open Question whose assumed answer changes an accepted outcome or constraint is also raised as a question in the stage's `.agentic/ship/stage.json`, so a person settles it before coding; every other Open Question stays assumed in the plan.
 3. Report the plan path, the Phases table, and every numbered Open Question.
 

@@ -7,7 +7,7 @@ How a `Remediation` (one recovery step with a `message` and an optional `command
 - **Decision:** every remediation is built in `core/`, `engine/` or `common/` and carried on the result.
   - No formatter supplies remediation text or a fallback.
   - No exception message carries hand-written fix text; the steps travel as `Remediation` values.
-- **Why:** terminal and JSON output must show the same steps (R3).
+- **Why:** terminal and JSON output must show the same steps (R-facts-from-core).
 - **Since:** #639
 
 ## Message wording

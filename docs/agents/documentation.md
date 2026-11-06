@@ -1,10 +1,10 @@
 # Documentation
 
-Guidelines for maintaining user-facing and agent documentation in Dovo CLI (companion to R17 in [AGENTS.md](../../AGENTS.md)).
+Guidelines for maintaining user-facing and agent documentation in Dovo CLI (companion to R-docs-match-shipped-behaviour in [AGENTS.md](../../AGENTS.md)).
 
 ## Documentation Update Gates
 
-Update docs in the same PR **only** when a change triggers one of these gates or makes an existing doc, skill, rule, or docstring sentence false (`R17`):
+Update docs in the same PR **only** when a change triggers one of these gates or makes an existing doc, skill, rule, or docstring sentence false (`R-docs-match-shipped-behaviour`):
 
 - **Command added, renamed, or removed in `src/dovo/cli/cli.py`:** Update `README.md` Quick start and command surface so it matches `dovo --help` (`tests/lint/test_readme_command_parity.py` enforces this).
 - **User-visible CLI behavior, arguments, or flags changed:** Update the corresponding command page under `docs/cli/<command>.md`.
@@ -12,18 +12,18 @@ Update docs in the same PR **only** when a change triggers one of these gates or
 - **Python style, package layout, or `Any`/ignore rules changed:** Update [docs/agents/code-conventions.md](code-conventions.md).
 - **A settled design decision added or changed (results, domain errors, remediations, diagnostics):** Rewrite its entry in [docs/agents/architecture/](architecture/README.md), following that folder's rules, and cite the issue in **Since**. A lint test that enforces an entry cites it in its failure message as `docs/agents/architecture/<file>.md#<heading>`.
 - **Test tier or harness conventions changed:** Update [docs/agents/testing.md](testing.md).
-- **Existing doc or docstring sentence made false (`R17`):** Correct or delete the false sentence in the same change.
+- **Existing doc or docstring sentence made false (`R-docs-match-shipped-behaviour`):** Correct or delete the false sentence in the same change.
 
 Keep docs lean: no update is better than busywork. Prefer deleting stale bullets over appending parallel prose.
 
-## Accuracy Rules (R17)
+## Accuracy Rules (R-docs-match-shipped-behaviour)
 
 1. **Document only shipped behavior.** Every file path, command flag, helper, or fixture named in docs, skills, or docstrings must exist in the tree today.
 2. **Never duplicate source shapes in prose.** Do not copy Pydantic field tables, enum lists, or function signatures into internal docs where reading the source file already shows them unambiguously.
 
 ## User documentation
 
-User docs are `docs/` outside `docs/agents/`, `README.md`, and the site metadata in `mkdocs.yml`. They are written for people who run `dovo`. Contributor material (code structure, classes, modules, tests, quality gates, rules, how claims are verified) lives only in `docs/agents/` and `.agents/skills/`. `R18` in [AGENTS.md](../../AGENTS.md) points here, and a review reports a violation as `R18` with the rule ID below.
+User docs are `docs/` outside `docs/agents/`, `README.md`, and the site metadata in `mkdocs.yml`. They are written for people who run `dovo`. Contributor material (code structure, classes, modules, tests, quality gates, rules, how claims are verified) lives only in `docs/agents/` and `.agents/skills/`. `R-user-docs-no-internals` in [AGENTS.md](../../AGENTS.md) points here, and a review reports a violation as `R-user-docs-no-internals` with the rule ID below.
 
 ### UDOC-001: Describe only what users see
 

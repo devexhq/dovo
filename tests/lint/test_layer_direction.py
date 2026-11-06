@@ -1,4 +1,4 @@
-"""Invariant: each package imports only from the layers below it, per R1 in AGENTS.md."""
+"""Invariant: each package imports only from the layers below it, per R-imports-flow-one-way in AGENTS.md."""
 
 from __future__ import annotations
 

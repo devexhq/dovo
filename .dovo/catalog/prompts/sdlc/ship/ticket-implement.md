@@ -14,7 +14,7 @@ Read from disk:
 ## Implementation and commit rules
 
 - Implement every required outcome (`O-n`), decision (`D-n`), binding value, test, and documentation update within scope.
-- Follow R1–R18 in [AGENTS.md](../../../../../AGENTS.md) and the conventions in [docs/agents/code-conventions.md](../../../../../docs/agents/code-conventions.md) (strict Pydantic models where applicable, max cognitive complexity 10 per function, boundary mocking only, no `Any` annotations, docstrings on functions).
+- Follow the rules in [AGENTS.md](../../../../../AGENTS.md) and the conventions in [docs/agents/code-conventions.md](../../../../../docs/agents/code-conventions.md) (strict Pydantic models where applicable, max cognitive complexity 10 per function, boundary mocking only, no `Any` annotations, docstrings on functions).
 - Run focused checks during coding (`uv run ruff format`, `uv run ruff check`, `uv run ty check`, targeted `uv run pytest`, and `uv run complexipy <changed_files> -mx 10`, removing any generated `complexipy-results.json` afterward).
 - Draft/update the PR handoff files consumed by `scripts/pr.py` and `ship/publish`:
   - `.agentic/commit-msg`

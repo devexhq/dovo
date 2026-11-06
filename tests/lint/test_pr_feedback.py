@@ -94,7 +94,7 @@ B1 = _finding(
     "BLOCKER",
     "src/a.py",
     3,
-    "R4",
+    "R-failures-as-results",
     start_line=2,
     issue="`Session.details` lets it escape.\nSecond line.",
     fix="Catch it **once**.",
@@ -147,16 +147,16 @@ def _own_comment(findings_line: str) -> dict[str, object]:
 
 
 B1_BLOCK = (
-    "#### B1 · `src/a.py:2-3` · R4\n\n"
+    "#### B1 · `src/a.py:2-3` · R-failures-as-results\n\n"
     "**Issue:** `Session.details` lets it escape.\nSecond line.\n\n**Fix:** Catch it **once**.\n\n"
-    "<!-- dovo-finding id=B1 severity=BLOCKER rule=R4 -->"
+    "<!-- dovo-finding id=B1 severity=BLOCKER rule=R-failures-as-results -->"
 )
 B1_SUMMARY = "Session.details lets it escape. Second line."
 N1_BLOCK = (
     "#### N1 · `docs/x.md`\n\n**Issue:** Typo.\n\n**Fix:** Fix.\n\n<!-- dovo-finding id=N1 severity=NIT rule=- -->"
 )
-B1_FINDING = {"id": "B1", "severity": "BLOCKER", "rule": "R4"}
-MARKER_FIRST = "<!-- dovo-finding id=W9 severity=WARNING rule=R4 -->"
+B1_FINDING = {"id": "B1", "severity": "BLOCKER", "rule": "R-failures-as-results"}
+MARKER_FIRST = "<!-- dovo-finding id=W9 severity=WARNING rule=R-failures-as-results -->"
 CUTOFF = "2026-10-20T12:00:00Z"
 LINKED_LINE = f"**Findings:** 1 blocking · 0 warnings · 0 suggestions · 0 nits · [review]({DOVO_REVIEW_URL})"
 OWN_COMMENT: dict[str, object] = {
@@ -337,7 +337,7 @@ class PrFeedbackTests:
                 [
                     ("me", f"{PUBLISH.inline_body(B1)}\n"),
                     ("alice", "Quoted.\n<!-- dovo-finding id=X1 severity=NIT rule=- -->"),
-                    ("me", "Another note.\n<!-- dovo-finding id=W2 severity=WARNING rule=R4 -->"),
+                    ("me", "Another note.\n<!-- dovo-finding id=W2 severity=WARNING rule=R-failures-as-results -->"),
                 ],
             ),
             _dovo_thread("108", [("bob", N1_BLOCK)]),
@@ -430,7 +430,7 @@ class PrFeedbackTests:
                 "line": 3,
                 "summary": "Plain note.",
                 "body": f"Plain note.\n{MARKER_FIRST}",
-                "finding": {"id": "W9", "severity": "WARNING", "rule": "R4"},
+                "finding": {"id": "W9", "severity": "WARNING", "rule": "R-failures-as-results"},
             },
         ]
 
@@ -486,7 +486,14 @@ class PrFeedbackTests:
         ]
 
     def test_finding_items_keeps_heading_line_in_issue(self) -> None:
-        finding = _finding("W1", "WARNING", "docs/x.md", 10, "R17", issue="The page says\n#### Usage\nwhich is stale.")
+        finding = _finding(
+            "W1",
+            "WARNING",
+            "docs/x.md",
+            10,
+            "R-docs-match-shipped-behaviour",
+            issue="The page says\n#### Usage\nwhich is stale.",
+        )
 
         [item] = FEEDBACK.finding_items(_dovo_review(HEAD, [finding]))
 
@@ -501,9 +508,9 @@ class PrFeedbackTests:
 
     def test_collects_what_publish_posts(self) -> None:
         findings = [
-            _finding("B1", "BLOCKER", "src/a.py", 3, "R4"),
-            _finding("S1", "SUGGESTION", "src/a.py", 12, "R12", start_line=10),
-            _finding("W1", "WARNING", "src/a.py", 40, "R12", start_line=38),
+            _finding("B1", "BLOCKER", "src/a.py", 3, "R-failures-as-results"),
+            _finding("S1", "SUGGESTION", "src/a.py", 12, "R-tests-assert-contracts", start_line=10),
+            _finding("W1", "WARNING", "src/a.py", 40, "R-tests-assert-contracts", start_line=38),
         ]
         payload = _payload(findings, (frozenset({3}), frozenset({10, 11, 12})))
         comments = payload["comments"]
@@ -602,7 +609,7 @@ class PrFeedbackTests:
                     "source": "review_thread",
                     "author": "me",
                     "summary": "Lock",
-                    "finding": {"id": "W3", "severity": "WARNING", "rule": "R4"},
+                    "finding": {"id": "W3", "severity": "WARNING", "rule": "R-failures-as-results"},
                 },
                 "T1 [review_thread, me, W3 WARNING] Lock",
                 id="review-thread-dovo",
@@ -775,7 +782,7 @@ class PrFeedbackTests:
         )
 
     def test_reads_later_of_two_posts_on_one_head(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        first = _payload([_finding("B1", "BLOCKER", "src/a.py", 3, "R4")])
+        first = _payload([_finding("B1", "BLOCKER", "src/a.py", 3, "R-failures-as-results")])
         later_findings = [_finding("N1", "NIT", "docs/x.md", None, None)]
         later = _payload(later_findings)
         posted_first = _posted(first, DOVO_REVIEW_URL, "2026-10-19T09:00:00Z")
