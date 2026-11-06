@@ -560,6 +560,7 @@ class RunCoordinator:
             if error.error_code not in SNAPSHOT_FAILURE_CODES:
                 raise
             self._fail(error.error_code, error.message)
+            self._remediations.extend(error.remediations)
             return False
 
         structure_errors = validate_block_structure(state, blueprint)

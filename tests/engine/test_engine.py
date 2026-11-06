@@ -17,6 +17,7 @@ from dovo.common.filesystem.services import resolve_global_paths
 from dovo.common.models import Remediation
 from dovo.common.process import process_registry
 from dovo.common.session_id import SessionIdFactory
+from dovo.common.tool_policy import LEGACY_TOOLS_FIX
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.models import CatalogScan
@@ -568,6 +569,27 @@ class EngineRunSnapshotsDefinitionsTests:
         ]
         assert outcome.diagnostics == []
         assert frozen_diagnostic_clock.exists() is False
+
+    def test_uses_step_with_legacy_tools_list_fails_run_with_its_fix_as_a_remediation(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        """A uses: catalog step with a tools string list fails the run with SESSION_SNAPSHOT_INVALID and the tools-list fix as its remediation."""
+        write_runnable_step(
+            engine_paths.root_dir,
+            key="legacy-step",
+            definition={"id": "legacy-step", "type": "agent", "prompt": "go", "tools": ["read"]},
+        )
+        blueprint = _catalog_blueprint(engine_paths, "legacy-uses", [{"id": "s1", "uses": "legacy-step"}])
+
+        outcome = _engine(engine_paths, sessions_repo).run(
+            blueprint, RunRequest(session_id="legacy-1", use_worktree=False)
+        )
+
+        assert (outcome.status, outcome.error_code, outcome.remediations) == (
+            SessionStatus.FAILED,
+            ErrorCode.SESSION_SNAPSHOT_INVALID,
+            [Remediation(message=LEGACY_TOOLS_FIX)],
+        )
 
     def test_snapshot_write_failure_fails_run_with_run_snapshot_failed(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch

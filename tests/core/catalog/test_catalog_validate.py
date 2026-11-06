@@ -497,6 +497,7 @@ class CatalogValidateFailurePathTests:
         ]
         assert result.warnings == []
         assert result.remediations == [Remediation(message="Fix the reported schema error for target 'multi'.")] * 2
+        assert result.diagnostics == []
 
     def test_legacy_tools_list_carries_its_fix_as_a_remediation_not_message_text(
         self, isolated_workspace: Path

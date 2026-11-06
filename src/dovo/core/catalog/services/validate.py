@@ -15,7 +15,7 @@ from pydantic_core import ErrorDetails
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
-from dovo.common.tool_policy import LEGACY_TOOLS_FIX, LEGACY_TOOLS_MESSAGE
+from dovo.common.tool_policy import legacy_tools_remediation
 from dovo.core.catalog.definitions.blueprint import STEP_KIND_TAGS, BlueprintDefinition
 from dovo.core.catalog.definitions.placeholders import placeholder_input_names, placeholder_syntax_errors
 from dovo.core.catalog.definitions.scopes import condition_reference_errors
@@ -171,9 +171,7 @@ def _format_schema_exception(exc: CatalogError | ValidationError, key: str) -> t
 
 def _error_remediation(error: ErrorDetails, key: str) -> Remediation:
     """Return the remediation for one Pydantic error: the legacy-tools fix for a tools string list, else the generic one."""
-    if str(error.get("ctx", {}).get("error")) == LEGACY_TOOLS_MESSAGE:
-        return Remediation(message=LEGACY_TOOLS_FIX)
-    return _schema_remediation(key)
+    return legacy_tools_remediation(error) or _schema_remediation(key)
 
 
 def _sentence(text: str) -> str:

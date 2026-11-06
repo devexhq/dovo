@@ -193,7 +193,9 @@ class EngineLoader:
         except EngineError as error:
             if error.error_code not in SNAPSHOT_FAILURE_CODES:
                 raise
-            raise EngineError(error.error_code, f"Cannot resume session '{session_id}': {error}") from error.__cause__
+            raise EngineError(
+                error.error_code, f"Cannot resume session '{session_id}': {error}", error.remediations
+            ) from error.__cause__
 
         structure_errors = validate_block_structure(state, blueprint)
         if structure_errors:

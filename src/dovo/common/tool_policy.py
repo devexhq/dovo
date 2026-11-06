@@ -6,7 +6,10 @@ import re
 from enum import StrEnum
 from typing import Final, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic_core import ErrorDetails
+
+from dovo.common.models import Remediation
 
 LEGACY_TOOLS_MESSAGE: Final[str] = "Agent step tools must be a policy object with allow, deny, and allow_all."
 LEGACY_TOOLS_FIX: Final[str] = "Replace the tools string list with structured capability rules"
@@ -124,6 +127,22 @@ def validate_rule_pattern(capability: ToolCapability, pattern: str | None) -> st
     if pattern is None:
         return None
     return _PATTERN_CHECKS[capability](pattern)
+
+
+def legacy_tools_remediation(error: ErrorDetails) -> Remediation | None:
+    """Return the legacy-tools fix for one Pydantic error raised with LEGACY_TOOLS_MESSAGE, else None."""
+    if str(error.get("ctx", {}).get("error")) == LEGACY_TOOLS_MESSAGE:
+        return Remediation(message=LEGACY_TOOLS_FIX)
+    return None
+
+
+def legacy_tools_remediations(exc: BaseException | None) -> tuple[Remediation, ...]:
+    """Return the legacy-tools fix once when exc is a ValidationError holding a tools string list error, else ()."""
+    if not isinstance(exc, ValidationError):
+        return ()
+    if any(legacy_tools_remediation(error) is not None for error in exc.errors()):
+        return (Remediation(message=LEGACY_TOOLS_FIX),)
+    return ()
 
 
 def coerce_tool_policy(val: object) -> object:

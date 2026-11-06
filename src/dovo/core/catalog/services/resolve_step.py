@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.tool_policy import legacy_tools_remediations
 from dovo.core.catalog.catalog import Catalog
 from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.catalog.exceptions import CatalogError
@@ -71,7 +72,11 @@ def load_step_by_path(path: str | Path) -> StepDefinition:
     try:
         return StepDefinition.model_validate(Catalog.read_yaml(Path(path)))
     except ValidationError as exc:
-        raise CatalogError(ErrorCode.CATALOG_SCHEMA_INVALID, f"Model validation failed for '{path}': {exc}") from exc
+        raise CatalogError(
+            ErrorCode.CATALOG_SCHEMA_INVALID,
+            f"Model validation failed for '{path}': {exc}",
+            legacy_tools_remediations(exc),
+        ) from exc
 
 
 def merge_uses_step(using: StepDefinition, base_definition: StepDefinition) -> StepDefinition | None:
@@ -123,7 +128,9 @@ def resolve_step_definition(
         except (ValidationError, ValueError) as exc:
             step_id = str(step.get("id", "<unknown>"))
             raise CatalogError(
-                ErrorCode.CATALOG_SCHEMA_INVALID, f"Step validation failed for '{step_id}': {exc}"
+                ErrorCode.CATALOG_SCHEMA_INVALID,
+                f"Step validation failed for '{step_id}': {exc}",
+                legacy_tools_remediations(exc),
             ) from exc
     else:
         step_definition = step
