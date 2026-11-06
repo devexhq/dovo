@@ -15,6 +15,7 @@ class StatusView(ResultHeaderView):
     config_error_code: str | None
     config_path_relative: str
     git_branch: str | None
+    git_error_code: str | None
     git_is_dirty: bool
     uncommitted_files: int
     agent_model: str | None

@@ -7,7 +7,8 @@ from pathlib import Path
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.db import SessionsRepository
 from dovo.core.git.runner import GitRunner
-from dovo.core.status import Status
+from dovo.core.status import Status, WorkspaceHealth
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.status_workspace import BuildStatusWorkspace
 from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
@@ -45,3 +46,20 @@ class DatabaseProbeTests:
         assert result.worktrees.active_worktrees == 0
         assert result.worktrees.total_worktrees == 0
         assert result.warnings == []
+
+    def test_collect_unreadable_database_records_the_probe_failure(
+        self, status_workspace: BuildStatusWorkspace, tmp_path: Path, frozen_diagnostic_clock: Path
+    ) -> None:
+        """With a corrupted project database and a healthy reconcile.db, list the database probe's own record in diagnostics."""
+        workspace = status_workspace()
+        paths = initialized_workspace_paths(workspace)
+        sessions_db = SessionsRepository(db_path=tmp_path / "reconcile.db", project_id=paths.project_id)
+        paths.database_file.write_bytes(b"NOT A SQLITE DATABASE")
+
+        result = Status(paths, git=GitRunner(), sessions_db=sessions_db).collect()
+
+        record = diagnostic_record(frozen_diagnostic_clock)
+        assert result.status is WorkspaceHealth.DEGRADED
+        assert result.database.diagnostic == record
+        assert result.diagnostics == [record]
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "status.database"

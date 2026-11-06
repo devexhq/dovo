@@ -668,6 +668,18 @@ def write_blueprint(project: Path, name: str, content: str, *, runner: DovoRunne
     return blueprint_file
 
 
+def hanging_git_env(directory: Path) -> dict[str, str]:
+    """Write a git into directory that sleeps without answering and return the env putting it first on PATH under a 1s DOVO_GIT_TIMEOUT_SECONDS.
+
+    The script execs sleep, so the timeout kills the sleeping process itself and no child holds the output pipes open.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    git = directory / "git"
+    git.write_text("#!/bin/sh\nexec sleep 30\n", encoding="utf-8")
+    git.chmod(0o755)
+    return {"PATH": f"{directory}{os.pathsep}{os.environ.get('PATH', '')}", "DOVO_GIT_TIMEOUT_SECONDS": "1"}
+
+
 def parse_json(stdout: str) -> dict[str, object]:
     """Parse the whole of stdout as one JSON object; any surrounding text fails the test."""
     data = json.loads(stdout)

@@ -79,6 +79,25 @@ REMEDIATION_RESOLUTION_CASES = [
     ),
     pytest.param(
         DiagnosticCheckRecord(
+            check_id="git.repo",
+            name="Git Repository Check",
+            category=CheckCategory.GIT,
+            status=CheckStatus.FAILED,
+            message="Git timed out in '/repo': Git timed out after 120s ('git rev-parse --is-inside-work-tree')",
+            error_code=ErrorCode.DOCTOR_GIT_TIMEOUT,
+        ),
+        [
+            Remediation(
+                message=(
+                    "Check for git lock files, credential prompts, or stuck git processes, then retry, "
+                    "or raise 'DOVO_GIT_TIMEOUT_SECONDS' for a slow repository."
+                )
+            )
+        ],
+        id="git_timeout",
+    ),
+    pytest.param(
+        DiagnosticCheckRecord(
             check_id="config.schema",
             name="Config Schema Check",
             category=CheckCategory.CONFIG,

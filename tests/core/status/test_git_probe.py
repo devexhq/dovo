@@ -11,10 +11,22 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.db import SessionsRepository
 from dovo.core.git import GitError, GitProcessOutput, GitRunner, git_command_error
-from dovo.core.status import Status
+from dovo.core.status import Status, WorkspaceHealth
+from dovo.core.status.models import GitStatusInfo
+from tests.harness.diagnostic_log import diagnostic_record
 from tests.harness.fakes import FakeGitRunner
 from tests.harness.status_workspace import BuildStatusWorkspace
 from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
+
+_GIT_TIMEOUT_MESSAGE = "Git timed out after 120s ('git rev-parse --is-inside-work-tree')"
+_GIT_MISSING_MESSAGE = "Git execution failed ('git rev-parse --is-inside-work-tree'): git not found"
+_GIT_MESSAGES = {ErrorCode.GIT_TIMEOUT: _GIT_TIMEOUT_MESSAGE, ErrorCode.GIT_BINARY_MISSING: _GIT_MISSING_MESSAGE}
+_GIT_TIMEOUT_REMEDIATION = Remediation(
+    message=(
+        "Check for git lock files, credential prompts, or stuck git processes, then retry, "
+        "or raise 'DOVO_GIT_TIMEOUT_SECONDS' for a slow repository."
+    )
+)
 
 
 class GitProbeTests:
@@ -72,31 +84,74 @@ class GitProbeTests:
         ]
 
     @pytest.mark.parametrize(
-        "git_error",
+        ("responses", "error_code", "remediation"),
         [
-            pytest.param(GitError(ErrorCode.GIT_BINARY_MISSING, "git not found"), id="not_found"),
-            pytest.param(GitError(ErrorCode.GIT_TIMEOUT, "git timed out"), id="timeout"),
+            pytest.param(
+                {("rev-parse", "--is-inside-work-tree"): GitError(ErrorCode.GIT_TIMEOUT, _GIT_TIMEOUT_MESSAGE)},
+                ErrorCode.GIT_TIMEOUT,
+                _GIT_TIMEOUT_REMEDIATION,
+                id="timeout_inside_work_tree",
+            ),
+            pytest.param(
+                {
+                    ("rev-parse", "--is-inside-work-tree"): GitProcessOutput(0, "true\n", ""),
+                    ("branch", "--show-current"): GitError(ErrorCode.GIT_TIMEOUT, _GIT_TIMEOUT_MESSAGE),
+                },
+                ErrorCode.GIT_TIMEOUT,
+                _GIT_TIMEOUT_REMEDIATION,
+                id="timeout_branch",
+            ),
+            pytest.param(
+                {
+                    ("rev-parse", "--is-inside-work-tree"): GitProcessOutput(0, "true\n", ""),
+                    ("branch", "--show-current"): GitProcessOutput(0, "feature\n", ""),
+                    ("status", "--porcelain"): GitError(ErrorCode.GIT_TIMEOUT, _GIT_TIMEOUT_MESSAGE),
+                },
+                ErrorCode.GIT_TIMEOUT,
+                _GIT_TIMEOUT_REMEDIATION,
+                id="timeout_status",
+            ),
+            pytest.param(
+                {("rev-parse", "--is-inside-work-tree"): GitError(ErrorCode.GIT_BINARY_MISSING, _GIT_MISSING_MESSAGE)},
+                ErrorCode.GIT_BINARY_MISSING,
+                Remediation(message="Install Git and make sure 'git' is on PATH."),
+                id="binary_missing",
+            ),
         ],
     )
-    def test_collect_git_error_reports_unknown_branch(
-        self, status_workspace: BuildStatusWorkspace, git_error: Exception
+    def test_collect_unreadable_git_reports_its_code_warning_and_record(
+        self,
+        status_workspace: BuildStatusWorkspace,
+        frozen_diagnostic_clock: Path,
+        responses: dict[tuple[str, ...], GitProcessOutput | Exception],
+        error_code: ErrorCode,
+        remediation: Remediation,
     ) -> None:
-        """Return is_git_repo False, branch "unknown" and remediations == [Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")] when the fake raises git_error for rev-parse --is-inside-work-tree."""
+        """Report a degraded status with git's code, its message as the warning, its own remediation and one record."""
         workspace = status_workspace()
-        fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): git_error})
+        fake = FakeGitRunner(responses)
 
         result = Status(
             initialized_workspace_paths(workspace), git=fake, sessions_db=initialized_workspace_db(workspace).sessions
         ).collect()
 
-        assert result.git.is_git_repo is False
-        assert result.git.branch == "unknown"
-        assert result.remediations == [
-            Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")
-        ]
+        record = diagnostic_record(frozen_diagnostic_clock)
+        assert result.status is WorkspaceHealth.DEGRADED
+        assert result.git == GitStatusInfo(
+            is_git_repo=False,
+            branch="unknown",
+            is_dirty=False,
+            uncommitted_files=0,
+            error_code=error_code,
+            warning=_GIT_MESSAGES[error_code],
+            diagnostic=record,
+        )
+        assert result.warnings == [_GIT_MESSAGES[error_code]]
+        assert result.remediations == [remediation]
+        assert result.diagnostics == [record]
 
     def test_collect_git_command_error_reports_no_branch(self, status_workspace: BuildStatusWorkspace) -> None:
-        """Return is_git_repo False and branch "none" when the fake raises a GIT_FAILED GitError for rev-parse --is-inside-work-tree."""
+        """Return is_git_repo False, branch "none", the git init remediation and no record when the fake raises a GIT_FAILED GitError for rev-parse --is-inside-work-tree."""
         workspace = status_workspace()
         failure = git_command_error(
             ["git", "rev-parse", "--is-inside-work-tree"], 128, "", "fatal: not a git repository"
@@ -109,6 +164,11 @@ class GitProbeTests:
 
         assert result.git.is_git_repo is False
         assert result.git.branch == "none"
+        assert result.git.error_code is None
+        assert result.remediations == [
+            Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")
+        ]
+        assert result.diagnostics == []
 
     def test_collect_propagates_git_workdir_missing(self, status_workspace: BuildStatusWorkspace) -> None:
         """Raise the GitError(GIT_WORKDIR_MISSING) rev-parse --is-inside-work-tree raised instead of reporting a git status."""

@@ -10,6 +10,7 @@ from dovo.common.filesystem import Filesystem
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.status_workspace import BuildStatusWorkspace, status_config_payload
 from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
@@ -42,7 +43,9 @@ class WorktreeProbeTests:
         self,
         status_workspace: BuildStatusWorkspace,
         monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
     ) -> None:
+        """Count worktree directories, warn about the fallback and list the probe's record when the worktree query raises."""
         workspace = status_workspace()
         fs = Filesystem(workspace)
         paths = initialized_workspace_paths(workspace)
@@ -63,6 +66,10 @@ class WorktreeProbeTests:
 
         result = Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
 
+        record = diagnostic_record(frozen_diagnostic_clock)
         assert result.database.total_sessions == 1
         assert result.worktrees.active_worktrees == 1
         assert result.worktrees.total_worktrees == 1
+        assert result.warnings == ["Could not read worktrees from the database; counted worktree directories instead."]
+        assert result.diagnostics == [record]
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "status.worktrees"

@@ -55,6 +55,18 @@ def _git_binary_missing(result: DiagnosticCheckRecord) -> list[Remediation]:
     ]
 
 
+def _git_timeout(result: DiagnosticCheckRecord) -> list[Remediation]:
+    """Return the remediation for a git command that timed out (DOCTOR_GIT_TIMEOUT)."""
+    return [
+        Remediation(
+            message=(
+                "Check for git lock files, credential prompts, or stuck git processes, then retry, "
+                "or raise 'DOVO_GIT_TIMEOUT_SECONDS' for a slow repository."
+            ),
+        )
+    ]
+
+
 def _fs_unwritable(result: DiagnosticCheckRecord) -> list[Remediation]:
     """Return one remediation per unwritable workspace path, or a generic fallback when none are named (DOCTOR_FS_UNWRITABLE)."""
     unwritable_paths = result.details.get("unwritable_paths")
@@ -161,6 +173,7 @@ def _agent_model_missing(result: DiagnosticCheckRecord) -> list[Remediation]:
 _ERROR_CODE_BUILDERS: Final[dict[ErrorCode, Callable[[DiagnosticCheckRecord], list[Remediation]]]] = {
     ErrorCode.DOCTOR_GIT_REPO_NOT_FOUND: _git_repo_not_found,
     ErrorCode.DOCTOR_GIT_BINARY_MISSING: _git_binary_missing,
+    ErrorCode.DOCTOR_GIT_TIMEOUT: _git_timeout,
     ErrorCode.DOCTOR_FS_UNWRITABLE: _fs_unwritable,
     ErrorCode.DOCTOR_WORKTREE_STALE: _worktree_stale,
     ErrorCode.DOCTOR_WORKTREE_ORPHANED: _worktree_orphaned,

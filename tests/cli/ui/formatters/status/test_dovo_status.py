@@ -113,6 +113,7 @@ def _make_status_view(**overrides: object) -> StatusView:
         "config_error_code": None,
         "config_path_relative": ".dovo/config.json",
         "git_branch": "feature/status-cmd",
+        "git_error_code": None,
         "git_is_dirty": False,
         "uncommitted_files": 0,
         "agent_model": "test-model",
@@ -300,6 +301,39 @@ NOT_A_GIT_REPO = FormatterCase(
     ],
 )
 
+_GIT_TIMEOUT_WARNING = "Git timed out after 120s ('git rev-parse --is-inside-work-tree')"
+_GIT_TIMEOUT_REMEDIATION = Remediation(
+    message=(
+        "Check for git lock files, credential prompts, or stuck git processes, then retry, "
+        "or raise 'DOVO_GIT_TIMEOUT_SECONDS' for a slow repository."
+    )
+)
+
+GIT_TIMEOUT = FormatterCase(
+    data=_make_status_result(
+        status=WorkspaceHealth.DEGRADED,
+        root_dir=ROOT,
+        git=GitStatusInfo(
+            is_git_repo=False,
+            branch="unknown",
+            is_dirty=False,
+            uncommitted_files=0,
+            error_code=ErrorCode.GIT_TIMEOUT,
+            warning=_GIT_TIMEOUT_WARNING,
+        ),
+        warnings=[_GIT_TIMEOUT_WARNING],
+        remediations=[_GIT_TIMEOUT_REMEDIATION],
+    ),
+    view=_make_status_view(
+        status=WorkspaceHealth.DEGRADED,
+        git_branch=None,
+        git_error_code="GIT_TIMEOUT",
+        warnings=[_GIT_TIMEOUT_WARNING],
+        remediations=[_GIT_TIMEOUT_REMEDIATION],
+    ),
+    render_expectations=["dovo", "GIT_TIMEOUT", "test-model", _GIT_TIMEOUT_WARNING, "Fix:"],
+)
+
 UNNAMED_PROJECT = FormatterCase(
     data=_make_status_result(
         root_dir=ROOT,
@@ -441,6 +475,7 @@ STATUS_CASES = [
     *DEGRADED_CONFIG_CASES,
     pytest.param(DIRTY_BRANCH, id="dirty_branch"),
     pytest.param(NOT_A_GIT_REPO, id="not_a_git_repo"),
+    pytest.param(GIT_TIMEOUT, id="git_timeout"),
     pytest.param(UNNAMED_PROJECT, id="unnamed_project"),
     pytest.param(AGENT_MODEL_UNSET, id="agent_model_unset"),
     pytest.param(EMPTY_CATALOG, id="empty_catalog"),
@@ -465,6 +500,7 @@ STATUS_PAYLOAD_CASES = [
             "config_error_code": None,
             "config_path_relative": ".dovo/config.json",
             "git_branch": "feature/status-cmd",
+            "git_error_code": None,
             "git_is_dirty": False,
             "uncommitted_files": 0,
             "agent_model": "test-model",
@@ -494,6 +530,7 @@ STATUS_PAYLOAD_CASES = [
             "config_error_code": "CONFIG_NOT_FOUND",
             "config_path_relative": ".dovo/config.json",
             "git_branch": None,
+            "git_error_code": None,
             "git_is_dirty": False,
             "uncommitted_files": 0,
             "agent_model": None,
@@ -504,6 +541,33 @@ STATUS_PAYLOAD_CASES = [
             "total_sessions": 1,
         },
         id="uninitialized_non_git",
+    ),
+    pytest.param(
+        GIT_TIMEOUT,
+        {
+            "ok": True,
+            "error_code": None,
+            "errors": [],
+            "warnings": [_GIT_TIMEOUT_WARNING],
+            "remediations": [{"message": _GIT_TIMEOUT_REMEDIATION.message, "command": None}],
+            "diagnostics": [],
+            "status": "degraded",
+            "root_dir": "/workspace/my-repo",
+            "project_name": "dovo",
+            "config_error_code": None,
+            "config_path_relative": ".dovo/config.json",
+            "git_branch": None,
+            "git_error_code": "GIT_TIMEOUT",
+            "git_is_dirty": False,
+            "uncommitted_files": 0,
+            "agent_model": "test-model",
+            "active_worktrees": 1,
+            "max_active_worktrees": 5,
+            "valid_catalog_items": 2,
+            "total_catalog_items": 2,
+            "total_sessions": 1,
+        },
+        id="git_timeout",
     ),
 ]
 

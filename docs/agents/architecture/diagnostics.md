@@ -15,11 +15,12 @@ How caught exceptions are recorded in the diagnostic log (`<DOVO_HOME>/logs/`) a
 ## Recording levels
 
 - **Decision:** a caught exception is recorded at one of two levels.
-  - **Error:** the failure is reported to the caller as an error or warning. `catch_failure` records unexpected exceptions and `OSError` causes at this level, and a site that reports and continues does the same.
+  - **Error:** every failure caught and continued past that is reported as a warning, a failed check or a degraded status, with the record listed in the result's `diagnostics`. This covers each probe behind `dovo status` and each doctor check, whatever the failure's code. `catch_failure` also records unexpected exceptions and `OSError` causes at this level.
   - **Debug:** Dovo recovered and reports nothing, such as an unreadable catalog index, a failing run observer or a step of a rollback. A debug record never reaches `diagnostics`.
-  - An expected failure reported to the caller whose message already names the cause (git failing, a missing git binary) is not recorded at error level.
-- **Why:** error-level records explain something the user saw; debug records keep recovered failures diagnosable without alarming anyone.
-- **Since:** #1133
+  - An expected failure that ends the command as its `error_code`, and whose message already names the cause (git failing, a missing git binary), is not recorded.
+  - A git exit that is the answer asked for, such as `rev-parse` outside a repository, is an outcome, not a failure, and is not recorded.
+- **Why:** error-level records explain something the user saw; a warning or a degraded status alone leaves no trace of the exception behind it. Debug records keep recovered failures diagnosable without alarming anyone.
+- **Since:** #1133, #1446
 
 ## Each failure is recorded once
 

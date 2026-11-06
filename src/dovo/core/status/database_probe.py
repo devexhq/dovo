@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from dovo.common.diagnostic_log import DiagnosticLevel, record_exception
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.db import SessionsRepository
 from dovo.core.status.models import DatabaseStatusInfo
 
 
 def probe_database(paths: WorkspacePaths) -> DatabaseStatusInfo:
-    """Return whether the project database exists and answers a session query, and its session count, without migrating it."""
+    """Return whether the project database exists and answers a session query, and its session count, without migrating it.
+
+    A failed query is recorded at error level and gives an inaccessible info carrying the record.
+    """
     db_path = paths.database_file
     if not db_path.is_file():
         return DatabaseStatusInfo(
@@ -27,10 +31,14 @@ def probe_database(paths: WorkspacePaths) -> DatabaseStatusInfo:
             is_accessible=True,
             total_sessions=total_sessions,
         )
-    except Exception:
+    except Exception as exc:
+        record = record_exception(
+            exc, level=DiagnosticLevel.ERROR, operation="status.database", context={"path": str(db_path)}
+        )
         return DatabaseStatusInfo(
             exists=True,
             db_path=db_path,
             is_accessible=False,
             total_sessions=0,
+            diagnostic=record,
         )

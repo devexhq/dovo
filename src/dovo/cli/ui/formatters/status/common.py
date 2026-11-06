@@ -37,7 +37,9 @@ def format_config_status(view: StatusView) -> str:
 
 
 def format_git_branch(view: StatusView) -> str:
-    """Format active git branch or non-git status badge."""
+    """Format active git branch, the code git could not be read under in red, or the non-git status badge."""
+    if view.git_error_code is not None:
+        return f"[red]{view.git_error_code}[/red]"
     if view.git_branch is None:
         return "[yellow]NOT_A_GIT_REPO[/yellow]"
     if view.git_is_dirty:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Final
+
 from dovo.common.diagnostic_log import error_diagnostics
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
@@ -24,6 +26,19 @@ from dovo.core.status.models import (
     WorktreeStatusInfo,
 )
 from dovo.core.status.worktree_probe import probe_worktrees
+
+_GIT_INIT_REMEDIATION: Final = Remediation(
+    message="Run 'git init' or navigate to a Git repository.", command="git init"
+)
+_GIT_UNREADABLE_REMEDIATIONS: Final[dict[ErrorCode, Remediation]] = {
+    ErrorCode.GIT_TIMEOUT: Remediation(
+        message=(
+            "Check for git lock files, credential prompts, or stuck git processes, then retry, "
+            "or raise 'DOVO_GIT_TIMEOUT_SECONDS' for a slow repository."
+        )
+    ),
+    ErrorCode.GIT_BINARY_MISSING: Remediation(message="Install Git and make sure 'git' is on PATH."),
+}
 
 
 def _max_active_worktrees(config: ConfigStatusInfo) -> int:
@@ -81,6 +96,8 @@ def _collect_warnings(
     if config.error_code == ErrorCode.CONFIG_NOT_FOUND:
         warnings.append("Dovo workspace is not initialized. Run 'dovo init' to configure.")
 
+    warnings.extend(warning for warning in (git.warning, worktrees.warning) if warning)
+
     if git.branch in ("main", "master"):
         warnings.append(f"Active branch is '{git.branch}'. Automated workflows on primary branches are discouraged.")
 
@@ -108,6 +125,9 @@ def _collect_remediations(
 ) -> list[Remediation]:
     """Aggregate the config load remediations in load order, then the git step.
 
+    The git step fixes the code git could not be read under, or runs 'git init' when git says the directory is not
+    a repository.
+
     Args:
         git: Git repository status information.
         config: Configuration status information.
@@ -117,8 +137,10 @@ def _collect_remediations(
     """
     remediations: list[Remediation] = []
     remediations.extend(config.remediations)
-    if not git.is_git_repo:
-        remediations.append(Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init"))
+    if git.error_code is not None:
+        remediations.append(_GIT_UNREADABLE_REMEDIATIONS[git.error_code])
+    elif not git.is_git_repo:
+        remediations.append(_GIT_INIT_REMEDIATION)
     return remediations
 
 
@@ -159,6 +181,8 @@ class Status:
 
     def collect(self) -> DovoStatusResult:
         """Reconcile stale sessions, then probe git, config, catalog, database and worktrees and derive warnings, remediations, initialization and health.
+
+        diagnostics lists the records of the reconciliation, git, database and worktree failures caught, in that order.
 
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
@@ -206,5 +230,10 @@ class Status:
             worktrees=worktree_status,
             warnings=warnings,
             remediations=remediations,
-            diagnostics=error_diagnostics(reconciliation.diagnostic),
+            diagnostics=[
+                *error_diagnostics(reconciliation.diagnostic),
+                *error_diagnostics(git_status.diagnostic),
+                *error_diagnostics(database_status.diagnostic),
+                *error_diagnostics(worktree_status.diagnostic),
+            ],
         )
