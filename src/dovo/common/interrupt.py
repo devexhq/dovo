@@ -1,4 +1,4 @@
-"""Process-wide SIGINT/SIGTERM handling: raise KeyboardInterrupt, remember the signal, and end the process by it once the command has unwound."""
+"""Process-wide SIGINT, SIGTERM and SIGHUP handling: raise KeyboardInterrupt, remember the signal, and end the process by it once the command has unwound."""
 
 from __future__ import annotations
 
@@ -9,12 +9,15 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from types import FrameType
 
-_INTERRUPT_SIGNALS = (signal.SIGINT, signal.SIGTERM)
+_HANGUP_SIGNAL: signal.Signals | None = getattr(signal, "SIGHUP", None)
+_INTERRUPT_SIGNALS: tuple[signal.Signals, ...] = (
+    (signal.SIGINT, signal.SIGTERM) if _HANGUP_SIGNAL is None else (signal.SIGINT, signal.SIGTERM, _HANGUP_SIGNAL)
+)
 _received_signal: int | None = None
 
 
 def install_interrupt_handlers() -> None:
-    """Route SIGINT and SIGTERM to KeyboardInterrupt, recording the first signal number received; leave a signal the process inherited as ignored ignored."""
+    """Route SIGINT, SIGTERM and SIGHUP (where the platform has it) to KeyboardInterrupt, recording the first signal number received; leave a signal the process inherited as ignored ignored."""
     for sig in _INTERRUPT_SIGNALS:
         if signal.getsignal(sig) is signal.SIG_IGN:
             continue
@@ -44,7 +47,7 @@ def reraise_interrupt_signal() -> None:
 
 @contextmanager
 def deferred_interrupts() -> Generator[None]:
-    """Block SIGINT and SIGTERM for the block so one received inside it raises KeyboardInterrupt just after the block; block nothing on Windows."""
+    """Block SIGINT, SIGTERM and SIGHUP for the block so one received inside it raises KeyboardInterrupt just after the block; block nothing on Windows."""
     if sys.platform == "win32":
         yield
         return

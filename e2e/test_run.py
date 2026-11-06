@@ -352,11 +352,15 @@ steps:
 @pytest.mark.e2e
 @pytest.mark.fixture
 class RunInterruptCliTests:
-    """E2E tests for `dovo run` receiving SIGINT or SIGTERM while a step runs."""
+    """E2E tests for `dovo run` receiving SIGINT, SIGTERM or SIGHUP while a step runs."""
 
     @pytest.mark.parametrize(
         "signum",
-        [pytest.param(signal.SIGINT, id="sigint"), pytest.param(signal.SIGTERM, id="sigterm")],
+        [
+            pytest.param(signal.SIGINT, id="sigint"),
+            pytest.param(signal.SIGTERM, id="sigterm"),
+            pytest.param(signal.SIGHUP, id="sighup"),
+        ],
     )
     def test_run_interrupted_during_step_records_cancelled_and_stops_step_group(
         self,
@@ -397,3 +401,77 @@ steps:
         session_record = payload.get("session", {})
         assert isinstance(session_record, dict)
         assert session_record.get("status") == "cancelled"
+
+    def test_run_hangup_releases_the_lock_for_the_next_command(
+        self,
+        start_dovo: DovoProcessStarter,
+        run_dovo: DovoRunner,
+        initialized_project: Path,
+        tmp_path: Path,
+    ) -> None:
+        """SIGHUP `dovo run` once its step wrote its PGID; a following `dovo run` with a 1 s lock timeout exits 0 and reports no lock wait."""
+        pid_file = tmp_path / "step.pid"
+        _write_step_blueprint(run_dovo, initialized_project, "hangup-bp", f"echo $$ > '{pid_file}' && exec sleep 300")
+        _write_step_blueprint(run_dovo, initialized_project, "quick-bp", "true")
+
+        process = start_dovo(["run", "hangup-bp", "--session-id", "hangup-1"], cwd=initialized_project)
+        assert wait_until(lambda: pid_file.exists() and pid_file.read_text().endswith("\n"), timeout=10)
+        process.send_signal(signal.SIGHUP)
+        process.communicate(timeout=15)
+        following = run_dovo(
+            ["run", "quick-bp", "--no-worktree"], cwd=initialized_project, env={"DOVO_LOCK_TIMEOUT_SECONDS": "1"}
+        )
+
+        assert process.returncode == -signal.SIGHUP
+        assert following.exit_code == 0, following.stdout + following.stderr
+        assert "Workspace lock is currently held" not in f"{following.stdout}{following.stderr}"
+
+    def test_run_interrupted_step_ignoring_sigterm_is_cancelled_only_after_it_is_gone(
+        self,
+        start_dovo: DovoProcessStarter,
+        run_dovo: DovoRunner,
+        initialized_project: Path,
+        tmp_path: Path,
+    ) -> None:
+        """SIGINT `dovo run` while its step ignores SIGTERM; once dovo has exited, no process of the step's group is alive and the session reads cancelled."""
+        pid_file = tmp_path / "step.pid"
+        _write_step_blueprint(
+            run_dovo, initialized_project, "stubborn-bp", f"trap '' TERM; echo $$ > '{pid_file}'; exec sleep 300"
+        )
+
+        process = start_dovo(["run", "stubborn-bp", "--session-id", "stubborn-1"], cwd=initialized_project)
+        assert wait_until(lambda: pid_file.exists() and pid_file.read_text().endswith("\n"), timeout=10)
+        pgid = int(pid_file.read_text())
+        process.send_signal(signal.SIGINT)
+        stdout, _ = process.communicate(timeout=15)
+
+        assert process.returncode == -signal.SIGINT
+        assert not is_process_group_alive(pgid)
+        assert "Run Cancelled" in stdout
+        assert _session_status(run_dovo, initialized_project, "stubborn-1") == "cancelled"
+
+
+def _write_step_blueprint(run_dovo: DovoRunner, project: Path, name: str, command: str) -> None:
+    """Write a blueprint named name whose single step runs command."""
+    write_blueprint(
+        project,
+        name,
+        f"""version: "1.0"
+name: {name}
+id: {name}
+steps:
+  - id: only-step
+    run: {json.dumps(command)}
+""",
+        runner=run_dovo,
+    )
+
+
+def _session_status(run_dovo: DovoRunner, project: Path, session_id: str) -> object:
+    """Return the status `dovo session show --format json` reports for session_id."""
+    show = run_dovo(["session", "show", session_id, "--format", "json"], cwd=project)
+    payload = parse_json(show.stdout).get("payload", {})
+    assert isinstance(payload, dict)
+    session_record = payload.get("session", {})
+    assert isinstance(session_record, dict)
+    return session_record.get("status")

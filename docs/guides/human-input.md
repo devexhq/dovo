@@ -106,7 +106,7 @@ The `until` conditions run after the whole iteration, so `fix` also runs once wi
 
 In an interactive terminal the prompt is printed and you answer in place: a number picks an option, a comma-separated list picks several, and a second line asks for the comment when the chosen option's policy is `optional` or `required`. Type `/edit` at the comment prompt to use `$VISUAL`, else `$EDITOR`, else multi-line input ended with Ctrl-D. Nothing is recorded until both reads finish.
 
-Press Ctrl-C or close the terminal and the run stays paused with no answer recorded. Continue later with `dovo resume <session_id>`; the stored prompt is asked again without re-resolving options or re-running the step that produced the artifact.
+Press Ctrl-C or close the terminal and the run stays paused with no answer recorded. Closing the terminal sends a hangup (`SIGHUP`), which Dovo handles like Ctrl-C: it releases the workspace lock before it exits, so the next `dovo` command starts at once. Continue later with `dovo resume <session_id>`; the stored prompt is asked again without re-resolving options or re-running the step that produced the artifact.
 
 ---
 

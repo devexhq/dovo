@@ -15,10 +15,10 @@ _ARGUMENT_CODES = {
 
 
 def _expected_exit(code: ErrorCode) -> int:
-    """Return 2 for the argument-decided codes, 130 for RUN_CANCELLED and 1 for every other code."""
+    """Return 2 for the argument-decided codes, 130 for RUN_CANCELLED and SESSION_PROCESS_STOP_FAILED, and 1 for every other code."""
     if code in _ARGUMENT_CODES:
         return 2
-    if code == ErrorCode.RUN_CANCELLED:
+    if code in (ErrorCode.RUN_CANCELLED, ErrorCode.SESSION_PROCESS_STOP_FAILED):
         return 130
     return 1
 
@@ -36,6 +36,7 @@ class ErrorCodeExitTests:
             pytest.param(ErrorCode.INTERACTION_ANSWER_INVALID, 1, id="answer_rejected_by_prompt"),
             pytest.param(ErrorCode.SESSION_NOT_FOUND, 1, id="not_found"),
             pytest.param(ErrorCode.RUN_CANCELLED, 130, id="cancelled"),
+            pytest.param(ErrorCode.SESSION_PROCESS_STOP_FAILED, 130, id="process_stop_failed"),
         ],
     )
     def test_exit_of_representative_codes(self, code: ErrorCode, expected: int) -> None:

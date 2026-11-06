@@ -245,7 +245,7 @@ The flag list is pinned to the command by [`tests/lint/test_step_schema_parity.p
 9. **Exit codes**:
    - `0`: Successful completion or paused run (run state updated), including a run paused at an `ask` prompt.
    - `2`: Answer arguments that conflict or are malformed (`INTERACTION_ARGUMENTS_INVALID`), an invalid `--env-passthrough` entry (`AGENT_ENV_OVERRIDE_INVALID`), or a usage error such as an `--env-mode` value it does not accept.
-   - `130` for Ctrl-C (`SIGINT`) and `143` for `SIGTERM`, `128` plus the signal number (`RUN_CANCELLED`): `dovo resume` finishes its cleanup and prints its run result, then ends by the same signal. A resume interrupted while a step runs stops the step, is recorded `cancelled` and prints its `Run Cancelled` outcome first. A resume interrupted at a `prompt_user` failure prompt, an `ask` prompt or a loop `max_iterations` prompt stays paused and prints `Run Cancelled`.
+   - `130` for Ctrl-C (`SIGINT`), `143` for `SIGTERM` and `129` for a closed terminal (`SIGHUP`), `128` plus the signal number (`RUN_CANCELLED`): `dovo resume` finishes its cleanup and prints its run result, then ends by the same signal. A resume interrupted while a step runs stops the step's processes, is recorded `cancelled` once they have exited and prints its `Run Cancelled` outcome first. When a process group is still running 5 seconds after the stop, it is recorded `failed` with `SESSION_PROCESS_STOP_FAILED` and prints `Run Failed` instead. A resume interrupted at a `prompt_user` failure prompt, an `ask` prompt or a loop `max_iterations` prompt stays paused and prints `Run Cancelled`.
    - `1`: Every other failure, including a resume validation error, a blueprint snapshot that fails validation, an answer the prompt rejects (`INTERACTION_ANSWER_INVALID`), an unreadable `--comment-file` or `--answers-file` (`INTERACTION_ARGUMENT_FILE_UNREADABLE`), a failed step, no paused session found, and a failure reported as an `error` event.
 
 ## Exit codes
@@ -254,7 +254,7 @@ Every `dovo session` subcommand exits by its result's `error_code`:
 
 - `0`: the command succeeded. For `resume` this includes a run that pauses again.
 - `2`: a usage error, such as an unknown option or `--patch` with `--format json`; for `resume`, also the answer and `--env-passthrough` errors listed under [`dovo session resume`](#dovo-session-resume).
-- `130` or `143`: a `resume` you interrupt with Ctrl-C (`SIGINT`) or `SIGTERM` (`RUN_CANCELLED`).
+- `130`, `143` or `129`: a `resume` you interrupt with Ctrl-C (`SIGINT`), `SIGTERM` or by closing the terminal (`SIGHUP`) (`RUN_CANCELLED`, or `SESSION_PROCESS_STOP_FAILED` when a process group survived the stop).
 - `1`: every other failure, such as `SESSION_NOT_FOUND`, and every failure reported as an `error` event: a workspace that is not initialized, a configuration that does not load, a workspace lock timeout or an unexpected error.
 
 See [JSON Output](../reference/json-output.md#exit-codes) for the rule every command follows and the `error` event's payload.

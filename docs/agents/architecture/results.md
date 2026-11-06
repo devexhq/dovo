@@ -79,7 +79,7 @@ What a public entrypoint returns and what a caller branches on. These entries ho
 ## Exit codes come from error_code
 
 - **Decision:** a command exits `0` when its result's `error_code` is null, and otherwise with the exit that `error_code` declares (`ErrorCode.exit_code`). Every handler in `cli/` calls `exit_for(result)` and picks no exit of its own.
-  - A code decided only from the command's own arguments, before the workspace is read or changed, declares `2` and is listed in `ARGUMENT_ERROR_CODES`. `RUN_CANCELLED` declares `130`, and `run_cli` then ends the process by the signal it actually received (`128` plus its number). Every other code declares `1`.
+  - A code decided only from the command's own arguments, before the workspace is read or changed, declares `2` and is listed in `ARGUMENT_ERROR_CODES`. `RUN_CANCELLED` and `SESSION_PROCESS_STOP_FAILED` (an interrupted run whose process group survived the stop) declare `130`, and `run_cli` then ends the process by the signal it actually received (`128` plus its number). Every other code declares `1`.
   - `exit_for` reads `error_code`, never `ok` or a status, so `dovo status` exits `0` whatever health it reports.
   - A failure no command result carries (an uninitialized workspace, a config that does not load, a lock timeout, an unexpected exception) is reported by the one handler in `DovoTyperGroup.invoke`: a panel, or under `--format json` exactly one final `error` event with the failed-result header, and exit `1`. Click usage errors pass through it with Click's exit `2`.
   - Adding an `ErrorCode` decides its exit; `tests/common/test_error_codes.py` pins every member's.

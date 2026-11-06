@@ -13,11 +13,13 @@ from pathlib import Path
 import pytest
 
 from dovo.common.process import (
+    ProcessRegistry,
     get_isolated_process_kwargs,
     is_process_group_alive,
     process_registry,
     stream_isolated_process,
 )
+from tests.harness.fakes import use_virtual_process_time
 from tests.harness.poll import wait_until
 
 WINDOWS_CREATION_FLAGS: int = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
@@ -272,3 +274,100 @@ class StreamIsolatedProcessTests:
             if child.poll() is None:
                 child.kill()
                 child.communicate()
+
+
+LINGERING_GROUP_COMMAND = ["sh", "-c", "trap '' TERM; sleep 300 & exit 0"]
+SIGTERM_IGNORING_COMMAND = ["sh", "-c", "trap '' TERM; echo ready; exec sleep 300"]
+
+
+def _start_lingering_group(registry: ProcessRegistry) -> int:
+    """Start a group whose leader exits at once, leaving a SIGTERM-ignoring sleep in it; register, reap and unregister the leader as the executors do, and return the group id."""
+    proc = subprocess.Popen(
+        LINGERING_GROUP_COMMAND, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **get_isolated_process_kwargs()
+    )
+    registry.register(proc, pgid=proc.pid)
+    proc.wait(timeout=10.0)
+    registry.unregister(proc)
+    return proc.pid
+
+
+def _kill_group(pgid: int) -> None:
+    """SIGKILL every process left in pgid, ignoring a group that is already gone."""
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups required")
+class ProcessRegistryStopTests:
+    def test_nothing_recorded_returns_no_survivor_without_waiting(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        clock = use_virtual_process_time(monkeypatch)
+
+        assert (ProcessRegistry().stop_all(), clock.sleeps) == ([], [])
+
+    def test_group_left_behind_by_an_unregistered_process_is_gone_when_stop_all_returns(self) -> None:
+        registry = ProcessRegistry()
+        pgid = _start_lingering_group(registry)
+        try:
+            assert is_process_group_alive(pgid)
+
+            assert registry.stop_all() == []
+            assert not is_process_group_alive(pgid)
+        finally:
+            _kill_group(pgid)
+
+    def test_registered_process_ignoring_sigterm_is_gone_when_stop_all_returns(self) -> None:
+        registry = ProcessRegistry()
+        proc = subprocess.Popen(
+            SIGTERM_IGNORING_COMMAND, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, **get_isolated_process_kwargs()
+        )
+        try:
+            assert proc.stdout is not None
+            assert proc.stdout.readline() == b"ready\n"
+            registry.register(proc, pgid=proc.pid)
+
+            assert registry.stop_all() == []
+            assert not is_process_group_alive(proc.pid)
+            assert proc.returncode == -signal.SIGKILL
+        finally:
+            _kill_group(proc.pid)
+            proc.communicate()
+
+    def test_survivor_is_reported_once_five_seconds_pass_after_the_kill(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        proc = subprocess.Popen(["true"])
+        proc.wait(timeout=10.0)
+        clock = use_virtual_process_time(monkeypatch)
+        kills: list[tuple[int, int, float]] = []
+        monkeypatch.setattr(os, "killpg", lambda pgid, sig: kills.append((pgid, sig, clock.now)))
+        monkeypatch.setattr("dovo.common.process.is_process_group_alive", lambda _pgid: True)
+        registry = ProcessRegistry()
+        registry.register(proc, pgid=48213)
+        registry.unregister(proc)
+
+        survivors = registry.stop_all()
+
+        assert survivors == [48213]
+        assert [(pgid, sig) for pgid, sig, _ in kills] == [(48213, signal.SIGTERM), (48213, signal.SIGKILL)]
+        assert clock.now - kills[-1][2] == pytest.approx(5.0, abs=0.05)
+
+    def test_exited_process_leaves_no_recorded_group(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        registry = ProcessRegistry()
+        proc = subprocess.Popen(["true"])
+        registry.register(proc, pgid=proc.pid)
+        proc.wait(timeout=10.0)
+        registry.unregister(proc)
+        clock = use_virtual_process_time(monkeypatch)
+
+        assert (registry.stop_all(), clock.sleeps) == ([], [])
+
+    def test_terminate_all_forgets_recorded_groups(self) -> None:
+        registry = ProcessRegistry()
+        pgid = _start_lingering_group(registry)
+        try:
+            registry.terminate_all()
+
+            assert registry.stop_all() == []
+            assert is_process_group_alive(pgid)
+        finally:
+            _kill_group(pgid)

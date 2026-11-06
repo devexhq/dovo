@@ -113,6 +113,7 @@ class ErrorCode(StrEnum):
     SESSION_LOGS_UNREADABLE = "SESSION_LOGS_UNREADABLE"
     SESSION_DIFF_NOT_FOUND = "SESSION_DIFF_NOT_FOUND"
     SESSION_DIFF_UNREADABLE = "SESSION_DIFF_UNREADABLE"
+    SESSION_PROCESS_STOP_FAILED = "SESSION_PROCESS_STOP_FAILED"
 
     # Artifact
     ARTIFACT_NOT_FOUND = "ARTIFACT_NOT_FOUND"
@@ -176,12 +177,12 @@ class ErrorCode(StrEnum):
     def exit_code(self) -> int:
         """Return the exit a command ends with when its result carries this code.
 
-        2 when the failure is decided from the command's own arguments, 130 (128 + SIGINT) for RUN_CANCELLED, and 1 for
-        every other code.
+        2 when the failure is decided from the command's own arguments, 130 (128 + SIGINT) for RUN_CANCELLED and for
+        SESSION_PROCESS_STOP_FAILED (an interrupted run whose processes survived the stop), and 1 for every other code.
         """
         if self in ARGUMENT_ERROR_CODES:
             return 2
-        if self is ErrorCode.RUN_CANCELLED:
+        if self in (ErrorCode.RUN_CANCELLED, ErrorCode.SESSION_PROCESS_STOP_FAILED):
             return 130
         return 1
 

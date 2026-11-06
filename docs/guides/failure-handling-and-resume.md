@@ -107,6 +107,22 @@ The saved run state includes:
 
 ---
 
+## Interrupting a Run
+
+Ctrl-C, `SIGTERM` or closing the terminal (`SIGHUP`) while a step runs stops the processes of every step and agent the run started: each gets `SIGTERM`, then `SIGKILL`, and Dovo waits up to 5 seconds for them to exit. Only then is the run recorded `cancelled`, so a cancelled session has nothing left editing its worktree. An interrupt while no step process runs is recorded `cancelled` at once. Either way Dovo releases the workspace lock before it exits.
+
+When a process group is still running after that wait, the run and the interrupted step are recorded `failed`, never `cancelled`, with `SESSION_PROCESS_STOP_FAILED`:
+
+```text
+Run interrupted, but process group 48213 is still running.
+Fix:
+- Its processes may still be running; stop them with 'kill -9 -48213'
+```
+
+The run still exits as an interrupted run does, so read `error_code` in `--format json` output to tell it from a clean cancel.
+
+---
+
 ## Resuming Sessions (`dovo resume`)
 
 A run can also pause at an `ask` step that waits for a person's answer; see [Human Input](human-input.md).

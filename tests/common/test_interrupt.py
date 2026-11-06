@@ -1,4 +1,4 @@
-"""Tier 1 tests for the process-wide SIGINT/SIGTERM handlers, run in child processes that receive real signals."""
+"""Tier 1 tests for the process-wide SIGINT, SIGTERM and SIGHUP handlers, run in child processes that receive real signals."""
 
 from __future__ import annotations
 
@@ -36,12 +36,13 @@ print("RETURNED", flush=True)
 DEFERRED_CHILD = """
 import os
 import signal
+import sys
 from dovo.common.interrupt import deferred_interrupts, install_interrupt_handlers, reraise_interrupt_signal
 
 install_interrupt_handlers()
 try:
     with deferred_interrupts():
-        os.kill(os.getpid(), signal.SIGTERM)
+        os.kill(os.getpid(), int(sys.argv[1]))
         print("INSIDE", flush=True)
 except KeyboardInterrupt:
     print("AFTER", flush=True)
@@ -58,6 +59,19 @@ install_interrupt_handlers()
 os.kill(os.getpid(), signal.SIGTERM)
 reraise_interrupt_signal()
 print("IGNORED", flush=True)
+"""
+
+NO_HANGUP_CHILD = """
+import signal
+
+hangup = signal.SIGHUP
+del signal.SIGHUP
+from dovo.common.interrupt import deferred_interrupts, install_interrupt_handlers
+
+install_interrupt_handlers()
+with deferred_interrupts():
+    pass
+print("DEFAULT" if signal.getsignal(hangup) is signal.SIG_DFL else "REGISTERED", flush=True)
 """
 
 
@@ -80,7 +94,11 @@ def _read_line(process: subprocess.Popen[str]) -> str:
 class InterruptHandlerTests:
     @pytest.mark.parametrize(
         "signum",
-        [pytest.param(signal.SIGINT, id="sigint"), pytest.param(signal.SIGTERM, id="sigterm")],
+        [
+            pytest.param(signal.SIGINT, id="sigint"),
+            pytest.param(signal.SIGTERM, id="sigterm"),
+            pytest.param(signal.SIGHUP, id="sighup"),
+        ],
     )
     def test_signal_raises_keyboard_interrupt_and_reraise_terminates_by_it(self, signum: int) -> None:
         """In a child that installed the handlers, printed READY and blocks in signal.pause(), print INTERRUPTED from its except KeyboardInterrupt, then call reraise_interrupt_signal(); the child's returncode is -signum."""
@@ -114,10 +132,26 @@ class InterruptHandlerTests:
 
         assert (completed.returncode, completed.stdout.splitlines()) == (0, ["IGNORED"])
 
-    def test_signal_inside_deferred_interrupts_raises_after_the_block(self) -> None:
-        """A child that installed the handlers sends itself SIGTERM inside deferred_interrupts() and prints INSIDE after the kill; its except KeyboardInterrupt prints AFTER and calls reraise_interrupt_signal(); stdout is INSIDE then AFTER and the returncode is -SIGTERM."""
+    @pytest.mark.parametrize(
+        "signum",
+        [pytest.param(signal.SIGTERM, id="sigterm"), pytest.param(signal.SIGHUP, id="sighup")],
+    )
+    def test_signal_inside_deferred_interrupts_raises_after_the_block(self, signum: int) -> None:
+        """A child that installed the handlers sends itself signum inside deferred_interrupts() and prints INSIDE after the kill; its except KeyboardInterrupt prints AFTER and calls reraise_interrupt_signal(); stdout is INSIDE then AFTER and the returncode is -signum."""
         completed = subprocess.run(
-            [sys.executable, "-c", DEFERRED_CHILD], capture_output=True, text=True, timeout=30.0, check=False
+            [sys.executable, "-c", DEFERRED_CHILD, str(int(signum))],
+            capture_output=True,
+            text=True,
+            timeout=30.0,
+            check=False,
         )
 
-        assert (completed.returncode, completed.stdout.splitlines()) == (-signal.SIGTERM, ["INSIDE", "AFTER"])
+        assert (completed.returncode, completed.stdout.splitlines()) == (-signum, ["INSIDE", "AFTER"])
+
+    def test_platform_without_sighup_registers_nothing_for_it_and_does_not_fail(self) -> None:
+        """A child whose signal module has no SIGHUP installs the handlers and enters deferred_interrupts() without error, and the hangup signal keeps its default disposition."""
+        completed = subprocess.run(
+            [sys.executable, "-c", NO_HANGUP_CHILD], capture_output=True, text=True, timeout=30.0, check=False
+        )
+
+        assert (completed.returncode, completed.stdout.splitlines(), completed.stderr) == (0, ["DEFAULT"], "")

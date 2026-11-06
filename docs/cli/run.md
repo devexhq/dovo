@@ -103,7 +103,7 @@ With `--format json` the run result is the last line, a `run.result` event. Its 
 | Key | Value |
 | --- | --- |
 | `ok` | `true` exactly when `error_code` is `null`. A paused run is `ok`. |
-| `error_code` | Why the run failed, or `null`. An interrupted run is `RUN_CANCELLED`. |
+| `error_code` | Why the run failed, or `null`. An interrupted run is `RUN_CANCELLED`, or `SESSION_PROCESS_STOP_FAILED` when a process group it started was still running after the stop. |
 | `errors` | The failure's messages. |
 | `warnings` | Every warning of the run, including validation warnings. |
 | `remediations` | The failure's fixes, each with a `message` and a `command` or `null`. |
@@ -145,7 +145,7 @@ With `--format json`, the run result carries the `error_code`, `errors` (one ent
 
 - `0`: the run completed, or paused with its state saved (for example a `--no-tty` run at an `ask` step).
 - `2`: an invalid `--env-passthrough` entry (`AGENT_ENV_OVERRIDE_INVALID`), or a usage error such as `--keep` with `--discard` or an `--env-mode` value it does not accept. A usage error prints a usage message, never a JSON event.
-- `130` for Ctrl-C (`SIGINT`) and `143` for `SIGTERM`, `128` plus the signal number (`RUN_CANCELLED`): `dovo run` finishes its cleanup and prints its run result, then ends by the same signal, so a shell loop stops. A run interrupted while a step runs stops the step, is recorded `cancelled` and prints its `Run Cancelled` outcome first; its worktree is removed unless `--keep` was given. A run interrupted at a `prompt_user` failure prompt, an `ask` prompt or a loop `max_iterations` prompt stays paused and prints `Run Cancelled`.
+- `130` for Ctrl-C (`SIGINT`), `143` for `SIGTERM` and `129` for a closed terminal (`SIGHUP`), `128` plus the signal number (`RUN_CANCELLED`): `dovo run` finishes its cleanup, releases the workspace lock and prints its run result, then ends by the same signal, so a shell loop stops. A run interrupted while a step runs stops the step's processes and waits up to 5 seconds for them to exit. It is then recorded `cancelled` and prints its `Run Cancelled` outcome first; its worktree is removed unless `--keep` was given. When a process group is still running after that wait, the run and the interrupted step are recorded `failed` instead, with `SESSION_PROCESS_STOP_FAILED` and a `Run Failed` panel naming each group and the `kill -9 -<pgid>` command that stops it; the run still ends by the signal. A run interrupted at a `prompt_user` failure prompt, an `ask` prompt or a loop `max_iterations` prompt stays paused and prints `Run Cancelled`.
 - `1`: every other failure, including a failed run, a blueprint that fails validation, a failed automatic initialization, a configuration that does not load, a workspace lock timeout and an unexpected error.
 
 See [JSON Output](../reference/json-output.md#exit-codes) for the rule every command follows and for failures reported outside the run result.

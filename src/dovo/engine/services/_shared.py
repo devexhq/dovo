@@ -89,6 +89,7 @@ def finalize(
         **session_fields(record),
         error_code=run_outcome.error_code,
         errors=list(run_outcome.errors),
+        remediations=list(run_outcome.remediations),
         warnings=warnings,
         diagnostics=diagnostics,
         paused_prompt_id=run_outcome.paused_prompt_id,

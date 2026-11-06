@@ -10,7 +10,7 @@ from enum import StrEnum
 from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.lock import WorkspaceLock
-from dovo.common.models import FailurePolicy
+from dovo.common.models import FailurePolicy, Remediation
 from dovo.common.process import process_registry
 from dovo.common.timing import TimeSpan
 from dovo.core.agents.models import ResolvedAgentSettings
@@ -87,6 +87,18 @@ _CEILING_GRANT_COUNT = 3
 _CANCELLED_MESSAGE = "Execution cancelled by user."
 
 
+def _survivor_failure(pgids: list[int]) -> tuple[list[str], list[Remediation]]:
+    """Return one error and one `kill -9` remediation per process group that survived the interrupt's stop."""
+    errors = [f"Run interrupted, but process group {pgid} is still running." for pgid in pgids]
+    remediations = [
+        Remediation(
+            message=f"Its processes may still be running; stop them with 'kill -9 -{pgid}'", command=f"kill -9 -{pgid}"
+        )
+        for pgid in pgids
+    ]
+    return errors, remediations
+
+
 class NodeTransitionKind(StrEnum):
     """Outcome of applying one durable transition to a node."""
 
@@ -125,6 +137,7 @@ class RunCoordinator:
         self._agent = agent
         self._paused_prompt_id: str | None = None
         self._errors: list[str] = []
+        self._remediations: list[Remediation] = []
         self._error_code: ErrorCode | None = None
         self._warnings: list[str] = []
         self._diagnostics: list[DiagnosticRecord] = []
@@ -496,17 +509,32 @@ class RunCoordinator:
                 return self._outcome(SessionStatus.FAILED)
 
     def _cancel(self) -> RunOutcome:
-        """Terminate child processes, persist a non-terminal in-flight node as cancelled, and return the CANCELLED outcome."""
-        process_registry.terminate_all(grace_seconds=0.5)
-        if self._in_flight is not None and self._in_flight.state not in TERMINAL_NODE_STATES:
-            self._in_flight.state = NodeState.CANCELLED
-            for block in self._run.state.nodes:
-                if isinstance(block, ExecutionIfNode) and any(leaf is self._in_flight for leaf in block.steps):
-                    block.state = NodeState.CANCELLED
-            self._commit("while cancelling the run")
-        self._errors = [_CANCELLED_MESSAGE]
-        self._error_code = ErrorCode.RUN_CANCELLED
-        return self._outcome(SessionStatus.CANCELLED)
+        """Stop every process group the run started and confirm it is gone, then settle the in-flight node and the run.
+
+        With every group gone, a non-terminal in-flight node is persisted CANCELLED and the run ends CANCELLED with
+        RUN_CANCELLED. When a group survives, the node and the run end FAILED with SESSION_PROCESS_STOP_FAILED, one
+        error and one `kill -9` remediation per surviving group.
+        """
+        survivors = process_registry.stop_all(grace_seconds=0.5)
+        if not survivors:
+            self._settle_in_flight(NodeState.CANCELLED)
+            self._errors = [_CANCELLED_MESSAGE]
+            self._error_code = ErrorCode.RUN_CANCELLED
+            return self._outcome(SessionStatus.CANCELLED)
+        self._settle_in_flight(NodeState.FAILED)
+        self._errors, self._remediations = _survivor_failure(survivors)
+        self._error_code = ErrorCode.SESSION_PROCESS_STOP_FAILED
+        return self._outcome(SessionStatus.FAILED)
+
+    def _settle_in_flight(self, state: NodeState) -> None:
+        """Persist a non-terminal in-flight node, and the if block enclosing it, in state."""
+        if self._in_flight is None or self._in_flight.state in TERMINAL_NODE_STATES:
+            return
+        self._in_flight.state = state
+        for block in self._run.state.nodes:
+            if isinstance(block, ExecutionIfNode) and any(leaf is self._in_flight for leaf in block.steps):
+                block.state = state
+        self._commit("while cancelling the run")
 
     def _start(self) -> bool:
         """Load state, session row, and snapshot definitions and resolve the run settings; record the failure and return False when unavailable."""
@@ -970,6 +998,7 @@ class RunCoordinator:
             status=status,
             step_results=flatten_step_results(self._loaded.state) if self._loaded is not None else [],
             errors=list(self._errors),
+            remediations=list(self._remediations),
             warnings=list(self._warnings),
             diagnostics=list(self._diagnostics),
             worktree_path=worktree.worktree_path if worktree is not None else self._context.target_dir,

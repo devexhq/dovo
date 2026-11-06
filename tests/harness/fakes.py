@@ -343,6 +343,30 @@ def fixed_new_id(kind: str) -> str:
     return f"{kind}_0000abcd"
 
 
+class VirtualProcessTime:
+    """Stand-in for the time module inside dovo.common.process: monotonic reads a virtual clock only sleep advances."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        """Return the virtual clock."""
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        """Record seconds and advance the virtual clock by it."""
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def use_virtual_process_time(monkeypatch: pytest.MonkeyPatch) -> VirtualProcessTime:
+    """Replace the time module inside dovo.common.process with a fresh VirtualProcessTime and return it."""
+    clock = VirtualProcessTime()
+    monkeypatch.setattr("dovo.common.process.time", clock)
+    return clock
+
+
 class SequentialIds:
     """Session-ID generator returning f"{kind}_{suffix}" for each suffix in order, recording every kind requested."""
 
