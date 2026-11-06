@@ -125,8 +125,18 @@ class ExecutionStateTree(BaseModel):
     manifest: DefinitionsManifest
     nodes: list[ExecutionPlanNode] = Field(default_factory=list)
 
-    def settle_started_nodes(self, state: NodeState) -> bool:
-        """Set every RUNNING or PAUSED node, if-branch step, loop iteration and loop body step to state; return whether any changed."""
+    def settle_started_nodes(self, run_status: SessionStatus) -> bool:
+        """Set every RUNNING or PAUSED node, if-branch step, loop iteration and loop body step to the state a run ending in run_status leaves it; return whether any changed.
+
+        A cancelled run leaves them CANCELLED and a failed run FAILED; a run ending in any other status leaves them
+        as they are.
+        """
+        if run_status is SessionStatus.CANCELLED:
+            state = NodeState.CANCELLED
+        elif run_status is SessionStatus.FAILED:
+            state = NodeState.FAILED
+        else:
+            return False
         changed = [_settle(item, state) for node in self.nodes for item in _with_descendants(node)]
         return any(changed)
 

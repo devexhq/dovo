@@ -8,10 +8,8 @@ from dovo.common.lock import WorkspaceLock
 from dovo.core.db import SessionStatus
 from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.models import LifecycleUpdate, RunOutcome
-from dovo.engine.state_models import ExecutionStateTree, NodeState
+from dovo.engine.state_models import ExecutionStateTree
 from dovo.engine.state_store import SessionStateStore
-
-_SETTLED_NODE_STATES = {SessionStatus.CANCELLED: NodeState.CANCELLED, SessionStatus.FAILED: NodeState.FAILED}
 
 
 def record_run_end(
@@ -71,9 +69,7 @@ def _write_run_end(
         )
         return
 
-    node_state = _SETTLED_NODE_STATES.get(status)
-    if node_state is not None:
-        state.settle_started_nodes(node_state)
+    state.settle_started_nodes(status)
     try:
         store.save(state, warnings, lifecycle)
     except EngineError as error:

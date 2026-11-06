@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import FailurePolicy
+from dovo.core.db import SessionStatus
 from dovo.core.interaction import InteractionRequest, RequestOption
 from dovo.engine.executors.models import StepRecord
 from dovo.engine.models import DefinitionRef, DefinitionsManifest, IfBranch, SkipCause
@@ -171,9 +172,12 @@ class ExecutionLoopNodeCeilingTests:
 
 
 class ExecutionStateTreeSettleTests:
-    @pytest.mark.parametrize("state", [NodeState.CANCELLED, NodeState.FAILED])
-    def test_settle_started_nodes_reaches_every_container(self, state: NodeState) -> None:
-        """Settle a running leaf, a running loop with its running iteration and body leaf, and a running if block with its paused branch step, keeping pending and terminal nodes as they are."""
+    @pytest.mark.parametrize(
+        ("run_status", "state"),
+        [(SessionStatus.CANCELLED, NodeState.CANCELLED), (SessionStatus.FAILED, NodeState.FAILED)],
+    )
+    def test_settle_started_nodes_reaches_every_container(self, run_status: SessionStatus, state: NodeState) -> None:
+        """Settle a running leaf, a running loop with its running iteration and body leaf, and a running if block with its paused branch step in the run status's node state, keeping pending and terminal nodes as they are."""
         tree = ExecutionStateTree(
             manifest=_MANIFEST,
             nodes=[
@@ -209,7 +213,7 @@ class ExecutionStateTreeSettleTests:
             ],
         )
 
-        changed = tree.settle_started_nodes(state)
+        changed = tree.settle_started_nodes(run_status)
 
         done, leaf, loop, gate, later = tree.nodes
         assert isinstance(loop, ExecutionLoopNode)
@@ -235,8 +239,22 @@ class ExecutionStateTreeSettleTests:
             nodes=[ExecutionLeafNode(id="a", state=NodeState.COMPLETED), ExecutionLeafNode(id="b")],
         )
 
-        assert tree.settle_started_nodes(NodeState.CANCELLED) is False
+        assert tree.settle_started_nodes(SessionStatus.CANCELLED) is False
         assert [node.state for node in tree.nodes] == [NodeState.COMPLETED, NodeState.PENDING]
+
+    @pytest.mark.parametrize("run_status", [SessionStatus.COMPLETED, SessionStatus.PAUSED, SessionStatus.RUNNING])
+    def test_settle_started_nodes_leaves_started_nodes_for_other_statuses(self, run_status: SessionStatus) -> None:
+        """A run ending in a status that is neither cancelled nor failed leaves a running leaf and a paused leaf as they are and reports no change."""
+        tree = ExecutionStateTree(
+            manifest=_MANIFEST,
+            nodes=[
+                ExecutionLeafNode(id="a", state=NodeState.RUNNING),
+                ExecutionLeafNode(id="b", state=NodeState.PAUSED),
+            ],
+        )
+
+        assert tree.settle_started_nodes(run_status) is False
+        assert [node.state for node in tree.nodes] == [NodeState.RUNNING, NodeState.PAUSED]
 
 
 class PendingAskStateTests:

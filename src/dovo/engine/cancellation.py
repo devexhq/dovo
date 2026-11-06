@@ -8,18 +8,16 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.common.process import process_registry
 from dovo.core.db import SessionStatus
-from dovo.engine.state_models import NodeState
 
 CANCELLED_MESSAGE = "Execution cancelled by user."
 
 
 class InterruptStop(BaseModel):
-    """How an interrupt ends a run once its processes are stopped: cancelled, or failed when a process group survived."""
+    """How an interrupt ends a run once its processes are stopped: cancelled, or failed when a process group survived; its started nodes settle by the status."""
 
     model_config = {"extra": "forbid", "strict": True, "frozen": True}
 
     status: SessionStatus
-    node_state: NodeState
     error_code: ErrorCode
     errors: list[str]
     remediations: list[Remediation]
@@ -35,14 +33,12 @@ def stop_interrupted_run() -> InterruptStop:
     if not survivors:
         return InterruptStop(
             status=SessionStatus.CANCELLED,
-            node_state=NodeState.CANCELLED,
             error_code=ErrorCode.RUN_CANCELLED,
             errors=[CANCELLED_MESSAGE],
             remediations=[],
         )
     return InterruptStop(
         status=SessionStatus.FAILED,
-        node_state=NodeState.FAILED,
         error_code=ErrorCode.SESSION_PROCESS_STOP_FAILED,
         errors=[f"Run interrupted, but process group {pgid} is still running." for pgid in survivors],
         remediations=[

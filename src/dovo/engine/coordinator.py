@@ -531,9 +531,9 @@ class RunCoordinator:
                 return self._outcome(SessionStatus.FAILED)
 
     def _cancel(self) -> RunOutcome:
-        """Stop every process group the run started, persist every started node in the interrupt's node state, and end the run as stop_interrupted_run decides."""
+        """Stop every process group the run started, persist every started node settled by the interrupt's status, and end the run as stop_interrupted_run decides."""
         stop = stop_interrupted_run()
-        if self._run.state.settle_started_nodes(stop.node_state):
+        if self._run.state.settle_started_nodes(stop.status):
             self._commit("while cancelling the run")
         self._errors = list(stop.errors)
         self._remediations = list(stop.remediations)
