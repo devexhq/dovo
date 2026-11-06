@@ -27,7 +27,7 @@ from dovo.engine import Engine, EngineError, RunRequest, SessionStateStore
 from dovo.engine.executors import StepExecution
 from dovo.engine.executors.models import StepRecord
 from dovo.engine.models import FailurePromptDecision, RunOutcome
-from dovo.engine.state_models import ExecutionStateTree, NodeState, SessionJsonPayload
+from dovo.engine.state_models import ExecutionLeafNode, ExecutionStateTree, NodeState, SessionJsonPayload
 from dovo.engine.workspace import Workspace
 from dovo.engine.writer import get_session_dir
 from tests.engine.conftest import StubDriveRun
@@ -847,6 +847,14 @@ def _node_states(paths: WorkspacePaths, sessions: SessionsRepository, session_id
     return [node.state for node in SessionStateStore(sessions, paths, session_id).load([]).nodes]
 
 
+def _leaf_attempts(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str, step_id: str) -> int:
+    """Return how many attempts the session's saved execution state holds for the top-level leaf step_id."""
+    for node in SessionStateStore(sessions, paths, session_id).load([]).nodes:
+        if isinstance(node, ExecutionLeafNode) and node.id == step_id:
+            return len(node.attempts)
+    raise AssertionError(f"No top-level leaf '{step_id}' in session '{session_id}'.")
+
+
 class EngineRunInterruptTests:
     def test_interrupt_during_worktree_setup_records_cancelled(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -987,6 +995,34 @@ class EngineRunInterruptTests:
         assert row is not None
         assert (outcome.status, row.status, row.worktree_kept) == (SessionStatus.FAILED, SessionStatus.FAILED, False)
         assert not paths.worktree_dir("error-2").exists()
+
+    def test_domain_error_inside_a_step_ends_the_run_with_its_code_and_remediations(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With StepExecution.run raising an EngineError under on_failure retry, return FAILED with the error's code, message and remediation without retrying, and leave the row failed with no node running."""
+        paths, sessions = _git_engine(tmp_path)
+        retry: dict[str, object] = {"action": "retry", "max_retries": 3, "backoff_ms": 0}
+        blueprint = _catalog_blueprint(paths, "domain", [{"id": "s1", "run": "true", "on_failure": retry}])
+        remediation = Remediation(message="Publish the artifact first.", command="dovo artifact list")
+
+        def _unavailable(self: StepExecution) -> StepRecord:
+            raise EngineError(ErrorCode.WORKTREE_NOT_FOUND, "Artifact 'plan' is unavailable.", [remediation])
+
+        monkeypatch.setattr(StepExecution, "run", _unavailable)
+
+        outcome = _engine(paths, sessions).run(blueprint, RunRequest(session_id="domain-1", use_worktree=False))
+
+        row = sessions.get("domain-1")
+        assert row is not None
+        assert (outcome.status, outcome.error_code, outcome.errors, outcome.remediations) == (
+            SessionStatus.FAILED,
+            ErrorCode.WORKTREE_NOT_FOUND,
+            ["Artifact 'plan' is unavailable."],
+            [remediation],
+        )
+        assert (row.status, row.error_message) == (SessionStatus.FAILED, "Artifact 'plan' is unavailable.")
+        assert _node_states(paths, sessions, "domain-1") == [NodeState.FAILED]
+        assert _leaf_attempts(paths, sessions, "domain-1", "s1") == 1
 
     def test_interrupt_during_resume_setup_records_cancelled(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch

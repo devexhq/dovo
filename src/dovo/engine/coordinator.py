@@ -9,7 +9,7 @@ from enum import StrEnum
 
 from dovo.common.diagnostic_log import DiagnosticRecord, error_diagnostics
 from dovo.common.error_codes import ErrorCode
-from dovo.common.exceptions import catch_failure
+from dovo.common.exceptions import catch_unexpected
 from dovo.common.lock import WorkspaceLock
 from dovo.common.models import FailurePolicy, Remediation
 from dovo.common.timing import TimeSpan
@@ -391,8 +391,12 @@ class RunCoordinator:
         on_output: Callable[[str, str], None] | None,
         on_progress: ProgressCallback | None,
     ) -> StepRecord:
-        """Run one StepExecution, or turn a failure it raises into the attempt's failed record and add its record to the run's diagnostics."""
-        with catch_failure("engine.step", step=invocation.step.id) as caught:
+        """Run one StepExecution, or turn an unexpected error it raises into the attempt's failed record and add its record to the run's diagnostics.
+
+        An EngineError the execution raises is a business failure of the run, not of the attempt: it propagates,
+        with its code and remediations, to the entrypoint that ends the run with it.
+        """
+        with catch_unexpected("engine.step", step=invocation.step.id) as caught:
             return StepExecution(
                 self._execution_context(invocation, on_output=on_output, on_progress=on_progress)
             ).run()
