@@ -82,17 +82,23 @@ def _leaf_summary(
     iteration: int | None = None,
     if_id: str | None = None,
 ) -> StepRunSummary:
-    """Build the kind="step" row for one leaf node."""
+    """Build the kind="step" row for one leaf node: the last result's fields, attempts the last attempt's number.
+
+    An attempt's number counts every try before it, retries inside one attempt included, so the last number is the
+    step's total tries.
+    """
     results = [attempt.result for attempt in leaf.attempts if attempt.result is not None]
+    last = results[-1] if results else None
 
     return StepRunSummary(
         kind="step",
         step_id=leaf.id,
         name=leaf.name,
         state=leaf.state.value,
-        attempts=len(leaf.attempts),
-        exit_code=results[-1].exit_code if results else None,
-        duration_seconds=sum(result.duration_seconds for result in results) if results else None,
+        status=None if last is None else last.status,
+        attempts=leaf.attempts[-1].number if leaf.attempts else 0,
+        exit_code=None if last is None else last.exit_code,
+        duration_seconds=None if last is None else last.duration_seconds,
         error_message=_last_error_message(leaf.attempts, redactor),
         error_code=_last_error_code(leaf.attempts),
         rejected_patch_path=_last_rejected_patch_path(leaf.attempts, redactor),

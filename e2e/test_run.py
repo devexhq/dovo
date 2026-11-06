@@ -583,7 +583,7 @@ class RunStepErrorCliTests:
         assert isinstance(step_done, dict)
         payload = run_result(result.stdout)
         assert result.exit_code == 1
-        assert (step_done.get("ok"), step_done.get("error_code")) == (False, "INTERNAL_ERROR")
+        assert (step_done.get("status"), step_done.get("error_code")) == ("failed", "INTERNAL_ERROR")
         assert (payload["session_id"], payload["blueprint_name"], payload["session_status"]) == (
             "bad-1",
             "bad-output-bp",
@@ -591,6 +591,52 @@ class RunStepErrorCliTests:
         )
         assert _session_status(run_dovo, initialized_project, "bad-1") == "failed"
         assert "run.step_start" not in [event.get("event_type") for event in parse_events(resumed.stdout)]
+
+
+@pytest.mark.e2e
+@pytest.mark.fixture
+class RunStepViewsCliTests:
+    """E2E tests for a step reporting the same fields live, in session.json and in `dovo session show`."""
+
+    def test_retried_failing_step_reports_three_attempts_live_saved_and_shown(
+        self, run_dovo: DovoRunner, initialized_project: Path
+    ) -> None:
+        write_blueprint(
+            initialized_project,
+            "retry-views-bp",
+            """version: "1.0"
+name: retry-views-bp
+id: retry-views-bp
+steps:
+  - id: only-step
+    run: exit 1
+    on_failure:
+      action: retry
+      max_retries: 3
+""",
+            runner=run_dovo,
+        )
+
+        result = run_dovo(
+            ["run", "retry-views-bp", "--no-worktree", "--session-id", "retry-views-1", "--format", "json"],
+            cwd=initialized_project,
+        )
+        show = run_dovo(["session", "show", "retry-views-1", "--format", "json"], cwd=initialized_project)
+
+        step_done = find_event(result.stdout, "run.step_done").get("payload", {})
+        assert isinstance(step_done, dict)
+        session_dir = DOVO_HOME / "storage" / "projects" / _get_project_id(initialized_project) / "sessions"
+        state = json.loads((session_dir / "retry-views-1" / "session.json").read_text(encoding="utf-8"))
+        saved = state["nodes"][0]["attempts"][-1]["result"]
+        show_payload = parse_json(show.stdout).get("payload", {})
+        assert isinstance(show_payload, dict)
+        step_row = show_payload["steps"][0]
+        assert result.exit_code == 1
+        assert (step_done.get("attempts"), step_done.get("status")) == (3, "failed")
+        views = [step_done, saved, step_row]
+        assert [(view["attempts"], view["status"], view["duration_seconds"]) for view in views] == [
+            (3, "failed", step_done["duration_seconds"])
+        ] * 3
 
 
 def _write_step_blueprint(run_dovo: DovoRunner, project: Path, name: str, command: str) -> None:

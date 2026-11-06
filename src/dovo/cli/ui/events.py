@@ -54,18 +54,25 @@ class StepStartEvent(BaseModel):
 
 
 class StepDoneEvent(BaseModel):
-    """UI event representing the completion of a step."""
+    """UI event representing the completion of a step: its last attempt's outcome, with attempts counting every try."""
 
     model_config = {"extra": "forbid", "strict": True}
 
     idx: int
     total: int
     step_id: str
-    ok: bool
+    status: str  # "completed" | "failed" | "ignored"
+    attempts: int
     exit_code: int
     duration_seconds: float | None = None
     error_message: str | None = None
     error_code: ErrorCode | None = None
+    rejected_patch_path: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        """Return True if the step completed or its failure was ignored."""
+        return self.status in ("completed", "ignored")
 
 
 class StepSkippedEvent(BaseModel):
