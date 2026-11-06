@@ -856,6 +856,18 @@ def _leaf_attempts(paths: WorkspacePaths, sessions: SessionsRepository, session_
 
 
 class EngineRunInterruptTests:
+    def test_interrupt_during_the_row_insert_propagates_with_no_session(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the session row insert interrupted, raise KeyboardInterrupt and leave no session row for a run result to name."""
+        blueprint = _catalog_blueprint(engine_paths, "insert-interrupt", [{"id": "s1", "run": "true"}])
+        monkeypatch.setattr(SessionsRepository, "create", _raise_interrupt)
+
+        with pytest.raises(KeyboardInterrupt):
+            _engine(engine_paths, sessions_repo).run(blueprint, RunRequest(session_id="insert-1", use_worktree=False))
+
+        assert sessions_repo.get("insert-1") is None
+
     def test_interrupt_during_worktree_setup_records_cancelled(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

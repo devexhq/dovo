@@ -88,8 +88,11 @@ class Engine:
         caller_worktree = True if req.use_worktree is None else req.use_worktree
         effective_worktree = caller_worktree and blueprint.use_worktree
         config = self._build_start_config(req, resolved.values, effective_worktree, manifest)
+        insert_failure = self._insert_run(blueprint, sid, config, engine_warnings, engine_diagnostics)
+        if insert_failure is not None:
+            return insert_failure
         with _run_guard("engine.run", sid) as guard:
-            start_failure = self._start_run(blueprint, sid, config, manifest, engine_warnings, engine_diagnostics)
+            start_failure = self._initialize_run(blueprint, sid, manifest, engine_warnings, engine_diagnostics)
             if start_failure is not None:
                 return start_failure
             guard.outcome = drive_run(
@@ -219,16 +222,19 @@ class Engine:
             outcome, session_id, warnings, prior=prior, finish=finish, leading_warnings=leading_warnings
         )
 
-    def _start_run(
+    def _insert_run(
         self,
         blueprint: Blueprint,
         session_id: str,
         config: RunStartConfig,
-        manifest: DefinitionsManifest,
         warnings: list[str],
         diagnostics: list[DiagnosticRecord],
     ) -> RunOutcome | None:
-        """Insert the RUNNING row and its initial execution state under the workspace lock; return the FAILED outcome or None, adding each recorded failure to diagnostics."""
+        """Insert the RUNNING row under the workspace lock; return the FAILED outcome or None, adding a recorded failure to diagnostics.
+
+        This runs before the run guard: an interrupt here propagates, since no session exists yet for a run result to
+        name.
+        """
         with WorkspaceLock(self.paths.lock_file):
             try:
                 self._insert_running(blueprint, session_id, config)
@@ -238,7 +244,18 @@ class Engine:
                 return self._failed_outcome(
                     session_id, [message], warnings, diagnostics=diagnostics, error_code=ErrorCode.INTERNAL_ERROR
                 )
+        return None
 
+    def _initialize_run(
+        self,
+        blueprint: Blueprint,
+        session_id: str,
+        manifest: DefinitionsManifest,
+        warnings: list[str],
+        diagnostics: list[DiagnosticRecord],
+    ) -> RunOutcome | None:
+        """Write the inserted row's initial execution state under the workspace lock; return the FAILED outcome, with the row marked failed, or None, adding each recorded failure to diagnostics."""
+        with WorkspaceLock(self.paths.lock_file):
             try:
                 SessionStateStore(self.db, self.paths, session_id).initialize(blueprint, manifest, warnings)
             except EngineError as error:
