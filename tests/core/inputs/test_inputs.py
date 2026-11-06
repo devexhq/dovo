@@ -170,20 +170,31 @@ class InputResolutionOutcomeTests:
         assert result.errors == errors
         assert result.warnings == warnings
 
-    def test_resolve_inputs_reports_every_rejected_value_with_the_parse_warnings(self) -> None:
+    @pytest.mark.parametrize(
+        ("cli_args", "warning"),
+        [
+            pytest.param(
+                ["-i", "a=x", "-i", "b=y", "-i", "nope=1"], "Ignoring unknown input override 'nope'.", id="overrides"
+            ),
+            pytest.param(["--a", "x", "--b=y", "--zzz"], "Ignoring unrecognized option '--zzz'.", id="aliases"),
+        ],
+    )
+    def test_resolve_inputs_reports_every_rejected_value_with_the_parse_warnings(
+        self, cli_args: list[str], warning: str
+    ) -> None:
         declarations = {
-            "a": ParameterInput(type=InputType.INTEGER),
-            "b": ParameterInput(type=InputType.INTEGER),
+            "a": ParameterInput(type=InputType.INTEGER, aliases=["--a"]),
+            "b": ParameterInput(type=InputType.INTEGER, aliases=["--b"]),
         }
 
-        result = resolve_inputs(declarations, name="deploy", cli_args=["-i", "a=x", "-i", "b=y", "-i", "nope=1"])
+        result = resolve_inputs(declarations, name="deploy", cli_args=cli_args)
 
         assert result.error_code == ErrorCode.BLUEPRINT_INPUT_INVALID
         assert result.errors == [
             "Input 'a' expects an integer, got 'x'.",
             "Input 'b' expects an integer, got 'y'.",
         ]
-        assert result.warnings == ["Ignoring unknown input override 'nope'."]
+        assert result.warnings == [warning]
 
     def test_resolve_inputs_warns_on_unknown_override_key(self) -> None:
         result = resolve_inputs(_sample_declarations(), name="deploy", cli_args=["-m", "x", "-i", "nope=1"])

@@ -245,8 +245,17 @@ def _from_answers_file(text: str) -> HeadlessArgumentsResult:
     try:
         supplied = HeadlessAnswerInput.model_validate(document)
     except ValidationError as error:
-        return _invalid_arguments(f"The answers file is invalid: {error.errors()[0]['msg']}")
+        return HeadlessArgumentsResult(
+            error_code=ErrorCode.INTERACTION_ARGUMENTS_INVALID,
+            errors=[_answers_file_error(detail["loc"], detail["msg"]) for detail in error.errors()],
+        )
     return HeadlessArgumentsResult(supplied=supplied)
+
+
+def _answers_file_error(location: tuple[int | str, ...], message: str) -> str:
+    """Name the answers-file key a validation error rejects, with the error's message."""
+    key = ".".join(str(part) for part in location)
+    return f"The answers file is invalid at '{key}': {message}."
 
 
 def request_errors(request: InteractionRequest) -> list[str]:

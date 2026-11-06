@@ -153,7 +153,7 @@ def _parse_alias_token(
     aliases: dict[str, str],
     flag: str,
 ) -> bool:
-    """Parse one declared alias token. Returns False when parsing must stop."""
+    """Parse one declared alias token. Returns False only when the alias has no value, which stops parsing."""
     name = aliases[flag]
     spec = declarations[name]
     token = args[state.index]
@@ -168,9 +168,8 @@ def _parse_alias_token(
         state.errors.append(str(exc))
         return False
 
-    before_errors = len(state.errors)
     _store_coerced(state, name=name, raw=raw, input_type=spec.type)
-    return len(state.errors) == before_errors
+    return True
 
 
 def _warn_unknown_token(state: _ParseState, token: str) -> None:

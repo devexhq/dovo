@@ -107,8 +107,17 @@ steps:
             "Ignoring unexpected argument '1'.",
         ]
 
+    @pytest.mark.parametrize(
+        ("inputs", "warning"),
+        [
+            pytest.param(
+                ["-i", "a=x", "-i", "b=y", "-i", "nope=1"], "Ignoring unknown input override 'nope'.", id="overrides"
+            ),
+            pytest.param(["--a", "x", "--b", "y", "--zzz"], "Ignoring unrecognized option '--zzz'.", id="aliases"),
+        ],
+    )
     def test_run_rejected_inputs_report_every_error_and_warning(
-        self, run_dovo: DovoRunner, initialized_project: Path
+        self, run_dovo: DovoRunner, initialized_project: Path, inputs: list[str], warning: str
     ) -> None:
         write_blueprint(
             initialized_project,
@@ -119,8 +128,12 @@ id: integer-inputs-bp
 inputs:
   a:
     type: integer
+    aliases:
+      - "--a"
   b:
     type: integer
+    aliases:
+      - "--b"
 steps:
   - id: step-1
     run: "true"
@@ -129,7 +142,7 @@ steps:
         )
 
         result = run_dovo(
-            ["run", "integer-inputs-bp", "--no-worktree", "-i", "a=x", "-i", "b=y", "-i", "nope=1", "--format", "json"],
+            ["run", "integer-inputs-bp", "--no-worktree", *inputs, "--format", "json"],
             cwd=initialized_project,
         )
 
@@ -138,7 +151,7 @@ steps:
         assert (payload.get("error_code"), payload.get("errors"), payload.get("warnings")) == (
             "BLUEPRINT_INPUT_INVALID",
             ["Input 'a' expects an integer, got 'x'.", "Input 'b' expects an integer, got 'y'."],
-            ["Ignoring unknown input override 'nope'."],
+            [warning],
         )
 
     def test_run_no_worktree_persists_completed_session(self, run_dovo: DovoRunner, initialized_project: Path) -> None:

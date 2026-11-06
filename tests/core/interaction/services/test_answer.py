@@ -333,6 +333,19 @@ class ParseAnswerArgumentsTests:
         assert result.supplied is None
         assert len(result.errors) == 1
 
+    def test_invalid_answers_file_reports_every_rejected_key(self, tmp_path: Path) -> None:
+        answers_file = tmp_path / "answers.json"
+        answers_file.write_text('{"selected": "a", "extra": 1}', encoding="utf-8")
+
+        result = parse_answer_arguments(None, None, None, answers_file)
+
+        assert result.error_code == ErrorCode.INTERACTION_ARGUMENTS_INVALID
+        assert result.errors == [
+            "The answers file is invalid at 'step_id': Field required.",
+            "The answers file is invalid at 'selected': Input should be a valid list.",
+            "The answers file is invalid at 'extra': Extra inputs are not permitted.",
+        ]
+
     def test_malformed_answer_puts_the_fix_in_remediations(self) -> None:
         result = parse_answer_arguments("x", None, None, None)
 
