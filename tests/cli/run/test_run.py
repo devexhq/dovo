@@ -530,7 +530,7 @@ class RunCliIntegrationTests:
     ) -> None:
         """Exit 1 with a tier-attributed Invalid Configuration panel when the User tier config.json is malformed.
 
-        The top-level callback resolves config before the run handler runs,
+        The run handler loads config after its arguments parse and before it resolves the blueprint,
         so no blueprint is resolved and no session row is inserted.
         """
         ui_dispatcher.set_output_format(OutputFormatOptions.TERMINAL)
@@ -542,6 +542,25 @@ class RunCliIntegrationTests:
         assert "Invalid Configuration" in result.stdout
         assert "Config Error" not in result.stdout
         assert "Invalid configuration in user tier" in result.stdout
+
+    def test_run_cli_undeclared_option_is_ignored_with_a_warning_json(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        """Exit 0 with a completed run whose result warns about '--bogus' and '1' for `run <bp> --bogus 1`."""
+        write_runnable_blueprint(cli_workspace, key="extra-task", steps=[{"id": "s1", "run": "true"}])
+
+        result = cli_runner.invoke(
+            app,
+            ["-p", str(cli_workspace), "run", "extra-task", "--no-worktree", "--bogus", "1", "--format", "json"],
+        )
+
+        assert result.exit_code == 0
+        payload = run_result_payload(result.stdout)
+        assert (payload["ok"], payload["session_status"], payload["warnings"]) == (
+            True,
+            "completed",
+            ["Ignoring unrecognized option '--bogus'.", "Ignoring unexpected argument '1'."],
+        )
 
     def test_run_cli_config_show_and_run_observe_identical_merged_config(
         self,

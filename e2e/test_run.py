@@ -80,6 +80,33 @@ steps:
         assert result.exit_code == 1
         assert "Initialization Failed!" in result.stdout
 
+    def test_run_ignores_an_undeclared_option_with_a_warning(
+        self, run_dovo: DovoRunner, initialized_project: Path
+    ) -> None:
+        write_blueprint(
+            initialized_project,
+            "undeclared-option-bp",
+            """version: "1.0"
+name: undeclared-option-bp
+id: undeclared-option-bp
+steps:
+  - id: step-1
+    run: "true"
+""",
+            runner=run_dovo,
+        )
+
+        result = run_dovo(
+            ["run", "undeclared-option-bp", "--no-worktree", "--bogus", "1", "--format", "json"],
+            cwd=initialized_project,
+        )
+
+        assert result.exit_code == 0
+        assert run_result(result.stdout).get("warnings") == [
+            "Ignoring unrecognized option '--bogus'.",
+            "Ignoring unexpected argument '1'.",
+        ]
+
     def test_run_no_worktree_persists_completed_session(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
         write_blueprint(
             initialized_project,

@@ -153,6 +153,24 @@ class CatalogItemCliTests:
         global_file = DOVO_HOME / "global" / "catalog" / kind.catalog_dir / f"{global_name}.yml"
         assert global_file.is_file()
 
+    def test_create_with_user_and_global_exits_two_with_tier_conflict(
+        self, run_dovo: DovoRunner, initialized_project: Path, kind: CatalogKind
+    ) -> None:
+        name = f"tier-conflict-{kind.suffix}"
+        result = run_dovo(
+            [kind.command, "create", "--name", name, "--user", "--global", "--format", "json"],
+            cwd=initialized_project,
+        )
+
+        assert result.exit_code == 2
+        assert json.loads(result.stdout).get("payload", {}).get("error_code") == "CATALOG_TIER_CONFLICT"
+        for tier_catalog in (
+            initialized_project / ".dovo" / "catalog",
+            DOVO_HOME / "user" / "catalog",
+            DOVO_HOME / "global" / "catalog",
+        ):
+            assert not (tier_catalog / kind.catalog_dir / f"{name}.yml").exists()
+
     def test_delete_removes_repo_tier_item(
         self, run_dovo: DovoRunner, initialized_project: Path, kind: CatalogKind
     ) -> None:

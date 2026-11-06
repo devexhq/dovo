@@ -11,6 +11,7 @@ _ARGUMENT_CODES = {
     ErrorCode.CONFIG_KEY_PATH_INVALID,
     ErrorCode.AGENT_ENV_OVERRIDE_INVALID,
     ErrorCode.INTERACTION_ARGUMENTS_INVALID,
+    ErrorCode.CATALOG_TIER_CONFLICT,
 }
 
 
@@ -32,6 +33,7 @@ class ErrorCodeExitTests:
         ("code", "expected"),
         [
             pytest.param(ErrorCode.PROJECT_ID_INVALID, 2, id="argument"),
+            pytest.param(ErrorCode.CATALOG_TIER_CONFLICT, 2, id="tier_conflict"),
             pytest.param(ErrorCode.INTERACTION_ARGUMENT_FILE_UNREADABLE, 1, id="unreadable_file"),
             pytest.param(ErrorCode.INTERACTION_ANSWER_INVALID, 1, id="answer_rejected_by_prompt"),
             pytest.param(ErrorCode.SESSION_NOT_FOUND, 1, id="not_found"),

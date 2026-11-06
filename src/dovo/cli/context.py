@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
+import typer
+
 from dovo.common.clock import Clock, utc_now
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
@@ -52,3 +54,11 @@ class CliContext:
         db = DovoDb(paths.database_file, project_id=paths.project_id)
         git = GitRunner()
         return cls(paths=paths, db=db, git=git, clock=utc_now, new_id=new_session_id, config=config)
+
+
+def cli_context(ctx: typer.Context, *, load_config: bool = True) -> CliContext:
+    """Build the CLI context for the running command, after its arguments have parsed.
+
+    Raises WorkspaceError when no workspace is initialized and, with load_config, ConfigError when config.json fails to load.
+    """
+    return CliContext.build(path=ctx.obj["path"], load_config=load_config)

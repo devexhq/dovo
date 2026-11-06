@@ -6,7 +6,7 @@ from typing import Annotated
 
 import typer
 
-from dovo.cli.context import CliContext
+from dovo.cli.context import cli_context
 from dovo.cli.options import FormatOption
 from dovo.cli.outcome import exit_for
 from dovo.common.models import OutputFormatOptions
@@ -30,7 +30,7 @@ def blueprint_list(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """List blueprint catalog items across all tiers."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = blueprint_list_command(context, output_format=format)
     exit_for(result)
 
@@ -42,7 +42,7 @@ def blueprint_show(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Show metadata and definition content of a blueprint."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = blueprint_show_command(context, name, output_format=format)
     exit_for(result)
 
@@ -60,7 +60,7 @@ def blueprint_create(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Create a new blueprint at the REPO tier by default, or at USER/GLOBAL tier with --user/--global."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = blueprint_create_command(context, name, user=user, global_=global_, output_format=format)
     exit_for(result)
 
@@ -77,7 +77,7 @@ def blueprint_delete(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Delete a repo-tier blueprint file and reindex."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = blueprint_delete_command(context, name, force=force, output_format=format)
     exit_for(result)
 
@@ -89,6 +89,6 @@ def blueprint_validate(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Validate a blueprint definition without executing it."""
-    context: CliContext = ctx.obj["context"]
+    context = cli_context(ctx)
     result = blueprint_validate_command(context, target, output_format=format)
     exit_for(result)
