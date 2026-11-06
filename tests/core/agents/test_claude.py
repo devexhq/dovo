@@ -12,13 +12,14 @@ import pytest
 
 from dovo.common.filesystem import Filesystem
 from dovo.common.mcp_servers import McpServerDefinition
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentInvocationContext,
     AgentResponse,
     AgentResponseStatus,
     default_tool_policy,
-    tool_policy_unsupported_message,
+    tool_policy_unsupported,
 )
 from dovo.core.agents.claude import (
     ClaudeAgentAdapter,
@@ -29,7 +30,7 @@ from dovo.core.agents.claude import (
     resolve_claude_credential,
 )
 from dovo.core.agents.claude_progress import map_claude_line
-from dovo.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest
+from dovo.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest, failure_outcome
 from dovo.core.agents.registry import PROVIDERS
 from tests.harness import (
     AgentRequestBuilder,
@@ -89,6 +90,18 @@ _DENIED_STDOUT = (
     b'{"type":"result","subtype":"success","is_error":false,"result":"blocked",'
     b'"permission_denials":[{"tool_name":"Bash","tool_use_id":"toolu_1"}]}\n'
 )
+
+
+_AUTH_REMEDIATIONS = [
+    Remediation(message="Run 'claude auth login'", command="claude auth login"),
+    Remediation(message="Set 'CLAUDE_CODE_OAUTH_TOKEN' to a token from 'claude setup-token'"),
+    Remediation(message="Set 'ANTHROPIC_API_KEY'"),
+]
+_INSTALL_REMEDIATION = Remediation(message="Install Claude Code (https://code.claude.com/docs)")
+_UPDATE_REMEDIATIONS = [
+    Remediation(message="Run 'claude update'", command="claude update"),
+    Remediation(message="Reinstall Claude Code"),
+]
 
 
 def _porcelain(repo: Path) -> str:
@@ -232,13 +245,13 @@ class ClaudeRunTests:
     def test_unsupported_policy_returns_policy_message_and_starts_no_process(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return error with tool_policy_unsupported_message('claude') and zero runner calls for a scratch rule without an invocation."""
+        """Return error with tool_policy_unsupported('claude') and zero runner calls for a scratch rule without an invocation."""
         runner = _fake_claude(monkeypatch)
         policy = ToolPolicy(allow=[ToolRule(capability=ToolCapability.READ, pattern="notes/**", root="scratch")])
 
         outcome = default_claude_run(_run_request(tmp_path, tools=policy))
 
-        assert outcome == CliMutationOutcome(status="error", error_detail=tool_policy_unsupported_message("claude"))
+        assert outcome == failure_outcome(tool_policy_unsupported("claude"))
         assert runner.calls == []
 
     def test_no_authentication_returns_the_not_authenticated_error_and_starts_no_process(
@@ -253,10 +266,8 @@ class ClaudeRunTests:
 
         assert outcome == CliMutationOutcome(
             status="error",
-            error_detail=(
-                "Claude Code is not authenticated. Fix: run `claude auth login`, "
-                "export CLAUDE_CODE_OAUTH_TOKEN=... (from `claude setup-token`) or export ANTHROPIC_API_KEY=..."
-            ),
+            error_detail="Claude Code is not authenticated.",
+            remediations=_AUTH_REMEDIATIONS,
         )
         assert runner.calls == []
 
@@ -272,7 +283,8 @@ class ClaudeRunTests:
 
         assert outcome == CliMutationOutcome(
             status="error",
-            error_detail="claude is not installed or not on PATH. Fix: install Claude Code (https://code.claude.com/docs)",
+            error_detail="claude is not installed or not on PATH.",
+            remediations=[_INSTALL_REMEDIATION],
         )
         assert runner.calls == []
 
@@ -284,10 +296,8 @@ class ClaudeRunTests:
 
         assert outcome == CliMutationOutcome(
             status="error",
-            error_detail=(
-                "claude is not installed or not on PATH: claude. "
-                "Fix: install Claude Code (https://code.claude.com/docs)"
-            ),
+            error_detail="claude is not installed or not on PATH: claude",
+            remediations=[_INSTALL_REMEDIATION],
         )
 
     def test_unknown_option_stderr_returns_update_required_detail(
@@ -300,7 +310,8 @@ class ClaudeRunTests:
 
         assert outcome == CliMutationOutcome(
             status="error",
-            error_detail="Installed Claude Code lacks a required flag. Fix: run `claude update` or reinstall Claude Code.",
+            error_detail="Installed Claude Code lacks a required flag.",
+            remediations=_UPDATE_REMEDIATIONS,
         )
 
     def test_timeout_returns_timeout_outcome(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -480,11 +491,8 @@ class ClaudeInvokeTests:
         response = ClaudeAgentAdapter().invoke(request)
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert response.errors == [
-            "Agent provider error: Claude Code is not authenticated. "
-            "Fix: run `claude auth login`, export CLAUDE_CODE_OAUTH_TOKEN=... (from `claude setup-token`) "
-            "or export ANTHROPIC_API_KEY=..."
-        ]
+        assert response.errors == ["Agent provider error: Claude Code is not authenticated."]
+        assert response.remediations == _AUTH_REMEDIATIONS
         assert runner.calls == []
 
     def test_allowlist_spawn_env_has_only_the_approved_key_and_no_claude_or_control_names(
@@ -730,7 +738,8 @@ class ClaudePolicyPreflightTests:
         response = ClaudeAgentAdapter().invoke(request)
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert response.errors == [tool_policy_unsupported_message("claude")]
+        assert response.errors == [tool_policy_unsupported("claude").message]
+        assert response.remediations == list(tool_policy_unsupported("claude").remediations)
         assert runner.calls == []
 
     @pytest.mark.parametrize(
@@ -819,7 +828,8 @@ class ClaudePolicyPreflightTests:
         response = ClaudeAgentAdapter().invoke(request)
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert response.errors == [tool_policy_unsupported_message("claude")]
+        assert response.errors == [tool_policy_unsupported("claude").message]
+        assert response.remediations == list(tool_policy_unsupported("claude").remediations)
         assert runner.calls == []
 
     def test_supported_policy_passes_preflight_and_reaches_the_runner(

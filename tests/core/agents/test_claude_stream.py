@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 import dovo.core.agents.claude_stream as claude_stream_module
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability
 from dovo.core.agents.claude_stream import ClaudeTurnTracker, classify_claude_output
 from dovo.core.agents.cli_mutation import CliMutationOutcome
@@ -16,8 +17,13 @@ from dovo.core.agents.models import AgentDenial
 from tests.harness.fixtures import load_agent_fixture
 
 _IMPURE_MODULES = frozenset({"os", "subprocess", "pathlib", "shutil", "socket", "tempfile", "asyncio", "sys"})
-_UPDATE_REQUIRED_DETAIL = (
-    "Installed Claude Code lacks a required flag. Fix: run `claude update` or reinstall Claude Code."
+_UPDATE_REQUIRED_OUTCOME = CliMutationOutcome(
+    status="error",
+    error_detail="Installed Claude Code lacks a required flag.",
+    remediations=[
+        Remediation(message="Run 'claude update'", command="claude update"),
+        Remediation(message="Reinstall Claude Code"),
+    ],
 )
 
 
@@ -230,10 +236,11 @@ class ClaudeStreamExitCodeTests:
 
         assert outcome.error_detail == "Claude Code result error (error_max_turns)"
 
-    def test_unknown_option_stderr_returns_update_required_detail(self) -> None:
+    def test_unknown_option_reports_update_remediations(self) -> None:
+        """Return a detail without fix text and the update and reinstall remediations."""
         outcome = classify_claude_output(1, _fixture_stdout("provider_error"), "error: Unknown option --foo")
 
-        assert outcome == CliMutationOutcome(status="error", error_detail=_UPDATE_REQUIRED_DETAIL)
+        assert outcome == _UPDATE_REQUIRED_OUTCOME
 
 
 class ClaudeStreamEmptyResultTests:

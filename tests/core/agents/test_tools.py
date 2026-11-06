@@ -6,9 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import AgentInvocationContext, ProviderSpec
 from dovo.core.agents.copilot import CopilotAgentAdapter
+from dovo.core.agents.models import ProviderFailure
 from dovo.core.agents.tools import (
     PolicyRoots,
     check_policy_support,
@@ -17,7 +19,7 @@ from dovo.core.agents.tools import (
     requests_scratch,
     resolve_policy_roots,
     resolve_tool_policy,
-    tool_policy_unsupported_message,
+    tool_policy_unsupported,
 )
 
 
@@ -109,14 +111,18 @@ class CheckPolicySupportTests:
     ) -> None:
         result = check_policy_support(_spec(supports_tool_policy=supports), policy)
 
-        assert result == (tool_policy_unsupported_message("unit-test") if rejected else None)
+        assert result == (tool_policy_unsupported("unit-test") if rejected else None)
 
-    def test_message_names_the_provider_token(self) -> None:
-        message = tool_policy_unsupported_message("copilot")
+    def test_unsupported_policy_returns_failure_with_remediations(self) -> None:
+        """Return a message that ends at its first sentence, naming the provider token, and the two alternatives as remediations."""
+        failure = check_policy_support(_spec(supports_tool_policy=False), ToolPolicy())
 
-        assert message == (
-            "Agent provider 'copilot' cannot enforce the requested tool policy. "
-            "Fix: choose a policy-capable provider or an explicitly authorized policy it can enforce."
+        assert failure == ProviderFailure(
+            message="Agent provider 'unit-test' cannot enforce the requested tool policy.",
+            remediations=(
+                Remediation(message="Choose an agent provider that can enforce the tool policy"),
+                Remediation(message="Choose a tool policy that provider 'unit-test' can enforce"),
+            ),
         )
 
 

@@ -24,7 +24,7 @@ from dovo.core.agents import (
     BaseAgentProvider,
     ResolvedAgentSettings,
     default_tool_policy,
-    tool_policy_unsupported_message,
+    tool_policy_unsupported,
 )
 from dovo.core.agents.models import AgentDenial
 from dovo.core.agents.responses import blocked_response, provider_error_response
@@ -163,7 +163,7 @@ class ExecuteAgentStepToolPolicyFailureTests:
                 id="blocked",
             ),
             pytest.param(
-                provider_error_response(duration_seconds=1.0, errors=[tool_policy_unsupported_message("copilot")]),
+                provider_error_response(duration_seconds=1.0, errors=[tool_policy_unsupported("copilot").message]),
                 203,
                 "provider_error",
                 ["cannot enforce the requested tool policy"],

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from dovo.common.diagnostic_log import error_diagnostics
 from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.mcp_servers import McpServerDefinition
+from dovo.common.models import Remediation
 from dovo.common.process import stream_isolated_process
 from dovo.common.timing import Stopwatch
 from dovo.common.tool_policy import ToolPolicy
@@ -29,6 +30,7 @@ from dovo.core.agents.models import (
     AgentRequest,
     AgentResponse,
     AgentResponseStatus,
+    ProviderFailure,
 )
 from dovo.core.agents.mutation_git import (
     capture_diff_since,
@@ -41,6 +43,7 @@ from dovo.core.agents.responses import (
     provider_error_response,
     timeout_response,
     unfixable_response,
+    with_remediations,
 )
 from dovo.core.agents.save_rejected_patch import save_rejected_patch
 from dovo.core.git import GitError, GitRunner, validate_patch_text
@@ -75,6 +78,12 @@ class CliMutationOutcome(BaseModel):
     result_text: str | None = None
     error_detail: str | None = None
     denials: list[AgentDenial] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)
+
+
+def failure_outcome(failure: ProviderFailure) -> CliMutationOutcome:
+    """Return the error outcome carrying the failure's message as its detail and its remediations."""
+    return CliMutationOutcome(status="error", error_detail=failure.message, remediations=[*failure.remediations])
 
 
 CliMutationRunFn = Callable[[CliMutationRunRequest], CliMutationOutcome]
@@ -122,12 +131,13 @@ def run_cli_process(
     *,
     env: dict[str, str],
     binary: str,
-    install_hint: str,
+    install: Remediation,
     stop_when: Callable[[str], bool] | None = None,
 ) -> subprocess.CompletedProcess[bytes] | CliMutationOutcome:
     """Run cmd in the request worktree, streaming lines to the request callbacks, or return the terminal outcome for a timeout or spawn failure.
 
-    stop_when, when given, ends the run early on the stdout line it accepts, as stream_isolated_process describes.
+    stop_when, when given, ends the run early on the stdout line it accepts, as stream_isolated_process describes; a
+    missing binary carries the install remediation.
     """
     try:
         return stream_isolated_process(
@@ -145,7 +155,8 @@ def run_cli_process(
     except FileNotFoundError as error:
         return CliMutationOutcome(
             status="error",
-            error_detail=f"{binary} is not installed or not on PATH: {error}. Fix: {install_hint}",
+            error_detail=f"{binary} is not installed or not on PATH: {error}",
+            remediations=[install],
         )
     except OSError as error:
         return CliMutationOutcome(status="error", error_detail=str(error))
@@ -159,12 +170,9 @@ def decode_output(completed: subprocess.CompletedProcess[bytes]) -> tuple[str, s
     )
 
 
-def unknown_option_detail(stderr_text: str, detail: str) -> str | None:
-    """Return detail when stderr reports an unknown option, else None."""
-    if "unknown option" in stderr_text.lower():
-        return detail
-
-    return None
+def reports_unknown_option(stderr_text: str) -> bool:
+    """Return whether stderr reports an unknown option."""
+    return "unknown option" in stderr_text.lower()
 
 
 _BATCHING_PROMPT_LINES = (
@@ -255,7 +263,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         """Execute the provider tool against the mutation request."""
         raise NotImplementedError
 
-    def _preflight(self, request: AgentRequest) -> str | None:
+    def _preflight(self, request: AgentRequest) -> ProviderFailure | None:
         """Perform provider-specific preflight checks before running; they run after the base credential check."""
         return None
 
@@ -270,7 +278,8 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         preflight_error = self._preflight(request)
         if preflight_error is not None:
             watch.stop()
-            return provider_error_response(duration_seconds=watch.elapsed_seconds, detail=preflight_error)
+            response = provider_error_response(duration_seconds=watch.elapsed_seconds, detail=preflight_error.message)
+            return with_remediations(response, preflight_error.remediations)
 
         git = GitRunner()
         try:
@@ -338,12 +347,13 @@ class CliDirectMutationAdapter(BaseAgentProvider):
             )
 
         if outcome.status == "error":
-            return provider_error_response(
+            response = provider_error_response(
                 duration_seconds=duration_seconds,
                 detail=outcome.error_detail or "Direct-mutation runner returned error",
                 raw_text=outcome.result_text,
                 mutation_baseline_ref=baseline,
             )
+            return with_remediations(response, outcome.remediations)
 
         try:
             diff, _ = capture_diff_since(request.worktree_path, baseline, git=git)
@@ -396,7 +406,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         *,
         git: GitRunner,
     ) -> AgentResponse:
-        """Save the rejected edit, then discard it and return PROVIDER_ERROR carrying the validation failure's code and message, its record in diagnostics, the saved path, and any discard failure; a failed save leaves the worktree untouched."""
+        """Save the rejected edit, then discard it and return PROVIDER_ERROR carrying the validation failure's code, message and remediations, its record in diagnostics, the saved path, and any discard failure; a failed save leaves the worktree untouched."""
         saved, notes, discard_detail = _save_and_discard(request, baseline, git=git)
         response = provider_error_response(
             duration_seconds=duration_seconds,
@@ -409,6 +419,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         return response.model_copy(
             update={
                 "error_code": failure.error_code,
+                "remediations": [*failure.remediations],
                 "rejected_patch_path": str(saved) if saved is not None else None,
                 "diagnostics": error_diagnostics(failure.diagnostic),
             }

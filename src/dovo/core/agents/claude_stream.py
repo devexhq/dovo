@@ -5,13 +5,18 @@ from __future__ import annotations
 import json
 import re
 
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability
 from dovo.core.agents.claude_policy import CLAUDE_SCHEDULING_TOOLS
-from dovo.core.agents.cli_mutation import CliMutationOutcome, unknown_option_detail
-from dovo.core.agents.models import AgentDenial
+from dovo.core.agents.cli_mutation import CliMutationOutcome, failure_outcome, reports_unknown_option
+from dovo.core.agents.models import AgentDenial, ProviderFailure
 
-_UPDATE_REQUIRED_DETAIL = (
-    "Installed Claude Code lacks a required flag. Fix: run `claude update` or reinstall Claude Code."
+_UPDATE_REQUIRED = ProviderFailure(
+    message="Installed Claude Code lacks a required flag.",
+    remediations=(
+        Remediation(message="Run 'claude update'", command="claude update"),
+        Remediation(message="Reinstall Claude Code"),
+    ),
 )
 _MAX_DIAGNOSTIC_CHARS = 2000
 _TRACEBACK_MARKER = "Traceback (most recent call last):"
@@ -315,8 +320,8 @@ def _exit_error_outcome(
 
     Stdout is a candidate only when it held no JSON events, so a stream-json dump never becomes the detail.
     """
-    if unknown_option_detail(stderr_text, _UPDATE_REQUIRED_DETAIL) is not None:
-        return _error_outcome(_UPDATE_REQUIRED_DETAIL)
+    if reports_unknown_option(stderr_text):
+        return failure_outcome(_UPDATE_REQUIRED)
 
     terminal = _terminal_result(events)
     candidates = [

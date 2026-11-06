@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import pytest
 
+from dovo.common.models import Remediation
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.copilot import CopilotAgentAdapter
 from dovo.core.agents.credentials import missing_credential_error, resolve_credential, resolve_credential_entry
+from dovo.core.agents.models import ProviderFailure
 
 
 def _spec(envs: tuple[str, ...], token: str = "x") -> ProviderSpec:
@@ -76,25 +78,22 @@ class MissingCredentialErrorTests:
     @pytest.mark.parametrize(
         ("envs", "expected"),
         [
-            pytest.param(
-                ("GH_TOKEN", "GITHUB_TOKEN"),
-                "missing GH_TOKEN or GITHUB_TOKEN. Fix: export GH_TOKEN=... or export GITHUB_TOKEN=...",
-                id="two-alternatives",
-            ),
-            pytest.param(
-                ("ANTHROPIC_API_KEY",),
-                "missing ANTHROPIC_API_KEY. Fix: export ANTHROPIC_API_KEY=...",
-                id="single",
-            ),
-            pytest.param(
-                ("A", "B", "C"),
-                "missing A or B or C. Fix: export A=... or export B=... or export C=...",
-                id="three-alternatives-descriptor-order",
-            ),
+            pytest.param(("GH_TOKEN", "GITHUB_TOKEN"), "missing GH_TOKEN or GITHUB_TOKEN.", id="two-alternatives"),
+            pytest.param(("ANTHROPIC_API_KEY",), "missing ANTHROPIC_API_KEY.", id="single"),
+            pytest.param(("A", "B", "C"), "missing A or B or C.", id="three-alternatives-descriptor-order"),
         ],
     )
     def test_descriptor_names_render_in_order_without_prefix(self, envs: tuple[str, ...], expected: str) -> None:
-        assert missing_credential_error(_spec(envs)) == expected
+        assert missing_credential_error(_spec(envs)).message == expected
+
+    def test_failure_names_each_credential_and_carries_one_remediation_per_name(self) -> None:
+        """Return a message without fix text and one Set remediation per credential name, in descriptor order."""
+        failure = missing_credential_error(_spec(("GH_TOKEN", "GITHUB_TOKEN")))
+
+        assert failure == ProviderFailure(
+            message="missing GH_TOKEN or GITHUB_TOKEN.",
+            remediations=(Remediation(message="Set 'GH_TOKEN'"), Remediation(message="Set 'GITHUB_TOKEN'")),
+        )
 
     def test_empty_credential_envs_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="provider 'x' declares no credential_envs"):

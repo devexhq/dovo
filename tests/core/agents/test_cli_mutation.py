@@ -32,12 +32,12 @@ from dovo.core.agents.cli_mutation import (
     decode_output,
     forward_line,
     forward_stdout,
+    reports_unknown_option,
     run_cli_process,
-    unknown_option_detail,
     validate_request_patch,
 )
 from dovo.core.agents.environment import env_filtered_prompt_line
-from dovo.core.agents.models import AgentDenial
+from dovo.core.agents.models import AgentDenial, ProviderFailure
 from dovo.core.agents.mutation_git import (
     capture_diff_since,
     discard_since,
@@ -134,8 +134,8 @@ class UnitTestAdapter(CliDirectMutationAdapter):
 class PreflightAdapter(UnitTestAdapter):
     """Adapter double whose preflight always fails, to prove it blocks before baseline."""
 
-    def _preflight(self, request: AgentRequest) -> str | None:
-        return "preflight failed"
+    def _preflight(self, request: AgentRequest) -> ProviderFailure | None:
+        return ProviderFailure(message="preflight failed", remediations=(Remediation(message="Retry"),))
 
 
 class CredentialedAdapter(UnitTestAdapter):
@@ -151,8 +151,8 @@ class CredentialedAdapter(UnitTestAdapter):
             build=lambda: self,
         )
 
-    def _preflight(self, request: AgentRequest) -> str | None:
-        return "extra"
+    def _preflight(self, request: AgentRequest) -> ProviderFailure | None:
+        return ProviderFailure(message="extra")
 
 
 class EnvironmentAdapter(UnitTestAdapter):
@@ -656,6 +656,7 @@ class SharedMutationAdapterTests:
 
         assert (resp.status, resp.error_code) == (AgentResponseStatus.PROVIDER_ERROR, ErrorCode.AGENT_PROVIDER_FAILED)
         assert resp.errors == ["Agent provider error: preflight failed"]
+        assert resp.remediations == [Remediation(message="Retry")]
         assert not run_function_called
 
 
@@ -726,11 +727,7 @@ class PreflightOrderingTests:
         [
             pytest.param(
                 False,
-                [
-                    "Agent provider error: "
-                    "missing TEST_CREDENTIAL_PRIMARY or TEST_CREDENTIAL_FALLBACK. "
-                    "Fix: export TEST_CREDENTIAL_PRIMARY=... or export TEST_CREDENTIAL_FALLBACK=..."
-                ],
+                ["Agent provider error: missing TEST_CREDENTIAL_PRIMARY or TEST_CREDENTIAL_FALLBACK."],
                 id="credential-check-wins-over-override",
             ),
             pytest.param(True, ["Agent provider error: extra"], id="override-runs-after-credential-passes"),
@@ -947,6 +944,29 @@ class RejectedPatchSaveTests:
         )
 
         assert response.errors == ["Patch touches 2 files; max_files is 1.", f"Discarded edit saved to {destination}."]
+
+    def test_rejected_edit_carries_the_patch_gate_remediations(self, git_repo: Path, tmp_path: Path) -> None:
+        """Return the gate failure's remediation on the response of an edit over max_files."""
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
+
+        response = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"})).invoke(
+            _gated_request(git_repo, destination)
+        )
+
+        assert response.remediations == [Remediation(message="Set 'max_files' on the agent step.")]
+
+    def test_runner_error_outcome_remediations_reach_the_response(self, git_repo: Path) -> None:
+        """Copy an error outcome's remediations onto the PROVIDER_ERROR response beside its prefixed detail."""
+        outcome = CliMutationOutcome(
+            status="error", error_detail="tool broke", remediations=[Remediation(message="Reinstall tool")]
+        )
+
+        response = UnitTestAdapter(run_fn=lambda _request: outcome).invoke(
+            AgentRequestBuilder().with_worktree_path(git_repo).build()
+        )
+
+        assert response.errors == ["Agent provider error: tool broke"]
+        assert response.remediations == [Remediation(message="Reinstall tool")]
 
 
 class RejectedPatchCaptureFailureTests:
@@ -1392,6 +1412,9 @@ class ForwardStdoutTests:
         assert received == [("stdout", "line")]
 
 
+_INSTALL_TOOL = Remediation(message="Install tool")
+
+
 class RunCliProcessTests:
     def test_completed_process_is_returned_with_request_derived_spawn_arguments(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1400,9 +1423,7 @@ class RunCliProcessTests:
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
         request = _request(tmp_path)
 
-        completed = run_cli_process(
-            ["tool", "--x"], request, env={"K": "V"}, binary="tool", install_hint="install tool"
-        )
+        completed = run_cli_process(["tool", "--x"], request, env={"K": "V"}, binary="tool", install=_INSTALL_TOOL)
 
         assert isinstance(completed, subprocess.CompletedProcess)
         assert completed.stdout == b"out"
@@ -1422,7 +1443,7 @@ class RunCliProcessTests:
             progress_mapper=_mapped("a"),
         )
 
-        run_cli_process(["tool"], request, env={}, binary="tool", install_hint="x")
+        run_cli_process(["tool"], request, env={}, binary="tool", install=_INSTALL_TOOL)
 
         assert received == [("stdout", "o1"), ("stderr", "e1")]
         assert progress == [AgentProgress(kind=AgentProgressKind.READ, target="a")]
@@ -1433,7 +1454,7 @@ class RunCliProcessTests:
         runner = StreamingAgentRunner(stdout_lines=[], stderr_lines=[], completed_stdout=b"")
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
-        run_cli_process(["tool"], _request(tmp_path), env={}, binary="tool", install_hint="x")
+        run_cli_process(["tool"], _request(tmp_path), env={}, binary="tool", install=_INSTALL_TOOL)
 
         assert (runner.received_stdout_callback, runner.received_stderr_callback) == (None, None)
 
@@ -1442,7 +1463,12 @@ class RunCliProcessTests:
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         run_cli_process(
-            ["tool"], _request(tmp_path), env={}, binary="tool", install_hint="x", stop_when=lambda line: line == "end"
+            ["tool"],
+            _request(tmp_path),
+            env={},
+            binary="tool",
+            install=_INSTALL_TOOL,
+            stop_when=lambda line: line == "end",
         )
 
         assert runner.stopped_at == "end"
@@ -1458,7 +1484,9 @@ class RunCliProcessTests:
             pytest.param(
                 FileNotFoundError("tool"),
                 CliMutationOutcome(
-                    status="error", error_detail="tool is not installed or not on PATH: tool. Fix: install tool"
+                    status="error",
+                    error_detail="tool is not installed or not on PATH: tool",
+                    remediations=[_INSTALL_TOOL],
                 ),
                 id="missing-binary",
             ),
@@ -1473,7 +1501,7 @@ class RunCliProcessTests:
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", FakeAgentRunner().raising(raised))
         request = _request(tmp_path)
 
-        outcome = run_cli_process(["tool"], request, env={}, binary="tool", install_hint="install tool")
+        outcome = run_cli_process(["tool"], request, env={}, binary="tool", install=_INSTALL_TOOL)
 
         assert outcome == expected
 
@@ -1499,7 +1527,7 @@ class DecodeOutputTests:
         assert decode_output(completed) == expected
 
 
-class UnknownOptionDetailTests:
+class ReportsUnknownOptionTests:
     @pytest.mark.parametrize(
         "stderr_text",
         [
@@ -1507,8 +1535,8 @@ class UnknownOptionDetailTests:
             pytest.param("Error: Unknown Option --x", id="mixed-case"),
         ],
     )
-    def test_unknown_option_stderr_returns_adapter_detail(self, stderr_text: str) -> None:
-        assert unknown_option_detail(stderr_text, "update it") == "update it"
+    def test_unknown_option_stderr_is_reported(self, stderr_text: str) -> None:
+        assert reports_unknown_option(stderr_text) is True
 
-    def test_unrelated_stderr_returns_none(self) -> None:
-        assert unknown_option_detail("some other failure", "update it") is None
+    def test_unrelated_stderr_is_not_reported(self) -> None:
+        assert reports_unknown_option("some other failure") is False

@@ -1,6 +1,6 @@
 """Shared environment credential lookup and canonical missing-credential diagnostics.
 
-Leaf module: imports nothing from ``dovo.core.agents`` so ``base.py`` can import it without a cycle.
+Imports only ``dovo.core.agents.models`` from its package so ``base.py`` can import it without a cycle.
 """
 
 from __future__ import annotations
@@ -8,6 +8,9 @@ from __future__ import annotations
 import os
 from collections.abc import Sequence
 from typing import Protocol
+
+from dovo.common.models import Remediation
+from dovo.core.agents.models import ProviderFailure
 
 
 class _CredentialDescriptor(Protocol):
@@ -41,13 +44,13 @@ def resolve_credential(envs: Sequence[str]) -> str | None:
     return None if entry is None else entry[1]
 
 
-def missing_credential_error(spec: _CredentialDescriptor) -> str:
-    """Return the unprefixed missing-credential diagnostic naming ``spec.credential_envs`` in order; raises ValueError when empty."""
+def missing_credential_error(spec: _CredentialDescriptor) -> ProviderFailure:
+    """Return the unprefixed missing-credential failure naming ``spec.credential_envs`` in order, with one remediation per name; raises ValueError when empty."""
     names = spec.credential_envs
     if not names:
         raise ValueError(f"provider '{spec.token}' declares no credential_envs")
 
-    missing_names = " or ".join(names)
-    export_commands = " or ".join(f"export {name}=..." for name in names)
-
-    return f"missing {missing_names}. Fix: {export_commands}"
+    return ProviderFailure(
+        message=f"missing {' or '.join(names)}.",
+        remediations=tuple(Remediation(message=f"Set '{name}'") for name in names),
+    )

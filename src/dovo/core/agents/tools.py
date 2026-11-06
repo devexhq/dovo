@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
-from dovo.core.agents.models import AgentInvocationContext
+from dovo.core.agents.models import AgentInvocationContext, ProviderFailure
 
 
 @dataclass(frozen=True)
@@ -37,11 +38,14 @@ def resolve_tool_policy(step_policy: ToolPolicy | None, configured: ToolPolicy) 
     return step_policy if step_policy is not None else configured
 
 
-def tool_policy_unsupported_message(token: str) -> str:
-    """Return the fixed unsupported-tool-policy message naming the provider token."""
-    return (
-        f"Agent provider '{token}' cannot enforce the requested tool policy. "
-        "Fix: choose a policy-capable provider or an explicitly authorized policy it can enforce."
+def tool_policy_unsupported(token: str) -> ProviderFailure:
+    """Return the fixed unsupported-tool-policy failure naming the provider token, with its two alternative remediations."""
+    return ProviderFailure(
+        message=f"Agent provider '{token}' cannot enforce the requested tool policy.",
+        remediations=(
+            Remediation(message="Choose an agent provider that can enforce the tool policy"),
+            Remediation(message=f"Choose a tool policy that provider '{token}' can enforce"),
+        ),
     )
 
 
@@ -59,12 +63,12 @@ class _PolicyDescriptor(Protocol):
         ...
 
 
-def check_policy_support(spec: _PolicyDescriptor, policy: ToolPolicy) -> str | None:
-    """Return the unsupported message when spec cannot enforce policy and policy is not unrestricted allow_all, else None."""
+def check_policy_support(spec: _PolicyDescriptor, policy: ToolPolicy) -> ProviderFailure | None:
+    """Return the unsupported failure when spec cannot enforce policy and policy is not unrestricted allow_all, else None."""
     if spec.supports_tool_policy or (policy.allow_all and not policy.deny):
         return None
 
-    return tool_policy_unsupported_message(spec.token)
+    return tool_policy_unsupported(spec.token)
 
 
 def policy_rules(policy: ToolPolicy) -> list[ToolRule]:

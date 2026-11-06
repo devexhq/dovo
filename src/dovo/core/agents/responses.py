@@ -57,6 +57,11 @@ def provider_error_response(
     )
 
 
+def with_remediations(response: AgentResponse, remediations: Sequence[Remediation]) -> AgentResponse:
+    """Return a copy of response carrying remediations in place of its own."""
+    return response.model_copy(update={"remediations": [*remediations]})
+
+
 def no_op_response(
     *,
     duration_seconds: float,

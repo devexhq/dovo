@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentEnvMode,
@@ -18,19 +19,22 @@ from dovo.core.agents import (
     AgentResponseStatus,
     BaseAgentProvider,
     default_tool_policy,
-    tool_policy_unsupported_message,
+    tool_policy_unsupported,
 )
 from dovo.core.agents.base import ProviderSpec
-from dovo.core.agents.claude import CLAUDE_AUTH_FIX
+from dovo.core.agents.claude import CLAUDE_AUTH_MISSING
 from dovo.core.agents.credentials import missing_credential_error
+from dovo.core.agents.models import ProviderFailure
 from dovo.core.agents.registry import PROVIDERS
 from tests.harness import PROVIDER_FINISHED_STREAMS, AgentRequestBuilder, FakeAgentRunner, real_invocation
 
 _CANONICAL_MISSING_CREDENTIAL_ERROR = (
-    "Agent provider error: "
-    "missing TEST_CREDENTIAL_PRIMARY or TEST_CREDENTIAL_FALLBACK. "
-    "Fix: export TEST_CREDENTIAL_PRIMARY=... or export TEST_CREDENTIAL_FALLBACK=..."
+    "Agent provider error: missing TEST_CREDENTIAL_PRIMARY or TEST_CREDENTIAL_FALLBACK."
 )
+_CANONICAL_MISSING_CREDENTIAL_REMEDIATIONS = [
+    Remediation(message="Set 'TEST_CREDENTIAL_PRIMARY'"),
+    Remediation(message="Set 'TEST_CREDENTIAL_FALLBACK'"),
+]
 _PROVIDER_RESPONSE = AgentResponse(status=AgentResponseStatus.NO_OP, duration_seconds=7.0)
 
 
@@ -43,7 +47,7 @@ class _DirectSubclassProvider(BaseAgentProvider):
         response: AgentResponse = _PROVIDER_RESPONSE,
         control_envs: tuple[str, ...] = (),
         supports_tool_policy: bool = False,
-        policy_rejection: str | None = None,
+        policy_rejection: ProviderFailure | None = None,
         auth_label: Callable[[], str | None] | None = None,
     ) -> None:
         self.invoke_calls: list[AgentRequest] = []
@@ -67,7 +71,7 @@ class _DirectSubclassProvider(BaseAgentProvider):
     def _provider_spec(self) -> ProviderSpec | None:
         return self._spec
 
-    def _policy_unsupported(self, request: AgentRequest) -> str | None:
+    def _policy_unsupported(self, request: AgentRequest) -> ProviderFailure | None:
         return self._policy_rejection
 
     def _invoke(self, request: AgentRequest) -> AgentResponse:
@@ -114,6 +118,54 @@ class InvokeDurationTests:
         assert provider.invoke_calls == []
 
 
+class BaseAgentProviderPreflightTests:
+    @pytest.mark.parametrize(
+        ("preflight", "expected_errors", "expected_remediations"),
+        [
+            pytest.param(
+                "missing_credential",
+                ["Agent provider error: missing TEST_CREDENTIAL_PRIMARY."],
+                [Remediation(message="Set 'TEST_CREDENTIAL_PRIMARY'")],
+                id="missing_credential",
+            ),
+            pytest.param(
+                "reserved_env_override",
+                ["Agent environment override 'TEST_CONTROL' conflicts with provider or Dovo controls."],
+                [
+                    Remediation(message="Remove 'TEST_CONTROL' from 'agents.unit-test.env_passthrough'"),
+                    Remediation(message="Remove 'TEST_CONTROL' from the agent step's env"),
+                ],
+                id="reserved_env_override",
+            ),
+            pytest.param(
+                "unenforceable_policy",
+                ["Agent provider 'unit-test' cannot enforce the requested tool policy."],
+                [
+                    Remediation(message="Choose an agent provider that can enforce the tool policy"),
+                    Remediation(message="Choose a tool policy that provider 'unit-test' can enforce"),
+                ],
+                id="unenforceable_policy",
+            ),
+        ],
+    )
+    def test_preflight_failure_carries_remediations(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        preflight: str,
+        expected_errors: list[str],
+        expected_remediations: list[Remediation],
+    ) -> None:
+        """Return PROVIDER_ERROR whose errors hold the message without fix text and whose remediations hold the fix."""
+        provider, request = _preflight_failing_case(preflight, tmp_path, monkeypatch)
+
+        response = provider.invoke(request.build())
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.errors == expected_errors
+        assert response.remediations == expected_remediations
+
+
 class BaseAgentProviderTests:
     def test_subclass_without_invoke_hook_cannot_be_instantiated(self) -> None:
 
@@ -135,6 +187,7 @@ class CredentialPreflightTests:
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
         assert response.errors == [_CANONICAL_MISSING_CREDENTIAL_ERROR]
+        assert response.remediations == _CANONICAL_MISSING_CREDENTIAL_REMEDIATIONS
         assert provider.invoke_calls == []
 
     def test_blank_first_credential_with_usable_second_delegates_to_provider(
@@ -235,7 +288,8 @@ class ToolPolicyConformanceTests:
         response = provider.invoke(request)
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert response.errors == [tool_policy_unsupported_message("unit-test")]
+        assert response.errors == [tool_policy_unsupported("unit-test").message]
+        assert response.remediations == list(tool_policy_unsupported("unit-test").remediations)
         assert provider.invoke_calls == []
 
     def test_non_policy_provider_delegates_an_allow_all_policy(self, tmp_path: Path) -> None:
@@ -248,13 +302,15 @@ class ToolPolicyConformanceTests:
         assert len(provider.invoke_calls) == 1
 
     def test_policy_capable_provider_hook_rejection_blocks_invoke(self, tmp_path: Path) -> None:
-        provider = _DirectSubclassProvider((), supports_tool_policy=True, policy_rejection="hook says no")
+        rejection = ProviderFailure(message="hook says no", remediations=(Remediation(message="Narrow the policy"),))
+        provider = _DirectSubclassProvider((), supports_tool_policy=True, policy_rejection=rejection)
         request = AgentRequestBuilder().with_worktree_path(tmp_path).with_tools(default_tool_policy()).build()
 
         response = provider.invoke(request)
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
         assert response.errors == ["hook says no"]
+        assert response.remediations == [Remediation(message="Narrow the policy")]
         assert provider.invoke_calls == []
 
     def test_policy_capable_provider_without_rejection_delegates_to_provider(self, tmp_path: Path) -> None:
@@ -279,9 +335,9 @@ def _isolated_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
-def _missing_credential_suffix(spec: ProviderSpec) -> str:
-    """Return the text a provider's missing-credential error must end with."""
-    return f"Fix: {CLAUDE_AUTH_FIX}" if spec.token == "claude" else missing_credential_error(spec)
+def _missing_credential_failure(spec: ProviderSpec) -> ProviderFailure:
+    """Return the failure a provider's missing-credential response must carry."""
+    return CLAUDE_AUTH_MISSING if spec.token == "claude" else missing_credential_error(spec)
 
 
 @pytest.mark.usefixtures("_isolated_credentials")
@@ -293,13 +349,13 @@ class RegisteredAdapterCredentialContractTests:
 
     @pytest.mark.parametrize("token", _CREDENTIALED)
     def test_missing_credential_returns_provider_detail(self, tmp_path: Path, token: str) -> None:
-        """Return PROVIDER_ERROR ending with each credentialed provider's descriptor-derived detail."""
+        """Return PROVIDER_ERROR carrying each credentialed provider's descriptor-derived message and remediations."""
         response = PROVIDERS[token].build().invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
-        [error] = response.errors
+        expected = _missing_credential_failure(PROVIDERS[token])
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert error.startswith("Agent provider error: ")
-        assert error.endswith(_missing_credential_suffix(PROVIDERS[token]))
+        assert response.errors == [f"Agent provider error: {expected.message}"]
+        assert response.remediations == list(expected.remediations)
 
     @pytest.mark.parametrize("token", _CREDENTIALED)
     def test_missing_credential_starts_no_backend_activity(
@@ -448,14 +504,15 @@ class RegisteredAdapterToolPolicyConformanceTests:
     def test_default_policy_without_an_invocation_is_rejected_before_any_spawn(
         self, token: str, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return PROVIDER_ERROR with errors == [tool_policy_unsupported_message(token)] and zero runner calls."""
+        """Return PROVIDER_ERROR carrying tool_policy_unsupported(token) and zero runner calls."""
         provider, runner = _provider_with_fake_runner(token, monkeypatch)
         request = AgentRequestBuilder().with_worktree_path(git_repo).with_tools(default_tool_policy()).build()
 
         response = provider.invoke(request)
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert response.errors == [tool_policy_unsupported_message(token)]
+        assert response.errors == [tool_policy_unsupported(token).message]
+        assert response.remediations == list(tool_policy_unsupported(token).remediations)
         assert runner.calls == []
 
 
@@ -564,10 +621,7 @@ class InvokeRedactionTests:
         assert response == expected
 
 
-_OVERRIDE_MESSAGE = (
-    "Agent environment override '{name}' conflicts with provider or Dovo controls. "
-    "Fix: remove it from agents.{provider}.env_passthrough or the agent step's env."
-)
+_OVERRIDE_MESSAGE = "Agent environment override '{name}' conflicts with provider or Dovo controls."
 
 
 class EnvPreflightConformanceTests:

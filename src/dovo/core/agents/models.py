@@ -245,6 +245,14 @@ class AgentResponse(BaseModel):
 
 
 @dataclass(frozen=True)
+class ProviderFailure:
+    """A provider failure's message, without fix text, and the remediations that fix it."""
+
+    message: str
+    remediations: tuple[Remediation, ...] = ()
+
+
+@dataclass(frozen=True)
 class AgentAttempt:
     """Classified result of one agent attempt before an adapter turns it into a caller-specific outcome.
 

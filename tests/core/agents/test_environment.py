@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.error_codes import ErrorCode
+from dovo.common.models import Remediation
 from dovo.core.agents import AgentEnvMode, AgentError, AgentInvocationContext, ProviderSpec
 from dovo.core.agents.copilot import COPILOT_PROVIDER_SPEC
 from dovo.core.agents.environment import (
@@ -23,13 +24,21 @@ from dovo.core.agents.environment import (
     validate_agent_env_request,
     withheld_env_names,
 )
+from dovo.core.agents.models import ProviderFailure
 from dovo.core.agents.registry import PROVIDERS
 from tests.harness import AgentRequestBuilder
 
-_OVERRIDE_MESSAGE = (
-    "Agent environment override '{name}' conflicts with provider or Dovo controls. "
-    "Fix: remove it from agents.{provider}.env_passthrough or the agent step's env."
-)
+
+def _override_failure(*, name: str, provider: str) -> ProviderFailure:
+    """Return the fixed override-conflict failure: the message without fix text and the two removal alternatives."""
+    return ProviderFailure(
+        message=f"Agent environment override '{name}' conflicts with provider or Dovo controls.",
+        remediations=(
+            Remediation(message=f"Remove '{name}' from 'agents.{provider}.env_passthrough'"),
+            Remediation(message=f"Remove '{name}' from the agent step's env"),
+        ),
+    )
+
 
 _CONTROL_CASES = [
     pytest.param(spec, name, id=f"{token}-{name}") for token, spec in PROVIDERS.items() for name in spec.control_envs
@@ -345,9 +354,9 @@ class ValidateAgentEnvRequestTests:
         request = builder.with_invocation(invocation).with_metadata_env({"DOVO_STEP_ID": "s"})
         request = request.with_env_passthrough([name]) if source == "passthrough" else request.with_env({name: "x"})
 
-        assert validate_agent_env_request(
-            COPILOT_PROVIDER_SPEC, request.build(), "copilot"
-        ) == _OVERRIDE_MESSAGE.format(name=name, provider="copilot")
+        assert validate_agent_env_request(COPILOT_PROVIDER_SPEC, request.build(), "copilot") == _override_failure(
+            name=name, provider="copilot"
+        )
 
     @pytest.mark.parametrize(
         "source", [pytest.param("passthrough", id="passthrough"), pytest.param("step-env", id="step-env")]
@@ -358,7 +367,7 @@ class ValidateAgentEnvRequestTests:
     ) -> None:
         request = builder.with_env_passthrough([name]) if source == "passthrough" else builder.with_env({name: "x"})
 
-        assert validate_agent_env_request(spec, request.build(), spec.token) == _OVERRIDE_MESSAGE.format(
+        assert validate_agent_env_request(spec, request.build(), spec.token) == _override_failure(
             name=name, provider=spec.token
         )
 
@@ -368,7 +377,7 @@ class ValidateAgentEnvRequestTests:
         rejected = builder.with_env({"GH_TOKEN": "x"}).build()
         allowed = AgentRequestBuilder().with_worktree_path(tmp_path).with_env_passthrough(["GH_TOKEN"]).build()
 
-        assert validate_agent_env_request(COPILOT_PROVIDER_SPEC, rejected, "copilot") == _OVERRIDE_MESSAGE.format(
+        assert validate_agent_env_request(COPILOT_PROVIDER_SPEC, rejected, "copilot") == _override_failure(
             name="GH_TOKEN", provider="copilot"
         )
         assert validate_agent_env_request(COPILOT_PROVIDER_SPEC, allowed, "copilot") is None
