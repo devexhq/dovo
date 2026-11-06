@@ -240,7 +240,7 @@ def _finding(**overrides: object) -> dict[str, object]:
         "path": "src/a.py",
         "start_line": None,
         "line": 94,
-        "rule": "R5",
+        "rule": "R-follow-the-exemplars",
         "summary": "Name the helper after its result.",
         "issue": "The helper name hides what it returns.",
         "fix": "Rename it.",

@@ -26,11 +26,11 @@ If the input file is missing, stop and say so.
 
 - **Never commit, stage, push, or touch PR state.** The `pr-fix` blueprint's `commit-fixes` and push steps own that.
 - **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, `.agentic/verdict.txt`, `.agentic/feedback.json` or `.agentic/triage.json` (except with `--triage`).** This skill writes only `.agentic/implementation-report.md`, `.agentic/fix-commit-msg` and `.agentic/feedback-outcomes.json`; with `--triage` it writes only `.agentic/triage.json`.
-- **A sentence your change makes false is fixed regardless (R17)**, and listed under Plan deviations in the report.
+- **A sentence your change makes false is fixed regardless (R-docs-match-shipped-behaviour)**, and listed under Plan deviations in the report.
 
 ## Before writing code
 
-Read [AGENTS.md](../../../AGENTS.md): its rules R1–R18 are what the reviewer will check, and its exemplars are what new code should look like. Then read the code you are about to change and its nearest exemplar. When `.agentic/plan.md` or `.agentic/ship/plan.md` exists, it records the design the change follows; consult it to keep a fix consistent with it.
+Read [AGENTS.md](../../../AGENTS.md): its rules are what the reviewer will check, and its exemplars are what new code should look like. Then read the code you are about to change and its nearest exemplar. When `.agentic/plan.md` or `.agentic/ship/plan.md` exists, it records the design the change follows; consult it to keep a fix consistent with it.
 
 ## Completion gate
 

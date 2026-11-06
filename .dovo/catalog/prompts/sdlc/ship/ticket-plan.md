@@ -14,7 +14,7 @@ Read from disk:
 
 - Read the code, callers, tests, and nearest exemplars needed to settle the design. Verify inherited claims against the current checkout and identify new files explicitly as new.
 - Reuse settled decisions from the ticket and `.agentic/ship/progress.json` (`answered_questions`); never re-ask a question already answered.
-- Choose the smallest coherent approach that satisfies every outcome (`O-n`), decision (`D-n`), binding value, and `Done when` condition while preserving R1–R18 in [AGENTS.md](../../../../../AGENTS.md).
+- Choose the smallest coherent approach that satisfies every outcome (`O-n`), decision (`D-n`), binding value, and `Done when` condition while preserving the rules in [AGENTS.md](../../../../../AGENTS.md).
 - Internal implementation steps organize coding and verification inside one pull request; they are not separate GitHub issues or approval gates.
 - Settle ordinary reversible implementation choices yourself. Use `ask` only when a choice changes an accepted outcome or constraint, or when a consequential product/design trade-off cannot be settled from code and repository rules.
 - If the ticket cannot reasonably fit one coherent pull request, choose `blocked` (`split_needed`) and document the evidence and proposed ticket boundary correction in `.agentic/ship/plan.md` rather than silently trimming acceptance criteria.
@@ -32,7 +32,7 @@ Choose one disposition accepted by [ship_state.py](../../../scripts/sdlc/ship/sh
    - Outcomes (`O-n`), decisions (`D-n`), binding values, and constraints being implemented
    - Chosen approach, settled technical decisions, and code evidence (`path:line`)
    - Ordered implementation and test steps anchored to real paths or explicitly new files
-   - Mapping from each outcome/constraint to the code and tests that verify it, naming the end-to-end scenario under `e2e/` for every outcome a person can observe from the installed binary (R13)
+   - Mapping from each outcome/constraint to the code and tests that verify it, naming the end-to-end scenario under `e2e/` for every outcome a person can observe from the installed binary (R-runner-and-e2e-tests)
    - Any unresolved human decision (`ask`) or boundary split proposal (`blocked`)
 2. Write `.agentic/ship/stage.json`:
 

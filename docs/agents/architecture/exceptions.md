@@ -1,6 +1,6 @@
 # Exceptions
 
-How business failures are raised, caught and classified behind an entrypoint. R4 and R6 in [AGENTS.md](../../../AGENTS.md) link here; the result side is in [results.md](results.md).
+How business failures are raised, caught and classified behind an entrypoint. R-failures-as-results and R-atomic-locked-writes in [AGENTS.md](../../../AGENTS.md) link here; the result side is in [results.md](results.md).
 
 ## One DomainError class per package
 
@@ -126,7 +126,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
 - **Decision:** every `LockTimeoutError` propagates to the top-level handler in `DovoTyperGroup.invoke`, which reports it as `WORKSPACE_LOCK_TIMEOUT`: the `Workspace Lock Timeout` panel, or the `error` event under `--format json`.
   - No package turns it into an error code, a warning or a status. `catch_failure` re-raises it, so an entrypoint needs no handler of its own. A timeout while a finished run's worktree is discarded propagates too, so that run ends with the `error` event and no run result.
   - An entrypoint that rolls back a failed attempt, such as `auto_initialize_workspace`, rolls back before re-raising it, adding any rollback failure as a note; each note becomes its own `errors` entry.
-- **Why:** this is what R6's "report it" means: one handler reports contention the same way for every command.
+- **Why:** this is what "report it" means in R-atomic-locked-writes: one handler reports contention the same way for every command.
 - **Since:** #1214
 
 ## Declined confirmation is decided in core
@@ -136,7 +136,7 @@ How business failures are raised, caught and classified behind an entrypoint. R4
   - Every check that can refuse the delete, such as a protected or wrong-tier target, also runs before the prompt; only failures of the delete itself can follow it.
   - No lock is held while the prompt waits; the delete's workspace lock is taken after it.
   - A declined prompt returns a success with `cancelled` set (see [results.md](results.md)).
-  - The handler makes one call and sets no result field (R2).
+  - The handler makes one call and sets no result field (R-thin-cli-handlers).
 - **Why:** prompting in the CLI asks to confirm deleting a target that does not exist, and splits one outcome across two layers.
 - **Since:** #1214
 - **Example:**

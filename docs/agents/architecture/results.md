@@ -5,7 +5,7 @@ What a public entrypoint returns and what a caller branches on. These entries ho
 ## One strict result per public command
 
 - **Decision:** a public entrypoint returns a Pydantic `BaseResult` subclass, one per public command, with `extra="forbid"` and `strict=True`.
-  - A public entrypoint is a method of the entrypoint class in `core/<pkg>/<pkg>.py`, or an `engine/services/` runner, called from a layer above (R4).
+  - A public entrypoint is a method of the entrypoint class in `core/<pkg>/<pkg>.py`, or an `engine/services/` runner, called from a layer above (R-failures-as-results).
   - Hand-authored YAML models may use `extra="ignore"` only with a justifying comment, as `BlueprintDefinition` and `LoopStepBlock` do.
 - **Why:** exit codes, the JSON envelope and every caller read the result, so its shape is checked at construction.
 - **Since:** #1106

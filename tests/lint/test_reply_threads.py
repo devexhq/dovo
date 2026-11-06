@@ -44,7 +44,7 @@ W2: dict[str, object] = {
     "path": "scripts/publish_review.py",
     "start_line": 120,
     "line": 124,
-    "rule": "R17",
+    "rule": "R-docs-match-shipped-behaviour",
     "summary": "The docstring names a round.",
     "issue": "The docstring names a round.",
     "fix": "Drop the round.",
@@ -70,7 +70,7 @@ FEEDBACK_ITEMS: list[dict[str, object]] = [
     _item("T4", "review_thread", "104", "https://x/t4", "Cache it"),
     {
         **_item("R1", "review_finding", None, "https://x/review", PUBLISH.finding_block(W2)),
-        "finding": {"id": "W2", "severity": "WARNING", "rule": "R17"},
+        "finding": {"id": "W2", "severity": "WARNING", "rule": "R-docs-match-shipped-behaviour"},
     },
     _item("C1", "comment", None, "https://x/c1", "Walkthrough"),
     _item("K1", "check", None, "https://ci/tests", "Tests: failure"),
@@ -410,10 +410,10 @@ class ReplyThreadsTests:
     @pytest.mark.parametrize(
         ("body", "expected"),
         [
-            pytest.param("#### W1 · `a.py:3` · R1\n\nsee `b.py`", "a.py:3", id="path-line"),
-            pytest.param("#### W1 · `a.py:3-5` · R1", "a.py:3-5", id="path-range"),
+            pytest.param("#### W1 · `a.py:3` · R-imports-flow-one-way\n\nsee `b.py`", "a.py:3", id="path-line"),
+            pytest.param("#### W1 · `a.py:3-5` · R-imports-flow-one-way", "a.py:3-5", id="path-range"),
             pytest.param("#### W1 · `a.py`", "a.py", id="path-only"),
-            pytest.param("#### W1 · R1\n\n**Issue:** `b.py` breaks.", None, id="no-location"),
+            pytest.param("#### W1 · R-imports-flow-one-way\n\n**Issue:** `b.py` breaks.", None, id="no-location"),
         ],
     )
     def test_heading_location(self, body: str, expected: str | None) -> None:

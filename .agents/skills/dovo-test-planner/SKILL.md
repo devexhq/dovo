@@ -3,7 +3,7 @@ name: dovo-test-planner
 description: >-
   Given a source module (or --plan to read from an in-progress plan), produce a skeleton of test class(es) and test method stubs
   covering public observable contracts, interaction and ordering contracts, and conforming
-  to this repo's test rules (R12-R16 in AGENTS.md and docs/agents/testing.md). Invoked as /dovo-test-planner <source-module> or
+  to this repo's test rules (the Tests rules in AGENTS.md and docs/agents/testing.md). Invoked as /dovo-test-planner <source-module> or
   /dovo-test-planner --plan [<path>]. Use when planning, drafting, or structuring tests for a module or plan.
 ---
 
@@ -21,7 +21,7 @@ Given a source module or an in-progress plan, produce a skeleton of test class(e
   outcomes.
 - Flag every test that is parameterisable and prefer `@pytest.mark.parametrize` for sibling
   variations.
-- Conform to this repo's test rules (R12-R16 in `AGENTS.md`, plus `docs/agents/testing.md`).
+- Conform to this repo's test rules (the Tests rules in `AGENTS.md`, plus `docs/agents/testing.md`).
 
 ---
 
@@ -44,7 +44,7 @@ The skill supports two data sources:
 
 Read before drafting:
 
-1. Rules R11-R16 in `AGENTS.md` and `docs/agents/testing.md`.
+1. The rules R-no-test-only-seams to R-inject-clocks-no-sleeps in `AGENTS.md` and `docs/agents/testing.md`.
 2. **Data source**:
    - **Existing-code mode**: The source module and returned models/DTOs (follow imports for `BaseResult` subtypes).
    - **Planning mode (`--plan`)**: The issue named in the plan's `# Issue #<n>:` header (`gh issue view <n> --json body`) for the contract, and the plan's `## Phases` table (which requirements each phase lands), `## Artifact inventory` and relevant `## Phase <p>` section, whose `### Tests` lines name each test, its file and the requirements it pins.
@@ -82,7 +82,7 @@ Record:
 - Exit behavior (`if not result.ok: raise typer.Exit(code=1)`).
 - Options and arguments handled exclusively by Typer.
 
-> **Rule**: Per R13, ensure every declared Typer option, flag, and argument is exercised in at least one CLI invocation test to pin CLI option binding and wire propagation. Do not duplicate underlying domain matrix variations through the CLI runner.
+> **Rule**: Per R-runner-and-e2e-tests, ensure every declared Typer option, flag, and argument is exercised in at least one CLI invocation test to pin CLI option binding and wire propagation. Do not duplicate underlying domain matrix variations through the CLI runner.
 
 ---
 
@@ -92,7 +92,7 @@ Check what existing tests already cover:
 - **Existing-code mode**: Search `tests/core/<domain>/` for tests asserting the same result fields.
 - **Planning mode (`--plan`)**: Search `tests/` for tests already asserting the result fields of the symbols the Artifact inventory lists as changed.
 
-Assert wiring at the CLI tier (R13 exit codes and rendered tokens; R14 covers the JSON wire dict in formatter tests under `tests/cli/ui/formatters/`). Do not re-assert domain service fields in CLI tests.
+Assert wiring at the CLI tier (R-runner-and-e2e-tests exit codes and rendered tokens; R-formatter-tests-pin-values covers the JSON wire dict in formatter tests under `tests/cli/ui/formatters/`). Do not re-assert domain service fields in CLI tests.
 
 ---
 
@@ -130,7 +130,7 @@ Select test tiers appropriate to the module:
 | Functions reading/writing filesystem or DB | Unit + Integration |
 | Subprocess execution or step-execution loops | Integration primary, Unit for edge cases |
 | Multi-collaborator orchestration | Integration for workflows, Unit for error injection |
-| A command, flag, exit code, terminal text or JSON field a person sees from the installed binary | The tiers above, plus one end-to-end scenario under `e2e/` (R13) |
+| A command, flag, exit code, terminal text or JSON field a person sees from the installed binary | The tiers above, plus one end-to-end scenario under `e2e/` (R-runner-and-e2e-tests) |
 
 Plan a separate test class per tier/scenario group with a descriptive suffix (e.g. `RunStepsExecutionTests`, `RunStepsFailurePolicyTests`, `RunStepsRobustnessTests`). Do not use monolithic classes across tier boundaries.
 
@@ -190,7 +190,7 @@ Run actual shell commands or real filesystem operations for integration tests. I
 
 For destructive or unreachable error paths (e.g. atomic write `OSError`), patch at the module import boundary and note it in the test docstring.
 
-### Assertion contracts (R12)
+### Assertion contracts (R-tests-assert-contracts)
 
 - `BaseResult`/`BaseModel`: assert relevant domain fields and invariants; reserve whole-schema pinning for dedicated model contract tests.
 - Scalar values: assert exact return values.
@@ -229,11 +229,11 @@ Verify before presenting output:
 | Planning mode (`--plan`) emits one stub per plan test line, with no separate `Test \| Outcome` index table | skill convention |
 | Private helpers verified through public caller tests | skill convention |
 | Interaction/ordering tests included where Step 5 identified sequences | skill convention |
-| Test doubles injected at protocol boundaries only | R11, R15 |
+| Test doubles injected at protocol boundaries only | R-no-test-only-seams, R-doubles-subclass-real-types |
 | Sibling contract variations parameterised | skill convention |
 | Method names follow `test_<condition>_<outcome>` with no banned names | skill convention |
-| No assertions on call counts, private state, or console layout | R12 |
-| Model assertions check domain invariants; dedicated contract tests pin schema | R12 |
+| No assertions on call counts, private state, or console layout | R-tests-assert-contracts |
+| Model assertions check domain invariants; dedicated contract tests pin schema | R-tests-assert-contracts |
 | Test file path mirrors source under `tests/` | skill convention |
 
 ---

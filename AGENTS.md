@@ -27,30 +27,35 @@ they are not repeated here.
    is reviewable in one sitting (roughly 400 changed lines or less), passes
    the quality gate on its own and ships something. When a change replaces an
    internal, phase it as add, switch callers, delete, with the deletion phase
-   planned up front (see R10). `/dovo-review` reviews a change by the same
+   planned up front (see R-replace-internals-outright). `/dovo-review` reviews a change by the same
    rules, and `pr-fix` fixes a pull request's feedback with `/dovo-code
    feedback`.
 
 ## Rules
 
 The coding agent follows these. The review agent reports each violation by its
-ID, with the `path:line` that breaks it.
+name, with the `path:line` that breaks it.
+
+A rule name is `R-` plus three or four kebab-case words, phrased as the claim
+the rule makes, not its topic. A name is permanent. A rule whose content changes
+enough that its name lies gets a new name, and the old one is removed with no
+alias. Rules stay grouped by section, and the name is the anchor, not a number.
 
 ### Architecture
 
-- **R1. Imports flow one way: common → core → engine → cli.** Within `core/`,
+- **R-imports-flow-one-way. Imports flow one way: common → core → engine → cli.** Within `core/`,
   packages follow `core/expressions → core/{project,db,git,inputs} → core/{agents,catalog,sessions} → core/config → core/{worktree,status,artifacts} → core/interaction → core/{bootstrap,diagnostics}`.
   *Why:* each layer can be tested and changed without the ones above it.
   `tests/lint/test_layer_direction.py` enforces the table; design with it rather
   than discovering it at the gate.
-- **R2. CLI handlers parse arguments, call one domain entrypoint and dispatch
+- **R-thin-cli-handlers. CLI handlers parse arguments, call one domain entrypoint and dispatch
   its result.** No business logic, SQL or filesystem scans in `cli/`. *Why:*
   every behaviour must be reachable and testable without Typer.
-- **R3. Domain facts originate in `core/` or `common/` models.** Status, error
+- **R-facts-from-core. Domain facts originate in `core/` or `common/` models.** Status, error
   category, warnings, remediation text and health rules come from the result;
   `cli/ui/` only reshapes them for display. *Why:* terminal and JSON output must
   agree, so both derive from the same result.
-- **R4. Business failures reach the caller as a result, not an exception.**
+- **R-failures-as-results. Business failures reach the caller as a result, not an exception.**
   A public entrypoint (a method of the entrypoint class in
   `core/<pkg>/<pkg>.py`, or an `engine/services/` runner, called from a layer
   above) returns a `*Result` subclassing `BaseResult`, and the caller branches
@@ -74,23 +79,23 @@ ID, with the `path:line` that breaks it.
   codes, the JSON envelope and every caller branch on the entrypoint's result,
   and a failure that carries the `ErrorCode` it was raised with needs no
   re-encoding at each hop.
-- **R5. New work follows its neighbours and the exemplars.** Match the layout,
+- **R-follow-the-exemplars. New work follows its neighbours and the exemplars.** Match the layout,
   naming and idiom of the package you are in. When two existing patterns
   disagree, follow the exemplar and say so in the PR. *Why:* agents copy what
   they see, so drift compounds.
 
 ### State and safety
 
-- **R6. Writes under `.dovo/` go through `Filesystem.atomic_write_*`, and
+- **R-atomic-locked-writes. Writes under `.dovo/` go through `Filesystem.atomic_write_*`, and
   mutations that can run in more than one process hold `WorkspaceLock`.** Every
   `LockTimeoutError` propagates to the top-level handler; no package turns it
   into an error code, a warning or a status
   ([exceptions.md](docs/agents/architecture/exceptions.md)). *Why:* concurrent `dovo` runs share one
   workspace, and a torn or racing write corrupts it.
-- **R7. Secrets come only from environment variables, read at call time.** Never
+- **R-secrets-from-env. Secrets come only from environment variables, read at call time.** Never
   write them to `config.json`, `data.db`, logs, artifacts or prompt arguments.
   *Why:* those files are shared, committed or uploaded.
-- **R8. Never edit, rename or delete a released migration; every new one is
+- **R-migrations-fixed-forward. Never edit, rename or delete a released migration; every new one is
   reversible.** A revision in a `v*` tag is fixed forward with a new revision.
   Each revision file stays dialect-neutral (`op.batch_alter_table`, no
   SQLite-only `PRAGMA` in revision files) and implements `upgrade()` and
@@ -99,32 +104,32 @@ ID, with the `path:line` that breaks it.
 
 ### Compatibility and change shape
 
-- **R9. Dovo is greenfield: its public surface is not yet a contract.** CLI
+- **R-fix-public-surface-now. Dovo is greenfield: its public surface is not yet a contract.** CLI
   flags and arguments, the meaning of `config.json` and blueprint keys, and the
   JSON event envelope have no external consumers until the first public
   release. When one is wrong, fix it now: change it outright, update every
-  caller, test and doc in the same change (R10, R17), and name the change in
+  caller, test and doc in the same change (R-replace-internals-outright, R-docs-match-shipped-behaviour), and name the change in
   the PR. Never keep a wrong shape behind an alias, fallback or compatibility
-  shim. R8 still applies to migrations. This rule becomes "never break the
+  shim. R-migrations-fixed-forward still applies to migrations. This rule becomes "never break the
   public surface" at the first public release (#914). *Why:* a contract
   settled before release is one users never migrate off, and a shim added now
   becomes permanent.
-- **R10. Replace internals outright.** No aliases, re-exports, fallbacks, dual
+- **R-replace-internals-outright. Replace internals outright.** No aliases, re-exports, fallbacks, dual
   paths or deprecation windows; update every caller in the same change, or in
   the planned phase that follows. *Why:* shims outlive their reason and the
   next agent copies them.
-- **R11. No production parameter, default or hook exists only for tests.**
+- **R-no-test-only-seams. No production parameter, default or hook exists only for tests.**
   Patch or inject at the boundary in the test instead. *Why:* a test seam is a
   production path nothing exercises.
 
 ### Tests
 
-- **R12. Tests assert published contracts:** the result model, JSON output, exit
+- **R-tests-assert-contracts. Tests assert published contracts:** the result model, JSON output, exit
   code, files on disk and git state. Never private members, the call order of
   internals or module layout. Pin each contract once, at the lowest tier that
   can observe it, plus one wiring test above it. *Why:* contract tests survive
   refactors; implementation tests block them.
-- **R13. Every command has runner tests for success, a failure path,
+- **R-runner-and-e2e-tests. Every command has runner tests for success, a failure path,
   `--format json` and each option it binds, and every outcome a person can
   observe from the installed binary (a command, a flag, an exit code, a
   terminal text or a JSON field) has one end-to-end scenario in `e2e/`, added
@@ -132,13 +137,13 @@ ID, with the `path:line` that breaks it.
   binary gets no scenario. *Why:* the CLI runner is the only tier that proves a
   flag is wired through, and the end-to-end suite is the only one that proves
   the installed binary still behaves as the docs say.
-- **R14. Formatter tests pin the transform view and the exact JSON dict.**
+- **R-formatter-tests-pin-values. Formatter tests pin the transform view and the exact JSON dict.**
   Render tests assert that the view's values appear, not layout, colour or
   widths. *Why:* values and JSON are the contract; layout is cosmetic.
-- **R15. Test doubles subclass a real production type or Protocol**, like
+- **R-doubles-subclass-real-types. Test doubles subclass a real production type or Protocol**, like
   `FakeAgentProvider` in `tests/harness/fakes.py`. *Why:* an invented double
   keeps passing after the real interface changes.
-- **R16. Inject clocks, sleeps and ID generators, and assert literal values.**
+- **R-inject-clocks-no-sleeps. Inject clocks, sleeps and ID generators, and assert literal values.**
   No `time.sleep` or wall-clock waits. The one exception is an OS event with no
   virtual equivalent (a process group reaped after `SIGKILL`): wait for it with
   `wait_until` in `tests/harness/poll.py`, which owns the only sleep. *Why:*
@@ -146,10 +151,10 @@ ID, with the `path:line` that breaks it.
 
 ### Docs
 
-- **R17. Document only shipped behaviour, and fix every doc or docstring
+- **R-docs-match-shipped-behaviour. Document only shipped behaviour, and fix every doc or docstring
   sentence your change makes false**, in the same change. *Why:* agents trust
   docs, so a false sentence spreads.
-- **R18. User docs describe only what users type, see and configure.** Pages
+- **R-user-docs-no-internals. User docs describe only what users type, see and configure.** Pages
   under `docs/` outside `docs/agents/`, `README.md` and `mkdocs.yml` name no
   classes, modules, source or test paths, internal libraries or the tests that
   check them, and follow the user-docs rules in

@@ -22,7 +22,7 @@ COMMENT_URL = f"{PR_URL}#issuecomment-5"
 TABLE_HEADER = "| ID | Location | Rule | Issue | Fix |"
 RANGE_RULE = "start_line is null for a single line, or a line from 1 to below line for a range"
 SEVERITIES = "BLOCKER, WARNING, SUGGESTION or NIT"
-RULES = "null or one word such as R4, conventions or architecture"
+RULES = "null or one word such as R-failures-as-results, conventions or architecture"
 APPROVE_REPORT = f"**Verdict:** APPROVE · **Action:** none\n**Reviewed commit:** `{PR_HEAD}`\n"
 
 
@@ -57,7 +57,12 @@ def _review(head: str | None = PR_HEAD, drop: str | None = None, **overrides: ob
 
 
 def _finding(
-    finding_id: str, severity: str, path: str | None, line: int | None, rule: str | None = "R4", **overrides: object
+    finding_id: str,
+    severity: str,
+    path: str | None,
+    line: int | None,
+    rule: str | None = "R-failures-as-results",
+    **overrides: object,
 ) -> dict[str, object]:
     """Return a review.json finding with finding_id, severity, location and rule, then overrides."""
     finding: dict[str, object] = {
@@ -95,18 +100,16 @@ OUTSIDE_HEAD = (
     "<details>\n<summary>⚠️ <b>Outside diff range comments "
 )
 B1_BLOCK = (
-    "#### B1 · `src/a.py:3` · R4\n\n**Issue:** B1 issue.\n\n**Fix:** B1 fix.\n\n"
-    "<!-- dovo-finding id=B1 severity=BLOCKER rule=R4 -->"
+    "#### B1 · `src/a.py:3` · R-failures-as-results\n\n**Issue:** B1 issue.\n\n**Fix:** B1 fix.\n\n"
+    "<!-- dovo-finding id=B1 severity=BLOCKER rule=R-failures-as-results -->"
 )
 W1_BLOCK = (
-    "#### W1 · `src/a.py:40` · R4\n\n**Issue:** W1 issue.\n\n**Fix:** W1 fix.\n\n"
-    "<!-- dovo-finding id=W1 severity=WARNING rule=R4 -->"
+    "#### W1 · `src/a.py:40` · R-failures-as-results\n\n**Issue:** W1 issue.\n\n**Fix:** W1 fix.\n\n"
+    "<!-- dovo-finding id=W1 severity=WARNING rule=R-failures-as-results -->"
 )
 N1_BLOCK = "#### N1\n\n**Issue:** N1 issue.\n\n**Fix:** N1 fix.\n\n<!-- dovo-finding id=N1 severity=NIT rule=- -->"
 REPORT_HEAD = f"**Verdict:** CHANGES REQUIRED · **Action:** fix\n**Reviewed commit:** `{PR_HEAD}`\n\nOne blocker.\n\n"
-FINDING_TABLES = (
-    f"### Blocking\n\n{TABLE_HEADER}\n|---|---|---|---|---|\n| B1 | `src/a.py:3` | R4 | B1 issue. | B1 fix. |\n\n"
-)
+FINDING_TABLES = f"### Blocking\n\n{TABLE_HEADER}\n|---|---|---|---|---|\n| B1 | `src/a.py:3` | R-failures-as-results | B1 issue. | B1 fix. |\n\n"
 
 
 def _changes_required(**overrides: object) -> dict[str, object]:
@@ -556,7 +559,7 @@ class PublishReviewTests:
                 f"{PROMPT_DETAILS}\n\n```text\n{PROMPT_INTRO}\nLocation: src/a.py#L3-L5\n\n"
                 "Potential issue: W1 issue.\n```\n</details>\n\n"
                 "**Also affects:** `src/b.py:1`, `src/b.py:2-4`\n"
-                "<!-- dovo-finding id=W1 severity=WARNING rule=R4 -->",
+                "<!-- dovo-finding id=W1 severity=WARNING rule=R-failures-as-results -->",
                 id="warning-with-also-affects",
             ),
             pytest.param(
@@ -574,7 +577,7 @@ class PublishReviewTests:
                 f"{SUGGESTED_FIX}\n\nS1 fix.\n</details>\n\n"
                 f"{PROMPT_DETAILS}\n\n````text\n{PROMPT_INTRO}\nLocation: src/a.py#L3-L3\n\n"
                 "Potential issue: Quote:\n```\nx\n```\n````\n</details>\n\n"
-                "<!-- dovo-finding id=S1 severity=SUGGESTION rule=R4 -->",
+                "<!-- dovo-finding id=S1 severity=SUGGESTION rule=R-failures-as-results -->",
                 id="fenced-issue",
             ),
         ],
@@ -593,8 +596,8 @@ class PublishReviewTests:
                 ],
                 f"{OUTSIDE_HEAD}(2)</b></summary><blockquote>\n\n"
                 "<details>\n<summary>🟠 <b>Warning</b> · W1 summary · <code>src/a.py:38-40</code></summary>"
-                "<blockquote>\n\n#### W1 · `src/a.py:38-40` · R4\n\n**Issue:** W1 issue.\n\n**Fix:** W1 fix.\n\n"
-                "<!-- dovo-finding id=W1 severity=WARNING rule=R4 -->\n\n</blockquote></details>\n\n"
+                "<blockquote>\n\n#### W1 · `src/a.py:38-40` · R-failures-as-results\n\n**Issue:** W1 issue.\n\n**Fix:** W1 fix.\n\n"
+                "<!-- dovo-finding id=W1 severity=WARNING rule=R-failures-as-results -->\n\n</blockquote></details>\n\n"
                 "<details>\n<summary>⚪ <b>Nit</b> · N1 summary · <code>docs/x.md</code></summary>"
                 "<blockquote>\n\n#### N1 · `docs/x.md`\n\n**Issue:** N1 issue.\n\n**Fix:** N1 fix.\n\n"
                 "<!-- dovo-finding id=N1 severity=NIT rule=- -->\n\n</blockquote></details>\n\n"
@@ -605,8 +608,8 @@ class PublishReviewTests:
                 [_finding("B1", "BLOCKER", None, None)],
                 f"{OUTSIDE_HEAD}(1)</b></summary><blockquote>\n\n"
                 "<details>\n<summary>🔴 <b>Blocker</b> · B1 summary</summary>"
-                "<blockquote>\n\n#### B1 · R4\n\n**Issue:** B1 issue.\n\n**Fix:** B1 fix.\n\n"
-                "<!-- dovo-finding id=B1 severity=BLOCKER rule=R4 -->\n\n</blockquote></details>\n\n"
+                "<blockquote>\n\n#### B1 · R-failures-as-results\n\n**Issue:** B1 issue.\n\n**Fix:** B1 fix.\n\n"
+                "<!-- dovo-finding id=B1 severity=BLOCKER rule=R-failures-as-results -->\n\n</blockquote></details>\n\n"
                 "</blockquote></details>",
                 id="no-path",
             ),
@@ -614,8 +617,8 @@ class PublishReviewTests:
                 [_finding("S1", "SUGGESTION", "src/a.py", 40, summary="a < b && c")],
                 f"{OUTSIDE_HEAD}(1)</b></summary><blockquote>\n\n"
                 "<details>\n<summary>🔵 <b>Suggestion</b> · a &lt; b &amp;&amp; c · <code>src/a.py:40</code></summary>"
-                "<blockquote>\n\n#### S1 · `src/a.py:40` · R4\n\n**Issue:** S1 issue.\n\n**Fix:** S1 fix.\n\n"
-                "<!-- dovo-finding id=S1 severity=SUGGESTION rule=R4 -->\n\n</blockquote></details>\n\n"
+                "<blockquote>\n\n#### S1 · `src/a.py:40` · R-failures-as-results\n\n**Issue:** S1 issue.\n\n**Fix:** S1 fix.\n\n"
+                "<!-- dovo-finding id=S1 severity=SUGGESTION rule=R-failures-as-results -->\n\n</blockquote></details>\n\n"
                 "</blockquote></details>",
                 id="escaped-summary",
             ),
@@ -630,14 +633,14 @@ class PublishReviewTests:
             pytest.param(FINDINGS[0], B1_BLOCK, id="full"),
             pytest.param(
                 _finding("W2", "WARNING", "src/b.py", None),
-                "#### W2 · `src/b.py` · R4\n\n**Issue:** W2 issue.\n\n**Fix:** W2 fix.\n\n"
-                "<!-- dovo-finding id=W2 severity=WARNING rule=R4 -->",
+                "#### W2 · `src/b.py` · R-failures-as-results\n\n**Issue:** W2 issue.\n\n**Fix:** W2 fix.\n\n"
+                "<!-- dovo-finding id=W2 severity=WARNING rule=R-failures-as-results -->",
                 id="line-none",
             ),
             pytest.param(
                 _finding("S1", "SUGGESTION", None, None),
-                "#### S1 · R4\n\n**Issue:** S1 issue.\n\n**Fix:** S1 fix.\n\n"
-                "<!-- dovo-finding id=S1 severity=SUGGESTION rule=R4 -->",
+                "#### S1 · R-failures-as-results\n\n**Issue:** S1 issue.\n\n**Fix:** S1 fix.\n\n"
+                "<!-- dovo-finding id=S1 severity=SUGGESTION rule=R-failures-as-results -->",
                 id="path-none",
             ),
             pytest.param(
@@ -840,8 +843,12 @@ class PublishReviewTests:
                 id="list-severity",
             ),
             pytest.param(
-                _review(findings=[_finding("W1", "WARNING", None, None, rule="R12, R13")]),
-                f"review.json finding W1 has rule 'R12, R13', which is not {RULES}",
+                _review(
+                    findings=[
+                        _finding("W1", "WARNING", None, None, rule="R-tests-assert-contracts, R-runner-and-e2e-tests")
+                    ]
+                ),
+                f"review.json finding W1 has rule 'R-tests-assert-contracts, R-runner-and-e2e-tests', which is not {RULES}",
                 id="spaced-rule",
             ),
             pytest.param(
@@ -865,8 +872,8 @@ class PublishReviewTests:
         ("line", "expected"),
         [
             pytest.param(
-                "<!-- dovo-finding id=W1 severity=WARNING rule=R4 -->",
-                {"id": "W1", "severity": "WARNING", "rule": "R4"},
+                "<!-- dovo-finding id=W1 severity=WARNING rule=R-failures-as-results -->",
+                {"id": "W1", "severity": "WARNING", "rule": "R-failures-as-results"},
                 id="marker",
             ),
             pytest.param(
@@ -874,9 +881,17 @@ class PublishReviewTests:
                 {"id": "N1", "severity": "NIT", "rule": None},
                 id="no-rule",
             ),
-            pytest.param("#### W1 · R4", None, id="not-a-marker"),
-            pytest.param("<!-- dovo-finding id=W1 severity=WARNING rule=R12, R13 -->", None, id="spaced-rule"),
-            pytest.param("<!-- dovo-finding id=W1 severity=WARNING rule=R4 round=1 -->", None, id="old-round-marker"),
+            pytest.param("#### W1 · R-failures-as-results", None, id="not-a-marker"),
+            pytest.param(
+                "<!-- dovo-finding id=W1 severity=WARNING rule=R-tests-assert-contracts, R-runner-and-e2e-tests -->",
+                None,
+                id="spaced-rule",
+            ),
+            pytest.param(
+                "<!-- dovo-finding id=W1 severity=WARNING rule=R-failures-as-results round=1 -->",
+                None,
+                id="old-round-marker",
+            ),
         ],
     )
     def test_parse_finding_marker(self, line: str, expected: dict[str, object] | None) -> None:

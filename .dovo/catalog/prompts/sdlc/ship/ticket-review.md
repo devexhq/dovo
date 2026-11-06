@@ -1,6 +1,6 @@
 # Review one delivery ticket (`ship/review`)
 
-Review the committed change at `HEAD` against `.agentic/ship/contract.json`, failure paths, regression risks, and [AGENTS.md](../../../../../AGENTS.md) rules R1–R18. Write `.agentic/review.md`, `.agentic/review.json`, and `.agentic/ship/stage.json`, and stop. Never edit tracked files, stage, commit, or push during review.
+Review the committed change at `HEAD` against `.agentic/ship/contract.json`, failure paths, regression risks, and [AGENTS.md](../../../../../AGENTS.md) rules. Write `.agentic/review.md`, `.agentic/review.json`, and `.agentic/ship/stage.json`, and stop. Never edit tracked files, stage, commit, or push during review.
 
 ## Inputs
 
@@ -15,8 +15,8 @@ Read from disk:
 ## Review priorities
 
 1. **Correctness and failure paths:** Bugs, regressions, unhandled edge cases, partial state writes, or silent error swallowing in the diff.
-2. **Contract coverage:** Every outcome (`O-n`), decision (`D-n`), binding value, and `Done when` condition in `.agentic/ship/contract.json` (plus any settled `answered_questions` in `.agentic/ship/progress.json`) is met by the code and verified by meaningful assertions in tests. An outcome a person can observe from the installed binary is also verified by an end-to-end scenario under `e2e/` (R13); a missing or stale scenario is a rule violation.
-3. **Repository rules and docs:** Compliance with R1–R18 in [AGENTS.md](../../../../../AGENTS.md), [docs/agents/code-conventions.md](../../../../../docs/agents/code-conventions.md), and required documentation updates.
+2. **Contract coverage:** Every outcome (`O-n`), decision (`D-n`), binding value, and `Done when` condition in `.agentic/ship/contract.json` (plus any settled `answered_questions` in `.agentic/ship/progress.json`) is met by the code and verified by meaningful assertions in tests. An outcome a person can observe from the installed binary is also verified by an end-to-end scenario under `e2e/` (R-runner-and-e2e-tests); a missing or stale scenario is a rule violation.
+3. **Repository rules and docs:** Compliance with the rules in [AGENTS.md](../../../../../AGENTS.md), [docs/agents/code-conventions.md](../../../../../docs/agents/code-conventions.md), and required documentation updates.
 
 ## Dispositions
 
@@ -41,7 +41,7 @@ Choose one disposition accepted by [ship_state.py](../../../scripts/sdlc/ship/sh
      **Reviewed commit:** `<full HEAD sha>`
      ```
    - `.agentic/review.json` must include `head` (full `HEAD` SHA), `verdict` (`"APPROVE"` or `"CHANGES_REQUIRED"`), `action` (`"none"`, `"fix"`, `"replan"`, or `"needs_human"`), `round` (`review_rounds + 1`), `counts` (`blocking`, `warnings`, `suggestions`, `nits`), `findings` (each with `id`, `severity`, `path`, `start_line`, `line`, `rule`, `summary`, `issue`, `fix`, `also_affects`), and `coverage`.
-   - Each finding's `severity` is exactly `"BLOCKER"`, `"WARNING"`, `"SUGGESTION"` or `"NIT"`, in uppercase. `rule` is an R-id, `"conventions"`, `"architecture"` or `null`. A one-line location sets `line` to that line and `start_line` to `null`. A range sets `start_line` to its first line and `line` to its last, so `start_line` is below `line`. A finding with no line sets both to `null`. `summary`, `issue` and `fix` are non-empty strings, and `also_affects` is a list of `path:line` or `path:start-end` entries (`[]` when there are none).
+   - Each finding's `severity` is exactly `"BLOCKER"`, `"WARNING"`, `"SUGGESTION"` or `"NIT"`, in uppercase. `rule` is a rule name from AGENTS.md, `"conventions"`, `"architecture"` or `null`. A one-line location sets `line` to that line and `start_line` to `null`. A range sets `start_line` to its first line and `line` to its last, so `start_line` is below `line`. A finding with no line sets both to `null`. `summary`, `issue` and `fix` are non-empty strings, and `also_affects` is a list of `path:line` or `path:start-end` entries (`[]` when there are none).
    - Before writing `.agentic/ship/stage.json` with `ready`, run `uv run python scripts/publish_review.py --check` and fix every refusal it prints. The recorder runs the same check on a `ready` review and sends a refused one back to this stage.
    - When `last_review.status` in `.agentic/ship/progress.json` is `rejected` for the current `HEAD`, its `summary` is the publisher's refusal. Correct `.agentic/review.json` and `.agentic/review.md` for the same `HEAD` and record the review again.
 2. Write `.agentic/ship/stage.json` tying the review verdict to the exact `body_sha` and `head_sha`:
