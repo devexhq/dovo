@@ -490,8 +490,10 @@ class BlueprintResumeServiceEnvTests:
         assert not result.ok
         assert result.error_code == ErrorCode.AGENT_ENV_OVERRIDE_INVALID
         assert result.errors == [
-            "Invalid --env-passthrough value '*': use a variable name or a prefix ending in a single '*'. "
-            "Fix: for example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'."
+            "Invalid --env-passthrough value '*': use a variable name or a prefix ending in a single '*'."
+        ]
+        assert result.remediations == [
+            Remediation(message="For example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'")
         ]
         assert resumed == []
         paused = sessions_repo.get("paused-1")

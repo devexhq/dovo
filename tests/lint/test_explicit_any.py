@@ -28,7 +28,7 @@ ANY_BUDGET: Final[dict[str, int]] = {
     "src/dovo/core/catalog/services/resolve_step.py": 2,
     "src/dovo/core/catalog/services/validate.py": 2,
     "src/dovo/core/config/generator.py": 5,
-    "src/dovo/core/config/loader.py": 4,
+    "src/dovo/core/config/loader.py": 3,
     "src/dovo/core/config/models.py": 3,
     "src/dovo/core/config/mutate.py": 2,
     "src/dovo/core/config/serialize.py": 1,

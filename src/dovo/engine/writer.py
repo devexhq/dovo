@@ -13,6 +13,7 @@ from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.redact import SecretRedactor
+from dovo.common.tool_policy import legacy_tools_remediations
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import (
@@ -246,7 +247,9 @@ def _snapshot_blueprint_definition(raw: dict[str, object], key: str) -> Blueprin
     try:
         return BlueprintDefinition.from_document(raw, key=key)
     except CatalogError as error:
-        raise EngineError(ErrorCode.SESSION_SNAPSHOT_INVALID, error.message) from error.__cause__
+        raise EngineError(
+            ErrorCode.SESSION_SNAPSHOT_INVALID, error.message, legacy_tools_remediations(error.__cause__)
+        ) from error.__cause__
 
 
 def _snapshot_step_definition(raw_step: dict[str, object], step_key: str) -> StepDefinition:
@@ -256,9 +259,13 @@ def _snapshot_step_definition(raw_step: dict[str, object], step_key: str) -> Ste
         snapshot_step = StepDefinition.model_validate(raw_step)
         return resolve_step_definition(snapshot_step) if snapshot_step.run is not None else snapshot_step
     except ValidationError as exc:
-        raise EngineError(ErrorCode.SESSION_SNAPSHOT_INVALID, f"{message}: {exc}") from exc
+        raise EngineError(
+            ErrorCode.SESSION_SNAPSHOT_INVALID, f"{message}: {exc}", legacy_tools_remediations(exc)
+        ) from exc
     except CatalogError as error:
-        raise EngineError(ErrorCode.SESSION_SNAPSHOT_INVALID, f"{message}: {error}") from error.__cause__
+        raise EngineError(
+            ErrorCode.SESSION_SNAPSHOT_INVALID, f"{message}: {error}", error.remediations
+        ) from error.__cause__
 
 
 def load_blueprint_from_snapshot(session_dir: Path, manifest: DefinitionsManifest) -> Blueprint:

@@ -7,7 +7,8 @@ import pytest
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
-from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
+from dovo.common.models import Remediation
+from dovo.common.tool_policy import LEGACY_TOOLS_FIX, ToolCapability, ToolPolicy, ToolRule
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
 from dovo.core.catalog.exceptions import CatalogError
 from dovo.core.catalog.services.resolve_step import (
@@ -129,6 +130,14 @@ class StepResolutionTests:
 
         assert caught.value.error_code is ErrorCode.CATALOG_SCHEMA_INVALID
         assert caught.value.message.startswith("Step validation failed for 'bad': ")
+        assert caught.value.remediations == ()
+
+    def test_resolve_step_legacy_tools_list_carries_its_fix_as_a_remediation(self) -> None:
+        with pytest.raises(CatalogError) as caught:
+            resolve_step_definition({"id": "old", "type": "agent", "prompt": "go", "tools": ["read"]})
+
+        assert caught.value.error_code is ErrorCode.CATALOG_SCHEMA_INVALID
+        assert caught.value.remediations == (Remediation(message=LEGACY_TOOLS_FIX),)
 
 
 class StepLoadingTests:
@@ -182,6 +191,16 @@ class StepLoadingTests:
 
         assert raised.value.error_code == code
         assert raised.value.message.startswith(message_start)
+
+    def test_load_step_by_path_legacy_tools_list_carries_its_fix_as_a_remediation(self, tmp_path: Path) -> None:
+        step_file = tmp_path / "old.yaml"
+        step_file.write_text("id: old\ntype: agent\nprompt: go\ntools: [read]\n", encoding="utf-8")
+
+        with pytest.raises(CatalogError) as raised:
+            load_step_by_path(step_file)
+
+        assert raised.value.error_code is ErrorCode.CATALOG_SCHEMA_INVALID
+        assert raised.value.remediations == (Remediation(message=LEGACY_TOOLS_FIX),)
 
 
 class MergeUsesStepTests:

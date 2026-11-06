@@ -981,6 +981,7 @@ class RunCliUnfixableAgentIntegrationTests:
         self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("GH_TOKEN", "test-token")
+        monkeypatch.setenv(_UNRELATED, "host-value")
         runner = UnfixableAgentRunner("no SSH key\n").returning(stdout=_AGENT_STDOUT)
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
         _write_agent_blueprint(cli_workspace)
@@ -993,6 +994,10 @@ class RunCliUnfixableAgentIntegrationTests:
         output_lines = [event["payload"]["line"] for event in events if event["event_type"] == "run.step_output"]
         summaries = [json.loads(line) for line in output_lines if line.startswith("{")]
         row = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list(limit=1)[0]
+        withheld_fix = {
+            "message": "Add names to agents.copilot.env_passthrough or pass --env-passthrough NAME",
+            "command": None,
+        }
         assert result.exit_code == 1
         assert step_done["exit_code"] == 201
         assert step_done["error_message"] == "Agent reported the task unfixable: no SSH key"
@@ -1012,7 +1017,7 @@ class RunCliUnfixableAgentIntegrationTests:
             "exit_code": 201,
             "error_message": "Agent reported the task unfixable: no SSH key",
             "error_code": "AGENT_TASK_UNFIXABLE",
-            "remediations": [],
+            "remediations": [withheld_fix],
             "rejected_patch_path": None,
         }
         assert _saved_last_result(cli_workspace, row.session_id)["error_code"] == "AGENT_TASK_UNFIXABLE"
@@ -1026,7 +1031,7 @@ class RunCliUnfixableAgentIntegrationTests:
             "exit_code": 201,
             "error_message": "Agent reported the task unfixable: no SSH key",
             "error_code": "AGENT_TASK_UNFIXABLE",
-            "remediations": [],
+            "remediations": [withheld_fix],
             "rejected_patch_path": None,
             "loop_id": None,
             "iteration": None,

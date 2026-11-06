@@ -15,6 +15,7 @@ from pydantic_core import ErrorDetails
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
+from dovo.common.tool_policy import legacy_tools_remediation
 from dovo.core.catalog.definitions.blueprint import STEP_KIND_TAGS, BlueprintDefinition
 from dovo.core.catalog.definitions.placeholders import placeholder_input_names, placeholder_syntax_errors
 from dovo.core.catalog.definitions.scopes import condition_reference_errors
@@ -161,9 +162,16 @@ def _format_schema_exception(exc: CatalogError | ValidationError, key: str) -> t
     """Format a schema-validation exception into (errors, remediations), one remediation per error."""
     pydantic_error = _extract_validation_error(exc)
     if pydantic_error is not None:
-        messages = [_format_pydantic_error(error) for error in pydantic_error.errors()]
-        return messages, [_schema_remediation(key) for _ in messages]
+        details = pydantic_error.errors()
+        return [_format_pydantic_error(error) for error in details], [
+            _error_remediation(error, key) for error in details
+        ]
     return [_sentence(str(exc))], [_schema_remediation(key)]
+
+
+def _error_remediation(error: ErrorDetails, key: str) -> Remediation:
+    """Return the remediation for one Pydantic error: the legacy-tools fix for a tools string list, else the generic one."""
+    return legacy_tools_remediation(error) or _schema_remediation(key)
 
 
 def _sentence(text: str) -> str:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -126,9 +127,7 @@ def execute_agent_step(
             ),
         ),
     )
-    _report_withheld_fix(attempt, agent.provider, on_output)
-
-    return _to_outcome(attempt, on_output, context=context)
+    return _to_outcome(_with_withheld_fix(attempt, agent.provider), on_output, context=context)
 
 
 def _allocate_scratch(
@@ -243,16 +242,13 @@ def _report_withheld_names(
     )
 
 
-def _report_withheld_fix(attempt: AgentAttempt, provider: str, on_output: OutputCallback | None) -> None:
-    """Emit the passthrough fix line when names were withheld and the attempt did not succeed."""
+def _with_withheld_fix(attempt: AgentAttempt, provider: str) -> AgentAttempt:
+    """Return attempt with the passthrough remediation appended when names were withheld and it did not complete, else attempt."""
     if not attempt.env_withheld or attempt.completed:
-        return
+        return attempt
 
-    _emit_output(
-        on_output,
-        "stderr",
-        f"  ! Fix: add names to agents.{provider}.env_passthrough or pass --env-passthrough NAME.\n",
-    )
+    fix = Remediation(message=f"Add names to agents.{provider}.env_passthrough or pass --env-passthrough NAME")
+    return dataclasses.replace(attempt, remediations=[*attempt.remediations, fix])
 
 
 def _provider_error(

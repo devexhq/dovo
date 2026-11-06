@@ -154,6 +154,40 @@ steps:
             [warning],
         )
 
+    def test_run_at_worktree_capacity_reports_the_fixes_as_remediations(
+        self, run_dovo: DovoRunner, initialized_project: Path
+    ) -> None:
+        write_blueprint(
+            initialized_project,
+            "capacity-bp",
+            """version: "1.0"
+name: capacity-bp
+id: capacity-bp
+steps:
+  - id: step-1
+    run: "true"
+""",
+            runner=run_dovo,
+        )
+        assert run_dovo(["config", "set", "worktree.max_active_worktrees", "1"], cwd=initialized_project).exit_code == 0
+        assert run_dovo(["worktree", "create"], cwd=initialized_project).exit_code == 0
+
+        result = run_dovo(["run", "capacity-bp", "--format", "json"], cwd=initialized_project)
+
+        assert result.exit_code == 1
+        payload = run_result(result.stdout)
+        assert (payload.get("error_code"), payload.get("errors"), payload.get("remediations")) == (
+            "WORKTREE_CAPACITY_EXCEEDED",
+            ["Git worktree creation failed: Maximum active worktrees reached (1/1)."],
+            [
+                {
+                    "message": "Remove a kept worktree with 'dovo worktree delete <worktree-id>' (see 'dovo worktree list')",
+                    "command": "dovo worktree delete <worktree-id>",
+                },
+                {"message": "Raise 'worktree.max_active_worktrees' in '.dovo/config.json'", "command": None},
+            ],
+        )
+
     def test_run_no_worktree_persists_completed_session(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
         write_blueprint(
             initialized_project,

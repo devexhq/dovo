@@ -171,7 +171,7 @@ Secret values among forwarded variables (step `env:` values with a secret-style 
 In `allowlist` mode, when host variables were not forwarded:
 
 - the agent sees their names (never values) in `DOVO_ENV_WITHHELD`, and its prompt starts with a line telling it to ask for `agents.<provider>.env_passthrough`;
-- before the agent starts, the console prints `! Agent environment filtered: <N> variables withheld.`; when the attempt does not succeed it also prints a `! Fix:` line saying how to pass names through (`agents.<provider>.env_passthrough` or `--env-passthrough`);
+- before the agent starts, the console prints `! Agent environment filtered: <N> variables withheld.`; when the attempt does not succeed, the step's `Fix:` block (and its `remediations` in JSON output) says how to pass names through (`agents.<provider>.env_passthrough` or `--env-passthrough`);
 - `session.log` records an `agent_env_filtered` event with the full list (see [`dovo session logs`](../cli/session.md#dovo-session-logs)).
 
 `inherit` mode reports nothing.

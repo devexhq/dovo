@@ -499,6 +499,33 @@ class CatalogValidateFailurePathTests:
         assert result.remediations == [Remediation(message="Fix the reported schema error for target 'multi'.")] * 2
         assert result.diagnostics == []
 
+    def test_legacy_tools_list_carries_its_fix_as_a_remediation_not_message_text(
+        self, isolated_workspace: Path
+    ) -> None:
+        _write_yaml(
+            isolated_workspace / "legacy.yml",
+            {
+                "name": "legacy",
+                "timeout_seconds": "x",
+                "steps": [{"id": "s1", "type": "agent", "prompt": "p", "tools": ["read"]}],
+            },
+        )
+
+        result = _validate("legacy.yml", path=isolated_workspace)
+
+        assert (result.error_code, result.errors, result.remediations) == (
+            ErrorCode.CATALOG_SCHEMA_INVALID,
+            [
+                "timeout_seconds: Input should be a valid integer, unable to parse string as an integer.",
+                "steps.0.tools: Value error, Agent step tools must be a policy object with allow, deny, and allow_all.",
+            ],
+            [
+                Remediation(message="Fix the reported schema error for target 'legacy'."),
+                Remediation(message="Replace the tools string list with structured capability rules"),
+            ],
+        )
+        assert result.diagnostics == []
+
     def test_several_semantic_errors_keep_their_warnings(self, isolated_workspace: Path) -> None:
         _write_yaml(isolated_workspace / "semantic.yml", _semantic_errors_and_warnings_blueprint())
 

@@ -54,6 +54,9 @@ AGENT_SCRATCH_ENV_NAME: Final[str] = "DOVO_AGENT_SCRATCH"
 SCRATCH_TEMP_ENV_NAMES: Final[tuple[str, ...]] = ("TMPDIR", "TMP", "TEMP")
 WITHHELD_ENV_NAME: Final[str] = "DOVO_ENV_WITHHELD"
 WITHHELD_REPORT_LIMIT: Final[int] = 4096
+ENV_PASSTHROUGH_EXAMPLE_REMEDIATION: Final[Remediation] = Remediation(
+    message="For example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'"
+)
 
 
 class _EnvDescriptor(Protocol):
@@ -182,14 +185,14 @@ def check_env_passthrough_flag(entries: Sequence[str]) -> None:
     """Check each --env-passthrough entry is a variable name or a prefix ending in a single '*'.
 
     Raises:
-        AgentError: AGENT_ENV_OVERRIDE_INVALID with the fixed message for the first invalid entry.
+        AgentError: AGENT_ENV_OVERRIDE_INVALID for the first invalid entry, with an example as its remediation.
     """
     for entry in entries:
         if re.fullmatch(ENV_PASSTHROUGH_PATTERN, entry) is None:
             raise AgentError(
                 ErrorCode.AGENT_ENV_OVERRIDE_INVALID,
-                f"Invalid --env-passthrough value '{entry}': use a variable name or a prefix ending in a single '*'. "
-                "Fix: for example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'.",
+                f"Invalid --env-passthrough value '{entry}': use a variable name or a prefix ending in a single '*'.",
+                [ENV_PASSTHROUGH_EXAMPLE_REMEDIATION],
             )
 
 

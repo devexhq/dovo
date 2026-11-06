@@ -12,7 +12,9 @@ from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.common.redact import SecretRedactor
+from dovo.common.tool_policy import LEGACY_TOOLS_FIX
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import IfStepBlock, StepDefinition, StepType
@@ -265,6 +267,43 @@ class LoadBlueprintFromSnapshotTests:
 
         assert excinfo.value.error_code is ErrorCode.SESSION_SNAPSHOT_INVALID
         assert excinfo.value.message.startswith(prefix.format(path=path))
+        assert excinfo.value.remediations == ()
+
+    @pytest.mark.parametrize(
+        ("target", "content"),
+        [
+            pytest.param(
+                "blueprint",
+                "steps:\n- id: s1\n  type: agent\n  prompt: go\n  tools: [read]\n",
+                id="blueprint",
+            ),
+            pytest.param("step", "id: lint-check\ntype: agent\nprompt: go\ntools: [read]\n", id="step"),
+        ],
+    )
+    def test_legacy_tools_list_in_a_snapshot_carries_its_fix_as_a_remediation(
+        self, tmp_path: Path, target: str, content: str
+    ) -> None:
+        """Raise SESSION_SNAPSHOT_INVALID with the legacy tools-list fix as its one remediation, not as message text."""
+        workspace = tmp_path / "workspace"
+        write_runnable_step(workspace, key="lint-check", definition={"id": "lint-check", "run": "echo lint"})
+        write_runnable_blueprint(workspace, key="legacy-task", steps=[{"id": "s1", "uses": "lint-check"}])
+        catalog = Catalog(initialized_workspace_paths(workspace))
+        session_dir = tmp_path / "session"
+        manifest = snapshot_definitions(catalog, Blueprint.load("legacy-task", catalog=catalog), session_dir, [], [])
+        assert manifest is not None
+        path = (
+            snapshot_blueprint_path(session_dir, "legacy-task")
+            if target == "blueprint"
+            else snapshot_step_path(session_dir, "lint-check")
+        )
+        path.write_text(content, encoding="utf-8")
+
+        with pytest.raises(EngineError) as excinfo:
+            load_blueprint_from_snapshot(session_dir, manifest)
+
+        assert excinfo.value.error_code is ErrorCode.SESSION_SNAPSHOT_INVALID
+        assert excinfo.value.remediations == (Remediation(message=LEGACY_TOOLS_FIX),)
+        assert "Fix:" not in excinfo.value.message
 
 
 class WriteSessionRunProjectionTests:
