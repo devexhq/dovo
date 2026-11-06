@@ -88,7 +88,7 @@ class ConditionScopeTests:
             pytest.param(
                 [{"id": "a", "run": "x"}, {"id": "b", "run": "y", "when": ["steps.a.code == 0"]}],
                 "Step 'b': Unknown step field 'code' in 'steps.a.code'. "
-                "Allowed fields: exit_code, outputs, status, stdout.",
+                "Allowed fields: error_code, exit_code, outputs, status, stdout.",
                 id="unknown_field",
             ),
             pytest.param(

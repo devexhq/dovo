@@ -20,6 +20,7 @@ from dovo.engine.executors.models import (
     StepDispatchOutcome,
     StepExecutionContext,
     StepRecord,
+    agent_exit_code,
 )
 from tests.harness.builders import StepBuilder
 
@@ -64,14 +65,11 @@ class AgentStepSummaryTests:
         [
             pytest.param(AgentResponseStatus.NO_OP, True, id="no_op"),
             pytest.param(AgentResponseStatus.PROPOSED_PATCH, True, id="proposed_patch"),
-            pytest.param(AgentResponseStatus.UNFIXABLE, False, id="unfixable"),
-            pytest.param(AgentResponseStatus.TIMEOUT, False, id="timeout"),
-            pytest.param(AgentResponseStatus.PROVIDER_ERROR, False, id="provider_error"),
-            pytest.param(AgentResponseStatus.BLOCKED, False, id="blocked"),
+            pytest.param(None, False, id="failed"),
         ],
     )
-    def test_succeeded_is_true_only_for_statuses_with_a_zero_exit_code(
-        self, status: AgentResponseStatus, expected: bool
+    def test_succeeded_is_true_only_when_a_status_is_named(
+        self, status: AgentResponseStatus | None, expected: bool
     ) -> None:
         assert AgentStepSummary(status=status).succeeded is expected
 
@@ -84,9 +82,9 @@ class AgentStepSummaryTests:
                 id="no_op_with_nulls",
             ),
             pytest.param(
-                AgentStepSummary(status=AgentResponseStatus.UNFIXABLE, unfixable_reason="no access"),
-                {"status": "unfixable", "summary": "", "unfixable_reason": "no access", "touched_files": "[]"},
-                id="unfixable_with_reason",
+                AgentStepSummary(status=None, unfixable_reason="no access"),
+                {"status": "", "summary": "", "unfixable_reason": "no access", "touched_files": "[]"},
+                id="failed_with_reason",
             ),
             pytest.param(
                 AgentStepSummary(
@@ -104,6 +102,30 @@ class AgentStepSummaryTests:
     )
     def test_as_outputs(self, summary: AgentStepSummary, expected: dict[str, str]) -> None:
         assert summary.as_outputs() == expected
+
+    def test_failed_summary_serializes_a_null_status(self) -> None:
+        assert (
+            AgentStepSummary(status=None).model_dump_json()
+            == '{"status":null,"summary":null,"unfixable_reason":null,"touched_files":[]}'
+        )
+
+
+class AgentExitCodeTests:
+    @pytest.mark.parametrize(
+        ("error_code", "expected"),
+        [
+            pytest.param(None, 0, id="none"),
+            pytest.param(ErrorCode.AGENT_TASK_UNFIXABLE, 201, id="unfixable"),
+            pytest.param(ErrorCode.AGENT_TIMEOUT, 202, id="timeout"),
+            pytest.param(ErrorCode.AGENT_TASK_BLOCKED, 204, id="blocked"),
+            pytest.param(ErrorCode.AGENT_PROVIDER_FAILED, 203, id="provider_failed"),
+            pytest.param(ErrorCode.STEP_WORKTREE_MISSING, 203, id="worktree_missing"),
+            pytest.param(ErrorCode.GIT_FAILED, 203, id="git_failed"),
+            pytest.param(ErrorCode.INTERNAL_ERROR, 203, id="internal_error"),
+        ],
+    )
+    def test_exit_code_derives_from_error_code(self, error_code: ErrorCode | None, expected: int) -> None:
+        assert agent_exit_code(error_code) == expected
 
 
 class StepExecutionContextTests:

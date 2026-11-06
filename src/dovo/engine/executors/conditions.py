@@ -26,10 +26,13 @@ _ITERATION_FIELDS = frozenset({"index", "attempt"})
 def _resolve_step_field(result: StepRecord, field: str, subpath: tuple[str | int, ...]) -> object:
     """Extract a step attribute or its `outputs.<key>[.<path>]` value from a StepRecord, or ABSENT when it has none.
 
-    An int segment, an unquoted bracket index, finds nothing.
+    error_code is the recorded code's text, '' when the step recorded none. An int segment, an unquoted bracket index,
+    finds nothing.
     """
     if field in ("exit_code", "status", "stdout"):
         return getattr(result, field)
+    if field == "error_code":
+        return result.error_code.value if result.error_code is not None else ""
     if field == "outputs" and subpath and isinstance(key := subpath[0], str):
         found = resolve_step_output(result.outputs, result.stdout, key, subpath[1:])
         return ABSENT if found is None else found.value
