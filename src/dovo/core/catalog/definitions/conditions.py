@@ -24,7 +24,7 @@ from dovo.core.expressions import (
 )
 from dovo.core.inputs import ARTIFACT_FIELDS, artifact_reference
 
-_VALID_STEP_FIELDS = frozenset({"exit_code", "outputs", "status", "stdout"})
+_VALID_STEP_FIELDS = frozenset({"error_code", "exit_code", "outputs", "status", "stdout"})
 _STEPS_ROOT = "steps"
 _ITERATION_ROOT = "iteration"
 _ARTIFACTS_ROOT = "artifacts"

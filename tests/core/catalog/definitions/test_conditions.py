@@ -150,7 +150,7 @@ class ConditionExpressionValidatorTests:
             ),
             pytest.param(
                 "steps.a.result.*.y",
-                "Unknown step field 'result' in 'steps.a.result'. Allowed fields: exit_code, outputs, status, stdout.",
+                "Unknown step field 'result' in 'steps.a.result'. Allowed fields: error_code, exit_code, outputs, status, stdout.",
                 id="unknown_field",
             ),
             pytest.param(
@@ -246,7 +246,8 @@ class ConditionExpressionValidatorTests:
     @pytest.mark.parametrize(
         ("expression", "step_id"),
         [
-            pytest.param('steps.fix.outputs.status != "unfixable"', "fix", id="quoted_status"),
+            pytest.param('steps.fix.outputs.status != "no_op"', "fix", id="quoted_status"),
+            pytest.param('steps.fix.error_code == ""', "fix", id="error_code"),
             pytest.param("steps.a.status == 'success'", "a", id="single_quoted"),
             pytest.param("steps.a.status == done", "a", id="bare_word"),
             pytest.param("steps.build.stdout contains success", "build", id="contains_bare_word"),

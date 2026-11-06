@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.agents import AgentResponseStatus
 from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.core.artifacts.store import ArtifactStore
@@ -12,13 +13,13 @@ from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.inputs import build_providers, interpolate_string
 from dovo.engine.executors import evaluate_condition
 from dovo.engine.executors.models import (
-    AGENT_OUTCOME_EXIT_CODES,
     AgentStepSummary,
     ConditionEvaluationResult,
     ExecutionMetadata,
     PreviousStepMetadata,
     StepMetadata,
     StepRecord,
+    agent_exit_code,
 )
 from tests.conftest import PublishArtifact
 
@@ -339,22 +340,27 @@ def _gate_result(**outputs: str) -> StepRecord:
     )
 
 
-def _agent_result(status: AgentResponseStatus) -> StepRecord:
-    """Build the StepRecord an agent step stores for the given status: mapped exit code and the summary line."""
-    code = AGENT_OUTCOME_EXIT_CODES[status]
+def _agent_result(status: AgentResponseStatus | None = None, error_code: ErrorCode | None = None) -> StepRecord:
+    """Build the StepRecord an agent step stores: completed with a status, or failed with an error code."""
+    code = agent_exit_code(error_code)
     summary = AgentStepSummary(status=status, summary=None, unfixable_reason=None, touched_files=[])
     return StepRecord(
         step_id="agent",
-        status="completed" if code == 0 else "failed",
+        status="completed" if error_code is None else "failed",
         exit_code=code,
         stdout=summary.model_dump_json() + "\n",
         stderr="",
         duration_seconds=0.1,
+        error_code=error_code,
+        outputs=summary.as_outputs(),
     )
 
 
+_COMPLETED_STATUSES = (AgentResponseStatus.PROPOSED_PATCH, AgentResponseStatus.NO_OP)
+
+
 class AgentStatusConditionTests:
-    @pytest.mark.parametrize("status", list(AgentResponseStatus))
+    @pytest.mark.parametrize("status", _COMPLETED_STATUSES)
     def test_outputs_status_matches_only_its_own_summary(self, status: AgentResponseStatus) -> None:
         step_results = {"agent": _agent_result(status)}
 
@@ -362,29 +368,60 @@ class AgentStatusConditionTests:
             candidate: evaluate_condition(
                 f'steps.agent.outputs.status == "{candidate.value}"', step_results=step_results
             )
-            for candidate in AgentResponseStatus
+            for candidate in _COMPLETED_STATUSES
         }
 
         assert results[status].passed is True
         assert results[status].actual == status.value
         assert {candidate for candidate, result in results.items() if result.passed} == {status}
 
-    def test_exit_code_condition_distinguishes_timeout(self) -> None:
+    def test_failed_attempt_records_an_empty_status(self) -> None:
+        result = evaluate_condition(
+            'steps.agent.outputs.status == ""',
+            step_results={"agent": _agent_result(error_code=ErrorCode.AGENT_TIMEOUT)},
+        )
+
+        assert (result.passed, result.actual) == (True, "")
+
+    def test_error_code_condition_names_the_failure(self) -> None:
         outcomes = {
-            status: evaluate_condition(
-                "steps.agent.exit_code == 202", step_results={"agent": _agent_result(status)}
+            code: evaluate_condition(
+                'steps.agent.error_code == "AGENT_TIMEOUT"', step_results={"agent": _agent_result(error_code=code)}
             ).passed
-            for status in (
-                AgentResponseStatus.TIMEOUT,
-                AgentResponseStatus.UNFIXABLE,
-                AgentResponseStatus.PROVIDER_ERROR,
-            )
+            for code in (ErrorCode.AGENT_TIMEOUT, ErrorCode.AGENT_TASK_UNFIXABLE, ErrorCode.AGENT_PROVIDER_FAILED)
         }
 
         assert outcomes == {
-            AgentResponseStatus.TIMEOUT: True,
-            AgentResponseStatus.UNFIXABLE: False,
-            AgentResponseStatus.PROVIDER_ERROR: False,
+            ErrorCode.AGENT_TIMEOUT: True,
+            ErrorCode.AGENT_TASK_UNFIXABLE: False,
+            ErrorCode.AGENT_PROVIDER_FAILED: False,
+        }
+
+    def test_error_code_is_empty_for_a_completed_step(self) -> None:
+        result = evaluate_condition(
+            'steps.agent.error_code == ""',
+            step_results={"agent": _agent_result(AgentResponseStatus.NO_OP)},
+        )
+
+        assert (result.passed, result.resolved, result.actual) == (True, True, "")
+
+    def test_error_code_of_a_step_that_has_not_run_is_unresolved(self) -> None:
+        result = evaluate_condition('steps.agent.error_code == ""', step_results={})
+
+        assert (result.passed, result.resolved) == (False, False)
+
+    def test_exit_code_condition_distinguishes_timeout(self) -> None:
+        outcomes = {
+            code: evaluate_condition(
+                "steps.agent.exit_code == 202", step_results={"agent": _agent_result(error_code=code)}
+            ).passed
+            for code in (ErrorCode.AGENT_TIMEOUT, ErrorCode.AGENT_TASK_UNFIXABLE, ErrorCode.AGENT_PROVIDER_FAILED)
+        }
+
+        assert outcomes == {
+            ErrorCode.AGENT_TIMEOUT: True,
+            ErrorCode.AGENT_TASK_UNFIXABLE: False,
+            ErrorCode.AGENT_PROVIDER_FAILED: False,
         }
 
 

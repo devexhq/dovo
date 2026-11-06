@@ -39,9 +39,9 @@ class _RecordingDispatcher(UiDispatcher):
         self.events.append(data)
 
 
-_SUMMARY_LINE = '{"status":"unfixable","summary":null,"unfixable_reason":"no network","touched_files":["a.py"]}'
+_SUMMARY_LINE = '{"status":null,"summary":null,"unfixable_reason":"no network","touched_files":["a.py"]}'
 _SUMMARY_VIEW = AgentSummaryView(
-    status="unfixable", succeeded=False, unfixable_reason="no network", touched_files=["a.py"]
+    status="failed", succeeded=False, unfixable_reason="no network", touched_files=["a.py"]
 )
 
 

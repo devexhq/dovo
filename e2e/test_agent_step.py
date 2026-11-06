@@ -116,6 +116,38 @@ class AgentStepWorktreeCliTests:
         assert step_done["remediations"] == [{"message": _WORKTREE_FIX, "command": None}]
         assert step["remediations"] == step_done["remediations"]
 
+    def test_later_step_branches_on_the_agent_error_code(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
+        write_blueprint(
+            initialized_project,
+            "agent-branch",
+            """version: "1.0"
+name: agent-branch
+id: agent-branch
+steps:
+  - id: agent
+    type: agent
+    prompt: Reply with the word done.
+    on_failure: continue
+  - id: on-missing-worktree
+    run: echo branched-on-error-code
+    when:
+      - steps.agent.error_code == "STEP_WORKTREE_MISSING"
+      - steps.agent.outputs.status == ""
+""",
+            runner=run_dovo,
+        )
+
+        result = run_dovo(
+            ["run", "agent-branch", "--no-worktree", "--no-tty", "--session-id", "sess-agent-branch"],
+            cwd=initialized_project,
+        )
+
+        assert result.exit_code == 0, result.stdout + result.stderr
+        assert "branched-on-error-code" in result.stdout
+        assert "Result: failed" in result.stdout
+        step = _agent_step(run_dovo, initialized_project, "sess-agent-branch")
+        assert (step["state"], step["exit_code"], step["error_code"]) == ("ignored", 203, "STEP_WORKTREE_MISSING")
+
 
 @pytest.mark.e2e
 @pytest.mark.fixture

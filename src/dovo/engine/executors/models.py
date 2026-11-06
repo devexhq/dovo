@@ -246,38 +246,47 @@ class InternalCommandContext(BaseModel):
     loop_iteration: int | None = None
 
 
-# Step outcome code per agent status; 200 is unused.
-AGENT_OUTCOME_EXIT_CODES: Final[Mapping[AgentResponseStatus, int]] = MappingProxyType(
+# Step exit code per agent failure error code; any other code exits 203 and 200 is unused.
+AGENT_FAILURE_EXIT_CODES: Final[Mapping[ErrorCode, int]] = MappingProxyType(
     {
-        AgentResponseStatus.PROPOSED_PATCH: 0,
-        AgentResponseStatus.NO_OP: 0,
-        AgentResponseStatus.UNFIXABLE: 201,
-        AgentResponseStatus.TIMEOUT: 202,
-        AgentResponseStatus.PROVIDER_ERROR: 203,
-        AgentResponseStatus.BLOCKED: 204,
+        ErrorCode.AGENT_TASK_UNFIXABLE: 201,
+        ErrorCode.AGENT_TIMEOUT: 202,
+        ErrorCode.AGENT_TASK_BLOCKED: 204,
     }
 )
+AGENT_OTHER_FAILURE_EXIT_CODE: Final[int] = 203
+
+
+def agent_exit_code(error_code: ErrorCode | None) -> int:
+    """Return an agent step's exit code from its error code: 0 without one, 201, 202 or 204 for its own code, else 203."""
+    if error_code is None:
+        return 0
+    return AGENT_FAILURE_EXIT_CODES.get(error_code, AGENT_OTHER_FAILURE_EXIT_CODE)
 
 
 class AgentStepSummary(BaseModel):
-    """JSON summary an agent step writes to stdout."""
+    """JSON summary an agent step writes to stdout.
+
+    status names only what a completed attempt produced, proposed_patch or no_op, and is null when the attempt failed:
+    the step's error_code alone tells why.
+    """
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: AgentResponseStatus
+    status: AgentResponseStatus | None
     summary: str | None = None
     unfixable_reason: str | None = None
     touched_files: list[str] = Field(default_factory=list)
 
     @property
     def succeeded(self) -> bool:
-        """Whether the status maps to a zero step exit code."""
-        return AGENT_OUTCOME_EXIT_CODES[self.status] == 0
+        """Whether the attempt completed, so the summary names its status."""
+        return self.status is not None
 
     def as_outputs(self) -> dict[str, str]:
         """Return the summary as step outputs: status, summary and unfixable_reason ('' when null), touched_files as a JSON array string."""
         return {
-            "status": self.status.value,
+            "status": self.status.value if self.status is not None else "",
             "summary": self.summary or "",
             "unfixable_reason": self.unfixable_reason or "",
             "touched_files": json.dumps(self.touched_files),
