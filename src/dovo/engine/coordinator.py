@@ -947,8 +947,9 @@ class RunCoordinator:
         result: StepRecord,
         run_status: SessionStatus | None,
     ) -> NodeTransitionKind:
-        """Persist the leaf as FAILED and record the step failure as the run error."""
+        """Persist the leaf as FAILED and record the step failure, with the step's remediations, as the run error."""
         self._fail(ErrorCode.RUN_STEP_FAILED, failed_step_message(result))
+        self._remediations.extend(result.remediations)
         self._finish_leaf(node, NodeState.FAILED, None, f"after step '{node.id}' failed", run_status)
         return NodeTransitionKind.FAILED
 

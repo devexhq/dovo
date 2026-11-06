@@ -9,6 +9,7 @@ from rich.text import Text
 
 from dovo.cli.ui.events import StepDoneEvent
 from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.common.formatters import format_remediations
 
 
 class StepDoneFormatter(ComponentFormatter[StepDoneEvent]):
@@ -17,12 +18,14 @@ class StepDoneFormatter(ComponentFormatter[StepDoneEvent]):
     event_type: ClassVar[str] = "run.step_done"
 
     def to_rich(self, data: StepDoneEvent) -> Group:
-        """Render step completed or failed line followed by a blank line."""
+        """Render step completed or failed line, a failed step's Fix: block from its remediations, then a blank line."""
         step_label = data.step_id
         if data.ok:
             line = Text.from_markup(f"[bold green][STEP {data.idx}/{data.total}] {step_label} COMPLETED[/]")
-        else:
-            msg = data.error_message or f"exit code {data.exit_code}"
-            line = Text.from_markup(f"[bold red][STEP {data.idx}/{data.total}] {step_label} FAILED[/]: {msg}")
+            return Group(line, Text(""))
 
-        return Group(line, Text(""))
+        msg = data.error_message or f"exit code {data.exit_code}"
+        line = Text.from_markup(f"[bold red][STEP {data.idx}/{data.total}] {step_label} FAILED[/]: {msg}")
+        fix = format_remediations(data.remediations)
+
+        return Group(line, *([Text(fix)] if fix else []), Text(""))

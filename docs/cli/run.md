@@ -102,9 +102,12 @@ With `--format json`, each step that finishes prints a `run.step_done` event wit
 | `attempts` | How many times the step ran, counting every retry. |
 | `exit_code` | The exit code of the step's last attempt. |
 | `duration_seconds` | The duration of the step's last attempt, or `null`. |
-| `error_message` | Why the step's last attempt failed, with secrets redacted, or `null`. |
+| `error_message` | Why the step's last attempt failed, with secrets redacted, or `null`. It never holds the fix. |
 | `error_code` | The code of that failure (see [Step failure codes](#step-failure-codes)), or `null` on a completed step. |
+| `remediations` | The fixes for that failure, each with a `message` and a `command` or `null`, with secrets redacted; `[]` when there are none. |
 | `rejected_patch_path` | The saved discarded edit of an agent step's last attempt, or `null`. |
+
+In the terminal, a failed step's line is followed by a `Fix:` block with one `- <message>` line per remediation.
 
 Every key except `idx` and `total` has the same name and value in the step's row of [`dovo session show`](session.md#step-keys), with one exception: the event prints before a failure prompt is answered, so a step continued past with `continue` at that prompt prints `failed`, and the session then records it `ignored`, with `(user continued after prompt_user)` appended to its `error_message`. The event leaves out the step's name, which `run.step_start` carries; a `when` skip, which `run.step_skipped` reports; an `if` block's branch, which `run.if_branch` reports; and the step's state, loop and iteration, which `dovo session show` reports. A step's output is read with [`dovo logs`](session.md#dovo-session-logs).
 
@@ -125,7 +128,7 @@ With `--format json` the run result is the last line, a `run.result` event. Its 
 | `error_code` | Why the run failed, or `null`. An interrupted run is `RUN_CANCELLED`, or `SESSION_PROCESS_STOP_FAILED` when a process group it started was still running after the stop. |
 | `errors` | The failure's messages. |
 | `warnings` | Every warning of the run, including validation warnings. |
-| `remediations` | The failure's fixes, each with a `message` and a `command` or `null`. |
+| `remediations` | The failure's fixes, each with a `message` and a `command` or `null`. When a failed step ends the run, they include that step's `remediations`. |
 | `diagnostics` | The run's diagnostic log records, each with an `event_id` and a `log_path`. |
 | `session_id`, `blueprint_name` | The session the run created, or `null` when it created none. |
 | `session_status` | The session's own status (`completed`, `paused`, `failed` or `cancelled`), or `null` when it created none. A failure is reported by `error_code`, never by this status. |

@@ -256,8 +256,9 @@ class ProviderFailure:
 class AgentAttempt:
     """Classified result of one agent attempt before an adapter turns it into a caller-specific outcome.
 
-    errors carry provider error text; error_code is the failure's code, None when the attempt completed; diagnostics carry
-    error-level diagnostic-log records for the caller's diagnostics, never its error text.
+    errors carry provider error text, without fix text; remediations carry the fixes; error_code is the failure's code,
+    None when the attempt completed; diagnostics carry error-level diagnostic-log records for the caller's diagnostics,
+    never its error text.
     """
 
     status: AgentResponseStatus
@@ -266,6 +267,7 @@ class AgentAttempt:
     unfixable_reason: str | None = None
     touched_files: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    remediations: list[Remediation] = field(default_factory=list)
     env_withheld: list[str] = field(default_factory=list)
     rejected_patch_path: str | None = None
     diagnostics: list[DiagnosticRecord] = field(default_factory=list)

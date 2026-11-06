@@ -9,6 +9,7 @@ import pytest
 from dovo.cli.ui.events import StepDoneEvent
 from dovo.cli.ui.formatters.events.step_done import StepDoneFormatter
 from dovo.common.error_codes import ErrorCode
+from dovo.common.models import Remediation
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -40,9 +41,10 @@ STEP_FAILURE = FormatterCase.identity(
         duration_seconds=0.8,
         error_message="Process crashed",
         error_code=ErrorCode.STEP_COMMAND_FAILED,
+        remediations=[Remediation(message="Run 'make fix'", command="make fix")],
         rejected_patch_path="/tmp/rejected.patch",
     ),
-    render_expectations=["step-2", "2", "3", "Process crashed"],
+    render_expectations=["step-2", "2", "3", "Process crashed", "Fix:\n- Run 'make fix'"],
 )
 
 STEP_IGNORED = FormatterCase.identity(
@@ -79,6 +81,7 @@ STEP_DONE_PAYLOAD_CASES = [
             "duration_seconds": 1.5,
             "error_message": None,
             "error_code": None,
+            "remediations": [],
             "rejected_patch_path": None,
         },
         id="step_success",
@@ -95,6 +98,7 @@ STEP_DONE_PAYLOAD_CASES = [
             "duration_seconds": 0.8,
             "error_message": "Process crashed",
             "error_code": "STEP_COMMAND_FAILED",
+            "remediations": [{"message": "Run 'make fix'", "command": "make fix"}],
             "rejected_patch_path": "/tmp/rejected.patch",
         },
         id="step_failure",
@@ -111,6 +115,7 @@ STEP_DONE_PAYLOAD_CASES = [
             "duration_seconds": 0.2,
             "error_message": "Lint failed",
             "error_code": "STEP_COMMAND_FAILED",
+            "remediations": [],
             "rejected_patch_path": None,
         },
         id="step_ignored",

@@ -899,6 +899,7 @@ _SHARED_STEP_KEYS = (
     "duration_seconds",
     "error_message",
     "error_code",
+    "remediations",
     "rejected_patch_path",
 )
 
@@ -942,10 +943,35 @@ class RunCliStepViewsIntegrationTests:
             "exit_code": 1,
             "error_message": "Command failed with exit code 1.",
             "error_code": "STEP_COMMAND_FAILED",
+            "remediations": [],
             "rejected_patch_path": None,
         }
         assert _shared_step_fields(saved) == _shared_step_fields(step_done)
         assert _shared_step_fields(step_row) == _shared_step_fields(step_done)
+
+    def test_failed_agent_step_json_event_carries_remediations(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        """A --no-worktree agent step reports its fix as remediations, not message text, live, saved, shown and in the run result."""
+        _write_agent_blueprint(cli_workspace)
+
+        result = cli_runner.invoke(
+            app,
+            ["-p", str(cli_workspace), "run", "agent-task", "--no-worktree", "--session-id", "a-1", "--format", "json"],
+        )
+        shown = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", "a-1", "--format", "json"])
+
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+        step_done = next(event["payload"] for event in events if event["event_type"] == "run.step_done")
+        fix = {"message": "Remove --no-worktree and run the blueprint with a worktree", "command": None}
+        assert result.exit_code == 1
+        assert (step_done["error_message"], step_done["remediations"]) == (
+            "Agent steps require an active git worktree.",
+            [fix],
+        )
+        assert _shared_step_fields(_saved_last_result(cli_workspace, "a-1")) == _shared_step_fields(step_done)
+        assert _shared_step_fields(json.loads(shown.stdout)["payload"]["steps"][0]) == _shared_step_fields(step_done)
+        assert run_result_payload(result.stdout)["remediations"] == [fix]
 
 
 class RunCliUnfixableAgentIntegrationTests:
@@ -988,6 +1014,7 @@ class RunCliUnfixableAgentIntegrationTests:
             "exit_code": 201,
             "error_message": "Agent reported the task unfixable: no SSH key",
             "error_code": "AGENT_TASK_UNFIXABLE",
+            "remediations": [],
             "rejected_patch_path": None,
         }
         assert _saved_last_result(cli_workspace, row.session_id)["error_code"] == "AGENT_TASK_UNFIXABLE"
@@ -1001,6 +1028,7 @@ class RunCliUnfixableAgentIntegrationTests:
             "exit_code": 201,
             "error_message": "Agent reported the task unfixable: no SSH key",
             "error_code": "AGENT_TASK_UNFIXABLE",
+            "remediations": [],
             "rejected_patch_path": None,
             "loop_id": None,
             "iteration": None,
@@ -1577,6 +1605,7 @@ class RunResultCliTests:
                 "error_message": "Unexpected error during engine.step: "
                 "'utf-8' codec can't decode byte 0xff in position 2: invalid start byte",
                 "error_code": "INTERNAL_ERROR",
+                "remediations": [],
                 "rejected_patch_path": None,
             }
         ]

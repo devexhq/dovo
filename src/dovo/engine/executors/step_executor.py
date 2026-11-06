@@ -731,7 +731,7 @@ def _step_result(
     outputs: dict[str, str] | None = None,
     warnings: list[str] | None = None,
 ) -> StepRecord:
-    """Convert a StepDispatchOutcome into a StepRecord whose stdout, stderr, and error_message are masked."""
+    """Convert a StepDispatchOutcome into a StepRecord whose stdout, stderr, error_message, and remediations are masked."""
     return StepRecord(
         step_id=step_id,
         status=status if status is not None else outcome.status,
@@ -742,6 +742,7 @@ def _step_result(
         attempts=outcome.attempts,
         error_message=None if outcome.error_message is None else redactor.redact_text(outcome.error_message),
         error_code=outcome.error_code,
+        remediations=redactor.redact_remediations(outcome.remediations),
         outputs=outputs or {},
         rejected_patch_path=outcome.rejected_patch_path,
         warnings=warnings or [],

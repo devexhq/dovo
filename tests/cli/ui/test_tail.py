@@ -10,6 +10,7 @@ from rich.text import Text
 
 from dovo.cli.ui.events import StepDoneEvent, StepOutputEvent, StepStartEvent
 from dovo.cli.ui.tail import _CURSOR_UP, _ERASE_LINE, CollapsingTailDisplay
+from dovo.common.models import Remediation
 
 
 def _display(*, tail_size: int = 2) -> tuple[CollapsingTailDisplay, io.StringIO]:
@@ -64,6 +65,25 @@ class CollapsingTailDisplayTests:
         rendered = console_buffer.getvalue()
         assert expected_glyph in rendered
         assert "[1/1] s1" in rendered
+
+    def test_failed_step_prints_fix_lines(self) -> None:
+        """Follow a failed step's summary line with its Fix: block, one line per remediation."""
+        display, console_buffer = _display(tail_size=2)
+
+        display.handle_step_done(
+            StepDoneEvent(
+                idx=1,
+                total=1,
+                step_id="s1",
+                status="failed",
+                attempts=1,
+                exit_code=203,
+                error_message="Agent steps require an active git worktree.",
+                remediations=[Remediation(message="Remove --no-worktree"), Remediation(message="Retry")],
+            )
+        )
+
+        assert console_buffer.getvalue().splitlines()[-3:] == ["Fix:", "- Remove --no-worktree", "- Retry"]
 
     def test_print_above_prints_renderable_and_reprints_tail(self, capsys: pytest.CaptureFixture[str]) -> None:
         display, console_buffer = _display(tail_size=2)

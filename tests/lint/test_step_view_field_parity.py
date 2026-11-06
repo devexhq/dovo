@@ -27,6 +27,7 @@ SHARED: Final = frozenset(
         "duration_seconds",
         "error_message",
         "error_code",
+        "remediations",
         "rejected_patch_path",
     }
 )

@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from dovo.common.error_codes import ErrorCode
-from dovo.common.formatters import format_remediations
 from dovo.common.models import Remediation
 from dovo.core.agents.models import AgentDenial, AgentResponse, AgentResponseStatus
 
@@ -144,12 +143,3 @@ def blocked_response(
         errors=errors,
         remediations=remediations,
     )
-
-
-def errors_with_fix_block(errors: Sequence[str], remediations: Sequence[Remediation]) -> list[str]:
-    """Return the errors followed by one trailing Fix: block when remediations are present."""
-    errors_out = list(errors)
-    if remediations:
-        errors_out.append(format_remediations(remediations))
-
-    return errors_out

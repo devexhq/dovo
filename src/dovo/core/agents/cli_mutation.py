@@ -81,9 +81,11 @@ class CliMutationOutcome(BaseModel):
     remediations: list[Remediation] = Field(default_factory=list)
 
 
-def failure_outcome(failure: ProviderFailure) -> CliMutationOutcome:
-    """Return the error outcome carrying the failure's message as its detail and its remediations."""
-    return CliMutationOutcome(status="error", error_detail=failure.message, remediations=[*failure.remediations])
+def failure_outcome(provider_failure: ProviderFailure) -> CliMutationOutcome:
+    """Return the error outcome carrying the provider failure's message as its detail and its remediations."""
+    return CliMutationOutcome(
+        status="error", error_detail=provider_failure.message, remediations=[*provider_failure.remediations]
+    )
 
 
 CliMutationRunFn = Callable[[CliMutationRunRequest], CliMutationOutcome]

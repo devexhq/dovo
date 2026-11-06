@@ -240,20 +240,19 @@ class RunDirectAttemptSettleTests:
         assert attempt.summary == expected_summary
         assert _porcelain(git_repo) == before
 
-    def test_response_remediations_render_as_trailing_fix_diagnostic(
+    def test_response_remediations_become_attempt_remediations(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        response = AgentResponse(
-            status=AgentResponseStatus.TIMEOUT,
-            errors=["e"],
-            remediations=[Remediation(message="Do one"), Remediation(message="Run 'two'", command="two")],
-        )
+        """Copy the response's remediations onto the attempt and keep its errors free of a Fix: block."""
+        remediations = [Remediation(message="Do one"), Remediation(message="Run 'two'", command="two")]
+        response = AgentResponse(status=AgentResponseStatus.TIMEOUT, errors=["e"], remediations=remediations)
         _use_provider(monkeypatch, FakeAgentProvider(response))
 
         attempt = _attempt(git_repo)
 
         assert attempt.status == AgentResponseStatus.TIMEOUT
-        assert attempt.errors == ["e", "Fix:\n- Do one\n- Run 'two'"]
+        assert attempt.errors == ["e"]
+        assert attempt.remediations == remediations
 
     def test_settle_copies_response_records_onto_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path

@@ -57,7 +57,7 @@ Shows the metadata, errors and per-step results for one session.
 
 For a finished run that used a worktree, the metadata includes a `Worktree` row: `kept (<path>)` when the worktree was kept, `removed` otherwise. With `--format json` the payload carries `worktree_kept` and `worktree_path`, both `null` for in-place and still-running sessions, and `worktree_path` is `null` when the worktree was removed. The row reports the outcome recorded when the run ended, so a later `dovo worktree delete` does not change it.
 
-Below the metadata, a `Steps` table lists every step in plan order with its state, attempt count, exit code and duration. A loop appears as its own row followed by its body steps, labeled `<step id> (iter <n>)` for each iteration. A step or loop skipped by its `when` list shows its cause after its state: `skipped (when_false)` or `skipped (when_unresolved)`; a skipped loop has no body rows. An `if` block appears as its own row, with the branch it took after its state (`completed (else)`), followed by the steps of that branch, indented. Missing values show `-`, and durations under 0.1 seconds show `<0.1s`. Failed steps list their error message under the table, with secrets redacted. Step stdout, stderr and outputs are never shown here; use [`dovo session logs`](#dovo-session-logs) with `--step`.
+Below the metadata, a `Steps` table lists every step in plan order with its state, attempt count, exit code and duration. A loop appears as its own row followed by its body steps, labeled `<step id> (iter <n>)` for each iteration. A step or loop skipped by its `when` list shows its cause after its state: `skipped (when_false)` or `skipped (when_unresolved)`; a skipped loop has no body rows. An `if` block appears as its own row, with the branch it took after its state (`completed (else)`), followed by the steps of that branch, indented. Missing values show `-`, and durations under 0.1 seconds show `<0.1s`. Failed steps list their error message under the table, each followed by a `Fix:` block when the step has remediations, with secrets redacted. Step stdout, stderr and outputs are never shown here; use [`dovo session logs`](#dovo-session-logs) with `--step`.
 
 ```
 Steps
@@ -89,6 +89,7 @@ When a session has no recorded execution state, the command prints `No step data
 | `duration_seconds` | The duration of the step's last attempt, or `null`. |
 | `error_message` | Why the step's last attempt failed, with secrets redacted, or `null`. |
 | `error_code` | The code of that failure, such as `STEP_COMMAND_FAILED` or `STEP_TIMEOUT` (see [Step failure codes](run.md#step-failure-codes)); `null` on a completed step, a loop or `if` row, or a step with no result. |
+| `remediations` | The fixes for that failure, each with a `message` and a `command` or `null`, with secrets redacted; `[]` on a loop or `if` row, a step with no result, or a session saved before steps kept their fixes. |
 | `rejected_patch_path` | The saved discarded edit of the step's last attempt, or `null`. |
 | `loop_id` | The loop a body step belongs to, or `null`. |
 | `iteration` | The loop iteration a body step ran in, or `null`. |
@@ -97,7 +98,7 @@ When a session has no recorded execution state, the command prints `No step data
 | `branch` | `then`, `else` or `none` on an `if` row that started; otherwise `null`. |
 | `if_id` | The `if` block each step of its chosen branch belongs to, or `null`. |
 
-`step_id`, `status`, `attempts`, `exit_code`, `duration_seconds`, `error_message`, `error_code` and `rejected_patch_path` carry the same values as the step's [`run.step_done`](run.md#step-done-keys) event, except that a step continued past at a failure prompt is `ignored` here and `failed` in the event. The other keys describe the row and its state and appear only here; the event's `idx` and `total` appear only while the run is live. A step's stdout and stderr are read with [`dovo logs`](#dovo-session-logs); its outputs and warnings are kept in the session's saved run state (`session.json`), which carries the keys listed at the start of this paragraph under the step's last attempt.
+`step_id`, `status`, `attempts`, `exit_code`, `duration_seconds`, `error_message`, `error_code`, `remediations` and `rejected_patch_path` carry the same values as the step's [`run.step_done`](run.md#step-done-keys) event, except that a step continued past at a failure prompt is `ignored` here and `failed` in the event. The other keys describe the row and its state and appear only here; the event's `idx` and `total` appear only while the run is live. A step's stdout and stderr are read with [`dovo logs`](#dovo-session-logs); its outputs and warnings are kept in the session's saved run state (`session.json`), which carries the keys listed at the start of this paragraph under the step's last attempt.
 
 ### Arguments
 

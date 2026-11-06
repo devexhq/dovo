@@ -67,6 +67,7 @@ class StepDoneEvent(BaseModel):
     duration_seconds: float | None = None
     error_message: str | None = None
     error_code: ErrorCode | None = None
+    remediations: list[Remediation] = Field(default_factory=list)
     rejected_patch_path: str | None = None
 
     @property

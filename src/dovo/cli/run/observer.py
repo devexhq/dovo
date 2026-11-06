@@ -143,6 +143,7 @@ class DispatcherRunObserver(RunObserver):
                 duration_seconds=result.duration_seconds,
                 error_message=result.error_message,
                 error_code=result.error_code,
+                remediations=result.remediations,
                 rejected_patch_path=result.rejected_patch_path,
             )
         )

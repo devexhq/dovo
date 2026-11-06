@@ -12,11 +12,11 @@ from dovo.common.tool_policy import ToolCapability
 from dovo.core.agents.models import AgentDenial, AgentResponse, AgentResponseStatus
 from dovo.core.agents.responses import (
     blocked_response,
-    errors_with_fix_block,
     no_op_response,
     provider_error_response,
     timeout_response,
     unfixable_response,
+    with_remediations,
 )
 
 
@@ -193,22 +193,13 @@ class UnfixableResponseTests:
         )
 
 
-class DiagnosticsWithRemediationsTests:
-    @pytest.mark.parametrize(
-        ("errors", "remediations", "expected"),
-        [
-            pytest.param(
-                ["e"],
-                [Remediation(message="Do one"), Remediation(message="Run 'two'", command="two")],
-                ["e", "Fix:\n- Do one\n- Run 'two'"],
-                id="errors-and-remediations",
-            ),
-            pytest.param(["e1", "e2"], [], ["e1", "e2"], id="errors-only"),
-            pytest.param([], [Remediation(message="Do it")], ["Fix:\n- Do it"], id="remediations-only"),
-        ],
-    )
-    def test_appends_one_fix_block(
-        self, errors: list[str], remediations: list[Remediation], expected: list[str]
-    ) -> None:
-        """Return errors plus 'Fix:\\n- <m1>\\n- <m2>' only when remediations are present."""
-        assert errors_with_fix_block(errors, remediations) == expected
+class WithRemediationsTests:
+    def test_remediations_are_copied_onto_the_response(self) -> None:
+        """Return a copy carrying the given remediations and leave the input response unchanged."""
+        response = provider_error_response(duration_seconds=1.0, detail="boom")
+        remediations = [Remediation(message="Do one"), Remediation(message="Run 'two'", command="two")]
+
+        copied = with_remediations(response, remediations)
+
+        assert copied == response.model_copy(update={"remediations": remediations})
+        assert response.remediations == []
