@@ -190,6 +190,36 @@ class AgentStepLiveCliTests:
         step = _agent_step(run_dovo, claude_project, "sess-agent-timeout")
         assert (step["state"], step["exit_code"], step["error_code"]) == ("failed", 202, "AGENT_TIMEOUT")
 
+    def test_failed_step_with_withheld_variables_carries_the_passthrough_fix_as_a_remediation(
+        self, run_dovo: DovoRunner, claude_project: Path
+    ) -> None:
+        _write_agent_blueprint(
+            claude_project,
+            "agent-withheld",
+            "    timeout_seconds: 3\n    tools:\n      allow_all: true\n"
+            "    prompt: Run the shell command `python3 -c 'import time; time.sleep(60)'` and wait for it to finish.\n",
+            run_dovo,
+        )
+
+        result = run_dovo(
+            ["run", "agent-withheld", "--no-tty", "--session-id", "sess-agent-withheld", "--format", "json"],
+            cwd=claude_project,
+            env={AMBIENT_SECRET_NAME: AMBIENT_SECRET_VALUE},
+            timeout=60,
+        )
+
+        output = result.stdout + result.stderr
+        step = _agent_step(run_dovo, claude_project, "sess-agent-withheld")
+        assert result.exit_code == 1, output
+        assert "Agent environment filtered: " in output
+        assert "Fix: add names to" not in output
+        remediations = step["remediations"]
+        assert isinstance(remediations, list)
+        assert (step["error_code"], remediations[-1]) == (
+            "AGENT_TIMEOUT",
+            {"message": "Add names to agents.claude.env_passthrough or pass --env-passthrough NAME", "command": None},
+        )
+
     def test_ambient_secret_printed_by_agent_is_redacted_in_output_and_logs(
         self, run_dovo: DovoRunner, claude_project: Path
     ) -> None:

@@ -8,10 +8,8 @@ from typing import Final, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-LEGACY_TOOLS_MESSAGE: Final[str] = (
-    "Agent step tools must be a policy object with allow, deny, and allow_all. "
-    "Fix: replace the tools string list with structured capability rules."
-)
+LEGACY_TOOLS_MESSAGE: Final[str] = "Agent step tools must be a policy object with allow, deny, and allow_all."
+LEGACY_TOOLS_FIX: Final[str] = "Replace the tools string list with structured capability rules"
 
 _DRIVE_PATH_RE: Final = re.compile(r"^[A-Za-z]:")
 _HOST_RE: Final = re.compile(r"^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*$")
