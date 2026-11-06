@@ -562,6 +562,33 @@ class RunCliIntegrationTests:
             ["Ignoring unrecognized option '--bogus'.", "Ignoring unexpected argument '1'."],
         )
 
+    def test_run_cli_json_rejected_inputs_report_every_error_and_warning(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        """Exit 1 with both integer errors and the unknown-override warning for `run <bp> -i a=x -i b=y -i nope=1`."""
+        write_runnable_blueprint(cli_workspace, key="counts", steps=[{"id": "s1", "run": "true"}])
+        blueprint_path = cli_workspace / ".dovo" / "catalog" / "blueprints" / "counts.yml"
+        blueprint_path.write_text(
+            blueprint_path.read_text(encoding="utf-8").replace(
+                "steps:", "inputs:\n  a:\n    type: integer\n  b:\n    type: integer\nsteps:", 1
+            ),
+            encoding="utf-8",
+        )
+
+        inputs = ["-i", "a=x", "-i", "b=y", "-i", "nope=1"]
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "run", "counts", "--no-worktree", *inputs, "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = run_result_payload(result.stdout)
+        assert (payload["error_code"], payload["errors"], payload["warnings"], payload["session_id"]) == (
+            "BLUEPRINT_INPUT_INVALID",
+            ["Input 'a' expects an integer, got 'x'.", "Input 'b' expects an integer, got 'y'."],
+            ["Ignoring unknown input override 'nope'."],
+            None,
+        )
+
     def test_run_cli_config_show_and_run_observe_identical_merged_config(
         self,
         cli_runner: CliRunner,

@@ -9,6 +9,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from dovo.common.error_codes import ErrorCode
+from dovo.common.models import Remediation
 from dovo.core.catalog.definitions import CommentPolicy
 from dovo.core.interaction.models import (
     COMMENT_MAX_CHARACTERS,
@@ -37,63 +38,83 @@ def effective_comment_policy(request: InteractionRequest, selected: Sequence[str
 def validate_answer(request: InteractionRequest, answer: InteractionAnswer) -> InteractionAnswerResult:
     """Check choice, text and comment rules for the request's mode and return the normalized answer."""
     if request.mode == "text":
-        error = _text_error(request, answer)
+        failure = _text_failure(request, answer)
         selected: list[str] = []
         text = (answer.text or "").strip()
     else:
-        error = _choice_error(request, answer.selected)
+        failure = _choice_failure(request, answer.selected)
         selected = [option.value for option in request.options if option.value in answer.selected]
         text = ""
-    if error is not None:
-        return _invalid(error)
+    if failure is not None:
+        return failure
 
-    comment_error, comment = _normalize_comment(request, selected, answer.comment)
-    if comment_error is not None:
-        return _invalid(comment_error)
+    comment_failure, comment = _normalize_comment(request, selected, answer.comment)
+    if comment_failure is not None:
+        return comment_failure
 
     return InteractionAnswerResult(answer=InteractionAnswer(selected=selected, comment=comment, text=text or None))
 
 
-def _invalid(message: str) -> InteractionAnswerResult:
-    """Return a failed answer result carrying INTERACTION_ANSWER_INVALID and message."""
-    return InteractionAnswerResult(error_code=ErrorCode.INTERACTION_ANSWER_INVALID, errors=[message])
+def _invalid(message: str, remediations: Sequence[Remediation] = ()) -> InteractionAnswerResult:
+    """Return a failed answer result carrying INTERACTION_ANSWER_INVALID, message and remediations."""
+    return InteractionAnswerResult(
+        error_code=ErrorCode.INTERACTION_ANSWER_INVALID, errors=[message], remediations=list(remediations)
+    )
 
 
-def _text_error(request: InteractionRequest, answer: InteractionAnswer) -> str | None:
-    """Return a violation of the text-mode answer rules, or None."""
+def _answer_step(step_id: str, value: str) -> Remediation:
+    """Return the step that passes value to prompt step_id with --answer."""
+    return Remediation(message=f"Pass '--answer {step_id}={value}'")
+
+
+def _text_failure(request: InteractionRequest, answer: InteractionAnswer) -> InteractionAnswerResult | None:
+    """Return the failed result for a violation of the text-mode answer rules, or None."""
     if answer.selected:
-        return f"'{answer.selected[0]}' is not a valid answer for prompt '{request.step_id}'.\nFix: pass text only."
+        return _invalid(
+            f"'{answer.selected[0]}' is not a valid answer for prompt '{request.step_id}', which takes text only.",
+            [_answer_step(request.step_id, "<text>")],
+        )
     if not (answer.text or "").strip():
-        return f"Prompt '{request.step_id}' requires non-empty text.\nFix: pass --answer {request.step_id}=<text>."
+        return _invalid(
+            f"Prompt '{request.step_id}' requires non-empty text.", [_answer_step(request.step_id, "<text>")]
+        )
     return None
 
 
-def _choice_error(request: InteractionRequest, selected: Sequence[str]) -> str | None:
-    """Return a violation of the option-choice rules for the request's mode, or None."""
+def _choice_failure(request: InteractionRequest, selected: Sequence[str]) -> InteractionAnswerResult | None:
+    """Return the failed result, with one remediation per option, for a violation of the option-choice rules, or None."""
     values = [option.value for option in request.options]
     unknown = next((value for value in selected if value not in values), None)
     wrong_count = request.mode != "multiselect" and len(selected) != 1
     if unknown is None and not wrong_count:
         return None
     shown = unknown if unknown is not None else ",".join(selected)
-    return f"'{shown}' is not a valid answer for prompt '{request.step_id}'.\nFix: use one of: {', '.join(values)}"
+    return _invalid(
+        f"'{shown}' is not a valid answer for prompt '{request.step_id}'.",
+        [_answer_step(request.step_id, value) for value in values],
+    )
 
 
 def _normalize_comment(
     request: InteractionRequest, selected: Sequence[str], comment: str | None
-) -> tuple[str | None, str | None]:
-    """Return (error, normalized comment) after applying the effective comment policy."""
+) -> tuple[InteractionAnswerResult | None, str | None]:
+    """Return (failed result, normalized comment) after applying the effective comment policy."""
     policy = effective_comment_policy(request, selected)
     if policy == "disabled":
         return None, None
     stripped = (comment or "").rstrip()
     if len(stripped) > COMMENT_MAX_CHARACTERS:
-        return f"Comment is too long (max {COMMENT_MAX_CHARACTERS} characters).", None
+        return _invalid(f"Comment is too long (max {COMMENT_MAX_CHARACTERS} characters)."), None
     if not stripped.strip():
         if policy == "required":
             return (
-                f"Prompt '{request.step_id}' answered '{','.join(selected)}' requires a comment.\n"
-                "Fix: pass --comment or --comment-file.",
+                _invalid(
+                    f"Prompt '{request.step_id}' answered '{','.join(selected)}' requires a comment.",
+                    [
+                        Remediation(message="Pass '--comment <comment>'"),
+                        Remediation(message="Pass '--comment-file <path>'"),
+                    ],
+                ),
                 None,
             )
         return None, None
@@ -104,7 +125,7 @@ def parse_headless_answer(request: InteractionRequest, supplied: HeadlessAnswerI
     """Parse the raw `--answer` value by mode (multiselect JSON array or comma list, text verbatim) and validate it."""
     if supplied.step_id != request.step_id:
         return _invalid(
-            f"Prompt '{supplied.step_id}' is not pending in this session.\nFix: use one of: {request.step_id}"
+            f"Prompt '{supplied.step_id}' is not pending in this session.", [_answer_step(request.step_id, "<value>")]
         )
     if supplied.value is not None and supplied.selected is not None:
         return _invalid(f"Prompt '{request.step_id}' takes either a value or selected, not both.")
@@ -171,13 +192,15 @@ def parse_answer_arguments(
 
 
 def _read_argument_files(comment_file: Path | None, answers_file: Path | None) -> dict[str, str] | str:
-    """Return the text of each given file keyed `comment` or `answers`, or the reason one cannot be read."""
+    """Return the text of each given file keyed `comment` or `answers`, or the reason one cannot be read as UTF-8 text."""
     texts: dict[str, str] = {}
     for key, path in (("comment", comment_file), ("answers", answers_file)):
         if path is None:
             continue
         try:
             texts[key] = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return f"Cannot read '{path}': it is not UTF-8 text."
         except OSError as error:
             return f"Cannot read '{path}': {error}"
     return texts
@@ -198,13 +221,17 @@ def _combine_arguments(
 
     step_id, separator, value = answer.partition("=")
     if not separator or not step_id:
-        return _invalid_arguments(f"'{answer}' is not valid.\nFix: use --answer <step_id>=<value>.")
+        return _invalid_arguments(
+            f"'{answer}' is not a valid '--answer' value.", [_answer_step("<step-id>", "<value>")]
+        )
     return HeadlessArgumentsResult(supplied=HeadlessAnswerInput(step_id=step_id, value=value, comment=comment))
 
 
-def _invalid_arguments(message: str) -> HeadlessArgumentsResult:
-    """Return a failed arguments result carrying INTERACTION_ARGUMENTS_INVALID and message."""
-    return HeadlessArgumentsResult(error_code=ErrorCode.INTERACTION_ARGUMENTS_INVALID, errors=[message])
+def _invalid_arguments(message: str, remediations: Sequence[Remediation] = ()) -> HeadlessArgumentsResult:
+    """Return a failed arguments result carrying INTERACTION_ARGUMENTS_INVALID, message and remediations."""
+    return HeadlessArgumentsResult(
+        error_code=ErrorCode.INTERACTION_ARGUMENTS_INVALID, errors=[message], remediations=list(remediations)
+    )
 
 
 def _from_answers_file(text: str) -> HeadlessArgumentsResult:

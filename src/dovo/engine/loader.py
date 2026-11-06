@@ -95,7 +95,7 @@ class EngineLoader:
         supplied: Sequence[HeadlessAnswerInput],
         warnings: list[str],
     ) -> dict[str, InteractionAnswer]:
-        """Validate supplied answers against the single pending ask; raise EngineError(SESSION_PROMPT_NOT_PENDING) or with the parse's code."""
+        """Validate supplied answers against the single pending ask; raise EngineError(SESSION_PROMPT_NOT_PENDING) or with the parse's code, error and remediations."""
         pending = next(
             (leaf.pending_ask for leaf in iter_leaves(state) if leaf.state is NodeState.PAUSED and leaf.pending_ask),
             None,
@@ -107,7 +107,7 @@ class EngineLoader:
         for item in supplied:
             parsed = Interaction.parse_headless(pending, item)
             if parsed.answer is None:
-                raise EngineError(ErrorCode(parsed.error_code), parsed.errors[0])
+                raise EngineError(ErrorCode(parsed.error_code), parsed.errors[0], parsed.remediations)
             warnings.extend(parsed.warnings)
             answers[pending.step_id] = parsed.answer
         return answers

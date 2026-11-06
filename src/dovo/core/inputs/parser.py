@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 
 from dovo.common.error_codes import ErrorCode
+from dovo.common.models import Remediation
 from dovo.core.inputs.models import InputResolveResult, InputType, ParameterInput
 
 _INPUT_OVERRIDE_RE = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>.*)$", re.DOTALL)
@@ -18,6 +19,7 @@ class _ParseState:
     values: dict[str, str | int | bool] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    remediations: list[Remediation] = field(default_factory=list)
     index: int = 0
 
 
@@ -98,22 +100,29 @@ def _store_coerced(
         state.errors.append(str(exc))
 
 
+def _add_remediation(state: _ParseState, remediation: Remediation) -> None:
+    """Record remediation once, however many rejected tokens call for it."""
+    if remediation not in state.remediations:
+        state.remediations.append(remediation)
+
+
 def _parse_generic_override(
     args: list[str],
     state: _ParseState,
     declarations: dict[str, ParameterInput],
 ) -> bool:
     """Parse one ``-i``/``--input`` token. Returns False when parsing must stop."""
-    token = args[state.index]
+    flag = args[state.index].split("=", 1)[0]
     try:
-        raw, state.index = _take_value(args, state.index, flag=token.split("=", 1)[0])
+        raw, state.index = _take_value(args, state.index, flag=flag)
     except ValueError as exc:
         state.errors.append(str(exc))
         return False
 
     match = _INPUT_OVERRIDE_RE.match(raw)
     if match is None:
-        state.errors.append(f"Invalid input syntax '{raw}'. Expected key=value (e.g. -i message=value).")
+        state.errors.append(f"Invalid input syntax '{raw}'.")
+        _add_remediation(state, Remediation(message=f"Pass each input as '{flag} <name>=<value>'"))
         return True
 
     name = match.group("key")
@@ -196,7 +205,11 @@ def parse_cli_input_args(
     args: list[str],
     declarations: dict[str, ParameterInput],
 ) -> InputResolveResult:
-    """Parse trailing CLI tokens against declared input aliases and ``-i`` overrides."""
+    """Parse trailing CLI tokens against declared input aliases and ``-i`` overrides.
+
+    Every rejected token is one error, and every ignored token one warning; a malformed override also adds the
+    remediation that shows the override syntax.
+    """
     state = _ParseState()
     aliases = _alias_map(declarations)
     while state.index < len(args) and _consume_one_token(args, state, declarations, aliases):
@@ -206,4 +219,5 @@ def parse_cli_input_args(
         error_code=ErrorCode.BLUEPRINT_INPUT_INVALID if state.errors else None,
         errors=state.errors,
         warnings=state.warnings,
+        remediations=state.remediations,
     )

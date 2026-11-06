@@ -1,42 +1,37 @@
-"""Unit tests for plain-text input resolution error messages."""
+"""Unit tests for the remediation that supplies inputs a run left out."""
 
 from __future__ import annotations
 
+from dovo.common.models import Remediation
 from dovo.core.inputs import (
     InputType,
     ParameterInput,
-    format_missing_inputs_error,
+    missing_inputs_remediation,
 )
 
 
-class InputErrorMessageTests:
-    """Unit tests verifying missing-input message formatting."""
+class MissingInputsRemediationTests:
+    """Unit tests verifying the command that runs the blueprint again with every missing input."""
 
-    def test_format_missing_inputs_error_includes_cli_usage_example(self) -> None:
+    def test_passes_each_missing_input_by_alias_or_generic_flag(self) -> None:
         declarations = {
-            "message": ParameterInput(
-                type=InputType.STRING,
-                required=True,
-                aliases=["-m", "--message"],
-            ),
-            "target": ParameterInput(
-                type=InputType.STRING,
-                required=True,
-            ),
+            "message": ParameterInput(type=InputType.STRING, required=True, aliases=["-m", "--message"]),
+            "target_env": ParameterInput(type=InputType.STRING, required=True),
         }
 
-        error_message = format_missing_inputs_error(
-            name="deploy",
-            missing=["message", "target"],
-            declarations=declarations,
-        )
-        expected_message = (
-            "Missing required input 'message' for 'deploy'.\n"
-            "Also missing: 'target'.\n\n"
-            "Usage:\n"
-            "  dovo run deploy -m <value>\n"
-            "  dovo run deploy -i message=<value>\n"
-            "  dovo run deploy -i target=<value>"
+        remediation = missing_inputs_remediation(
+            name="deploy", missing=["message", "target_env"], declarations=declarations
         )
 
-        assert error_message == expected_message
+        command = "dovo run deploy -m <message> -i target_env=<target-env>"
+        assert remediation == Remediation(message=f"Run '{command}'", command=command)
+
+    def test_uses_long_input_flag_when_an_input_takes_short_flag_as_alias(self) -> None:
+        declarations = {
+            "issue": ParameterInput(type=InputType.STRING, required=True, aliases=["-i"]),
+            "base": ParameterInput(type=InputType.STRING, required=True),
+        }
+
+        remediation = missing_inputs_remediation(name="ship", missing=["base"], declarations=declarations)
+
+        assert remediation.command == "dovo run ship --input base=<base>"

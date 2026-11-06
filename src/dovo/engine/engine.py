@@ -67,9 +67,15 @@ class Engine:
         self.new_id = new_id
 
     def run(self, blueprint: Blueprint, request: RunRequest | None = None) -> RunOutcome:
-        """Persist the session row and initial state for ``blueprint``, then execute it through ``drive_run``."""
+        """Persist the session row and initial state for ``blueprint``, then execute it through ``drive_run``.
+
+        Inputs the blueprint rejects end the run before any session exists, with every input error, remediation and
+        warning on the FAILED outcome.
+        """
         req = request or RunRequest()
-        resolved = self._resolve_run_inputs(blueprint, req)
+        resolved = blueprint.resolve_inputs(req.cli_args, overrides=req.inputs)
+        if not resolved.ok:
+            return self._rejected_inputs_outcome(resolved)
         sid = req.session_id or self.new_id("blueprint")
         engine_warnings: list[str] = list(resolved.warnings)
         snapshot_warnings: list[str] = []
@@ -349,12 +355,16 @@ class Engine:
             auto_apply=config.auto_apply,
         )
 
-    def _resolve_run_inputs(self, blueprint: Blueprint, request: RunRequest) -> InputResolveResult:
-        """Apply defaults and required checks; raise before a session row is inserted."""
-        result = blueprint.resolve_inputs(request.cli_args, overrides=request.inputs)
-        if not result.ok:
-            raise EngineError(ErrorCode(result.error_code), result.errors[0])
-        return result
+    def _rejected_inputs_outcome(self, resolved: InputResolveResult) -> RunOutcome:
+        """Build the FAILED RunOutcome, with no session, carrying every input error, remediation and warning."""
+        return RunOutcome(
+            status=SessionStatus.FAILED,
+            error_code=resolved.error_code,
+            errors=list(resolved.errors),
+            remediations=list(resolved.remediations),
+            warnings=list(resolved.warnings),
+            worktree_path=self.path,
+        )
 
     def _finalize_outcome(
         self,

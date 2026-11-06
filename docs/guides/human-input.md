@@ -125,10 +125,13 @@ The answer is validated before any step runs and the run then continues in that 
 
 ```text
 Error: 'maybe' is not a valid answer for prompt 'approve'.
-Fix: use one of: approve, revise, deny
+Fix:
+- Pass '--answer approve=approve'
+- Pass '--answer approve=revise'
+- Pass '--answer approve=deny'
 ```
 
-Answer flags that conflict, such as `--comment` together with `--comment-file`, an `--answer` that is not `<step_id>=<value>`, or an `--answers-file` that does not hold a valid answers JSON object exit `2` instead, with `error_code` `INTERACTION_ARGUMENTS_INVALID`. A `--comment-file` or `--answers-file` that cannot be read exits `1` with `error_code` `INTERACTION_ARGUMENT_FILE_UNREADABLE`. Both leave the session paused.
+Answer flags that conflict, such as `--comment` together with `--comment-file`, an `--answer` that is not `<step_id>=<value>`, or an `--answers-file` that does not hold a valid answers JSON object exit `2` instead, with `error_code` `INTERACTION_ARGUMENTS_INVALID`. A `--comment-file` or `--answers-file` that cannot be read, including one that is not UTF-8 text, exits `1` with `error_code` `INTERACTION_ARGUMENT_FILE_UNREADABLE`. Both leave the session paused.
 
 A comment supplied for an option whose policy is `disabled` is discarded with a warning. The flags are listed in [`dovo session resume`](../cli/session.md#dovo-session-resume).
 

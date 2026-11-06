@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from e2e.conftest import DovoPtyRunner, DovoRunner, parse_json, write_blueprint
+from e2e.conftest import DovoPtyRunner, DovoRunner, parse_json, run_result, write_blueprint
 
 
 @pytest.mark.e2e
@@ -249,3 +249,39 @@ steps:
         session_info = show_payload.get("session", {})
         assert isinstance(session_info, dict)
         assert session_info.get("status") == "completed"
+
+
+@pytest.mark.e2e
+@pytest.mark.fixture
+class ResumeArgumentFailureCliTests:
+    """E2E tests for `dovo resume` answer flags rejected before any session is loaded."""
+
+    def test_comment_file_that_is_not_utf8_reports_file_unreadable(
+        self, run_dovo: DovoRunner, initialized_project: Path, tmp_path: Path
+    ) -> None:
+        binary = tmp_path / "binary.bin"
+        binary.write_bytes(b"\xff\xfe")
+
+        result = run_dovo(
+            ["resume", "--answer", "s=v", "--comment-file", str(binary), "--format", "json"], cwd=initialized_project
+        )
+
+        assert result.exit_code == 1
+        payload = run_result(result.stdout)
+        assert (payload.get("error_code"), payload.get("errors")) == (
+            "INTERACTION_ARGUMENT_FILE_UNREADABLE",
+            [f"Cannot read '{binary}': it is not UTF-8 text."],
+        )
+
+    def test_malformed_answer_reports_the_fix_as_a_remediation(
+        self, run_dovo: DovoRunner, initialized_project: Path
+    ) -> None:
+        result = run_dovo(["resume", "--answer", "x", "--format", "json"], cwd=initialized_project)
+
+        assert result.exit_code == 2
+        payload = run_result(result.stdout)
+        assert (payload.get("error_code"), payload.get("errors"), payload.get("remediations")) == (
+            "INTERACTION_ARGUMENTS_INVALID",
+            ["'x' is not a valid '--answer' value."],
+            [{"message": "Pass '--answer <step-id>=<value>'", "command": None}],
+        )
