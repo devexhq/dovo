@@ -134,7 +134,7 @@ def validate_agent_env_request(spec: _EnvDescriptor, request: AgentRequest, prov
         message=f"Agent environment override '{name}' conflicts with provider or Dovo controls.",
         remediations=(
             Remediation(message=f"Remove '{name}' from 'agents.{provider}.env_passthrough'"),
-            Remediation(message=f"Remove '{name}' from the agent step's env"),
+            Remediation(message=f"Remove '{name}' from the agent step's 'env'"),
         ),
     )
 

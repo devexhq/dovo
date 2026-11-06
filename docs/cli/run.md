@@ -107,7 +107,7 @@ With `--format json`, each step that finishes prints a `run.step_done` event wit
 | `remediations` | The fixes for that failure, each with a `message` and a `command` or `null`, with secrets redacted; `[]` when there are none. |
 | `rejected_patch_path` | The saved discarded edit of an agent step's last attempt, or `null`. |
 
-In the terminal, a failed step's line is followed by a `Fix:` block with one `- <message>` line per remediation.
+In the terminal, a failed step with remediations has its line followed by a `Fix:` block with one `- <message>` line per remediation.
 
 Every key except `idx` and `total` has the same name and value in the step's row of [`dovo session show`](session.md#step-keys), with one exception: the event prints before a failure prompt is answered, so a step continued past with `continue` at that prompt prints `failed`, and the session then records it `ignored`, with `(user continued after prompt_user)` appended to its `error_message`. The event leaves out the step's name, which `run.step_start` carries; a `when` skip, which `run.step_skipped` reports; an `if` block's branch, which `run.if_branch` reports; and the step's state, loop and iteration, which `dovo session show` reports. A step's output is read with [`dovo logs`](session.md#dovo-session-logs).
 

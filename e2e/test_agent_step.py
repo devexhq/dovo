@@ -15,7 +15,7 @@ from e2e.conftest import DOVO_HOME, DovoRunner, parse_json, write_blueprint
 CLAUDE_CREDENTIAL_ENVS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY")
 AMBIENT_SECRET_NAME = "DOVO_E2E_AMBIENT_TOKEN"
 AMBIENT_SECRET_VALUE = "e2e-fake-ambient-value-5531"
-_WORKTREE_FIX = "Remove --no-worktree and run the blueprint with a worktree"
+_WORKTREE_FIX = "Remove '--no-worktree' and run the blueprint with a worktree"
 
 
 def _claude_unavailable_reason() -> str | None:

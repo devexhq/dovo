@@ -39,7 +39,7 @@ from dovo.engine.executors.models import (
 from dovo.engine.executors.session_log import append_session_log_event
 
 WORKTREE_REQUIRED_MESSAGE = "Agent steps require an active git worktree."
-WORKTREE_REQUIRED_REMEDIATION = Remediation(message="Remove --no-worktree and run the blueprint with a worktree")
+WORKTREE_REQUIRED_REMEDIATION = Remediation(message="Remove '--no-worktree' and run the blueprint with a worktree")
 MISSING_SETTINGS_MESSAGE = (
     "Agent step has no resolved agent settings "
     "(default_agent, agents.<provider>.model, agents.<provider>.endpoint, agents.<provider>.temperature, "

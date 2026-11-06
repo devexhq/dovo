@@ -963,7 +963,7 @@ class RunCliStepViewsIntegrationTests:
 
         events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
         step_done = next(event["payload"] for event in events if event["event_type"] == "run.step_done")
-        fix = {"message": "Remove --no-worktree and run the blueprint with a worktree", "command": None}
+        fix = {"message": "Remove '--no-worktree' and run the blueprint with a worktree", "command": None}
         assert result.exit_code == 1
         assert (step_done["error_message"], step_done["remediations"]) == (
             "Agent steps require an active git worktree.",

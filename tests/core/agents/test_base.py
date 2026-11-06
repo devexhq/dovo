@@ -133,7 +133,7 @@ class BaseAgentProviderPreflightTests:
                 ["Agent environment override 'TEST_CONTROL' conflicts with provider or Dovo controls."],
                 [
                     Remediation(message="Remove 'TEST_CONTROL' from 'agents.unit-test.env_passthrough'"),
-                    Remediation(message="Remove 'TEST_CONTROL' from the agent step's env"),
+                    Remediation(message="Remove 'TEST_CONTROL' from the agent step's 'env'"),
                 ],
                 id="reserved_env_override",
             ),

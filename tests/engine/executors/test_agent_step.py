@@ -198,7 +198,7 @@ class ExecuteAgentStepRemediationTests:
             pytest.param(
                 "missing-worktree",
                 WORKTREE_REQUIRED_MESSAGE,
-                [Remediation(message="Remove --no-worktree and run the blueprint with a worktree")],
+                [Remediation(message="Remove '--no-worktree' and run the blueprint with a worktree")],
                 id="missing-worktree",
             ),
             pytest.param(
