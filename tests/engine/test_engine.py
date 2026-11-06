@@ -14,6 +14,8 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
+from dovo.common.models import Remediation
+from dovo.common.process import process_registry
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
@@ -22,8 +24,11 @@ from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
 from dovo.engine import Engine, EngineError, RunRequest, SessionStateStore
+from dovo.engine.executors import StepExecution
+from dovo.engine.executors.models import StepRecord
 from dovo.engine.models import FailurePromptDecision, RunOutcome
-from dovo.engine.state_models import ExecutionStateTree, SessionJsonPayload
+from dovo.engine.state_models import ExecutionLeafNode, ExecutionStateTree, NodeState, SessionJsonPayload
+from dovo.engine.workspace import Workspace
 from dovo.engine.writer import get_session_dir
 from tests.engine.conftest import StubDriveRun
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
@@ -404,6 +409,44 @@ class EngineResumeFinalizationTests:
             "engine.persist",
             {"session_id": site},
         )
+
+    def test_resume_does_not_rerun_a_step_that_failed_unexpectedly(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A prompt_user step whose execution raises pauses at its failure prompt; resuming re-enters that prompt with the INTERNAL_ERROR record, never running the step again or warning of a rerun."""
+        calls: list[str] = []
+
+        def _boom(self: StepExecution) -> StepRecord:
+            calls.append(self.step.id)
+            raise RuntimeError("bad output")
+
+        monkeypatch.setattr(StepExecution, "run", _boom)
+        engine = _engine(engine_paths, sessions_repo)
+        blueprint = _catalog_blueprint(
+            engine_paths, "raises", [{"id": "a", "run": "true", "on_failure": "prompt_user"}]
+        )
+        paused = engine.run(
+            blueprint,
+            RunRequest(
+                session_id="raises-1",
+                use_worktree=False,
+                failure_prompter=ScriptedFailurePrompter([KeyboardInterrupt()]),
+            ),
+        )
+        prompter = ScriptedFailurePrompter([FailurePromptDecision.ABORT])
+
+        resumed = engine.resume("raises-1", failure_prompter=prompter)
+
+        assert (paused.status, resumed.status, resumed.error_code) == (
+            SessionStatus.PAUSED,
+            SessionStatus.FAILED,
+            ErrorCode.RUN_STEP_FAILED,
+        )
+        assert calls == ["a"]
+        assert [(record.error_code, record.error_message) for record in prompter.prompted] == [
+            (ErrorCode.INTERNAL_ERROR, "Unexpected error during engine.step: bad output")
+        ]
+        assert not any("was interrupted before it recorded a result" in warning for warning in resumed.warnings)
 
     def test_mark_running_record_precedes_run_records(
         self,
@@ -787,26 +830,233 @@ class EngineFinalizeFallbackTests:
         assert row.status == SessionStatus.COMPLETED
 
 
+def _raise_interrupt(*args: object, **kwargs: object) -> None:
+    """Stand in for a call Ctrl-C interrupts."""
+    raise KeyboardInterrupt
+
+
+def _git_engine(tmp_path: Path) -> tuple[WorkspacePaths, SessionsRepository]:
+    """Return the paths and sessions repository of an initialized git workspace under tmp_path."""
+    workspace = WorkspaceBuilder(tmp_path / "git-workspace").with_git().with_database().build()
+    paths = initialized_workspace_paths(workspace)
+    return paths, SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
+
+
+def _node_states(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> list[NodeState]:
+    """Return the state of every top-level node in the session's saved execution state."""
+    return [node.state for node in SessionStateStore(sessions, paths, session_id).load([]).nodes]
+
+
+def _leaf_attempts(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str, step_id: str) -> int:
+    """Return how many attempts the session's saved execution state holds for the top-level leaf step_id."""
+    for node in SessionStateStore(sessions, paths, session_id).load([]).nodes:
+        if isinstance(node, ExecutionLeafNode) and node.id == step_id:
+            return len(node.attempts)
+    raise AssertionError(f"No top-level leaf '{step_id}' in session '{session_id}'.")
+
+
 class EngineRunInterruptTests:
-    def test_interrupt_during_auto_apply_propagates_and_leaves_row_running(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    def test_interrupt_during_the_row_insert_propagates_with_no_session(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Raise KeyboardInterrupt from the worktree apply of a completed --auto-apply run; it propagates out of the engine and the session row's status stays running."""
-        workspace = WorkspaceBuilder(tmp_path / "git-workspace").with_git().with_database().build()
-        paths = initialized_workspace_paths(workspace)
-        sessions = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
-        blueprint = _catalog_blueprint(paths, "apply-interrupt", [{"id": "s1", "run": "echo change > tracked.txt"}])
-
-        def interrupted_apply(*args: object, **kwargs: object) -> None:
-            raise KeyboardInterrupt
-
-        monkeypatch.setattr(Worktree, "apply", interrupted_apply)
+        """With the session row insert interrupted, raise KeyboardInterrupt and leave no session row for a run result to name."""
+        blueprint = _catalog_blueprint(engine_paths, "insert-interrupt", [{"id": "s1", "run": "true"}])
+        monkeypatch.setattr(SessionsRepository, "create", _raise_interrupt)
 
         with pytest.raises(KeyboardInterrupt):
-            _engine(paths, sessions).run(
-                blueprint, RunRequest(session_id="apply-interrupt", use_worktree=True, auto_apply=True)
-            )
+            _engine(engine_paths, sessions_repo).run(blueprint, RunRequest(session_id="insert-1", use_worktree=False))
+
+        assert sessions_repo.get("insert-1") is None
+
+    def test_interrupt_during_worktree_setup_records_cancelled(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With Worktree.create interrupted, return CANCELLED with RUN_CANCELLED for the session and leave its row cancelled."""
+        paths, sessions = _git_engine(tmp_path)
+        blueprint = _catalog_blueprint(paths, "setup-interrupt", [{"id": "s1", "run": "true"}])
+        monkeypatch.setattr(Worktree, "create", _raise_interrupt)
+
+        outcome = _engine(paths, sessions).run(blueprint, RunRequest(session_id="setup-1", use_worktree=True))
+
+        row = sessions.get("setup-1")
+        assert row is not None
+        assert (outcome.status, outcome.error_code, outcome.errors, outcome.session_id) == (
+            SessionStatus.CANCELLED,
+            ErrorCode.RUN_CANCELLED,
+            ["Execution cancelled by user."],
+            "setup-1",
+        )
+        assert (row.status, row.error_message) == (SessionStatus.CANCELLED, "Execution cancelled by user.")
+
+    @pytest.mark.parametrize("discard", [False, True])
+    def test_interrupt_during_auto_apply_records_cancelled_and_keeps_the_worktree(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, discard: bool
+    ) -> None:
+        """With the worktree apply of a completed --auto-apply run interrupted, return CANCELLED with the completed step's result, and keep the worktree holding the work, even with --discard."""
+        paths, sessions = _git_engine(tmp_path)
+        blueprint = _catalog_blueprint(paths, "apply-interrupt", [{"id": "s1", "run": "echo change > tracked.txt"}])
+        monkeypatch.setattr(Worktree, "apply", _raise_interrupt)
+
+        outcome = _engine(paths, sessions).run(
+            blueprint, RunRequest(session_id="apply-interrupt", use_worktree=True, auto_apply=True, discard=discard)
+        )
 
         row = sessions.get("apply-interrupt")
         assert row is not None
-        assert row.status == SessionStatus.RUNNING
+        assert (outcome.status, outcome.error_code, outcome.errors) == (
+            SessionStatus.CANCELLED,
+            ErrorCode.RUN_CANCELLED,
+            ["Execution cancelled by user."],
+        )
+        assert [(result.step_id, result.status) for result in outcome.step_results] == [("s1", "completed")]
+        assert (row.status, row.worktree_kept, outcome.worktree_kept) == (SessionStatus.CANCELLED, True, True)
+        assert outcome.worktree_path == paths.worktree_dir("apply-interrupt")
+        assert (outcome.worktree_path / "tracked.txt").read_text(encoding="utf-8") == "change\n"
+
+    def test_interrupt_during_close_records_cancelled_with_the_worktree_kept(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the diff capture of a completed run interrupted, return CANCELLED at the worktree and record the row cancelled with the worktree, still on disk, kept."""
+        paths, sessions = _git_engine(tmp_path)
+        blueprint = _catalog_blueprint(paths, "close-interrupt", [{"id": "s1", "run": "true"}])
+        monkeypatch.setattr(Workspace, "capture_and_persist_diff", _raise_interrupt)
+
+        outcome = _engine(paths, sessions).run(blueprint, RunRequest(session_id="close-1", use_worktree=True))
+
+        row = sessions.get("close-1")
+        assert row is not None
+        assert (outcome.status, outcome.error_code) == (SessionStatus.CANCELLED, ErrorCode.RUN_CANCELLED)
+        assert (row.status, row.worktree_id, row.worktree_kept) == (SessionStatus.CANCELLED, "close-1", True)
+        assert (outcome.worktree_id, outcome.worktree_path) == ("close-1", paths.worktree_dir("close-1"))
+        assert outcome.worktree_path.is_dir()
+        assert _node_states(paths, sessions, "close-1") == [NodeState.COMPLETED]
+
+    def test_interrupt_with_a_surviving_group_outside_a_step_fails_with_process_stop_failed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the worktree setup interrupted and group 4242 surviving the stop, return FAILED with SESSION_PROCESS_STOP_FAILED and its kill -9 remediation."""
+        paths, sessions = _git_engine(tmp_path)
+        blueprint = _catalog_blueprint(paths, "survivor", [{"id": "s1", "run": "true"}])
+        monkeypatch.setattr(Worktree, "create", _raise_interrupt)
+        monkeypatch.setattr(process_registry, "stop_all", lambda *, grace_seconds: [4242])
+
+        outcome = _engine(paths, sessions).run(blueprint, RunRequest(session_id="survivor-1", use_worktree=True))
+
+        row = sessions.get("survivor-1")
+        assert row is not None
+        assert (outcome.status, outcome.error_code, outcome.errors) == (
+            SessionStatus.FAILED,
+            ErrorCode.SESSION_PROCESS_STOP_FAILED,
+            ["Run interrupted, but process group 4242 is still running."],
+        )
+        assert outcome.remediations == [
+            Remediation(
+                message="Its processes may still be running; stop them with 'kill -9 -4242'", command="kill -9 -4242"
+            )
+        ]
+        assert row.status == SessionStatus.FAILED
+
+    def test_unexpected_error_outside_a_step_records_failed_with_internal_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """With the auto-apply raising RuntimeError, return FAILED with INTERNAL_ERROR for the session at its worktree, record its engine.run record, and leave the row failed with the worktree the failure kept."""
+        paths, sessions = _git_engine(tmp_path)
+        blueprint = _catalog_blueprint(paths, "apply-error", [{"id": "s1", "run": "true"}])
+
+        def _boom(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("apply broke")
+
+        monkeypatch.setattr(Workspace, "handle_auto_apply", _boom)
+
+        outcome = _engine(paths, sessions).run(
+            blueprint, RunRequest(session_id="error-1", use_worktree=True, auto_apply=True)
+        )
+
+        row = sessions.get("error-1")
+        assert row is not None
+        assert (outcome.status, outcome.error_code, outcome.errors, outcome.session_id) == (
+            SessionStatus.FAILED,
+            ErrorCode.INTERNAL_ERROR,
+            ["Unexpected error during engine.run: apply broke"],
+            "error-1",
+        )
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.run"
+        assert (row.status, row.worktree_id, row.worktree_kept) == (SessionStatus.FAILED, "error-1", True)
+        assert (outcome.worktree_id, outcome.worktree_path) == ("error-1", paths.worktree_dir("error-1"))
+        assert outcome.worktree_path.is_dir()
+        assert NodeState.RUNNING not in _node_states(paths, sessions, "error-1")
+
+    def test_unexpected_error_outside_a_step_records_a_discarded_worktree_removed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the auto-apply of a --discard run raising RuntimeError, record the row failed with the worktree removed."""
+        paths, sessions = _git_engine(tmp_path)
+        blueprint = _catalog_blueprint(paths, "apply-error", [{"id": "s1", "run": "true"}])
+
+        def _boom(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("apply broke")
+
+        monkeypatch.setattr(Workspace, "handle_auto_apply", _boom)
+
+        outcome = _engine(paths, sessions).run(
+            blueprint, RunRequest(session_id="error-2", use_worktree=True, auto_apply=True, discard=True)
+        )
+
+        row = sessions.get("error-2")
+        assert row is not None
+        assert (outcome.status, row.status, row.worktree_kept) == (SessionStatus.FAILED, SessionStatus.FAILED, False)
+        assert not paths.worktree_dir("error-2").exists()
+
+    def test_domain_error_inside_a_step_ends_the_run_with_its_code_and_remediations(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With StepExecution.run raising an EngineError under on_failure retry, return FAILED with the error's code, message and remediation without retrying, and leave the row failed with no node running."""
+        paths, sessions = _git_engine(tmp_path)
+        retry: dict[str, object] = {"action": "retry", "max_retries": 3, "backoff_ms": 0}
+        blueprint = _catalog_blueprint(paths, "domain", [{"id": "s1", "run": "true", "on_failure": retry}])
+        remediation = Remediation(message="Publish the artifact first.", command="dovo artifact list")
+
+        def _unavailable(self: StepExecution) -> StepRecord:
+            raise EngineError(ErrorCode.WORKTREE_NOT_FOUND, "Artifact 'plan' is unavailable.", [remediation])
+
+        monkeypatch.setattr(StepExecution, "run", _unavailable)
+
+        outcome = _engine(paths, sessions).run(blueprint, RunRequest(session_id="domain-1", use_worktree=False))
+
+        row = sessions.get("domain-1")
+        assert row is not None
+        assert (outcome.status, outcome.error_code, outcome.errors, outcome.remediations) == (
+            SessionStatus.FAILED,
+            ErrorCode.WORKTREE_NOT_FOUND,
+            ["Artifact 'plan' is unavailable."],
+            [remediation],
+        )
+        assert (row.status, row.error_message) == (SessionStatus.FAILED, "Artifact 'plan' is unavailable.")
+        assert _node_states(paths, sessions, "domain-1") == [NodeState.FAILED]
+        assert _leaf_attempts(paths, sessions, "domain-1", "s1") == 1
+
+    def test_interrupt_during_resume_setup_records_cancelled(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With the workspace setup of a resumed run interrupted, return CANCELLED and leave the row and its paused step cancelled."""
+        seed_paused_session(
+            engine_paths,
+            sessions_repo,
+            session_id="resume-1",
+            steps=[{"id": "a", "run": "true", "on_failure": "prompt_user"}],
+            paused_step_id="a",
+        )
+        monkeypatch.setattr(Workspace, "setup", _raise_interrupt)
+
+        outcome = _engine(engine_paths, sessions_repo).resume("resume-1")
+
+        row = sessions_repo.get("resume-1")
+        assert row is not None
+        assert (outcome.status, outcome.error_code, outcome.session_id) == (
+            SessionStatus.CANCELLED,
+            ErrorCode.RUN_CANCELLED,
+            "resume-1",
+        )
+        assert row.status == SessionStatus.CANCELLED
+        assert _node_states(engine_paths, sessions_repo, "resume-1") == [NodeState.CANCELLED]

@@ -96,6 +96,22 @@ def catch_failure(operation: str, **context: _ContextValue) -> Generator[CaughtF
         caught.failure = _unexpected_failure(error, operation, context)
 
 
+@contextmanager
+def catch_unexpected(operation: str, **context: _ContextValue) -> Generator[CaughtFailure]:
+    """Turn an unexpected exception raised in the block into caught.failure, recorded; a DomainError or a LockTimeoutError propagates.
+
+    For a per-item site behind an entrypoint that reports an item's unexpected error and continues, while a
+    business failure still ends the whole operation at the entrypoint that catches it.
+    """
+    caught = CaughtFailure()
+    try:
+        yield caught
+    except (LockTimeoutError, DomainError):
+        raise
+    except Exception as error:
+        caught.failure = _unexpected_failure(error, operation, context)
+
+
 def _domain_failure(error: DomainError, operation: str, context: Mapping[str, _ContextValue]) -> Failure:
     """Copy error into a Failure, recording its OSError cause at error level when it has one."""
     cause = error.__cause__

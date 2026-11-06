@@ -61,6 +61,33 @@ class BlueprintRunServiceExecuteTests:
         assert seen[1] is fixed_clock
         assert seen[2] is fixed_new_id
 
+    def test_step_with_non_utf8_output_fails_with_session_fields(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        """A --no-worktree run whose step writes non-UTF-8 bytes to $DOVO_OUTPUT returns RUN_STEP_FAILED for the failed session."""
+        write_runnable_blueprint(
+            engine_paths.root_dir,
+            key="bad-output",
+            steps=[{"id": "a", "run": "printf 'K=\\377\\376\\n' > \"$DOVO_OUTPUT\""}],
+        )
+
+        result = BlueprintRunService(
+            name="bad-output",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            no_worktree=True,
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        ).execute()
+
+        assert (result.error_code, result.session_id, result.blueprint_name, result.session_status) == (
+            ErrorCode.RUN_STEP_FAILED,
+            "blueprint_0000abcd",
+            "bad-output",
+            SessionStatus.FAILED,
+        )
+
     def test_execute_completed_run_returns_ok_result_with_session_fields(
         self,
         engine_paths: WorkspacePaths,
@@ -514,14 +541,14 @@ def _lint_service(paths: WorkspacePaths, sessions: SessionsRepository) -> Bluepr
 
 
 class BlueprintRunServiceCatchTests:
-    def test_unexpected_engine_error_returns_internal_error_recorded_under_engine_run(
+    def test_unexpected_run_error_names_the_session(
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
         stub_drive_run: StubDriveRun,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With drive_run raising TypeError("boom"), return INTERNAL_ERROR, the message, the frozen record, and one engine.run event."""
+        """With drive_run raising TypeError("boom") once the row is running, return INTERNAL_ERROR, the message, the failed session, the frozen record, and one engine.run event."""
 
         def _boom(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> RunOutcome:
             raise TypeError("boom")
@@ -530,13 +557,17 @@ class BlueprintRunServiceCatchTests:
 
         result = _lint_service(engine_paths, sessions_repo).execute()
 
-        assert result.session_id is None
+        assert (result.session_id, result.blueprint_name, result.session_status) == (
+            "blueprint_0000abcd",
+            "lint",
+            SessionStatus.FAILED,
+        )
         assert result.error_code == ErrorCode.INTERNAL_ERROR
         assert result.errors == ["Unexpected error during engine.run: boom"]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["operation"] == "engine.run"
-        assert event["context"] == {"blueprint": "lint"}
+        assert event["context"] == {"session_id": "blueprint_0000abcd"}
         assert event["exception_type"] == "TypeError"
 
     def test_engine_lock_timeout_propagates(

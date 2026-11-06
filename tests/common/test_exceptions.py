@@ -20,6 +20,7 @@ from dovo.common.exceptions import (
     RecordedDiagnostics,
     WorkspaceError,
     catch_failure,
+    catch_unexpected,
     escaped_failure_fields,
     fatal_failure_fields,
     workspace_not_initialized_error,
@@ -231,6 +232,41 @@ PRIOR_RECORD: Final[DiagnosticRecord] = DiagnosticRecord(
 DEBUG_RECORD: Final[DiagnosticRecord] = DiagnosticRecord(
     event_id="exc_debug", log_path=Path("/logs/exc_debug.json"), level=DiagnosticLevel.DEBUG
 )
+
+
+class CatchUnexpectedTests:
+    def test_unexpected_exception_is_internal_error_and_recorded(self, frozen_diagnostic_clock: Path) -> None:
+        """Suppress TypeError("bad operand") and set caught.failure to Failure(INTERNAL_ERROR, "Unexpected error during engine.step: bad operand", (), record)."""
+        with catch_unexpected("engine.step", step="a") as caught:
+            raise TypeError("bad operand")
+
+        assert caught.failure == Failure(
+            ErrorCode.INTERNAL_ERROR,
+            "Unexpected error during engine.step: bad operand",
+            (),
+            _expected_record(frozen_diagnostic_clock),
+        )
+        assert read_single_event(frozen_diagnostic_clock)["context"] == {"step": "a"}
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            pytest.param(
+                DomainError(ErrorCode.WORKTREE_NOT_FOUND, "Worktree 'x' not found.", [REMEDIATION]), id="domain"
+            ),
+            pytest.param(LockTimeoutError("lock held"), id="lock_timeout"),
+            pytest.param(KeyboardInterrupt(), id="keyboard_interrupt"),
+        ],
+    )
+    def test_domain_error_lock_timeout_and_base_exceptions_propagate_unrecorded(
+        self, frozen_diagnostic_clock: Path, error: BaseException
+    ) -> None:
+        """Re-raise the exception out of the with block and create no logs directory."""
+        with pytest.raises(type(error)) as raised, catch_unexpected("engine.step"):
+            raise error
+
+        assert raised.value is error
+        assert not frozen_diagnostic_clock.parent.parent.exists()
 
 
 class FailureResultFieldsTests:

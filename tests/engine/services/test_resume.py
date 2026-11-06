@@ -23,6 +23,7 @@ from dovo.core.worktree import Worktree
 from dovo.engine import BlueprintRunService
 from dovo.engine.executors.exceptions import EngineError
 from dovo.engine.executors.models import StepRecord
+from dovo.engine.loader import EngineLoader
 from dovo.engine.models import BlueprintRunResult, RunOutcome
 from dovo.engine.services.resume import BlueprintResumeService
 from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
@@ -333,14 +334,14 @@ class BlueprintResumeServiceValidationTests:
 
 
 class BlueprintResumeServiceCatchTests:
-    def test_unexpected_error_after_load_returns_internal_error_recorded_under_engine_resume(
+    def test_unexpected_resume_error_reports_a_documented_session_status(
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
         stub_drive_run: StubDriveRun,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With a paused session and drive_run raising TypeError("boom"), return INTERNAL_ERROR, the message, the record, the session's persisted running status, and one engine.resume event."""
+        """With a paused session and drive_run raising TypeError("boom"), return INTERNAL_ERROR, the message, the record, the session's persisted failed status, and one engine.resume event."""
         _seed(engine_paths, sessions_repo, "paused-1")
 
         def _boom(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> RunOutcome:
@@ -359,7 +360,7 @@ class BlueprintResumeServiceCatchTests:
 
         assert result.error_code == ErrorCode.INTERNAL_ERROR
         assert result.errors == ["Unexpected error during engine.resume: boom"]
-        assert (result.session_id, result.session_status) == ("paused-1", SessionStatus.RUNNING)
+        assert (result.session_id, result.session_status) == ("paused-1", SessionStatus.FAILED)
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         event = read_single_event(frozen_diagnostic_clock)
         assert event["operation"] == "engine.resume"
@@ -369,11 +370,10 @@ class BlueprintResumeServiceCatchTests:
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
-        stub_drive_run: StubDriveRun,
         frozen_diagnostic_clock: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """With drive_run raising an EngineError from an OSError and the session read back after it raising, return null session fields and diagnostics == [the engine.read_run record, the engine.resume record], the failure's own record last."""
+        """With the resume load raising an EngineError from an OSError and the session read back after it raising, return null session fields and diagnostics == [the engine.read_run record, the engine.resume record], the failure's own record last."""
         _seed(engine_paths, sessions_repo, "paused-1")
         monkeypatch.setattr(
             "dovo.common.diagnostic_log.services.record.uuid4",
@@ -389,14 +389,14 @@ class BlueprintResumeServiceCatchTests:
 
         monkeypatch.setattr(SessionsRepository, "get", _fail_read_back)
 
-        def _boom(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> RunOutcome:
+        def _boom(sessions: SessionsRepository, paths: WorkspacePaths, session_id: str, warnings: list[str]) -> None:
             driven.append(session_id)
             try:
                 raise PermissionError("state.json")
             except OSError as exc:
                 raise EngineError(ErrorCode.SESSION_STATE_CORRUPT, "Unable to read session state.") from exc
 
-        stub_drive_run(_boom)
+        monkeypatch.setattr(EngineLoader, "load_for_resume", staticmethod(_boom))
 
         result = BlueprintResumeService(
             paths=engine_paths,

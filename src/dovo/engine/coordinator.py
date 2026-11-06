@@ -7,11 +7,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.diagnostic_log import DiagnosticRecord, error_diagnostics
 from dovo.common.error_codes import ErrorCode
+from dovo.common.exceptions import catch_unexpected
 from dovo.common.lock import WorkspaceLock
 from dovo.common.models import FailurePolicy, Remediation
-from dovo.common.process import process_registry
 from dovo.common.timing import TimeSpan
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.catalog.blueprint import Blueprint
@@ -19,6 +19,7 @@ from dovo.core.catalog.definitions import BlueprintStep, IfStepBlock, LoopStepBl
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
+from dovo.engine.cancellation import CANCELLED_MESSAGE, stop_interrupted_run
 from dovo.engine.executors import StepExecution
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.ask_step import complete_ask_step, resolve_ask_request
@@ -84,19 +85,21 @@ _RERUN_WARNING = (
     "check for side effects its interrupted attempt already made."
 )
 _CEILING_GRANT_COUNT = 3
-_CANCELLED_MESSAGE = "Execution cancelled by user."
 
 
-def _survivor_failure(pgids: list[int]) -> tuple[list[str], list[Remediation]]:
-    """Return one error and one `kill -9` remediation per process group that survived the interrupt's stop."""
-    errors = [f"Run interrupted, but process group {pgid} is still running." for pgid in pgids]
-    remediations = [
-        Remediation(
-            message=f"Its processes may still be running; stop them with 'kill -9 -{pgid}'", command=f"kill -9 -{pgid}"
-        )
-        for pgid in pgids
-    ]
-    return errors, remediations
+def _failed_step_record(invocation: StepInvocation, code: ErrorCode, message: str) -> StepRecord:
+    """Return the failed record of invocation's attempt for a failure its execution raised, carrying code and message."""
+    return StepRecord(
+        step_id=invocation.step.id,
+        status="failed",
+        exit_code=1,
+        stdout="",
+        stderr="",
+        duration_seconds=0.0,
+        attempts=invocation.attempt,
+        error_message=message,
+        error_code=code,
+    )
 
 
 class NodeTransitionKind(StrEnum):
@@ -143,7 +146,6 @@ class RunCoordinator:
         self._diagnostics: list[DiagnosticRecord] = []
         self._loaded: _LoadedRun | None = None
         self._load_ok: bool | None = None
-        self._in_flight: ExecutionPlanNode | None = None
 
     def _fail(self, error_code: ErrorCode, message: str) -> None:
         """Append message to the run's errors and make error_code the run's code unless an earlier failure set one."""
@@ -291,7 +293,7 @@ class RunCoordinator:
         try:
             answer = self._read_answer(request)
         except KeyboardInterrupt:
-            self._fail(ErrorCode.RUN_CANCELLED, _CANCELLED_MESSAGE)
+            self._fail(ErrorCode.RUN_CANCELLED, CANCELLED_MESSAGE)
             return self._pause_at_prompt(leaf)
         if answer is None:
             return self._pause_at_prompt(leaf)
@@ -378,10 +380,31 @@ class RunCoordinator:
             if observer is not None
             else None
         )
-        result = StepExecution(self._execution_context(invocation, on_output=on_output, on_progress=on_progress)).run()
+        result = self._execute_step(invocation, on_output, on_progress)
         self._log_step_done(invocation, result)
         self._warnings.extend(result.warnings)
         return result
+
+    def _execute_step(
+        self,
+        invocation: StepInvocation,
+        on_output: Callable[[str, str], None] | None,
+        on_progress: ProgressCallback | None,
+    ) -> StepRecord:
+        """Run one StepExecution, or turn an unexpected error it raises into the attempt's failed record and add its record to the run's diagnostics.
+
+        An EngineError the execution raises is a business failure of the run, not of the attempt: it propagates,
+        with its code and remediations, to the entrypoint that ends the run with it.
+        """
+        with catch_unexpected("engine.step", step=invocation.step.id) as caught:
+            return StepExecution(
+                self._execution_context(invocation, on_output=on_output, on_progress=on_progress)
+            ).run()
+        failure = caught.failure
+        if failure is None:
+            raise RuntimeError(f"Step '{invocation.step.id}' neither returned a result nor raised a failure.")
+        self._diagnostics.extend(error_diagnostics(failure.diagnostic))
+        return _failed_step_record(invocation, failure.error_code, failure.message)
 
     def _resolve_ask(self, invocation: StepInvocation) -> AskResolution:
         """Notify and log the ask's start and resolve its request; when it settles without a prompt, notify and log the done and append its warnings."""
@@ -501,7 +524,6 @@ class RunCoordinator:
                 return self._outcome(SessionStatus.COMPLETED)
 
             position, node = upcoming
-            self._in_flight = node
             transition = self._dispatch(position, node)
             if transition is NodeTransitionKind.PAUSED:
                 return self._outcome(SessionStatus.PAUSED)
@@ -509,32 +531,14 @@ class RunCoordinator:
                 return self._outcome(SessionStatus.FAILED)
 
     def _cancel(self) -> RunOutcome:
-        """Stop every process group the run started and confirm it is gone, then settle the in-flight node and the run.
-
-        With every group gone, a non-terminal in-flight node is persisted CANCELLED and the run ends CANCELLED with
-        RUN_CANCELLED. When a group survives, the node and the run end FAILED with SESSION_PROCESS_STOP_FAILED, one
-        error and one `kill -9` remediation per surviving group.
-        """
-        survivors = process_registry.stop_all(grace_seconds=0.5)
-        if not survivors:
-            self._settle_in_flight(NodeState.CANCELLED)
-            self._errors = [_CANCELLED_MESSAGE]
-            self._error_code = ErrorCode.RUN_CANCELLED
-            return self._outcome(SessionStatus.CANCELLED)
-        self._settle_in_flight(NodeState.FAILED)
-        self._errors, self._remediations = _survivor_failure(survivors)
-        self._error_code = ErrorCode.SESSION_PROCESS_STOP_FAILED
-        return self._outcome(SessionStatus.FAILED)
-
-    def _settle_in_flight(self, state: NodeState) -> None:
-        """Persist a non-terminal in-flight node, and the if block enclosing it, in state."""
-        if self._in_flight is None or self._in_flight.state in TERMINAL_NODE_STATES:
-            return
-        self._in_flight.state = state
-        for block in self._run.state.nodes:
-            if isinstance(block, ExecutionIfNode) and any(leaf is self._in_flight for leaf in block.steps):
-                block.state = state
-        self._commit("while cancelling the run")
+        """Stop every process group the run started, persist every started node settled by the interrupt's status, and end the run as stop_interrupted_run decides."""
+        stop = stop_interrupted_run()
+        if self._run.state.settle_started_nodes(stop.status):
+            self._commit("while cancelling the run")
+        self._errors = list(stop.errors)
+        self._remediations = list(stop.remediations)
+        self._error_code = stop.error_code
+        return self._outcome(stop.status)
 
     def _start(self) -> bool:
         """Load state, session row, and snapshot definitions and resolve the run settings; record the failure and return False when unavailable."""
@@ -675,7 +679,6 @@ class RunCoordinator:
         """Advance one branch step through retries until it is terminal, or return the PAUSED or FAILED that stops it."""
         transition = NodeTransitionKind.COMPLETED
         while leaf.state not in TERMINAL_NODE_STATES:
-            self._in_flight = leaf
             transition = self._advance_slot(leaf, step_def, idx=idx, total=total, loop=None)
             if transition in (NodeTransitionKind.PAUSED, NodeTransitionKind.FAILED):
                 return transition
@@ -745,7 +748,6 @@ class RunCoordinator:
         """Advance the body leaf at body_index of the last iteration through _advance_slot; PAUSED returns PAUSED, FAILED fails the loop."""
         iteration = loop.iterations[-1]
         leaf = iteration.steps[body_index]
-        self._in_flight = leaf
         transition = self._advance_slot(
             leaf,
             loop_block.do[body_index],
@@ -816,7 +818,6 @@ class RunCoordinator:
         events: LoopEventEmitter,
     ) -> NodeTransitionKind | None:
         """Apply a prompt_user ceiling: grant three more iterations (None), continue, abort, or pause the run when the prompt is interrupted."""
-        self._in_flight = loop
         ceiling = loop.iteration_ceiling
         if self._prompter is None or not self._interactive:
             diagnostic = f"Loop '{loop.id}' reached max_iterations ({ceiling}) and run is non-interactive."

@@ -10,6 +10,7 @@ import pytest
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.lock import LockTimeoutError
 from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import default_tool_policy
@@ -466,6 +467,25 @@ class DriveRunCleanupTests:
         assert outcome.worktree_kept is expected_kept
         assert outcome.errors == (["Patch merge conflict in worktree apply"] if auto_apply else [])
         assert outcome.error_code == (ErrorCode.WORKTREE_APPLY_CONFLICT if auto_apply else None)
+
+    def test_close_lock_timeout_propagates_after_final_status_is_written(
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With Worktree.cleanup timing out on the workspace lock, raise LockTimeoutError with the row already completed and its worktree, still on disk, recorded kept."""
+
+        def _lock_timeout(*args: object, **kwargs: object) -> None:
+            raise LockTimeoutError("lock held")
+
+        monkeypatch.setattr(Worktree, "cleanup", _lock_timeout)
+        seed_new_session(git_paths, git_runs, session_id="close-lock", steps=[_step("a", "true")], use_worktree=True)
+
+        with pytest.raises(LockTimeoutError, match="lock held"):
+            _drive(git_paths, git_runs, "close-lock")
+
+        row = git_runs.get("close-lock")
+        assert row is not None
+        assert (row.status, row.worktree_kept) == (SessionStatus.COMPLETED, True)
+        assert git_paths.worktree_dir("close-lock").is_dir()
 
     def test_cleanup_failure_after_step_failure_still_reports_failed(
         self,
