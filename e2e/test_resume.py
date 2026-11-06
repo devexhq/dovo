@@ -72,6 +72,61 @@ steps:
         assert nodes[0].get("state") == "completed"
         assert nodes[1].get("state") == "paused"
 
+    def test_hangup_at_an_ask_prompt_leaves_the_session_paused(
+        self,
+        run_dovo: DovoRunner,
+        run_dovo_pty: DovoPtyRunner,
+        initialized_project: Path,
+    ) -> None:
+        """Closing the terminal (SIGHUP) at an ask prompt pauses the session with no answer recorded."""
+        write_blueprint(
+            initialized_project,
+            "hangup-ask-bp",
+            """version: "1.0"
+name: hangup-ask-bp
+id: hangup-ask-bp
+steps:
+  - id: approve
+    type: ask
+    interaction:
+      mode: select
+      message: Approve this plan?
+      options:
+        - { value: approve, label: Approve }
+        - { value: deny, label: Deny }
+""",
+            runner=run_dovo,
+        )
+
+        session_id = "paused-sess-hangup-ask"
+        pty_result = run_dovo_pty(
+            ["run", "hangup-ask-bp", "--session-id", session_id, "--no-worktree"],
+            prompt_replies=[("Select [1-2]: ", "<sighup>")],
+            cwd=initialized_project,
+        )
+
+        assert pty_result.exit_code == -signal.SIGHUP
+
+        show_result = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
+        assert show_result.exit_code == 0
+        show_payload = parse_json(show_result.stdout).get("payload", {})
+        assert isinstance(show_payload, dict)
+        session_record = show_payload.get("session", {})
+        assert isinstance(session_record, dict)
+        assert session_record.get("status") == "paused"
+        steps = show_payload.get("steps", [])
+        assert isinstance(steps, list)
+        assert [(step.get("step_id"), step.get("state")) for step in steps] == [("approve", "paused")]
+
+        dovo_home = Path(os.environ.get("DOVO_HOME", "/tmp/dovo-home"))
+        state_files = list(dovo_home.glob(f"**/sessions/{session_id}/session.json"))
+        assert len(state_files) == 1
+        nodes = json.loads(state_files[0].read_text(encoding="utf-8")).get("nodes", [])
+        assert [(node.get("id"), node.get("state")) for node in nodes] == [("approve", "paused")]
+        assert [(attempt.get("ask"), attempt.get("result")) for attempt in nodes[0].get("attempts", [])] == [
+            (None, None)
+        ]
+
     def test_resume_without_arguments_completes_latest_paused_checkpoint(
         self,
         run_dovo: DovoRunner,

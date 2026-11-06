@@ -23,6 +23,7 @@ from typing import cast
 import pytest
 
 from e2e.command_coverage import CommandRecorder, CoverageReport, compare, read_command_tree, read_gap_list
+from tests.harness.poll import wait_until
 
 E2E_ROOT = Path("/tmp/dovo-e2e")
 DOVO_HOME = Path("/tmp/dovo-home")
@@ -32,6 +33,7 @@ LOCK_FILE = Path("/tmp/dovo-e2e.lock")
 FIXTURES_LOCK_PATH = Path(__file__).parent / "fixtures.lock"
 LOCAL_FIXTURES_CANDIDATE = Path("/home/luckner/workspace/devexhq/dovo-e2e-fixtures")
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+SIGNAL_REPLIES = {"\x03": signal.SIGINT, "<ctrl-c>": signal.SIGINT, "<sighup>": signal.SIGHUP}
 E2E_DIR = Path(__file__).parent
 COMMAND_GAPS_PATH = E2E_DIR / "command_gaps.txt"
 RECORDER_KEY = pytest.StashKey[CommandRecorder]()
@@ -56,6 +58,15 @@ class DovoPtyResult:
     transcript: str
     exit_code: int
     duration_seconds: float
+
+
+def _is_sleeping(pid: int) -> bool:
+    """Return True when /proc reports pid sleeping, or when the platform has no /proc to ask."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError:
+        return True
+    return stat.rsplit(")", 1)[1].split()[0] == "S"
 
 
 def resolve_dovo_binary() -> str:
@@ -246,10 +257,14 @@ class DovoPtyRunner:
             return
         expected_prompt, reply = prompt_replies[0]
         if expected_prompt in accumulated:
-            if reply in ("\x03", "<ctrl-c>"):
-                process.send_signal(signal.SIGINT)
-            else:
+            reply_signal = SIGNAL_REPLIES.get(reply)
+            if reply_signal is None:
                 os.write(master_fd, reply.encode("utf-8"))
+            else:
+                # input() writes its prompt before it blocks in read(); a signal landing between the two is
+                # only noted, and read() then blocks for good, so signal once the process sleeps in the read.
+                wait_until(lambda: _is_sleeping(process.pid), timeout=5.0)
+                process.send_signal(reply_signal)
             prompt_replies.pop(0)
 
     def _handle_pty_read(
