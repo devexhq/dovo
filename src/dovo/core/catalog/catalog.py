@@ -75,12 +75,13 @@ class Catalog:
         """Reindex and list records of item_type, raising CatalogError on failure."""
         scan = self.sync()
         records = [record for record in resolve_catalog_records(self.paths) if record.item_type == item_type]
+        skipped = tuple(skipped for skipped in scan.skipped_files if skipped.item_type == item_type)
         return CatalogListResult(
             item_type=item_type,
             items=records,
             type_filter=item_type,
-            warnings=[skipped.message for skipped in scan.skipped_files],
-            diagnostics=_skipped_file_diagnostics(scan.skipped_files),
+            warnings=[skipped_file.message for skipped_file in skipped],
+            diagnostics=_skipped_file_diagnostics(skipped),
         )
 
     def show(self, sha_or_name: str, item_type: CatalogItemType) -> CatalogShowResult:
@@ -122,11 +123,13 @@ class Catalog:
         error, rather than CATALOG_NOT_FOUND; a readable match always wins over an unreadable one.
 
         Raises:
-            CatalogError: CATALOG_NOT_FOUND when nothing matches ("Catalog item '<key>' not found."),
+            CatalogError: CATALOG_NOT_FOUND when nothing matches ("Catalog item '<key>' not found.");
                 CATALOG_FILE_UNREADABLE ("Failed to read catalog <item_type> '<path>': <exc>") when only an
-                unreadable file matches, CATALOG_FILE_UNREADABLE, CATALOG_SYNTAX_INVALID or CATALOG_SCHEMA_INVALID, carrying every
-                error and warning in ``CatalogValidateFindings``, when the winner fails those checks,
-                CATALOG_WRITE_FAILED when reindexing fails, CATALOG_TYPE_INVALID for an unknown item_type.
+                unreadable file matches;
+                CATALOG_FILE_UNREADABLE, CATALOG_SYNTAX_INVALID or CATALOG_SCHEMA_INVALID when the winner fails
+                those checks, carrying every error and warning in ``CatalogValidateFindings``;
+                CATALOG_WRITE_FAILED when reindexing fails;
+                CATALOG_TYPE_INVALID for an unknown item_type.
         """
         scan = self.sync()
         parsed_item_type = coerce_catalog_item_type(item_type) if item_type is not None else None

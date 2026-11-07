@@ -833,6 +833,24 @@ class CatalogListTests:
             {"path": str(bad_file)},
         )
 
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_unreadable_file_of_the_other_type_is_not_reported(
+        self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """List blueprints with warnings [], diagnostics [] and no event file when only a step file is unreadable."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "good")
+        catalog.create(CatalogItemType.STEP, "locked")
+        locked = _unreadable(workspace_paths.catalog_steps_dir / "locked.yml")
+        try:
+            result = catalog.list(CatalogItemType.BLUEPRINT)
+        finally:
+            locked.chmod(0o644)
+
+        assert "good" in [item.key for item in result.items]
+        assert (result.warnings, result.diagnostics, result.error_code) == ([], [], None)
+        assert frozen_diagnostic_clock.exists() is False
+
     def test_invalid_file_is_listed_with_no_warning_or_record(
         self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
