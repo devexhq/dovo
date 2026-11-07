@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -207,3 +208,31 @@ class CatalogItemCliTests:
         assert isinstance(payload, dict)
         assert (payload.get("deleted"), payload.get("cancelled")) == (False, True)
         assert item_path.is_file()
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_unreadable_item_is_a_list_warning_with_a_record_and_unreadable_by_name(
+        self, run_dovo: DovoRunner, initialized_project: Path, kind: CatalogKind
+    ) -> None:
+        """An item whose file cannot be read is a list warning with one diagnostics record, and show and validate by name fail with CATALOG_FILE_UNREADABLE."""
+        name = f"locked-{kind.suffix}"
+        run_dovo([kind.command, "create", "--name", name], cwd=initialized_project)
+        locked = initialized_project / ".dovo" / "catalog" / kind.catalog_dir / f"{name}.yml"
+        locked.chmod(0o000)
+        try:
+            listed = run_dovo([kind.command, "list", "--format", "json"], cwd=initialized_project)
+            shown = run_dovo([kind.command, "show", name, "--format", "json"], cwd=initialized_project)
+            validated = run_dovo([kind.command, "validate", name, "--format", "json"], cwd=initialized_project)
+        finally:
+            locked.chmod(0o644)
+
+        assert listed.exit_code == 0
+        list_payload = json.loads(listed.stdout)["payload"]
+        assert list_payload["warnings"] == [
+            f"Failed to read catalog {kind.command} '{locked}': [Errno 13] Permission denied: '{locked}'"
+        ]
+        assert len(list_payload["diagnostics"]) == 1
+        for result in (shown, validated):
+            assert result.exit_code == 1
+            payload = json.loads(result.stdout)["payload"]
+            assert payload["error_code"] == "CATALOG_FILE_UNREADABLE"
+            assert len(payload["diagnostics"]) == 1

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -155,6 +156,28 @@ class StepLoadingTests:
         assert loaded is not None
         assert loaded.id == "catalog-step"
         assert loaded.run == "echo hello"
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_load_step_by_name_of_unreadable_step_raises_file_unreadable(
+        self, tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
+    ) -> None:
+        """Raise CATALOG_FILE_UNREADABLE naming the step file, as a `uses:` lookup of an unreadable step does."""
+        steps_dir = tmp_path / ".dovo" / "catalog" / "steps"
+        steps_dir.mkdir(parents=True, exist_ok=True)
+        _persist_project_identity(tmp_path)
+        step_file = steps_dir / "locked.yml"
+        step_file.write_text("id: locked\nrun: echo hello\n", encoding="utf-8")
+        step_file.chmod(0o000)
+        try:
+            with pytest.raises(CatalogError) as raised:
+                load_step_by_name("locked", paths=workspace_paths_factory(tmp_path, None))
+        finally:
+            step_file.chmod(0o644)
+
+        assert raised.value.error_code == ErrorCode.CATALOG_FILE_UNREADABLE
+        assert raised.value.message == (
+            f"Failed to read catalog step '{step_file}': [Errno 13] Permission denied: '{step_file}'"
+        )
 
     def test_load_step_from_definition_returns_it(self) -> None:
         inst = StepDefinition(id="inst", type=StepType.COMMAND, command="echo 1")

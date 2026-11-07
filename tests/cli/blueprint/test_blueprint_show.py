@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogItemType
+from tests.harness.diagnostic_log import FROZEN_EVENT_ID
 from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -90,3 +92,26 @@ class BlueprintShowCliIntegrationTests:
         assert payload["item_type"] == "blueprint"
         assert payload["error_code"] == "CATALOG_NOT_FOUND"
         assert payload["errors"] == ["Catalog item 'missing-blueprint' not found."]
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_show_unreadable_json_has_file_unreadable_and_its_record(
+        self, cli_runner: CliRunner, isolated_workspace: Path, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Exit 1 with CATALOG_FILE_UNREADABLE naming the file, not CATALOG_NOT_FOUND, and its record in diagnostics."""
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "locked")
+        locked = isolated_workspace / ".dovo" / "catalog" / "blueprints" / "locked.yml"
+        locked.chmod(0o000)
+        try:
+            result = cli_runner.invoke(
+                app, ["-p", str(isolated_workspace), "blueprint", "show", "locked", "--format", "json"]
+            )
+        finally:
+            locked.chmod(0o644)
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["error_code"] == "CATALOG_FILE_UNREADABLE"
+        assert payload["errors"] == [
+            f"Failed to read catalog blueprint '{locked}': [Errno 13] Permission denied: '{locked}'"
+        ]
+        assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]

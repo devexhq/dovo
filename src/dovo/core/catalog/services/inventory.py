@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dovo.common.diagnostic_log import DiagnosticLevel, record_exception
 from dovo.common.error_codes import ErrorCode
-from dovo.common.filesystem import Filesystem, WorkspacePaths, YamlFile
+from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.filesystem.services.operations import delete_file
 from dovo.common.lock import WorkspaceLock, resolve_lock_file_path
 from dovo.common.models import Remediation
@@ -19,6 +19,7 @@ from dovo.core.catalog.models import (
     CatalogItemTypeDirectory,
     CatalogRecord,
     CatalogScan,
+    CatalogSkippedFile,
     CatalogTier,
 )
 
@@ -100,47 +101,53 @@ def write_catalog_index(tier_dir: Path, index: CatalogIndex) -> None:
         ) from exc
 
 
-def _index_entry_for_file(
+def _scan_catalog_file(
+    tier: CatalogTier,
     item_type: CatalogItemType,
     tier_dir: Path,
-    file_entry: YamlFile,
-) -> tuple[CatalogIndexEntry | None, str | None]:
-    """Build one CatalogIndexEntry for a scanned YAML file, or return an error message."""
-    if file_entry.error:
-        return None, file_entry.error
-    sha, checksum = compute_catalog_sha(item_type, str(file_entry.content))
-    rel_path = file_entry.path.relative_to(tier_dir)
+    file_path: Path,
+) -> CatalogIndexEntry | CatalogSkippedFile:
+    """Build the CatalogIndexEntry for one catalog file, or the CatalogSkippedFile carrying the OSError that reading it raised.
+
+    The read error is handed to the caller unrecorded: the site that reports the skip records it.
+    """
+    rel_path = file_path.relative_to(tier_dir)
     namespace = _catalog_namespace(rel_path, CatalogItemTypeDirectory[item_type.name])
-    entry = CatalogIndexEntry(
+    key = _catalog_key(namespace, rel_path.stem)
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return CatalogSkippedFile(tier=tier, item_type=item_type, key=key, path=file_path, error=exc)
+    sha, checksum = compute_catalog_sha(item_type, content)
+    return CatalogIndexEntry(
         sha=sha,
-        key=_catalog_key(namespace, rel_path.stem),
+        key=key,
         item_type=item_type,
-        name=file_entry.name,
+        name=Filesystem.parse_yaml_content(file_path, content).name,
         namespace=namespace,
         path=rel_path,
         checksum=checksum,
     )
-    return entry, None
 
 
-def _scan_tier_subdirectories(tier_dir: Path) -> tuple[list[CatalogIndexEntry], list[str]]:
-    """Scan one tier's blueprints/steps subdirectories, returning the indexed entries and the skipped files' messages."""
+def _scan_tier_subdirectories(
+    tier: CatalogTier, tier_dir: Path
+) -> tuple[list[CatalogIndexEntry], list[CatalogSkippedFile]]:
+    """Scan one tier's blueprints/steps subdirectories, returning the indexed entries and the files that could not be read."""
     entries: list[CatalogIndexEntry] = []
-    skipped: list[str] = []
+    skipped: list[CatalogSkippedFile] = []
 
     subdirs: list[tuple[CatalogItemType, Path]] = [
         (CatalogItemType.BLUEPRINT, tier_dir / "blueprints"),
         (CatalogItemType.STEP, tier_dir / "steps"),
     ]
     for item_type, sub_dir in subdirs:
-        if not sub_dir.exists():
-            continue
-        for file_entry in Filesystem.scan_yaml_directory(sub_dir):
-            entry, error = _index_entry_for_file(item_type, tier_dir, file_entry)
-            if error is not None:
-                skipped.append(error)
-            elif entry is not None:
-                entries.append(entry)
+        for file_path in Filesystem.list_yaml_files(sub_dir):
+            scanned = _scan_catalog_file(tier, item_type, tier_dir, file_path)
+            if isinstance(scanned, CatalogSkippedFile):
+                skipped.append(scanned)
+            else:
+                entries.append(scanned)
 
     return entries, skipped
 
@@ -161,7 +168,7 @@ def scan_and_index_tier(tier: CatalogTier, paths: WorkspacePaths) -> CatalogScan
 
     lock_path = paths.lock_file if tier is CatalogTier.REPO else _global_tier_lock_path(paths)
     with WorkspaceLock(lock_path):
-        entries, skipped = _scan_tier_subdirectories(tier_dir)
+        entries, skipped = _scan_tier_subdirectories(tier, tier_dir)
         write_catalog_index(tier_dir, CatalogIndex(items=entries))
 
         records = tuple(CatalogRecord(**entry.model_dump(), tier=tier) for entry in entries)
@@ -175,7 +182,7 @@ def scan_and_index_catalog(paths: WorkspacePaths) -> CatalogScan:
         CatalogError: CATALOG_WRITE_FAILED if any tier's index.json cannot be written.
     """
     records: list[CatalogRecord] = []
-    skipped: list[str] = []
+    skipped: list[CatalogSkippedFile] = []
     for tier in (CatalogTier.GLOBAL, CatalogTier.USER, CatalogTier.REPO):
         scan = scan_and_index_tier(tier, paths)
         records.extend(scan.records)
