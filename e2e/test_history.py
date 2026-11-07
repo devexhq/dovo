@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import os
+import signal
 from pathlib import Path
 
 import pytest
 
-from e2e.conftest import DovoRunner, parse_json, write_blueprint
+from e2e.conftest import DovoProcessStarter, DovoRunner, parse_json, write_blueprint
+from tests.harness.poll import wait_until
 
 
 @pytest.mark.e2e
@@ -107,6 +110,56 @@ steps:
         assert show_term.exit_code == 0
         assert f"Session Metadata: {session_id}" in show_term.stdout
         assert "completed" in show_term.stdout
+
+    def test_session_show_reports_killed_run_failed_with_interrupted_step(
+        self,
+        start_dovo: DovoProcessStarter,
+        run_dovo: DovoRunner,
+        initialized_project: Path,
+        tmp_path: Path,
+    ) -> None:
+        """kill -9 `dovo run` while its step sleeps; its step keeps the session id, so `session show` reports it failed with the step failed."""
+        pid_file = tmp_path / "step.pid"
+        write_blueprint(
+            initialized_project,
+            "killed-bp",
+            f"""version: "1.0"
+name: killed-bp
+id: killed-bp
+steps:
+  - id: tests
+    run: echo $$ > '{pid_file}' && exec sleep 300
+""",
+            runner=run_dovo,
+        )
+        session_id = "sess-killed"
+        process = start_dovo(["run", "killed-bp", "--session-id", session_id], cwd=initialized_project)
+        assert wait_until(lambda: pid_file.exists() and pid_file.read_text().endswith("\n"), timeout=10)
+        pgid = int(pid_file.read_text())
+        try:
+            process.send_signal(signal.SIGKILL)
+            process.communicate(timeout=15)
+
+            show_json = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
+            show_term = run_dovo(["session", "show", session_id], cwd=initialized_project)
+        finally:
+            os.killpg(pgid, signal.SIGKILL)
+
+        assert show_json.exit_code == 0
+        payload = parse_json(show_json.stdout).get("payload", {})
+        assert isinstance(payload, dict)
+        assert payload.get("warnings") == [f"Marked 1 interrupted session failed (session_id: {session_id})."]
+        session = payload.get("session", {})
+        assert isinstance(session, dict)
+        assert session.get("status") == "failed"
+        assert session.get("error_message") == "Session interrupted by abnormal process termination"
+        steps = payload.get("steps", [])
+        assert isinstance(steps, list)
+        assert [
+            (step.get("step_id"), step.get("state"), step.get("exit_code"), step.get("error_message")) for step in steps
+        ] == [("tests", "failed", 1, "Step attempt was interrupted before it recorded a result.")]
+        assert show_term.exit_code == 0
+        assert "• tests: Step attempt was interrupted before it recorded a result." in show_term.stdout
 
     def test_diff_presents_latest_changeset_and_patch(
         self,

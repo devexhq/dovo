@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -153,3 +153,15 @@ class Reconciliation:
     failed: tuple[SessionRecord, ...] = ()
     warning: str | None = None
     diagnostic: DiagnosticRecord | None = None
+
+
+class StepStateCloser(Protocol):
+    """Closes the interrupted steps in the saved execution state of a stale session reconciliation marks failed."""
+
+    def close(self, record: SessionRecord) -> str | None:
+        """Return record's execution state with its interrupted steps closed, at record.execution_state_revision + 1.
+
+        Returns None when record has no state, its state cannot be read or does not match the row's revision, or
+        nothing in it needs closing.
+        """
+        ...

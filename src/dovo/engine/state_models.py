@@ -137,14 +137,14 @@ class ExecutionStateTree(BaseModel):
             state = NodeState.FAILED
         else:
             return False
-        changed = [_settle(item, state) for node in self.nodes for item in _with_descendants(node)]
+        changed = [_settle(item, state) for node in self.nodes for item in with_descendants(node)]
         return any(changed)
 
 
 _STARTED_NODE_STATES = frozenset({NodeState.RUNNING, NodeState.PAUSED})
 
 
-def _with_descendants(node: ExecutionPlanNode) -> list[ExecutionPlanNode | ExecutionIterationRecord]:
+def with_descendants(node: ExecutionPlanNode) -> list[ExecutionPlanNode | ExecutionIterationRecord]:
     """Return node, then an if block's branch steps, or each of a loop's iterations followed by its body steps."""
     if isinstance(node, ExecutionIfNode):
         return [node, *node.steps]

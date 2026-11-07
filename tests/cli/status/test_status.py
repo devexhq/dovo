@@ -18,12 +18,13 @@ from dovo.core.git import GitError
 from dovo.core.status.models import (
     DovoStatusResult,
 )
+from dovo.engine.state_models import NodeState
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
 from tests.harness.exit_codes import OUTPUT_FORMATS
 from tests.harness.fakes import FakeGitRunner, use_fake_git
 from tests.harness.lock import lock_timeout_reported, raise_lock_timeout
-from tests.harness.sessions import fail_reconciliation_list
-from tests.harness.workspace_paths import initialized_workspace_db
+from tests.harness.sessions import INTERRUPTED_ATTEMPT_MESSAGE, fail_reconciliation_list, seed_dead_session, stored_leaf
+from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
 
 def _leave_healthy(_workspace: Path) -> None:
@@ -191,6 +192,22 @@ class StatusCliIntegrationTests:
         stored = sessions_db.get("session-stale")
         assert stored is not None
         assert stored.status is SessionStatus.FAILED
+
+    def test_status_closes_interrupted_step_of_failed_session(
+        self, cli_runner: CliRunner, status_workspace: Path
+    ) -> None:
+        """A dead session status marks failed has its running tests step stored failed on its closed attempt."""
+        sessions_db = initialized_workspace_db(status_workspace).sessions
+        seed_dead_session(initialized_workspace_paths(status_workspace), sessions_db, session_id="session-dead")
+
+        result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", "json"])
+
+        assert result.exit_code == 0
+        leaf = stored_leaf(sessions_db, "session-dead", "tests")
+        assert leaf.state is NodeState.FAILED
+        assert [(a.result.exit_code, a.result.error_message) for a in leaf.attempts if a.result is not None] == [
+            (1, INTERRUPTED_ATTEMPT_MESSAGE)
+        ]
 
     def test_status_cli_json_under_lock_timeout_exits_one(
         self, cli_runner: CliRunner, status_workspace: Path, monkeypatch: pytest.MonkeyPatch

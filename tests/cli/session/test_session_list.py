@@ -12,11 +12,12 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.core.db import SessionsRepository, SessionStatus
+from dovo.engine.state_models import NodeState
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
 from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
 from tests.harness.lock import lock_timeout_reported, time_out_first_lock
-from tests.harness.sessions import fail_reconciliation_list
-from tests.harness.workspace_paths import initialized_workspace_db
+from tests.harness.sessions import INTERRUPTED_ATTEMPT_MESSAGE, fail_reconciliation_list, seed_dead_session, stored_leaf
+from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
 
 def _list_normally(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -113,6 +114,22 @@ class SessionListCliIntegrationTests:
 
         assert result.exit_code == 1
         assert lock_timeout_reported(result.stdout)
+
+    def test_session_list_closes_interrupted_step_of_failed_session(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        """A dead session session list marks failed has its running tests step stored failed on its closed attempt."""
+        sessions_db = initialized_workspace_db(cli_workspace).sessions
+        seed_dead_session(initialized_workspace_paths(cli_workspace), sessions_db, session_id="session-dead")
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "list", "--format", "json"])
+
+        assert result.exit_code == 0
+        leaf = stored_leaf(sessions_db, "session-dead", "tests")
+        assert leaf.state is NodeState.FAILED
+        assert [(a.result.exit_code, a.result.error_message) for a in leaf.attempts if a.result is not None] == [
+            (1, INTERRUPTED_ATTEMPT_MESSAGE)
+        ]
 
     def test_bare_session_and_ls_alias_equal_session_list(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         db = initialized_workspace_db(cli_workspace)

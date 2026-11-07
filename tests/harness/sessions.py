@@ -31,7 +31,7 @@ from dovo.engine.models import (
     RunContext,
     StepSkipNotice,
 )
-from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
+from dovo.engine.state_models import ExecutionLeafNode, ExecutionStateTree, NodeState, StepAttemptRecord
 from dovo.engine.state_store import SessionStateStore
 from dovo.engine.writer import snapshot_definitions
 from tests.harness.catalog import write_runnable_blueprint
@@ -344,6 +344,30 @@ def seed_crashed_session(
     row = sessions.get(session_id)
     assert row is not None
     return row
+
+
+INTERRUPTED_ATTEMPT_MESSAGE = "Step attempt was interrupted before it recorded a result."
+DEAD_SESSION_STEPS: list[dict[str, object]] = [{"id": "format", "run": "true"}, {"id": "tests", "run": "false"}]
+
+
+def seed_dead_session(paths: WorkspacePaths, sessions: SessionsRepository, *, session_id: str) -> SessionRecord:
+    """Seed a RUNNING row with no pid whose tests step is RUNNING on an open attempt and that reconciliation cannot pause.
+
+    The row uses a worktree it never recorded, so reconciliation marks it failed; its format step stays pending.
+    """
+    return seed_crashed_session(
+        paths, sessions, session_id=session_id, steps=DEAD_SESSION_STEPS, interrupted_step_id="tests", use_worktree=True
+    )
+
+
+def stored_leaf(sessions: SessionsRepository, session_id: str, step_id: str) -> ExecutionLeafNode:
+    """Return the top-level step_id leaf of session_id's stored execution state."""
+    row = sessions.get(session_id)
+    assert row is not None
+    assert row.execution_state_json is not None
+    state = ExecutionStateTree.model_validate_json(row.execution_state_json)
+    (leaf,) = [node for node in state.nodes if isinstance(node, ExecutionLeafNode) and node.id == step_id]
+    return leaf
 
 
 def seed_paused_session(

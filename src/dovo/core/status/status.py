@@ -11,7 +11,7 @@ from dovo.common.models import Remediation
 from dovo.core.config import agent_settings
 from dovo.core.db import SessionsRepository
 from dovo.core.git import GitRunner
-from dovo.core.sessions import reconcile_stale_sessions
+from dovo.core.sessions import StepStateCloser, reconcile_stale_sessions
 from dovo.core.status.catalog_probe import probe_catalog
 from dovo.core.status.config_probe import probe_config
 from dovo.core.status.database_probe import probe_database
@@ -173,11 +173,14 @@ def _classify_health(
 class Status:
     """Unified entrypoint for workspace status and runtime health collection."""
 
-    def __init__(self, paths: WorkspacePaths, *, git: GitRunner, sessions_db: SessionsRepository) -> None:
-        """Bind this Status to a resolved WorkspacePaths snapshot, the git runner its probe uses and the sessions it reconciles."""
+    def __init__(
+        self, paths: WorkspacePaths, *, git: GitRunner, sessions_db: SessionsRepository, closer: StepStateCloser
+    ) -> None:
+        """Bind this Status to a resolved WorkspacePaths snapshot, the git runner its probe uses, the sessions it reconciles and the closer of their interrupted steps."""
         self.paths = paths
         self.git = git
         self.sessions_db = sessions_db
+        self.closer = closer
 
     def collect(self) -> DovoStatusResult:
         """Reconcile stale sessions, then probe git, config, catalog, database and worktrees and derive warnings, remediations, initialization and health.
@@ -189,7 +192,7 @@ class Status:
             LockTimeoutError: If another process holds the workspace lock.
         """
         paths = self.paths
-        reconciliation = reconcile_stale_sessions(self.sessions_db, path=paths.root_dir)
+        reconciliation = reconcile_stale_sessions(self.sessions_db, path=paths.root_dir, closer=self.closer)
         git_status = probe_git(paths.root_dir, git=self.git)
         config_status = probe_config(paths)
         catalog_status = probe_catalog(paths.catalog_dir)

@@ -31,7 +31,9 @@ from dovo.core.agents import (
     AgentResponse,
     BaseAgentProvider,
 )
+from dovo.core.db import SessionRecord
 from dovo.core.git import GitBytesOutput, GitProcessOutput, GitRunner
+from dovo.core.sessions import StepStateCloser
 
 
 class _ClaudeSubprocess:
@@ -383,3 +385,16 @@ def use_fixed_clock_and_ids(monkeypatch: pytest.MonkeyPatch, *, new_id: SessionI
     """Make CliContext.build hand fixed_clock and new_id (fixed_new_id unless given) to every command."""
     monkeypatch.setattr("dovo.cli.context.utc_now", fixed_clock)
     monkeypatch.setattr("dovo.cli.context.new_session_id", new_id)
+
+
+class RecordingStepStateCloser(StepStateCloser):
+    """StepStateCloser recording every record it is asked to close and answering closed_state for each."""
+
+    def __init__(self, closed_state: str | None = None) -> None:
+        self.closed_state = closed_state
+        self.records: list[SessionRecord] = []
+
+    def close(self, record: SessionRecord) -> str | None:
+        """Record record and return closed_state."""
+        self.records.append(record)
+        return self.closed_state

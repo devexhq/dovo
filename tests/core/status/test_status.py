@@ -15,6 +15,7 @@ from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status, WorkspaceHealth
 from tests.harness.diagnostic_log import diagnostic_record
+from tests.harness.fakes import RecordingStepStateCloser
 from tests.harness.lock import raise_lock_timeout
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.status_workspace import BuildStatusWorkspace, status_config_payload
@@ -53,7 +54,12 @@ class StatusCollectTests:
             worktree_path=fs.worktrees_dir / "sb-001",
         )
 
-        result = Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
+        result = Status(
+            paths,
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
+        ).collect()
 
         assert result.ok is True
         assert result.error_code is None
@@ -87,7 +93,12 @@ class StatusCollectTests:
         paths = initialized_workspace_paths(tmp_path)
         before = _tree_listing(tmp_path)
 
-        Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(tmp_path).sessions).collect()
+        Status(
+            paths,
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(tmp_path).sessions,
+            closer=RecordingStepStateCloser(),
+        ).collect()
 
         assert _tree_listing(tmp_path) == sorted([*before, ".dovo/.lock"])
 
@@ -114,7 +125,12 @@ class StatusCollectTests:
         worktrees_before = [record.model_dump() for record in worktrees_repo.list()]
         listing_before = _tree_listing(workspace)
 
-        Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
+        Status(
+            paths,
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
+        ).collect()
 
         assert [record.model_dump() for record in sessions_repo.list()] == sessions_before
         assert [record.model_dump() for record in worktrees_repo.list()] == worktrees_before
@@ -131,7 +147,12 @@ class StatusReconciliationTests:
         sessions_db = initialized_workspace_db(workspace).sessions
         sessions_db.create("session-stale", "blueprint", "blueprint")
 
-        result = Status(initialized_workspace_paths(workspace), git=GitRunner(), sessions_db=sessions_db).collect()
+        result = Status(
+            initialized_workspace_paths(workspace),
+            git=GitRunner(),
+            sessions_db=sessions_db,
+            closer=RecordingStepStateCloser(),
+        ).collect()
 
         stored = sessions_db.get("session-stale")
         assert stored is not None
@@ -152,6 +173,7 @@ class StatusReconciliationTests:
             initialized_workspace_paths(workspace),
             git=GitRunner(),
             sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         assert result.warnings == []
@@ -166,6 +188,7 @@ class StatusReconciliationTests:
             initialized_workspace_paths(workspace),
             git=GitRunner(),
             sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         )
         monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
@@ -184,7 +207,12 @@ class StatusWarningsOrderingTests:
         (workspace / "dirty.txt").write_text("dirty content", encoding="utf-8")
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "broken.yml", "bad: [yaml\n")
 
-        result = Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
+        result = Status(
+            paths,
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
+        ).collect()
 
         assert result.warnings == [
             "Dovo workspace is not initialized. Run 'dovo init' to configure.",
@@ -198,7 +226,12 @@ class StatusWarningsOrderingTests:
             status_config_payload(model=None, max_active_worktrees=8),
         )
 
-        result2 = Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
+        result2 = Status(
+            paths,
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
+        ).collect()
 
         assert result2.warnings == [
             "Active branch is 'main'. Automated workflows on primary branches are discouraged.",
@@ -219,6 +252,7 @@ class StatusFixesRemediationTests:
             initialized_workspace_paths(workspace),
             git=GitRunner(),
             sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         assert result.remediations == [
@@ -237,6 +271,7 @@ class StatusFixesRemediationTests:
             initialized_workspace_paths(non_git_dir),
             git=GitRunner(),
             sessions_db=initialized_workspace_db(non_git_dir).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         assert result.remediations == [
@@ -256,6 +291,7 @@ class StatusFixesRemediationTests:
             initialized_workspace_paths(non_git_dir),
             git=GitRunner(),
             sessions_db=initialized_workspace_db(non_git_dir).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         assert result.remediations == [
@@ -305,6 +341,7 @@ class StatusFixesRemediationTests:
             initialized_workspace_paths(workspace),
             git=GitRunner(),
             sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         assert result.remediations == expected_remediations
@@ -319,6 +356,7 @@ class StatusFixesRemediationTests:
             initialized_workspace_paths(workspace),
             git=GitRunner(),
             sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         assert result.remediations == [Remediation(message="Remove the directory or point config_path at a file")]
@@ -336,6 +374,7 @@ class StatusFixesRemediationTests:
                 initialized_workspace_paths(workspace),
                 git=GitRunner(),
                 sessions_db=initialized_workspace_db(workspace).sessions,
+                closer=RecordingStepStateCloser(),
             ).collect()
             assert result.remediations == [Remediation(message="Check file permissions and that the path is readable")]
         finally:

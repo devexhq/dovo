@@ -174,6 +174,38 @@ RUN_WITH_STEPS = FormatterCase(
     ],
 )
 
+_RECONCILED_WARNING = "Marked 1 interrupted session failed (session_id: sess-12345678)."
+_INTERRUPTED_STEPS = [
+    StepRunSummary(
+        kind="step",
+        step_id="tests",
+        state="failed",
+        status="failed",
+        attempts=1,
+        exit_code=1,
+        duration_seconds=2.5,
+        error_message="Step attempt was interrupted before it recorded a result.",
+    ),
+]
+RECONCILED_RUN_WITH_STEPS = FormatterCase(
+    data=HistoryShowResult(
+        session_id="sess-12345678",
+        session=session_record(status=SessionStatus.FAILED),
+        steps=_INTERRUPTED_STEPS,
+        warnings=[_RECONCILED_WARNING],
+    ),
+    view=_make_session_show_view(
+        session=session_summary_view(status="failed"), steps=_INTERRUPTED_STEPS, warnings=[_RECONCILED_WARNING]
+    ),
+    render_expectations=[
+        _RECONCILED_WARNING,
+        "tests",
+        "failed",
+        "2.5s",
+        "• tests: Step attempt was interrupted before it recorded a result.",
+    ],
+)
+
 _GUARDED_STEPS = [
     StepRunSummary(kind="step", step_id="fold", state="skipped", attempts=0, skip_cause="when_false"),
     StepRunSummary(kind="if", step_id="route", state="completed", branch="else"),
@@ -278,6 +310,7 @@ HISTORY_SHOW_CASES = [
     pytest.param(RUN_WITH_LOGS, id="run_with_logs"),
     pytest.param(RUN_WITH_STEPS, id="run_with_steps"),
     pytest.param(RUN_WITH_GUARDED_STEPS, id="run_with_guarded_steps"),
+    pytest.param(RECONCILED_RUN_WITH_STEPS, id="reconciled_run_with_steps"),
     pytest.param(RUN_WITHOUT_STEP_DATA, id="run_without_step_data"),
     pytest.param(RUN_WITH_STEP_READ_FAILURE, id="run_with_step_read_failure"),
     pytest.param(NOT_FOUND, id="not_found"),

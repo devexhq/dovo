@@ -26,6 +26,7 @@ from dovo.core.sessions import (
     SessionLogEventType,
 )
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
+from tests.harness.fakes import RecordingStepStateCloser
 from tests.harness.lock import time_out_first_lock
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -439,7 +440,7 @@ class SessionCollectionListTests:
     def test_empty_database_returns_success_with_empty_runs(self, isolated_workspace: Path) -> None:
         sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
 
-        result = sessions.list()
+        result = sessions.list(closer=RecordingStepStateCloser())
 
         assert result.error_code is None
         assert result.sessions == []
@@ -449,7 +450,7 @@ class SessionCollectionListTests:
         session_first = _create(sessions.db, "session-001")
         session_second = _create(sessions.db, "session-002", SessionStatus.FAILED)
 
-        result = sessions.list()
+        result = sessions.list(closer=RecordingStepStateCloser())
 
         assert result.error_code is None
         assert result.sessions == [_as_expected_record(session_second), _as_expected_record(session_first)]
@@ -460,7 +461,7 @@ class SessionCollectionListTests:
         _create(sessions.db, "session-002")
         session_third = _create(sessions.db, "session-003")
 
-        result = sessions.list(limit=1)
+        result = sessions.list(closer=RecordingStepStateCloser(), limit=1)
 
         assert result.error_code is None
         assert result.sessions == [_as_expected_record(session_third)]
@@ -489,7 +490,7 @@ class SessionCollectionListTests:
             "session-run": run_active,
         }
 
-        result = sessions.list(status=status_arg)
+        result = sessions.list(closer=RecordingStepStateCloser(), status=status_arg)
 
         assert result.error_code is None
         assert result.sessions == [_as_expected_record(lookup[expected_session_id])]
@@ -498,7 +499,7 @@ class SessionCollectionListTests:
         sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
         _create(sessions.db, "session-comp")
 
-        result = sessions.list(status="nonexistent_status_value")
+        result = sessions.list(closer=RecordingStepStateCloser(), status="nonexistent_status_value")
 
         assert result.error_code is None
         assert result.sessions == []
@@ -513,7 +514,7 @@ class SessionCollectionListTests:
 
         monkeypatch.setattr("dovo.core.sessions.sessions.reconcile_stale_sessions", _mock_reconcile)
 
-        result = sessions.list()
+        result = sessions.list(closer=RecordingStepStateCloser())
 
         assert result.error_code is None
         assert result.sessions == []
@@ -527,7 +528,7 @@ class SessionCollectionListTests:
         session_first = _create(sessions.db, "session-001")
         fail_reconciliation_list(monkeypatch)
 
-        result = sessions.list()
+        result = sessions.list(closer=RecordingStepStateCloser())
 
         assert result.error_code is None
         assert result.sessions == [_as_expected_record(session_first)]
@@ -547,7 +548,7 @@ class SessionCollectionListTests:
         monkeypatch.setattr(SessionsRepository, "list", _boom)
         monkeypatch.setattr("dovo.core.sessions.sessions.reconcile_stale_sessions", lambda *a, **k: Reconciliation())
 
-        result = sessions.list()
+        result = sessions.list(closer=RecordingStepStateCloser())
 
         assert result.error_code == ErrorCode.INTERNAL_ERROR
         assert result.errors == ["Unexpected error during sessions.list: boom"]
@@ -563,7 +564,7 @@ class SessionCollectionListTests:
         time_out_first_lock(monkeypatch)
 
         with pytest.raises(LockTimeoutError, match="lock held"):
-            sessions.list()
+            sessions.list(closer=RecordingStepStateCloser())
 
 
 class SessionDetailsTests:
@@ -693,7 +694,7 @@ class SessionHistoryRedactionTests:
         monkeypatch.setenv("SVC_TOKEN", "s3cr3t-value")
 
         details = collection.get("old").details()
-        listed = collection.list()
+        listed = collection.list(closer=RecordingStepStateCloser())
 
         assert details.session is not None
         assert details.session.error_message == "[REDACTED:SVC_TOKEN]"
@@ -730,7 +731,7 @@ class SessionHistoryRedactionTests:
 
         logs = session.logs(step="build")
         details = session.details()
-        listed = collection.list()
+        listed = collection.list(closer=RecordingStepStateCloser())
 
         assert logs.lines == [expected_line]
         assert details.session is not None

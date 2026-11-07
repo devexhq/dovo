@@ -13,7 +13,7 @@ from dovo.common.diagnostic_log import DiagnosticLevel, record_exception
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus, WorktreesRepository, parse_timestamp
-from dovo.core.sessions.models import Reconciliation
+from dovo.core.sessions.models import Reconciliation, StepStateCloser
 
 STALE_RUN_ERROR_MESSAGE = "Session interrupted by abnormal process termination"
 PID_START_TOLERANCE = timedelta(seconds=1)
@@ -118,7 +118,31 @@ def _resumable(run: SessionRecord, sessions_repo: SessionsRepository, live_sessi
     return not run.use_worktree or _worktree_present(run, sessions_repo)
 
 
-def _reconcile_stale_records(sessions_repo: SessionsRepository) -> tuple[list[SessionRecord], list[SessionRecord]]:
+def _fail_run(run: SessionRecord, sessions_repo: SessionsRepository, closer: StepStateCloser) -> SessionRecord | None:
+    """Mark run failed, saving its state with the interrupted steps closed in the same commit when closer closes any.
+
+    Returns None when the row is gone, or when its state revision moved since it was read, which leaves it unchanged.
+    """
+    closed_state = closer.close(run)
+    if closed_state is None:
+        return sessions_repo.update_status(
+            run.session_id, status=SessionStatus.FAILED, error_message=STALE_RUN_ERROR_MESSAGE
+        )
+
+    revision = run.execution_state_revision or 0
+    return sessions_repo.save_execution_state(
+        run.session_id,
+        closed_state,
+        expected_revision=revision,
+        next_revision=revision + 1,
+        status=SessionStatus.FAILED,
+        error_message=STALE_RUN_ERROR_MESSAGE,
+    )
+
+
+def _reconcile_stale_records(
+    sessions_repo: SessionsRepository, closer: StepStateCloser
+) -> tuple[list[SessionRecord], list[SessionRecord]]:
     """Mark each stale running record paused when it can resume and failed otherwise; return the paused and failed rows."""
     stale = [run for run in sessions_repo.list(status=SessionStatus.RUNNING) if is_run_stale(run)]
     has_state = any(run.execution_state_json is not None for run in stale)
@@ -128,21 +152,24 @@ def _reconcile_stale_records(sessions_repo: SessionsRepository) -> tuple[list[Se
     failed: list[SessionRecord] = []
     for run in stale:
         resumable = _resumable(run, sessions_repo, live_session_ids)
-        updated = sessions_repo.update_status(
-            run.session_id,
-            status=SessionStatus.PAUSED if resumable else SessionStatus.FAILED,
-            error_message=None if resumable else STALE_RUN_ERROR_MESSAGE,
+        updated = (
+            sessions_repo.update_status(run.session_id, status=SessionStatus.PAUSED, error_message=None)
+            if resumable
+            else _fail_run(run, sessions_repo, closer)
         )
         if updated is not None:
             (paused if resumable else failed).append(updated)
     return paused, failed
 
 
-def reconcile_stale_sessions(db: SessionsRepository, path: Path | None = None) -> Reconciliation:
+def reconcile_stale_sessions(
+    db: SessionsRepository, path: Path | None = None, *, closer: StepStateCloser
+) -> Reconciliation:
     """Mark stale RUNNING session records PAUSED or FAILED; on an unexpected failure, skip them and return its record.
 
     A stale record is paused when it has saved execution state, its worktree is present if it used
-    one, and no live process carries its session id; every other stale record is marked failed.
+    one, and no live process carries its session id; every other stale record is marked failed, and
+    closer closes the interrupted steps of its saved state in the same commit.
 
     Raises:
         LockTimeoutError: If another process holds the workspace lock.
@@ -154,7 +181,7 @@ def reconcile_stale_sessions(db: SessionsRepository, path: Path | None = None) -
         return Reconciliation()
 
     try:
-        return _reconcile_under_lock(sessions_repo, root_dir)
+        return _reconcile_under_lock(sessions_repo, root_dir, closer)
     except LockTimeoutError:
         # Propagates to the top-level handler, like every lock timeout (#1135).
         raise
@@ -165,10 +192,10 @@ def reconcile_stale_sessions(db: SessionsRepository, path: Path | None = None) -
         return Reconciliation(diagnostic=record)
 
 
-def _reconcile_under_lock(sessions_repo: SessionsRepository, root_dir: Path) -> Reconciliation:
+def _reconcile_under_lock(sessions_repo: SessionsRepository, root_dir: Path, closer: StepStateCloser) -> Reconciliation:
     """Reconcile stale records while holding the workspace lock and return the paused and failed rows with their warning."""
     with WorkspaceLock(RepositoryPaths.from_root(root_dir).lock_file):
-        paused, failed = _reconcile_stale_records(sessions_repo)
+        paused, failed = _reconcile_stale_records(sessions_repo, closer)
 
     return Reconciliation(
         paused=tuple(paused), failed=tuple(failed), warning=format_reconciliation_warning(paused, failed)
