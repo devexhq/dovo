@@ -14,7 +14,7 @@ import pytest
 
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
-from dovo.core.db import SessionsRepository, SessionStatus
+from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.sessions import Reconciliation
 from dovo.core.sessions.services.reconcile import (
     STALE_RUN_ERROR_MESSAGE,
@@ -26,12 +26,33 @@ from dovo.core.sessions.services.reconcile import (
     reconcile_stale_sessions,
 )
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
+from tests.harness.fakes import RecordingStepStateCloser
 from tests.harness.lock import raise_lock_timeout
 from tests.harness.sessions import seed_crashed_session
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 DEAD_PID = 4242
 ONE_PAUSED = "Paused 1 interrupted session; continue it with 'dovo resume <session_id>'."
+
+
+_CLOSED_STATE = '{"closed": true}'
+_MOVED_STATE = '{"moved": true}'
+
+
+class _RevisionMovingCloser(RecordingStepStateCloser):
+    """Closer that saves another state at the row's next revision before answering, as a concurrent writer would."""
+
+    def __init__(self, sessions: SessionsRepository) -> None:
+        super().__init__(_CLOSED_STATE)
+        self.sessions = sessions
+
+    def close(self, record: SessionRecord) -> str | None:
+        """Move the row's state revision on, then answer closed_state."""
+        revision = record.execution_state_revision or 0
+        self.sessions.save_execution_state(
+            record.session_id, _MOVED_STATE, expected_revision=revision, next_revision=revision + 1
+        )
+        return super().close(record)
 
 
 def _raise_db_unavailable(*_args: object, **_kwargs: object) -> None:
@@ -289,7 +310,7 @@ class ReconcileStaleRunsTests:
         sessions = _sessions_for(isolated_workspace)
         sessions.create("session-dead", "blueprint", "blueprint", pid=DEAD_PID, pid_started_at=pid_started_at)
 
-        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace, closer=RecordingStepStateCloser())
 
         stored = sessions.get("session-dead")
         assert stored is not None
@@ -333,7 +354,7 @@ class ReconcileStaleRunsTests:
             worktree_path=worktree_path,
         )
 
-        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace, closer=RecordingStepStateCloser())
 
         stored = sessions.get("session-crashed")
         assert stored is not None
@@ -353,7 +374,7 @@ class ReconcileStaleRunsTests:
             isolated_workspace, "session-elsewhere", use_worktree=True, worktree_id="wt-1", worktree_path=worktree_path
         )
 
-        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace, closer=RecordingStepStateCloser())
 
         stored = sessions.get("session-elsewhere")
         assert stored is not None
@@ -377,7 +398,7 @@ class ReconcileStaleRunsTests:
             env={**os.environ, "DOVO_SESSION_ID": child_session_id},
         )
         try:
-            reconcile_stale_sessions(sessions, path=isolated_workspace)
+            reconcile_stale_sessions(sessions, path=isolated_workspace, closer=RecordingStepStateCloser())
         finally:
             child.kill()
             child.wait()
@@ -396,7 +417,7 @@ class ReconcileStaleRunsTests:
 
         monkeypatch.setattr(psutil.Process, "environ", _environ)
 
-        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace, closer=RecordingStepStateCloser())
 
         stored = sessions.get("session-unreadable")
         assert stored is not None
@@ -415,7 +436,7 @@ class ReconcileStaleRunsTests:
 
         monkeypatch.setattr(psutil, "process_iter", _process_iter)
 
-        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace, closer=RecordingStepStateCloser())
 
         stored = sessions.get("session-walk-failed")
         assert stored is not None
@@ -431,7 +452,7 @@ class ReconcileStaleRunsTests:
         sessions = _seed_crashed(isolated_workspace, "session-resumable")
         sessions.create("session-stateless", "blueprint", "blueprint")
 
-        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace, closer=RecordingStepStateCloser())
 
         paused = sessions.get("session-resumable")
         failed = sessions.get("session-stateless")
@@ -465,12 +486,97 @@ class ReconcileStaleRunsTests:
             pid_started_at=_child_started_at(child_process, offset_seconds),
         )
 
-        reconcile_stale_sessions(sessions, path=isolated_workspace)
+        reconcile_stale_sessions(sessions, path=isolated_workspace, closer=RecordingStepStateCloser())
 
         stored = sessions.get("session-live")
         assert stored is not None
         assert stored.status == expected_status
         assert stored.error_message == expected_error
+
+    def test_failed_run_state_is_closed_in_the_status_commit(self, isolated_workspace: Path) -> None:
+        """Store the closer's state at revision + 1 with the failed status, stale message and a completion time."""
+        sessions = _seed_crashed(isolated_workspace, "session-crashed", use_worktree=True)
+        seeded = sessions.get("session-crashed")
+        assert seeded is not None
+        closer = RecordingStepStateCloser(_CLOSED_STATE)
+
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace, closer=closer)
+
+        stored = sessions.get("session-crashed")
+        assert stored is not None
+        assert closer.records == [seeded]
+        assert stored.status == SessionStatus.FAILED
+        assert stored.error_message == STALE_RUN_ERROR_MESSAGE
+        assert stored.completed_at is not None
+        assert stored.execution_state_json == _CLOSED_STATE
+        assert stored.execution_state_revision == (seeded.execution_state_revision or 0) + 1
+        assert result.failed == (stored,)
+        assert result.warning == "Marked 1 interrupted session failed (session_id: session-crashed)."
+
+    def test_paused_run_state_is_not_closed(self, isolated_workspace: Path) -> None:
+        sessions = _seed_crashed(isolated_workspace, "session-resumable")
+        seeded = sessions.get("session-resumable")
+        assert seeded is not None
+        closer = RecordingStepStateCloser(_CLOSED_STATE)
+
+        reconcile_stale_sessions(sessions, path=isolated_workspace, closer=closer)
+
+        stored = sessions.get("session-resumable")
+        assert stored is not None
+        assert closer.records == []
+        assert stored.status == SessionStatus.PAUSED
+        assert stored.execution_state_json == seeded.execution_state_json
+        assert stored.execution_state_revision == seeded.execution_state_revision
+
+    @pytest.mark.parametrize("seeded_state", [True, False], ids=["unclosable-state", "no-state"])
+    def test_failed_run_without_closable_state_is_marked_failed(
+        self, isolated_workspace: Path, seeded_state: bool
+    ) -> None:
+        if seeded_state:
+            sessions = _seed_crashed(isolated_workspace, "session-crashed", use_worktree=True)
+        else:
+            sessions = _sessions_for(isolated_workspace)
+            sessions.create("session-crashed", "blueprint", "blueprint")
+        seeded = sessions.get("session-crashed")
+        assert seeded is not None
+
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace, closer=RecordingStepStateCloser())
+
+        stored = sessions.get("session-crashed")
+        assert stored is not None
+        assert stored.status == SessionStatus.FAILED
+        assert stored.error_message == STALE_RUN_ERROR_MESSAGE
+        assert stored.execution_state_json == seeded.execution_state_json
+        assert stored.execution_state_revision == seeded.execution_state_revision
+        assert result.failed == (stored,)
+
+    def test_revision_conflict_leaves_the_run_unreported(self, isolated_workspace: Path) -> None:
+        """When the row's state revision moves while the closer runs, leave the row as the other writer left it."""
+        sessions = _seed_crashed(isolated_workspace, "session-crashed", use_worktree=True)
+        closer = _RevisionMovingCloser(sessions)
+
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace, closer=closer)
+
+        stored = sessions.get("session-crashed")
+        assert stored is not None
+        assert stored.status == SessionStatus.RUNNING
+        assert stored.execution_state_json == _MOVED_STATE
+        assert result.failed == ()
+        assert result.warning is None
+
+    def test_non_running_rows_are_never_closed(self, isolated_workspace: Path) -> None:
+        sessions = _seed_crashed(isolated_workspace, "session-old-failure", use_worktree=True)
+        sessions.update_status(
+            "session-old-failure", status=SessionStatus.FAILED, error_message=STALE_RUN_ERROR_MESSAGE
+        )
+        seeded = sessions.get("session-old-failure")
+        assert seeded is not None
+        closer = RecordingStepStateCloser(_CLOSED_STATE)
+
+        reconcile_stale_sessions(sessions, path=isolated_workspace, closer=closer)
+
+        assert closer.records == []
+        assert sessions.get("session-old-failure") == seeded
 
     def test_repository_failure_records_error_in_diagnostic(
         self, isolated_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
@@ -479,7 +585,7 @@ class ReconcileStaleRunsTests:
         sessions = _sessions_for(isolated_workspace)
         monkeypatch.setattr(SessionsRepository, "list", _raise_db_unavailable)
 
-        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace, closer=RecordingStepStateCloser())
 
         assert result == Reconciliation(diagnostic=diagnostic_record(frozen_diagnostic_clock))
         event = read_single_event(frozen_diagnostic_clock)
@@ -496,7 +602,7 @@ class ReconcileStaleRunsTests:
         monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
         with pytest.raises(LockTimeoutError, match="lock held"):
-            reconcile_stale_sessions(sessions, path=isolated_workspace)
+            reconcile_stale_sessions(sessions, path=isolated_workspace, closer=RecordingStepStateCloser())
 
         assert not frozen_diagnostic_clock.parent.parent.exists()
 
@@ -504,7 +610,7 @@ class ReconcileStaleRunsTests:
         """Return Reconciliation() and leave <DOVO_HOME>/logs absent for a detached repository without a path."""
         detached = SessionsRepository(path=None, auto_init=False)
 
-        assert reconcile_stale_sessions(detached) == Reconciliation()
+        assert reconcile_stale_sessions(detached, closer=RecordingStepStateCloser()) == Reconciliation()
         assert not frozen_diagnostic_clock.parent.parent.exists()
 
     def test_repository_failure_unchanged_when_recorder_cannot_write(
@@ -517,6 +623,6 @@ class ReconcileStaleRunsTests:
         logs_dir.parent.mkdir(parents=True, exist_ok=True)
         logs_dir.write_text("not a directory", encoding="utf-8")
 
-        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace, closer=RecordingStepStateCloser())
 
         assert result == Reconciliation()

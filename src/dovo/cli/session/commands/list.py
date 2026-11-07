@@ -6,6 +6,7 @@ from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.common.models import OutputFormatOptions
 from dovo.core.sessions import HistoryListResult, SessionCollection
+from dovo.engine.interrupted_steps import InterruptedStepCloser
 
 
 def session_list_command(
@@ -28,6 +29,7 @@ def session_list_command(
     result = SessionCollection(
         context.paths, db=context.db.sessions, sensitive_variables=context.sensitive_variables
     ).list(
+        closer=InterruptedStepCloser(),
         limit=limit,
         status=status,
     )

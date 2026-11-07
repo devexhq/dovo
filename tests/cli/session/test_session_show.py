@@ -14,7 +14,8 @@ from dovo.cli import app
 from dovo.common.utils import display_path
 from dovo.core.db import DovoDb, SessionStatus
 from tests.harness.exit_codes import OUTPUT_FORMATS, assert_exit_follows_result
-from tests.harness.sessions import seed_failed_session
+from tests.harness.lock import lock_timeout_reported, time_out_first_lock
+from tests.harness.sessions import INTERRUPTED_ATTEMPT_MESSAGE, seed_dead_session, seed_failed_session
 from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
 
@@ -171,6 +172,58 @@ class SessionShowCliIntegrationTests:
         assert "No step data recorded for this session." in payload["warnings"]
 
 
+class SessionShowReconcileCliIntegrationTests:
+    """Typer runner integration tests for dovo session show reconciling stale sessions first."""
+
+    def test_session_show_reports_interrupted_session_in_terminal(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        seed_dead_session(
+            initialized_workspace_paths(cli_workspace),
+            initialized_workspace_db(cli_workspace).sessions,
+            session_id="session-dead",
+        )
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", "session-dead"])
+
+        assert result.exit_code == 0
+        assert "Marked 1 interrupted session failed (session_id: session-dead)." in result.stdout
+        assert "Session interrupted by abnormal process termination" in result.stdout
+        assert re.search(r"2[\s│]+tests[\s│]+failed[\s│]+1[\s│]+1[\s│]", result.stdout)
+        assert f"• tests: {INTERRUPTED_ATTEMPT_MESSAGE}" in result.stdout
+
+    def test_session_show_reports_interrupted_session_in_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        seed_dead_session(
+            initialized_workspace_paths(cli_workspace),
+            initialized_workspace_db(cli_workspace).sessions,
+            session_id="session-dead",
+        )
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", "--format", "json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["session"]["status"] == "failed"
+        assert payload["warnings"] == ["Marked 1 interrupted session failed (session_id: session-dead)."]
+        assert [
+            (step["step_id"], step["state"], step["exit_code"], step["error_message"]) for step in payload["steps"]
+        ] == [
+            ("format", "pending", None, None),
+            ("tests", "failed", 1, INTERRUPTED_ATTEMPT_MESSAGE),
+        ]
+
+    def test_session_show_under_lock_timeout_exits_one(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 with the lock timeout reported for `session show --format json`."""
+        time_out_first_lock(monkeypatch)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", "--format", "json"])
+
+        assert result.exit_code == 1
+        assert lock_timeout_reported(result.stdout)
+
+
 class SessionShowLatestCliIntegrationTests:
     """Typer runner integration tests for dovo session show with the session id omitted."""
 
@@ -203,8 +256,12 @@ class SessionShowLatestCliIntegrationTests:
         self, cli_runner: CliRunner, cli_workspace: Path, show_args: list[str], shown: str, not_shown: str
     ) -> None:
         sessions = initialized_workspace_db(cli_workspace).sessions
-        sessions.create(session_id="session-older", blueprint_name="task-a", blueprint_key="task-a")
-        sessions.create(session_id="session-newer", blueprint_name="task-b", blueprint_key="task-b")
+        sessions.create(
+            session_id="session-older", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.COMPLETED
+        )
+        sessions.create(
+            session_id="session-newer", blueprint_name="task-b", blueprint_key="task-b", status=SessionStatus.COMPLETED
+        )
 
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "show", *show_args])
 

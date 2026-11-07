@@ -14,7 +14,7 @@ from dovo.core.git import GitError, GitProcessOutput, GitRunner, git_command_err
 from dovo.core.status import Status, WorkspaceHealth
 from dovo.core.status.models import GitStatusInfo
 from tests.harness.diagnostic_log import diagnostic_record
-from tests.harness.fakes import FakeGitRunner
+from tests.harness.fakes import FakeGitRunner, RecordingStepStateCloser
 from tests.harness.status_workspace import BuildStatusWorkspace
 from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
@@ -42,6 +42,7 @@ class GitProbeTests:
             initialized_workspace_paths(workspace),
             git=GitRunner(),
             sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         assert result.git.branch == "feature-dirty"
@@ -59,6 +60,7 @@ class GitProbeTests:
             initialized_workspace_paths(workspace),
             git=GitRunner(),
             sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         assert result.git.branch == "HEAD (detached)"
@@ -70,7 +72,7 @@ class GitProbeTests:
         paths = initialized_workspace_paths(non_git_dir)
         sessions_db = SessionsRepository(db_path=tmp_path / "reconcile.db", project_id=paths.project_id)
 
-        result = Status(paths, git=GitRunner(), sessions_db=sessions_db).collect()
+        result = Status(paths, git=GitRunner(), sessions_db=sessions_db, closer=RecordingStepStateCloser()).collect()
 
         assert result.is_initialized is False
         assert result.git.is_git_repo is False
@@ -132,7 +134,10 @@ class GitProbeTests:
         fake = FakeGitRunner(responses)
 
         result = Status(
-            initialized_workspace_paths(workspace), git=fake, sessions_db=initialized_workspace_db(workspace).sessions
+            initialized_workspace_paths(workspace),
+            git=fake,
+            sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         record = diagnostic_record(frozen_diagnostic_clock)
@@ -159,7 +164,10 @@ class GitProbeTests:
         fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): failure})
 
         result = Status(
-            initialized_workspace_paths(workspace), git=fake, sessions_db=initialized_workspace_db(workspace).sessions
+            initialized_workspace_paths(workspace),
+            git=fake,
+            sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         assert result.git.is_git_repo is False
@@ -176,7 +184,10 @@ class GitProbeTests:
         failure = GitError(ErrorCode.GIT_WORKDIR_MISSING, "working directory does not exist")
         fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): failure})
         status = Status(
-            initialized_workspace_paths(workspace), git=fake, sessions_db=initialized_workspace_db(workspace).sessions
+            initialized_workspace_paths(workspace),
+            git=fake,
+            sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         )
 
         with pytest.raises(GitError) as excinfo:
@@ -189,7 +200,10 @@ class GitProbeTests:
         fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): GitProcessOutput(0, "false\n", "")})
 
         result = Status(
-            initialized_workspace_paths(workspace), git=fake, sessions_db=initialized_workspace_db(workspace).sessions
+            initialized_workspace_paths(workspace),
+            git=fake,
+            sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         assert result.git.is_git_repo is False

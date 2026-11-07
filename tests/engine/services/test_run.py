@@ -260,7 +260,7 @@ class BlueprintRunServiceLoadTests:
 
         monkeypatch.setattr(
             "dovo.engine.services.run.reconcile_stale_sessions",
-            lambda sessions_db, *, path: Reconciliation(warning="reconciled 1 stale run"),
+            lambda sessions_db, *, path, closer: Reconciliation(warning="reconciled 1 stale run"),
         )
 
         result = BlueprintRunService(
@@ -347,7 +347,7 @@ class BlueprintRunServiceLoadTests:
         )
         monkeypatch.setattr(
             "dovo.engine.services.run.reconcile_stale_sessions",
-            lambda sessions_db, *, path: Reconciliation(diagnostic=prior),
+            lambda sessions_db, *, path, closer: Reconciliation(diagnostic=prior),
         )
 
         result = BlueprintRunService(
@@ -370,7 +370,7 @@ class BlueprintRunServiceLoadTests:
     ) -> None:
         """With reconciliation stubbed and the catalog index's lock timing out while the blueprint loads, raise LockTimeoutError("lock held") and add no session row."""
         monkeypatch.setattr(
-            "dovo.engine.services.run.reconcile_stale_sessions", lambda sessions_db, *, path: Reconciliation()
+            "dovo.engine.services.run.reconcile_stale_sessions", lambda sessions_db, *, path, closer: Reconciliation()
         )
         service = _lint_service(engine_paths, sessions_repo)
         time_out_first_lock(monkeypatch)
@@ -522,7 +522,7 @@ class BlueprintRunServiceLoadTests:
         """Append the reconciliation warning before the blueprint loads, so a failed load still reports it."""
         monkeypatch.setattr(
             "dovo.engine.services.run.reconcile_stale_sessions",
-            lambda sessions_db, *, path: Reconciliation(warning="reconciled 1 stale run"),
+            lambda sessions_db, *, path, closer: Reconciliation(warning="reconciled 1 stale run"),
         )
 
         result = BlueprintRunService(
@@ -609,7 +609,7 @@ class BlueprintRunServiceCatchTests:
     ) -> None:
         """With reconciliation stubbed and the catalog indexed up front, time out the engine's run-start lock and raise LockTimeoutError("lock held") from execute()."""
         monkeypatch.setattr(
-            "dovo.engine.services.run.reconcile_stale_sessions", lambda sessions_db, *, path: Reconciliation()
+            "dovo.engine.services.run.reconcile_stale_sessions", lambda sessions_db, *, path, closer: Reconciliation()
         )
         service = _lint_service(engine_paths, sessions_repo)
         scan = Catalog(engine_paths).sync()

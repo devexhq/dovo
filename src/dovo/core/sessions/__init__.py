@@ -11,6 +11,7 @@ from dovo.core.sessions.models import (
     SessionLogEvent,
     SessionLogEventType,
     StepRunSummary,
+    StepStateCloser,
 )
 from dovo.core.sessions.services.reconcile import (
     STALE_RUN_ERROR_MESSAGE,
@@ -33,6 +34,7 @@ __all__ = [
     "SessionLogEvent",
     "SessionLogEventType",
     "StepRunSummary",
+    "StepStateCloser",
     "current_process_started_at",
     "history_redactor",
     "reconcile_stale_sessions",

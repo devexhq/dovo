@@ -9,6 +9,7 @@ from dovo.core.db import SessionsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status, WorkspaceHealth
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
+from tests.harness.fakes import RecordingStepStateCloser
 from tests.harness.status_workspace import BuildStatusWorkspace
 from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
@@ -24,7 +25,7 @@ class DatabaseProbeTests:
         paths = initialized_workspace_paths(workspace)
         sessions_db = SessionsRepository(db_path=tmp_path / "reconcile.db", project_id=paths.project_id)
 
-        result = Status(paths, git=GitRunner(), sessions_db=sessions_db).collect()
+        result = Status(paths, git=GitRunner(), sessions_db=sessions_db, closer=RecordingStepStateCloser()).collect()
 
         assert result.database.exists is False
         assert result.database.is_accessible is False
@@ -38,6 +39,7 @@ class DatabaseProbeTests:
             initialized_workspace_paths(workspace),
             git=GitRunner(),
             sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         assert result.database.exists is True
@@ -56,7 +58,7 @@ class DatabaseProbeTests:
         sessions_db = SessionsRepository(db_path=tmp_path / "reconcile.db", project_id=paths.project_id)
         paths.database_file.write_bytes(b"NOT A SQLITE DATABASE")
 
-        result = Status(paths, git=GitRunner(), sessions_db=sessions_db).collect()
+        result = Status(paths, git=GitRunner(), sessions_db=sessions_db, closer=RecordingStepStateCloser()).collect()
 
         record = diagnostic_record(frozen_diagnostic_clock)
         assert result.status is WorkspaceHealth.DEGRADED

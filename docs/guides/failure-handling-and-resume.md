@@ -140,7 +140,7 @@ Dovo reopens the kept worktree and shows the failure prompt for the paused step 
 
 ### Resuming a run whose process died
 
-When the `dovo` process running a blueprint dies (it is killed, or the machine restarts), its session is left `running`. `dovo resume` and `dovo session resume` settle such sessions first: a session that saved its progress, whose worktree still exists if it used one, and none of whose processes is still running is paused, and every other one is marked `failed`. The resume prints `Paused 1 interrupted session; continue it with 'dovo resume <session_id>'.` and then resumes the session you named, or, with no session ID, the latest paused session, which can be the one just paused.
+When the `dovo` process running a blueprint dies (it is killed, or the machine restarts), its session is left `running`. `dovo resume` and `dovo session resume` settle such sessions first: a session that saved its progress, whose worktree still exists if it used one, and none of whose processes is still running is paused, and every other one is marked `failed`, with the step that was running marked `failed` as [`dovo session show`](../cli/session.md#dovo-session-show) lists it. The resume prints `Paused 1 interrupted session; continue it with 'dovo resume <session_id>'.` and then resumes the session you named, or, with no session ID, the latest paused session, which can be the one just paused.
 
 The step that was running when the process died has no recorded result, so it runs again from its start as a fresh attempt with the same attempt number, and the resume prints:
 

@@ -18,6 +18,7 @@ from dovo.core.interaction import HeadlessAnswerInput
 from dovo.core.sessions import reconcile_stale_sessions
 from dovo.engine.engine import Engine
 from dovo.engine.executors.exceptions import EngineError
+from dovo.engine.interrupted_steps import InterruptedStepCloser
 from dovo.engine.models import BlueprintRunResult, FailurePrompter, InteractionPrompter, RunObserver, RunOutcome
 from dovo.engine.services._shared import failed_result, finalize, load_record, resolve_env_overrides
 
@@ -51,7 +52,7 @@ class BlueprintResumeService:
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
         """
-        reconciliation = reconcile_stale_sessions(self.db, path=self.paths.root_dir)
+        reconciliation = reconcile_stale_sessions(self.db, path=self.paths.root_dir, closer=InterruptedStepCloser())
         if reconciliation.warning:
             self.warnings.append(reconciliation.warning)
         self.diagnostics.extend(error_diagnostics(reconciliation.diagnostic))

@@ -16,6 +16,7 @@ from dovo.core.db import SessionsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions import reconcile_stale_sessions
 from dovo.engine.engine import Engine
+from dovo.engine.interrupted_steps import InterruptedStepCloser
 from dovo.engine.models import (
     BlueprintRunResult,
     FailurePrompter,
@@ -63,7 +64,9 @@ class BlueprintRunService:
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
         """
-        reconciliation = reconcile_stale_sessions(self.sessions_db, path=self.paths.root_dir)
+        reconciliation = reconcile_stale_sessions(
+            self.sessions_db, path=self.paths.root_dir, closer=InterruptedStepCloser()
+        )
         if reconciliation.warning:
             self.warnings.append(reconciliation.warning)
         self.diagnostics.extend(error_diagnostics(reconciliation.diagnostic))

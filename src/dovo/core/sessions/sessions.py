@@ -20,6 +20,7 @@ from dovo.core.sessions.models import (
     LogsShowResult,
     LogStreamFilter,
     SessionLogEvent,
+    StepStateCloser,
 )
 from dovo.core.sessions.services.read_diff import read_session_diff
 from dovo.core.sessions.services.read_logs import list_session_log_files, read_session_log_events, read_step_logs
@@ -270,13 +271,13 @@ class SessionCollection:
         """Return a Session handle sharing this collection's paths and run repository."""
         return Session(self.paths, session_id, db=self.db, sensitive_variables=self.sensitive_variables)
 
-    def list(self, *, limit: int | None = 20, status: str | None = None) -> HistoryListResult:
-        """Reconcile stale sessions, then list this project's session records, newest first; report a failure by its error_code.
+    def list(self, *, closer: StepStateCloser, limit: int | None = 20, status: str | None = None) -> HistoryListResult:
+        """Reconcile stale sessions, closing the interrupted steps of each one marked failed with closer, then list this project's session records, newest first; report a failure by its error_code.
 
         Raises:
             LockTimeoutError: If another process holds the workspace lock.
         """
-        reconciliation = reconcile_stale_sessions(self.db, path=self.paths.root_dir)
+        reconciliation = reconcile_stale_sessions(self.db, path=self.paths.root_dir, closer=closer)
         warnings = [reconciliation.warning] if reconciliation.warning else []
         diagnostics = error_diagnostics(reconciliation.diagnostic)
         redactor = history_redactor(self.paths, self.sensitive_variables)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -10,12 +11,21 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.redact import SecretRedactor
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
-from dovo.core.sessions import StepRunSummary
+from dovo.core.sessions import STALE_RUN_ERROR_MESSAGE, StepRunSummary, current_process_started_at
 from dovo.engine.services import SessionShowService
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
-from tests.harness.sessions import SEEDED_FAILURE, seed_failed_session
+from tests.harness.sessions import (
+    INTERRUPTED_ATTEMPT_MESSAGE,
+    SEEDED_FAILURE,
+    fail_reconciliation_list,
+    seed_dead_session,
+    seed_failed_session,
+)
 
 _STEPS: list[dict[str, object]] = [{"id": "format", "run": "true"}, {"id": "tests", "run": "false"}]
+
+
+_DEAD_WARNING = "Marked 1 interrupted session failed (session_id: session-dead)."
 
 
 def _seed(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> None:
@@ -113,3 +123,75 @@ class SessionShowServiceTests:
         event = read_single_event(frozen_diagnostic_clock)
         assert event["operation"] == "engine.session_show"
         assert event["context"] == {"session_id": "session-failed"}
+
+
+class SessionShowReconcileTests:
+    @pytest.mark.parametrize("session_id", ["session-dead", None], ids=["explicit-id", "latest"])
+    def test_execute_reconciles_dead_session_and_closes_its_step(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, session_id: str | None
+    ) -> None:
+        """A running row whose process is gone and that cannot pause, with a running tests step, is shown failed with the step failed."""
+        seed_dead_session(engine_paths, sessions_repo, session_id="session-dead")
+
+        result = SessionShowService(paths=engine_paths, sessions_db=sessions_repo, session_id=session_id).execute()
+
+        assert result.error_code is None
+        assert result.session is not None
+        assert result.session.status is SessionStatus.FAILED
+        assert result.session.error_message == STALE_RUN_ERROR_MESSAGE
+        assert result.warnings == [_DEAD_WARNING]
+        assert [(step.step_id, step.state, step.exit_code, step.error_message) for step in result.steps] == [
+            ("format", "pending", None, None),
+            ("tests", "failed", 1, INTERRUPTED_ATTEMPT_MESSAGE),
+        ]
+
+    def test_execute_live_session_is_running_without_warning(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        sessions_repo.create("session-live", "bp", "bp", pid=os.getpid(), pid_started_at=current_process_started_at())
+
+        result = SessionShowService(paths=engine_paths, sessions_db=sessions_repo, session_id="session-live").execute()
+
+        assert result.session is not None
+        assert result.session.status is SessionStatus.RUNNING
+        assert result.warnings == ["No step data recorded for this session."]
+
+    def test_execute_failed_session_without_state_keeps_missing_state_warning(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        sessions_repo.create("session-dead", "bp", "bp")
+
+        result = SessionShowService(paths=engine_paths, sessions_db=sessions_repo, session_id="session-dead").execute()
+
+        assert result.session is not None
+        assert result.session.status is SessionStatus.FAILED
+        assert result.warnings == [_DEAD_WARNING, "No step data recorded for this session."]
+
+    def test_execute_unknown_session_keeps_reconciliation_warning(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        sessions_repo.create("session-dead", "bp", "bp")
+
+        result = SessionShowService(paths=engine_paths, sessions_db=sessions_repo, session_id="ghost").execute()
+
+        assert result.error_code == ErrorCode.SESSION_NOT_FOUND
+        assert result.warnings == [_DEAD_WARNING]
+
+    def test_execute_reconciliation_failure_is_reported_as_diagnostic(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        _seed(engine_paths, sessions_repo, "session-failed")
+        fail_reconciliation_list(monkeypatch)
+
+        result = SessionShowService(
+            paths=engine_paths, sessions_db=sessions_repo, session_id="session-failed"
+        ).execute()
+
+        assert result.error_code is None
+        assert result.session_id == "session-failed"
+        assert result.warnings == []
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]

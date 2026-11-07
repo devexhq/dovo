@@ -11,6 +11,7 @@ from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
+from tests.harness.fakes import RecordingStepStateCloser
 from tests.harness.status_workspace import BuildStatusWorkspace, status_config_payload
 from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
@@ -32,7 +33,7 @@ class WorktreeProbeTests:
         (fs.worktrees_dir / "sb-1").mkdir(parents=True, exist_ok=True)
         (fs.worktrees_dir / "sb-2").mkdir(parents=True, exist_ok=True)
 
-        result = Status(paths, git=GitRunner(), sessions_db=sessions_db).collect()
+        result = Status(paths, git=GitRunner(), sessions_db=sessions_db, closer=RecordingStepStateCloser()).collect()
 
         assert result.database.exists is False
         assert result.worktrees.active_worktrees == 2
@@ -64,7 +65,12 @@ class WorktreeProbeTests:
 
         monkeypatch.setattr(WorktreesRepository, "list", mock_list)
 
-        result = Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
+        result = Status(
+            paths,
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
+        ).collect()
 
         record = diagnostic_record(frozen_diagnostic_clock)
         assert result.database.total_sessions == 1

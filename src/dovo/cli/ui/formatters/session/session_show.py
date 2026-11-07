@@ -56,11 +56,13 @@ STEP_LOGS_HINT = "Use 'dovo logs {session_id} --step <step_id>' for step output.
 
 
 def _render_show_steps(view: SessionShowView) -> list[RenderableType]:
-    """Render the Steps table, its error lines and the logs hint, or the warnings when no steps exist."""
+    """Render the warnings, then the Steps table, its error lines and the logs hint when steps exist."""
+    warnings: list[RenderableType] = [Text(warning, style="dim") for warning in view.warnings]
     if not view.steps:
-        return [Text(warning, style="dim") for warning in view.warnings]
+        return warnings
 
     return [
+        *warnings,
         build_steps_table(view.steps),
         *build_step_error_lines(view.steps),
         Text(STEP_LOGS_HINT.format(session_id=view.session_id), style="dim"),

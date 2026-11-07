@@ -12,6 +12,7 @@ from dovo.common.models import Remediation
 from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status, WorkspaceHealth
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
+from tests.harness.fakes import RecordingStepStateCloser
 from tests.harness.status_workspace import BuildStatusWorkspace
 from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
@@ -28,6 +29,7 @@ class ConfigProbeTests:
             initialized_workspace_paths(workspace),
             git=GitRunner(),
             sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         assert result.is_initialized is False
@@ -46,6 +48,7 @@ class ConfigProbeTests:
             initialized_workspace_paths(workspace),
             git=GitRunner(),
             sessions_db=initialized_workspace_db(workspace).sessions,
+            closer=RecordingStepStateCloser(),
         ).collect()
 
         assert result.config.error_code == ErrorCode.CONFIG_JSON_INVALID
@@ -65,7 +68,12 @@ class ConfigProbeTests:
         paths.config_file.chmod(0)
 
         try:
-            result = Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
+            result = Status(
+                paths,
+                git=GitRunner(),
+                sessions_db=initialized_workspace_db(workspace).sessions,
+                closer=RecordingStepStateCloser(),
+            ).collect()
         finally:
             paths.config_file.chmod(0o600)
 
