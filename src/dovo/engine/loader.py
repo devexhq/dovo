@@ -67,8 +67,8 @@ class EngineLoader:
             )
 
         try:
-            # The coordinator reloads the state at run start and reports any projection warning itself.
-            state = SessionStateStore(sessions, paths, session_id).load([])
+            # The coordinator reloads the state at run start and reports any projection warning and record itself.
+            state = SessionStateStore(sessions, paths, session_id).load([], [])
         except EngineError as error:
             raise EngineError(
                 error.error_code, f"Cannot resume session '{session_id}': {error.message}"
@@ -124,9 +124,10 @@ class EngineLoader:
         cls, sessions: SessionsRepository, paths: WorkspacePaths, session_id: str, state: ExecutionStateTree
     ) -> None:
         """Write the row failed with the stale-run message through the state store, so the row and session.json agree."""
-        # The loader raises next, so the save's projection warning has no result to reach.
+        # The loader raises next, so the save's projection warning and record have no result to reach.
         SessionStateStore(sessions, paths, session_id).save(
             state,
+            [],
             [],
             LifecycleUpdate(run_status=SessionStatus.FAILED, error_message=STALE_RUN_ERROR_MESSAGE),
         )

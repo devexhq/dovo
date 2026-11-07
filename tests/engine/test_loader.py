@@ -67,11 +67,11 @@ def _break_state(paths: WorkspacePaths, sessions: SessionsRepository, fault: str
     """Corrupt the seeded paused run's state document in the way fault names."""
     assert fault == "paused-leaf-without-result"
     store = SessionStateStore(sessions, paths, "paused-1")
-    state = store.load([])
+    state = store.load([], [])
     paused = state.nodes[1]
     assert isinstance(paused, ExecutionLeafNode)
     paused.attempts[-1] = paused.attempts[-1].model_copy(update={"result": None})
-    store.save(state, [])
+    store.save(state, [], [])
 
 
 def _seed_ended(paths: WorkspacePaths, sessions: SessionsRepository, case: str) -> None:
@@ -79,17 +79,17 @@ def _seed_ended(paths: WorkspacePaths, sessions: SessionsRepository, case: str) 
     if case == "failed-step":
         _seed(paths, sessions)
         store = SessionStateStore(sessions, paths, "paused-1")
-        state = store.load([])
+        state = store.load([], [])
         state.nodes[1].state = NodeState.FAILED
     else:
         store = _seed_paused_loop(paths, sessions)
-        state = store.load([])
+        state = store.load([], [])
         loop = state.nodes[0]
         assert isinstance(loop, ExecutionLoopNode)
         loop.iterations[0].steps[1].state = NodeState.COMPLETED
         loop.iterations[0].state = NodeState.COMPLETED
         loop.state = NodeState.FAILED
-    store.save(state, [])
+    store.save(state, [], [])
 
 
 def _break_seeded_run(paths: WorkspacePaths, sessions: SessionsRepository, fault: str) -> None:
@@ -103,7 +103,7 @@ def _break_seeded_run(paths: WorkspacePaths, sessions: SessionsRepository, fault
             "paused-1", "{not json", expected_revision=row.execution_state_revision or 0, next_revision=99
         )
     elif fault == "newer-projection":
-        state = SessionStateStore(sessions, paths, "paused-1").load([])
+        state = SessionStateStore(sessions, paths, "paused-1").load([], [])
         newer = build_session_json_payload(state.model_copy(update={"revision": state.revision + 1}), row)
         (paths.session_dir("paused-1") / "session.json").write_text(newer.model_dump_json())
     elif fault == "deleted-snapshot":
@@ -119,7 +119,7 @@ def _seed_paused_loop(paths: WorkspacePaths, sessions: SessionsRepository) -> Se
     assert row is not None
     sessions.update_status("paused-1", SessionStatus.PAUSED)
     store = SessionStateStore(sessions, paths, "paused-1")
-    state = store.load([])
+    state = store.load([], [])
     loop = state.nodes[0]
     assert isinstance(loop, ExecutionLoopNode)
 
@@ -142,7 +142,7 @@ def _seed_paused_loop(paths: WorkspacePaths, sessions: SessionsRepository) -> Se
     edit.state = NodeState.COMPLETED
     verify.attempts = [attempt("verify", "failed")]
     verify.state = NodeState.PAUSED
-    store.save(state, [], LifecycleUpdate(run_status=SessionStatus.PAUSED))
+    store.save(state, [], [], LifecycleUpdate(run_status=SessionStatus.PAUSED))
     return store
 
 
@@ -281,9 +281,9 @@ class EngineLoaderTests:
     ) -> None:
         _seed(engine_paths, sessions_repo)
         store = SessionStateStore(sessions_repo, engine_paths, "paused-1")
-        state = store.load([])
+        state = store.load([], [])
         state.nodes[0].state, state.nodes[1].state = states
-        store.save(state, [])
+        store.save(state, [], [])
 
         _, loaded, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
 
@@ -398,12 +398,12 @@ class EngineLoaderPausedBodyLeafTests:
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         store = _seed_paused_loop(engine_paths, sessions_repo)
-        state = store.load([])
+        state = store.load([], [])
         loop = state.nodes[0]
         assert isinstance(loop, ExecutionLoopNode)
         paused = loop.iterations[0].steps[1]
         paused.attempts[-1] = paused.attempts[-1].model_copy(update={"result": None})
-        store.save(state, [])
+        store.save(state, [], [])
 
         with pytest.raises(EngineError) as exc_info:
             EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
@@ -418,11 +418,11 @@ class EngineLoaderCorruptLoopStateTests:
     ) -> None:
         """Raise SESSION_STATE_CORRUPT with the validator's text when loop iteration children differ from the snapshot body."""
         store = _seed_paused_loop(engine_paths, sessions_repo)
-        state = store.load([])
+        state = store.load([], [])
         loop = state.nodes[0]
         assert isinstance(loop, ExecutionLoopNode)
         loop.iterations[0].steps.reverse()
-        store.save(state, [])
+        store.save(state, [], [])
 
         with pytest.raises(EngineError) as exc_info:
             EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])
@@ -478,11 +478,11 @@ class EngineLoaderPausedAskTests:
             engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
         )
         store = SessionStateStore(sessions_repo, engine_paths, "paused-1")
-        state = store.load([])
+        state = store.load([], [])
         leaf = state.nodes[0]
         assert isinstance(leaf, ExecutionLeafNode)
         leaf.pending_ask = None
-        store.save(state, [])
+        store.save(state, [], [])
 
         with pytest.raises(EngineError) as raised:
             EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1", [])

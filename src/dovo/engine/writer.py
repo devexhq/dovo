@@ -9,7 +9,7 @@ from typing import Any, Final
 import yaml
 from pydantic import ValidationError
 
-from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.redact import SecretRedactor
@@ -107,22 +107,29 @@ def snapshot_step_path(session_dir: Path, step_key: str) -> Path:
     return session_dir / "definitions" / "steps" / f"{step_key}.yml"
 
 
+def record_persist_failure(exc: Exception, session_id: str) -> list[DiagnosticRecord]:
+    """Record exc at error level under engine.persist and return its record as a diagnostics list."""
+    return error_diagnostics(
+        record_exception(
+            exc, level=DiagnosticLevel.ERROR, operation="engine.persist", context={"session_id": session_id}
+        )
+    )
+
+
 def _write_definitions_snapshot(
     session_dir: Path,
     blueprint_key: str,
     blueprint_content: str,
     visited: dict[str, tuple[CatalogRecord, str]],
-    warnings: list[str],
-) -> bool:
-    """Atomically write the blueprint and every visited step's raw YAML under session_dir/definitions/."""
-    try:
-        Filesystem.atomic_write_text(snapshot_blueprint_path(session_dir, blueprint_key), blueprint_content)
-        for ref, (_, content) in visited.items():
-            Filesystem.atomic_write_text(snapshot_step_path(session_dir, ref), content)
-    except OSError as exc:
-        warnings.append(f"Failed to write run definitions snapshot: {exc}")
-        return False
-    return True
+) -> None:
+    """Atomically write the blueprint and every visited step's raw YAML under session_dir/definitions/.
+
+    Raises:
+        OSError: when a snapshot file cannot be written.
+    """
+    Filesystem.atomic_write_text(snapshot_blueprint_path(session_dir, blueprint_key), blueprint_content)
+    for ref, (_, content) in visited.items():
+        Filesystem.atomic_write_text(snapshot_step_path(session_dir, ref), content)
 
 
 def _build_definitions_manifest(
@@ -157,7 +164,7 @@ def snapshot_definitions(
     warnings: list[str],
     diagnostics: list[DiagnosticRecord],
 ) -> DefinitionsManifest | None:
-    """Snapshot the resolved blueprint and its transitive uses: step chain into session_dir/definitions/, adding a failed lookup's records to diagnostics."""
+    """Snapshot the resolved blueprint and its transitive uses: step chain into session_dir/definitions/, adding a failed lookup's or write's records to diagnostics."""
     blueprint_show = catalog.show(blueprint.key, item_type=CatalogItemType.BLUEPRINT)
     if not blueprint_show.ok or blueprint_show.item is None or blueprint_show.content is None:
         detail = (
@@ -174,7 +181,12 @@ def snapshot_definitions(
     if visited is None:
         return None
 
-    if not _write_definitions_snapshot(session_dir, blueprint.key, blueprint_content, visited, warnings):
+    try:
+        _write_definitions_snapshot(session_dir, blueprint.key, blueprint_content, visited)
+    except OSError as exc:
+        warnings.append(f"Failed to write run definitions snapshot: {exc}")
+        # The session directory is named after its session id.
+        diagnostics.extend(record_persist_failure(exc, session_dir.name))
         return None
 
     resolved_at = datetime.now(UTC).isoformat()

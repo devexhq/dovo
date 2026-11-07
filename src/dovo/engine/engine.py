@@ -39,10 +39,10 @@ from dovo.engine.models import (
     RunStartConfig,
 )
 from dovo.engine.preset_prompter import PresetInteractionPrompter
-from dovo.engine.run_end import record_persist_failure, record_run_end, status_write_failure
+from dovo.engine.run_end import record_run_end, status_write_failure
 from dovo.engine.session import drive_run
 from dovo.engine.state_store import SessionStateStore
-from dovo.engine.writer import get_session_dir, snapshot_definitions
+from dovo.engine.writer import get_session_dir, record_persist_failure, snapshot_definitions
 
 
 class Engine:
@@ -263,7 +263,9 @@ class Engine:
         """Write the inserted row's initial execution state under the workspace lock; return the FAILED outcome, with the row marked failed, or None, adding each recorded failure to diagnostics."""
         with WorkspaceLock(self.paths.lock_file):
             try:
-                SessionStateStore(self.db, self.paths, session_id).initialize(blueprint, manifest, warnings)
+                SessionStateStore(self.db, self.paths, session_id).initialize(
+                    blueprint, manifest, warnings, diagnostics
+                )
             except EngineError as error:
                 error_code, message = error.error_code, error.message
             except Exception as exc:

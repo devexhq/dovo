@@ -544,7 +544,7 @@ class RunCoordinator:
         """Load state, session row, and snapshot definitions and resolve the run settings; record the failure and return False when unavailable."""
         session_id = self._context.session_id
         try:
-            state = self._state_store.load(self._warnings)
+            state = self._state_store.load(self._warnings, self._diagnostics)
         except EngineError as error:
             self._fail(error.error_code, error.message)
             return False
@@ -981,6 +981,7 @@ class RunCoordinator:
                 saved = self._state_store.save(
                     self._run.state,
                     self._warnings,
+                    self._diagnostics,
                     LifecycleUpdate(
                         run_status=run_status,
                         error_message=error_message,
