@@ -137,7 +137,12 @@ class Engine:
         validation_warnings: list[str] = []
         prior_diagnostics: list[DiagnosticRecord] = []
         with WorkspaceLock(self.paths.lock_file):
-            _, state, _ = EngineLoader.load_for_resume(self.db, self.paths, session_id, validation_warnings)
+            _, state, _ = EngineLoader.load_for_resume(
+                SessionStateStore(self.db, self.paths, session_id),
+                validation_warnings,
+                engine_warnings,
+                prior_diagnostics,
+            )
             if answers:
                 preset = EngineLoader.resolve_answers(session_id, state, answers, engine_warnings)
                 interaction_prompter = PresetInteractionPrompter(preset, interaction_prompter)

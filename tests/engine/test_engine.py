@@ -707,6 +707,44 @@ class EngineRunSnapshotsDefinitionsTests:
         after = SessionStateStore(sessions_repo, engine_paths, "task_defs").load([], [])
         assert after.revision == before.revision + 1
 
+    def test_resume_load_projection_warning_reaches_run_warnings(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        stub_drive_run: StubDriveRun,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With session.json absent and its first write on resume raising OSError("disk full"), the resume completes and outcome.warnings contains the projection warning once and outcome.diagnostics its one record."""
+        seed_paused_session(
+            engine_paths,
+            sessions_repo,
+            session_id="resume-proj",
+            steps=[{"id": "a", "run": "true"}, {"id": "b", "run": "exit 1", "on_failure": "prompt_user"}],
+            paused_step_id="b",
+        )
+        (engine_paths.session_dir("resume-proj") / "session.json").unlink()
+        stub_drive_run(None)
+        write_text = Filesystem.atomic_write_text
+        projection_writes: list[Path] = []
+
+        def fail_first_session_json(path: Path, text: str) -> None:
+            if path.name == "session.json":
+                projection_writes.append(path)
+                if len(projection_writes) == 1:
+                    raise OSError("disk full")
+            write_text(path, text)
+
+        monkeypatch.setattr(Filesystem, "atomic_write_text", fail_first_session_json)
+
+        outcome = _engine(engine_paths, sessions_repo).resume("resume-proj")
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert outcome.warnings == [
+            "Failed to write session.json projection: disk full; it will be regenerated on the next load."
+        ]
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+
 
 class EngineRunConfigPersistenceTests:
     @pytest.mark.parametrize(

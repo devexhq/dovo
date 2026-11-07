@@ -354,7 +354,7 @@ class WhenGuardTests:
         state.nodes[1] = ExecutionLeafNode(id="b", state=NodeState.SKIPPED, skip=skip)
         store.save(state, [], [])
         sessions_repo.update_status(_SESSION_ID, SessionStatus.PAUSED)
-        EngineLoader.load_for_resume(sessions_repo, engine_paths, _SESSION_ID, [])
+        EngineLoader.load_for_resume(store, [], [], [])
 
         outcome = _coordinator(engine_paths, sessions_repo).execute()
 

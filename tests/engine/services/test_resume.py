@@ -389,8 +389,13 @@ class BlueprintResumeServiceCatchTests:
 
         monkeypatch.setattr(SessionsRepository, "get", _fail_read_back)
 
-        def _boom(sessions: SessionsRepository, paths: WorkspacePaths, session_id: str, warnings: list[str]) -> None:
-            driven.append(session_id)
+        def _boom(
+            store: SessionStateStore,
+            validation_warnings: list[str],
+            warnings: list[str],
+            diagnostics: list[DiagnosticRecord],
+        ) -> None:
+            driven.append(store.session_id)
             try:
                 raise PermissionError("state.json")
             except OSError as exc:
