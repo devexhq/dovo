@@ -5,8 +5,9 @@ from __future__ import annotations
 import builtins
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Protocol, Self
+from typing import Any, Final, Protocol, Self
 
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.filesystem import Filesystem, WorkspacePaths
@@ -21,6 +22,7 @@ from dovo.core.catalog.models import (
     CatalogResolution,
     CatalogScan,
     CatalogShowResult,
+    CatalogSkippedFile,
     CatalogTier,
     CatalogValidateResult,
 )
@@ -36,6 +38,8 @@ from dovo.core.catalog.services.inventory import (
     scan_and_index_catalog,
 )
 from dovo.core.catalog.services.validate import check_catalog_item
+
+_SKIPPED_TIER_PRECEDENCE: Final[tuple[CatalogTier, ...]] = (CatalogTier.REPO, CatalogTier.USER, CatalogTier.GLOBAL)
 
 
 class _PydanticModel(Protocol):
@@ -71,11 +75,13 @@ class Catalog:
         """Reindex and list records of item_type, raising CatalogError on failure."""
         scan = self.sync()
         records = [record for record in resolve_catalog_records(self.paths) if record.item_type == item_type]
+        skipped = tuple(skipped for skipped in scan.skipped_files if skipped.item_type == item_type)
         return CatalogListResult(
             item_type=item_type,
             items=records,
             type_filter=item_type,
-            warnings=builtins.list(scan.skipped_files),
+            warnings=[skipped_file.message for skipped_file in skipped],
+            diagnostics=_skipped_file_diagnostics(skipped),
         )
 
     def show(self, sha_or_name: str, item_type: CatalogItemType) -> CatalogShowResult:
@@ -112,16 +118,26 @@ class Catalog:
         each ``script_path`` looked up under the repository root, and its warnings follow the duplicate-name warning
         in the resolution's warnings.
 
+        When no readable record matches but a file of that key and item_type was skipped because it could not be
+        read, the lookup fails with CATALOG_FILE_UNREADABLE for the highest-precedence such file, caused by its read
+        error, rather than CATALOG_NOT_FOUND; a readable match always wins over an unreadable one.
+
         Raises:
-            CatalogError: CATALOG_NOT_FOUND when nothing matches ("Catalog item '<key>' not found."),
-                CATALOG_FILE_UNREADABLE, CATALOG_SYNTAX_INVALID or CATALOG_SCHEMA_INVALID, carrying every
-                error and warning in ``CatalogValidateFindings``, when the winner fails those checks,
-                CATALOG_WRITE_FAILED when reindexing fails, CATALOG_TYPE_INVALID for an unknown item_type.
+            CatalogError: CATALOG_NOT_FOUND when nothing matches ("Catalog item '<key>' not found.");
+                CATALOG_FILE_UNREADABLE ("Failed to read catalog <item_type> '<path>': <exc>") when only an
+                unreadable file matches;
+                CATALOG_FILE_UNREADABLE, CATALOG_SYNTAX_INVALID or CATALOG_SCHEMA_INVALID when the winner fails
+                those checks, carrying every error and warning in ``CatalogValidateFindings``;
+                CATALOG_WRITE_FAILED when reindexing fails;
+                CATALOG_TYPE_INVALID for an unknown item_type.
         """
-        self.sync()
+        scan = self.sync()
         parsed_item_type = coerce_catalog_item_type(item_type) if item_type is not None else None
         matches = tuple(find_catalog_record_matches(key_or_sha, parsed_item_type, self.paths))
         if not matches:
+            unreadable = _unreadable_match(key_or_sha, parsed_item_type, scan.skipped_files)
+            if unreadable is not None:
+                raise _unreadable_error(unreadable) from unreadable.error
             raise CatalogError(ErrorCode.CATALOG_NOT_FOUND, f"Catalog item '{key_or_sha}' not found.")
 
         winner = matches[0]
@@ -289,6 +305,49 @@ class Catalog:
             detail = yaml_file.error or "invalid or non-object YAML content."
             raise CatalogError(ErrorCode.CATALOG_SYNTAX_INVALID, f"Failed to load catalog blueprint '{path}': {detail}")
         return yaml_file.parsed
+
+
+def _skipped_file_diagnostics(skipped_files: tuple[CatalogSkippedFile, ...]) -> list[DiagnosticRecord]:
+    """Record each skipped file's read error at error level under catalog.list and return the error-level records written."""
+    diagnostics: list[DiagnosticRecord] = []
+    for skipped in skipped_files:
+        record = record_exception(
+            skipped.error, level=DiagnosticLevel.ERROR, operation="catalog.list", context={"path": str(skipped.path)}
+        )
+        diagnostics.extend(error_diagnostics(record))
+    return diagnostics
+
+
+def _unreadable_match(
+    key_or_sha: str, item_type: CatalogItemType | None, skipped_files: tuple[CatalogSkippedFile, ...]
+) -> CatalogSkippedFile | None:
+    """Return the highest-precedence skipped file (REPO, then USER, then GLOBAL) whose key is key_or_sha and whose type is item_type, if any."""
+    candidates = [
+        skipped
+        for skipped in skipped_files
+        if skipped.key == key_or_sha and (item_type is None or skipped.item_type == item_type)
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=_skipped_tier_rank)
+
+
+def _skipped_tier_rank(skipped: CatalogSkippedFile) -> int:
+    """Return the precedence rank of skipped's tier: 0 for REPO, 1 for USER, 2 for GLOBAL."""
+    return _SKIPPED_TIER_PRECEDENCE.index(skipped.tier)
+
+
+def _unreadable_error(skipped: CatalogSkippedFile) -> CatalogError:
+    """Return CATALOG_FILE_UNREADABLE with the skipped file's read message and a check-the-file remediation."""
+    return CatalogError(
+        ErrorCode.CATALOG_FILE_UNREADABLE,
+        skipped.message,
+        [
+            Remediation(
+                message=f"Check that '{skipped.path}' can be read by the current user, for example its permissions."
+            )
+        ],
+    )
 
 
 def _duplicate_name_warnings(

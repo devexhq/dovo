@@ -88,7 +88,7 @@ class ScanAndIndexTierTests:
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
     def test_unreadable_file_is_skipped_and_scan_continues(self, workspace_paths: WorkspacePaths) -> None:
-        """Return CatalogScan whose records hold the readable file and skipped_files holds the unreadable file's read error."""
+        """Return CatalogScan whose records hold the readable file and skipped_files the unreadable file's tier, type, key, path and read message."""
         tier_dir = tier_root(CatalogTier.REPO, workspace_paths)
         _write_blueprint(tier_dir, "good", 'version: "1.0"\nname: good\ndescription: Good\nsteps: []\n')
         _write_blueprint(tier_dir, "bad", 'version: "1.0"\nname: bad\ndescription: Bad\nsteps: []\n')
@@ -100,8 +100,37 @@ class ScanAndIndexTierTests:
             bad_file.chmod(0o644)
 
         assert [record.key for record in result.records] == ["good"]
-        assert len(result.skipped_files) == 1
-        assert result.skipped_files[0].startswith(f"Failed to read catalog blueprint '{bad_file}': ")
+        (skipped,) = result.skipped_files
+        assert (skipped.tier, skipped.item_type, skipped.key, skipped.path) == (
+            CatalogTier.REPO,
+            CatalogItemType.BLUEPRINT,
+            "bad",
+            bad_file,
+        )
+        assert skipped.message == (
+            f"Failed to read catalog blueprint '{bad_file}': [Errno 13] Permission denied: '{bad_file}'"
+        )
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_unreadable_step_is_skipped_under_its_namespaced_key_and_named_a_step(
+        self, workspace_paths: WorkspacePaths
+    ) -> None:
+        """Skip an unreadable steps/team/lint.yml as STEP 'team/lint' whose message calls it a catalog step."""
+        tier_dir = tier_root(CatalogTier.REPO, workspace_paths)
+        step_file = tier_dir / "steps" / "team" / "lint.yml"
+        step_file.parent.mkdir(parents=True)
+        step_file.write_text("name: lint\nrun: echo lint\n", encoding="utf-8")
+        step_file.chmod(0o000)
+        try:
+            result = scan_and_index_tier(CatalogTier.REPO, workspace_paths)
+        finally:
+            step_file.chmod(0o644)
+
+        (skipped,) = result.skipped_files
+        assert (skipped.item_type, skipped.key) == (CatalogItemType.STEP, "team/lint")
+        assert skipped.message == (
+            f"Failed to read catalog step '{step_file}': [Errno 13] Permission denied: '{step_file}'"
+        )
 
     def test_index_write_failure_raises_catalog_write_failed(
         self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch

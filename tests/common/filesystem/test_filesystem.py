@@ -81,14 +81,23 @@ class FilesystemStaticHelperTests:
         assert result.parsed == {"name": "sample"}
         assert result.error is None
 
-    def test_scan_yaml_directory_returns_sorted_yaml_files_from_directory(self, tmp_path: Path) -> None:
+    def test_list_yaml_files_returns_sorted_yaml_paths_from_directory(self, tmp_path: Path) -> None:
         (tmp_path / "b.yml").write_text("name: b\n", encoding="utf-8")
         (tmp_path / "a.yaml").write_text("name: a\n", encoding="utf-8")
         (tmp_path / "skip.txt").write_text("ignored", encoding="utf-8")
 
-        results = Filesystem.scan_yaml_directory(tmp_path)
+        assert Filesystem.list_yaml_files(tmp_path) == [tmp_path / "a.yaml", tmp_path / "b.yml"]
 
-        assert [entry.path.name for entry in results] == ["a.yaml", "b.yml"]
+    def test_parse_yaml_content_names_the_file_by_its_mapping_name(self, tmp_path: Path) -> None:
+        """Return a YamlFile named by the mapping's name, with the content and no error."""
+        result = Filesystem.parse_yaml_content(tmp_path / "item.yml", "name: sample\n")
+
+        assert (result.name, result.parsed, result.content, result.error) == (
+            "sample",
+            {"name": "sample"},
+            "name: sample\n",
+            None,
+        )
 
 
 class FilesystemAtomicWriteBytesTests:

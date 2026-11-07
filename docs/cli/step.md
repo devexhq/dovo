@@ -6,7 +6,7 @@ The `dovo step` command inspects, creates, deletes, and validates executable ste
 
 With `--format json`, every `dovo step` payload carries `item_type: "step"`, on success and on failure, so a consumer can tell it from a [`dovo blueprint`](blueprint.md) payload.
 
-When `list`, `show`, `create`, `delete` or `validate` fails with an unexpected error, or with an operating-system error writing or deleting a catalog file, and Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record for it, the error message is unchanged and a `Details logged: <path> (event <event_id>)` line naming that file follows it. With `--format json`, the record is listed in `diagnostics` as `{"event_id": …, "log_path": …}`. If the record cannot be written, there is no line and `diagnostics` is empty.
+When `list`, `show`, `create`, `delete` or `validate` fails with an unexpected error, or with an operating-system error reading, writing or deleting a catalog file, and Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record for it, the error message is unchanged and a `Details logged: <path> (event <event_id>)` line naming that file follows it. With `--format json`, the record is listed in `diagnostics` as `{"event_id": …, "log_path": …}`. If the record cannot be written, there is no line and `diagnostics` is empty.
 
 If another Dovo process holds the workspace lock and the wait times out, `create` and `delete` print a Workspace Lock Timeout panel, or with `--format json` an `error` event with `error_code` `WORKSPACE_LOCK_TIMEOUT` (see [JSON Output](../reference/json-output.md#the-error-event)), and exit with code 1; wait for that process to finish and retry.
 
@@ -20,6 +20,8 @@ Lists step items across all tiers, each row tagged with its resolved `tier`.
 dovo step list [--format terminal|json]
 dovo step ls [--format terminal|json]
 ```
+
+A step file that exists but cannot be read, for example because of its permissions, is left out of the list with the warning `Failed to read catalog step '<path>': <reason>`, and the list still exits `0`. The read error is recorded in the [diagnostic log](doctor.md#diagnostic-logs): a `Details logged: <path> (event <event_id>)` line names it, and with `--format json` the record is listed in `diagnostics`.
 
 ### `dovo step create`
 
@@ -36,6 +38,8 @@ Displays metadata and YAML content for a step, resolved via tier precedence and 
 ```bash
 dovo step show <sha_or_name> [--format terminal|json]
 ```
+
+When the only step file with that name exists but cannot be read, `show` and `validate` fail with `Failed to read catalog step '<path>': <reason>` and exit `1` (`CATALOG_FILE_UNREADABLE` with `--format json`) rather than reporting an unknown name; a readable step of that name in another tier still wins.
 
 ### `dovo step delete`
 

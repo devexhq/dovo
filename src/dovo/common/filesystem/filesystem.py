@@ -18,8 +18,9 @@ from dovo.common.filesystem.services.paths import (
     get_catalog_templates_dir as _get_catalog_templates_dir,
 )
 from dovo.common.filesystem.services.yaml import (
+    list_yaml_files as _list_yaml_files,
+    parse_yaml_content as _parse_yaml_content,
     read_yaml_file as _read_yaml_file,
-    scan_yaml_directory as _scan_yaml_directory,
 )
 
 
@@ -121,6 +122,11 @@ class Filesystem:
         return _read_yaml_file(file_path)
 
     @staticmethod
-    def scan_yaml_directory(directory: Path, *, suffixes: tuple[str, ...] = (".yml", ".yaml")) -> list[YamlFile]:
-        """Scan a directory recursively for matching YAML files, sorted by path."""
-        return _scan_yaml_directory(directory, suffixes=suffixes)
+    def parse_yaml_content(file_path: Path, content: str) -> YamlFile:
+        """Parse YAML content already read from file_path into a typed YamlFile model."""
+        return _parse_yaml_content(file_path, content)
+
+    @staticmethod
+    def list_yaml_files(directory: Path, *, suffixes: tuple[str, ...] = (".yml", ".yaml")) -> list[Path]:
+        """List a directory's matching YAML files recursively, sorted by path."""
+        return _list_yaml_files(directory, suffixes=suffixes)
