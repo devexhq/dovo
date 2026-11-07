@@ -111,7 +111,7 @@ SAMPLES: Final[dict[type[BaseResult], Callable[[], BaseResult]]] = {
     CatalogDeleteResult: lambda: CatalogDeleteResult(item_type=CatalogItemType.BLUEPRINT, diagnostics=[RECORD]),
     CatalogCreateResult: lambda: CatalogCreateResult(item_type=CatalogItemType.BLUEPRINT, diagnostics=[RECORD]),
     CatalogValidateResult: lambda: CatalogValidateResult(
-        valid=False, target="my-bp", item_type=CatalogItemType.BLUEPRINT, diagnostics=[RECORD]
+        target="my-bp", item_type=CatalogItemType.BLUEPRINT, diagnostics=[RECORD]
     ),
     ConfigLoadResult: lambda: ConfigLoadResult(
         error_code=ErrorCode.CONFIG_UNREADABLE, errors=["boom"], config_path=CONFIG_PATH, diagnostics=[RECORD]

@@ -56,22 +56,33 @@ With `json`, emits structured NDJSON for scripts and tools.
 dovo init --format json
 ```
 
-## Errors
+## Error codes
 
-Every failure reports its cause as `error_code` in `--format json` output; on success `error_code` is `null`. An invalid `--id` exits with code `2` (`error_code` `PROJECT_ID_INVALID`); every other failure exits with code `1`.
+Every failure reports its cause as `error_code` in `--format json` output; on success `error_code` is `null`. An invalid `--id` exits with code `2`; every other failure exits with code `1`.
 
-The two errors below are checked before anything is written. Both exit with code `1`, and nothing is written.
+| Code | Cause |
+| --- | --- |
+| `BOOTSTRAP_TARGET_FORBIDDEN` | The directory's `.dovo` is the global Dovo home (`Cannot initialize a workspace at '<root>': its .dovo directory is the global Dovo home '<DOVO_HOME>'.`). Run `dovo init` inside a project directory, or set `DOVO_HOME` to a different directory. Checked first, before anything is written. |
+| `BOOTSTRAP_REPO_NOT_FOUND` | The current directory is not a Git repository (`The current directory is not a valid Git repository.`). Run `git init` first. Checked before anything is written. |
+| `PROJECT_ID_INVALID` | `--id` does not match `^[a-z0-9][a-z0-9-_]{2,62}$`. Exits `2` and writes nothing. |
+| `BOOTSTRAP_PATH_INVALID` | A `.dovo/` directory is a file, a symlink, or cannot be created. |
+| `BOOTSTRAP_PATH_UNWRITABLE` | A `.dovo/` directory does not exist after creation or is not writable. |
+| `BOOTSTRAP_METADATA_WRITE_FAILED` | The bootstrap metadata under `.dovo/.meta` cannot be written. |
+| `PROJECT_IDENTITY_UNREADABLE` | An existing `.dovo/project.json` cannot be read. |
+| `PROJECT_IDENTITY_SCHEMA_INVALID` | An existing `.dovo/project.json` is not a valid project identity. |
+| `PROJECT_IDENTITY_WRITE_FAILED` | `.dovo/project.json` cannot be written. |
+| `CONFIG_PATH_INVALID` | `.dovo/config.json` is a directory. |
+| `CONFIG_JSON_INVALID` | `--repair` found a `.dovo/config.json` that is not valid JSON. |
+| `CONFIG_ROOT_INVALID` | `--repair` found a `.dovo/config.json` whose root is not a JSON object. |
+| `CONFIG_SCHEMA_INVALID` | The configuration to write fails schema validation, for example a repaired file with an invalid value. |
+| `CONFIG_WRITE_FAILED` | `.dovo/config.json` cannot be written. |
+| `CATALOG_SEED_FAILED` | A starter catalog file cannot be written. |
+| `WORKSPACE_LOCK_TIMEOUT` | Another `dovo` process held the workspace lock until the wait timed out. Reported as an [`error` event](../reference/json-output.md#the-error-event). Wait for the other process to finish, then rerun `dovo init`. |
+| `INTERNAL_ERROR` | An unexpected error in any step of `dovo init`. |
 
-| Error | `error_code` | Fix |
-| --- | --- | --- |
-| `The current directory is not a valid Git repository.` | `BOOTSTRAP_REPO_NOT_FOUND` | Run `git init` before running `dovo init`. |
-| `Cannot initialize a workspace at '<root>': its .dovo directory is the global Dovo home '<DOVO_HOME>'.` | `BOOTSTRAP_TARGET_FORBIDDEN` | Run `dovo init` inside a project directory, or set `DOVO_HOME` to a different directory. |
+The global-home refusal applies to a directory whose `.dovo` is `DOVO_HOME` (by default your home directory, whose `.dovo` is `~/.dovo`), even when it is a Git repository.
 
-The global-home refusal applies to a directory whose `.dovo` is `DOVO_HOME` (by default your home directory, whose `.dovo` is `~/.dovo`), even when it is a Git repository, and is checked before the Git check.
-
-When `dovo init` fails with an unexpected error in any of its steps (setting up the `.dovo/` directory, the project identity, the database, the configuration or the starter blueprints), or the operating system refuses (for example, with a permission error) to create a `.dovo/` directory, write its bootstrap metadata, read or write `.dovo/project.json`, write `.dovo/config.json` or write a seeded catalog file, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record. The error message is unchanged, a `Details logged: <path> (event <event_id>)` line naming that file follows it, and `--format json` lists the record in `diagnostics`; if the record cannot be written, there is no line and `diagnostics` is empty. These failures exit with code `1`. An unexpected error reports `error_code` `INTERNAL_ERROR`; an operating-system error reports the `error_code` of the step that failed.
-
-If another `dovo` process holds the workspace lock and the wait times out, `dovo init` prints a Workspace Lock Timeout panel, or with `--format json` an `error` event with `error_code` `WORKSPACE_LOCK_TIMEOUT` (see [JSON Output](../reference/json-output.md#the-error-event)), and exits with code `1`. Wait for the other process to finish, then rerun `dovo init`.
+When `dovo init` fails with an unexpected error in any of its steps (setting up the `.dovo/` directory, the project identity, the database, the configuration or the starter blueprints), or the operating system refuses (for example, with a permission error) to create a `.dovo/` directory, write its bootstrap metadata, read or write `.dovo/project.json`, write `.dovo/config.json` or write a seeded catalog file, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record. The error message is unchanged, a `Details logged: <path> (event <event_id>)` line naming that file follows it, and `--format json` lists the record in `diagnostics`; if the record cannot be written, there is no line and `diagnostics` is empty. An unexpected error reports `error_code` `INTERNAL_ERROR`; an operating-system error reports the `error_code` of the step that failed.
 
 ## Exit codes
 

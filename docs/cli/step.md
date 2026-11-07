@@ -61,6 +61,28 @@ dovo step validate <target> [--format terminal|json]
 
 Exits `0` when the definition is valid and `1` on any failure, including a target that names no catalog item.
 
+The result header alone reports the outcome. In the terminal, the command prints the target, its type and resolved path, then an Errors table with each error's code and fix and a Warnings table, and a valid definition ends with `Step is valid.` With `--format json`, `ok` is `true` and `error_code` is `null` exactly when the definition is valid; the payload adds `target`, `resolved_path` and `item_type`.
+
+## Error codes
+
+With `--format json`, a failure reports one of these codes as `error_code`, and a success reports `null`.
+
+| Code | Commands | Cause |
+| --- | --- | --- |
+| `WORKSPACE_NOT_INITIALIZED` | all | The workspace has no valid `.dovo/project.json`; run `dovo init`. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `CONFIG_NOT_FOUND`, `CONFIG_UNREADABLE`, `CONFIG_PATH_INVALID`, `CONFIG_JSON_INVALID`, `CONFIG_ROOT_INVALID`, `CONFIG_SCHEMA_INVALID`, `CONFIG_TIER_UNREADABLE`, `CONFIG_TIER_JSON_INVALID`, `CONFIG_TIER_ROOT_INVALID`, `CONFIG_TIER_SCHEMA_INVALID` | all | The configuration does not load; [`dovo config show`](config.md#dovo-config-show) explains each code. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `WORKSPACE_LOCK_TIMEOUT` | `create`, `delete` | Another `dovo` process held the workspace lock until the wait timed out. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `INTERNAL_ERROR` | all | An unexpected error, with a [diagnostic log](doctor.md#diagnostic-logs) record. Reported in the result, or as an [`error` event](../reference/json-output.md#the-error-event) when it ends the command outside its result. |
+| `CATALOG_NOT_FOUND` | `show`, `delete`, `validate` | The name or sha matches no step, including a name that matches only a blueprint, or a `validate` file target does not exist. |
+| `CATALOG_FILE_UNREADABLE` | `show`, `validate` | The step file cannot be read, for example because of its permissions. |
+| `CATALOG_SYNTAX_INVALID` | `validate` | The file is not valid YAML, or its root is not a mapping. |
+| `CATALOG_SCHEMA_INVALID` | `validate` | The definition fails the schema or a semantic check; `errors` lists every finding. |
+| `CATALOG_ALREADY_EXISTS` | `create` | A step file with that name already exists in the target tier. |
+| `CATALOG_TIER_CONFLICT` | `create` | `--user` and `--global` were both given. Exits `2`. |
+| `CATALOG_WRITE_FAILED` | all | The operating system refused to write or delete a catalog file, or to write the catalog index. |
+| `CATALOG_TIER_DELETE_FORBIDDEN` | `delete` | The match resolved from the USER or GLOBAL tier; only REPO-tier items can be deleted. |
+| `CATALOG_PROTECTED` | `delete` | The match is a bundled template in the `dovo/` namespace. |
+
 ## Exit codes
 
 Every `dovo step` subcommand exits by its result's `error_code`:

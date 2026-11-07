@@ -8,7 +8,8 @@ Update docs in the same PR **only** when a change triggers one of these gates or
 
 - **Command added, renamed, or removed in `src/dovo/cli/cli.py`:** Update `README.md` Quick start and command surface so it matches `dovo --help` (`tests/lint/test_readme_command_parity.py` enforces this).
 - **User-visible CLI behavior, arguments, or flags changed:** Update the corresponding command page under `docs/cli/<command>.md`.
-- **User-visible config or blueprint schema changed:** Update the corresponding reference page under `docs/reference/` (`tests/lint/test_config_schema_parity.py` and `tests/lint/test_step_schema_parity.py` enforce schema parity).
+- **An `ErrorCode` added, removed, renamed, or made reachable from another command:** Update the `Error codes` section of every command page that can return it, or `UNPUBLISHED` in `tests/lint/test_error_code_doc_parity.py` when no command can surface it (`tests/lint/test_error_code_doc_parity.py` enforces this).
+- **User-visible config or blueprint schema changed:** Update the corresponding reference page under `docs/reference/` (`tests/lint/test_config_schema_parity.py` and `tests/lint/test_step_schema_parity.py` enforce schema parity; `tests/lint/test_step_schema_parity.py` also pins the `dovo session resume` flag list in `docs/cli/session.md`).
 - **Python style, package layout, or `Any`/ignore rules changed:** Update [docs/agents/code-conventions.md](code-conventions.md).
 - **A settled design decision added or changed (results, domain errors, remediations, diagnostics):** Rewrite its entry in [docs/agents/architecture/](architecture/README.md), following that folder's rules, and cite the issue in **Since**. A lint test that enforces an entry cites it in its failure message as `docs/agents/architecture/<file>.md#<heading>`.
 - **Test tier or harness conventions changed:** Update [docs/agents/testing.md](testing.md).

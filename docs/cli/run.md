@@ -64,33 +64,6 @@ The `path` of a `cleanup` event (including with `--format json`) is relative to 
 9. **Run result**: Every `dovo run` ends with one run result, printed after every other line (see [Run result](#run-result)), unless a failure stops it outside the run (see [JSON Output](../reference/json-output.md#the-error-event)).
 10. **Exit codes**: see [Exit codes](#exit-codes).
 
-### Step failure codes
-
-With `--format json`, each step that finishes prints a `run.step_done` event with the keys under [Step done keys](#step-done-keys); `dovo resume` prints the same event. `error_code` is `null` for a step that completed. A failed step carries one of the codes below, or, when it failed because something it used failed, that failure's code: `CATALOG_NOT_FOUND` for a `uses:` step that does not exist, an `ARTIFACT_*` code for an artifact that cannot be published, downloaded or inlined, an `ASK_*` code for an `ask` prompt that cannot be built, or, for an agent step, the `PATCH_*` code its edit failed validation with (`PATCH_FILE_COUNT_EXCEEDED` for an edit over `max_files`, for example), or the `GIT_*` code of a git command on its worktree that failed (`GIT_TIMEOUT` when it timed out, `GIT_FAILED` for most other failures). A step continued past with `on_failure: continue`, or with `continue` at a failure prompt, keeps its code, and a retried step carries the code of its last attempt. [`dovo session show`](session.md#dovo-session-show) reports the same code for each step.
-
-| Code | Cause |
-| --- | --- |
-| `STEP_WORKTREE_MISSING` | The step's working directory does not exist or is not a directory, or an agent step ran without a worktree (`--no-worktree`). |
-| `STEP_DEFINITION_INVALID` | The step cannot run as written: an unsupported type, a `command` or `internal` step with no command, a `script` step with no `script_path`, an unknown internal command, or an `ask` step with no interaction. |
-| `STEP_SCRIPT_NOT_FOUND` | The file named by `script_path` does not exist. |
-| `STEP_LAUNCH_FAILED` | The command or script could not be started. |
-| `STEP_OUTPUT_READ_FAILED` | Reading the command's or script's output failed. |
-| `STEP_TIMEOUT` | The step ran longer than its `timeout_seconds`. |
-| `STEP_COMMAND_FAILED` | The command or script exited with a non-zero code. |
-| `STEP_ASSERT_FAILED` | One of the step's `assert` checks failed. |
-| `STEP_SESSION_MISSING` | An `artifacts.upload` or `artifacts.download` step ran with no active session. |
-| `STEP_INPUT_INVALID` | An `artifacts.upload` or `artifacts.download` step is missing `ARTIFACT_NAME`, `ARTIFACT_PATH` or `ARTIFACT_DEST`, or its `ARTIFACT_REVISION` is not a positive integer. |
-| `STEP_ANSWER_FAILED` | An `ask` step was answered with an option marked `fail: true`. |
-| `STEP_AGENT_SETTINGS_MISSING` | An agent step ran with no resolved agent settings. |
-| `STEP_PROMPT_EMPTY` | An agent step's prompt is blank after interpolation. |
-| `AGENT_SCRATCH_UNAVAILABLE` | The agent step's private scratch directory could not be prepared. |
-| `AGENT_PROVIDER_UNSUPPORTED` | The agent step's provider is not a supported provider. |
-| `AGENT_TIMEOUT` | The agent ran longer than the step's `timeout_seconds`. |
-| `AGENT_TASK_UNFIXABLE` | The agent reported the task unfixable. |
-| `AGENT_TASK_BLOCKED` | The agent was blocked by its tool permissions and made no change. |
-| `AGENT_PROVIDER_FAILED` | Any other agent provider failure, such as a missing credential, a provider that exited with an error, or an unreadable unfixable report. |
-| `INTERNAL_ERROR` | An internal command, or an agent provider, failed with an unexpected error, an agent step's output could not be delivered, or the step itself failed with an unexpected error, such as writing bytes that are not UTF-8 to `$DOVO_OUTPUT`. Its `error_message` is `Unexpected error during engine.step: <error>`. Like any failed step it follows its `on_failure` policy, and `dovo resume` does not run it again. |
-
 ### Step done keys
 
 | Key | Description |
@@ -160,6 +133,87 @@ With `--format json`, the run result carries the `error_code`, `errors` (one ent
 ```json
 {"version": 1, "event_type": "run.result", "payload": {"ok": false, "error_code": "CATALOG_SCHEMA_INVALID", "errors": ["Step id 'a' is used by more than one step."], "warnings": [], "remediations": [{"message": "Resolve: Step id 'a' is used by more than one step.", "command": null}], "diagnostics": [], "session_id": null, "blueprint_name": null, "session_status": null, "paused_prompt_id": null}}
 ```
+
+### Error codes
+
+With `--format json`, a failure reports one of these codes as `error_code`, and a success reports `null`. A failure that stops `dovo run` outside its run result is an [`error` event](../reference/json-output.md#the-error-event) carrying its code.
+
+| Code | Cause |
+| --- | --- |
+| `RUN_STEP_FAILED` | A step failed and stopped the run. The step's own code is in its `run.step_done` event; see [Step failure codes](#step-failure-codes). |
+| `RUN_LOOP_LIMIT_EXCEEDED` | A loop reached `max_iterations` without meeting its `until` conditions, and its `on_max_iterations` policy stopped the run. |
+| `RUN_CANCELLED` | You interrupted the run. Exits by the signal (see [Exit codes](#exit-codes)). |
+| `SESSION_PROCESS_STOP_FAILED` | You interrupted the run and a process group it started was still running 5 seconds after the stop. Exits by the signal. |
+| `RUN_SNAPSHOT_FAILED` | The run could not save a copy of its blueprint and step files when it started. |
+| `BLUEPRINT_INPUT_INVALID` | A declared input was given a value its type rejects, or a required input was left out. |
+| `AGENT_ENV_OVERRIDE_INVALID` | An `--env-passthrough` entry is invalid. Exits `2`. |
+| `CATALOG_NOT_FOUND` | No blueprint has that name. |
+| `CATALOG_SYNTAX_INVALID`, `CATALOG_SCHEMA_INVALID`, `CATALOG_FILE_UNREADABLE` | The blueprint fails validation, as [`dovo blueprint validate`](blueprint.md#error-codes) reports it (see [Validation failures](#validation-failures)). |
+| `CATALOG_WRITE_FAILED` | The catalog index cannot be written. |
+| `SESSION_STATE_MISSING`, `SESSION_STATE_CORRUPT`, `SESSION_STATE_INCONSISTENT`, `SESSION_STATE_REVISION_CONFLICT` | The run's saved execution state is missing, cannot be read, disagrees with `session.json`, or was changed by another writer, as for [`dovo session resume`](session.md#error-codes). |
+| `SESSION_SNAPSHOT_MISSING`, `SESSION_SNAPSHOT_INVALID` | A blueprint or step file the run saved when it started is missing or invalid when a later step needs it. |
+| `SESSION_WORKTREE_LINK_FAILED` | The run could not link its worktree to its session storage. |
+| `GIT_FAILED`, `GIT_BINARY_MISSING`, `GIT_TIMEOUT`, `GIT_WORKDIR_MISSING` | A git command failed while the run created its worktree, saved its diff, applied its changes with `--auto-apply` or removed its worktree, as for [`dovo worktree`](worktree.md#error-codes). |
+| `WORKTREE_PATH_CONFLICT`, `WORKTREE_CAPACITY_EXCEEDED`, `WORKTREE_CREATE_FAILED` | The run could not create its worktree, as for [`dovo worktree create`](worktree.md#error-codes); a full `worktree.max_active_worktrees` fails with a `Fix:` naming `dovo worktree delete`. |
+| `WORKTREE_WORKSPACE_DIRTY`, `WORKTREE_CHANGES_EMPTY`, `WORKTREE_APPLY_CONFLICT`, `WORKTREE_MISSING` | `--auto-apply` could not apply the changes, as for [`dovo worktree apply`](worktree.md#error-codes). The worktree is kept. |
+| `BOOTSTRAP_TARGET_FORBIDDEN`, `BOOTSTRAP_REPO_NOT_FOUND`, `BOOTSTRAP_PATH_INVALID`, `BOOTSTRAP_PATH_UNWRITABLE`, `BOOTSTRAP_METADATA_WRITE_FAILED`, `PROJECT_IDENTITY_UNREADABLE`, `PROJECT_IDENTITY_SCHEMA_INVALID`, `PROJECT_IDENTITY_WRITE_FAILED`, `CONFIG_PATH_INVALID`, `CONFIG_JSON_INVALID`, `CONFIG_ROOT_INVALID`, `CONFIG_SCHEMA_INVALID`, `CONFIG_WRITE_FAILED`, `CATALOG_SEED_FAILED` | The automatic initialization failed, only when the workspace has no `.dovo/project.json`; [`dovo init`](init.md#error-codes) explains each code. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `WORKSPACE_NOT_INITIALIZED` | `.dovo/project.json` exists but is not valid. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `CONFIG_NOT_FOUND`, `CONFIG_UNREADABLE`, `CONFIG_PATH_INVALID`, `CONFIG_JSON_INVALID`, `CONFIG_ROOT_INVALID`, `CONFIG_SCHEMA_INVALID`, `CONFIG_TIER_UNREADABLE`, `CONFIG_TIER_JSON_INVALID`, `CONFIG_TIER_ROOT_INVALID`, `CONFIG_TIER_SCHEMA_INVALID` | The configuration does not load; [`dovo config show`](config.md#dovo-config-show) explains each code. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `WORKSPACE_LOCK_TIMEOUT` | Another `dovo` process held the workspace lock until the wait timed out. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `INTERNAL_ERROR` | An unexpected error, with a [diagnostic log](doctor.md#diagnostic-logs) record. Reported in the result, or as an [`error` event](../reference/json-output.md#the-error-event) when it ends the command outside its result. Its message is `Unexpected error during engine.run: <error>`. |
+
+#### Step failure codes
+
+With `--format json`, each step that finishes prints a `run.step_done` event with the keys under [Step done keys](#step-done-keys); `dovo resume` prints the same event. `error_code` is `null` for a step that completed. A failed step carries one of the codes below: a code for a failure the step detects itself, or, when it failed because something it used failed, that failure's code. A step continued past with `on_failure: continue`, or with `continue` at a failure prompt, keeps its code, and a retried step carries the code of its last attempt. [`dovo session show`](session.md#dovo-session-show) reports the same code for each step.
+
+| Code | Cause |
+| --- | --- |
+| `STEP_WORKTREE_MISSING` | The step's working directory does not exist or is not a directory, or an agent step ran without a worktree (`--no-worktree`). |
+| `STEP_DEFINITION_INVALID` | The step cannot run as written: an unsupported type, a `command` or `internal` step with no command, a `script` step with no `script_path`, an unknown internal command, or an `ask` step with no interaction. |
+| `STEP_SCRIPT_NOT_FOUND` | The file named by `script_path` does not exist. |
+| `STEP_LAUNCH_FAILED` | The command or script could not be started. |
+| `STEP_OUTPUT_READ_FAILED` | Reading the command's or script's output failed. |
+| `STEP_TIMEOUT` | The step ran longer than its `timeout_seconds`. |
+| `STEP_COMMAND_FAILED` | The command or script exited with a non-zero code. |
+| `STEP_ASSERT_FAILED` | One of the step's `assert` checks failed. |
+| `STEP_INPUT_INVALID` | An `artifacts.upload` or `artifacts.download` step is missing `ARTIFACT_NAME`, `ARTIFACT_PATH` or `ARTIFACT_DEST`, or its `ARTIFACT_REVISION` is not a positive integer. |
+| `STEP_ANSWER_FAILED` | An `ask` step was answered with an option marked `fail: true`. |
+| `STEP_PROMPT_EMPTY` | An agent step's prompt is blank after interpolation. |
+| `AGENT_SCRATCH_UNAVAILABLE` | The agent step's private scratch directory could not be prepared. |
+| `AGENT_PROVIDER_UNSUPPORTED` | The agent step's provider is not a supported provider. |
+| `AGENT_TIMEOUT` | The agent ran longer than the step's `timeout_seconds`. |
+| `AGENT_TASK_UNFIXABLE` | The agent reported the task unfixable. |
+| `AGENT_TASK_BLOCKED` | The agent was blocked by its tool permissions and made no change. |
+| `AGENT_PROVIDER_FAILED` | Any other agent provider failure, such as a missing credential, a provider that exited with an error, or an unreadable unfixable report. |
+| `INTERNAL_ERROR` | An internal command, or an agent provider, failed with an unexpected error, an agent step's output could not be delivered, or the step itself failed with an unexpected error, such as writing bytes that are not UTF-8 to `$DOVO_OUTPUT`. Its `error_message` is `Unexpected error during engine.step: <error>`. Like any failed step it follows its `on_failure` policy, and `dovo resume` does not run it again. |
+
+A step that fails because something it used failed carries that failure's code:
+
+| Code | Cause |
+| --- | --- |
+| `RUN_CANCELLED` | You interrupted the step. |
+| `CATALOG_NOT_FOUND` | The step's `uses:` names a step that does not exist. |
+| `CATALOG_SCHEMA_INVALID` | The step's `uses:` names a step that fails validation. |
+| `PATCH_EMPTY` | The agent step's edit is empty. |
+| `PATCH_SIZE_EXCEEDED` | The agent step's edit is larger than `max_patch_kb`. |
+| `PATCH_CORRUPT` | The agent step's edit is not a valid unified diff. |
+| `PATCH_FILE_COUNT_EXCEEDED` | The agent step's edit touches more files than `max_files`. |
+| `PATCH_BINARY_DISALLOWED` | The agent step's edit changes a binary file. |
+| `PATCH_PATH_UNSAFE` | The agent step's edit names an absolute path or one that escapes the worktree. |
+| `PATCH_WORKTREE_MISSING` | The worktree the agent step's edit applies to does not exist. |
+| `GIT_TIMEOUT` | A git command on the agent step's worktree timed out. |
+| `GIT_FAILED` | Any other failed git command on the agent step's worktree. |
+| `ARTIFACT_FILE_NOT_FOUND` | A `required` entry of the step's `artifacts:` block matched no files (`Artifact '<name>' matched no files at '<path>'.`). |
+| `ARTIFACT_PUBLISH_FAILED` | The step's artifact could not be published (`Failed to publish artifact '<name>': <detail>`). |
+| `ARTIFACT_CONTENT_UNAVAILABLE` | An `{{ artifacts.<name>.content }}` reference cannot be inlined. |
+| `ARTIFACT_NOT_FOUND`, `ARTIFACT_CHECKSUM_INVALID`, `ARTIFACT_DOWNLOAD_FAILED` | An `artifacts.download` step failed, as [`dovo artifacts download`](artifacts.md#error-codes) does. |
+| `ASK_ARTIFACT_NOT_FOUND` | The artifact an `ask` step shows was not found. |
+| `ASK_ARTIFACT_MANIFEST_UNREADABLE` | The manifest of the artifact an `ask` step shows cannot be read. |
+| `ASK_OPTIONS_ARTIFACT_NOT_FOUND` | The artifact named by an `ask` step's `options_from` was not found. |
+| `ASK_OPTIONS_ARTIFACT_MANIFEST_UNREADABLE` | The manifest of the artifact named by `options_from` cannot be read. |
+| `ASK_OPTIONS_INVALID` | The file named by `options_from` cannot be read as a JSON array of options. |
+| `ASK_OPTIONS_EMPTY` | `options_from` produced fewer than 2 options. |
+| `ASK_OPTIONS_CONFLICT` | An option value appears more than once. |
 
 ### Exit codes
 

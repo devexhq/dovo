@@ -198,6 +198,5 @@ class CatalogCreateResult(CatalogResult):
 class CatalogValidateResult(CatalogResult):
     """Non-raising result of validating one catalog blueprint or step definition."""
 
-    valid: bool
     target: str
     resolved_path: Path | None = None

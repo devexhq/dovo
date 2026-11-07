@@ -23,7 +23,23 @@ dovo doctor [--category <name>] [--format terminal|json]
 
 The `config.schema` check loads the configuration as [`dovo config show`](config.md#dovo-config-show) does. When it fails to load, the check fails with the same `error_code`, `errors` and remediations that `dovo config show` reports, for example `CONFIG_JSON_INVALID` for malformed JSON or `CONFIG_PATH_INVALID` when `.dovo/config.json` is a directory, and its `details` hold `schema_errors` only for `CONFIG_SCHEMA_INVALID`.
 
-Each check in the JSON output reports an `error_code`: `null` for a check that passed or was skipped, otherwise one of the codes below. A check that only warns carries its code with an empty `errors` list.
+Each check in the JSON output reports an `error_code`: `null` for a check that passed or was skipped, otherwise one of the [check codes](#check-codes). A check that only warns carries its code with an empty `errors` list.
+
+Dovo stops any `git` command that runs longer than 120 seconds. Set `DOVO_GIT_TIMEOUT_SECONDS` to a positive number of seconds, up to one day (86400), to change that limit, for example for a slow repository; any other value keeps 120. When a `git` command of the `git.repo` check times out, the check fails with `DOCTOR_GIT_TIMEOUT` and the message `Git timed out in '<dir>': Git timed out after <seconds>s ('git <command>')`, not as a directory that is not a Git repository. Its fix is to check for git lock files, credential prompts or stuck git processes and retry, or to raise `DOVO_GIT_TIMEOUT_SECONDS`. A timeout, or a `git` that disappears from `PATH` while the check runs, also writes a [diagnostic log](#diagnostic-logs) record, listed in the check's `diagnostics`.
+
+The command exits `1` when at least one check has status `FAILED`, and `0` otherwise (including when checks have `WARNING` or `SKIPPED` status). Passing an unrecognized `--category` value exits `2` before any check runs. See [Exit codes](#exit-codes).
+
+## Error codes
+
+With `--format json`, the report's `error_code` is one of these codes, or `null` when no check failed.
+
+| Code | Cause |
+| --- | --- |
+| `DOCTOR_CHECKS_FAILED` | At least one check has status `FAILED`. Each failed check carries its own code, listed under [Check codes](#check-codes). |
+| `WORKSPACE_NOT_INITIALIZED` | The workspace has no valid `.dovo/project.json`; run `dovo init`. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `INTERNAL_ERROR` | An unexpected error, with a [diagnostic log](doctor.md#diagnostic-logs) record. Reported in the result, or as an [`error` event](../reference/json-output.md#the-error-event) when it ends the command outside its result. |
+
+### Check codes
 
 | `error_code` | Check | Meaning |
 | --- | --- | --- |
@@ -39,17 +55,12 @@ Each check in the JSON output reports an `error_code`: `null` for a check that p
 | `DOCTOR_AGENT_KEY_MISSING` | `agent.setup` | The agent provider's credential is missing. |
 | `DOCTOR_AGENT_MODEL_MISSING` | `agent.setup` | The agent provider has no model configured. |
 | `DOCTOR_CHECK_CRASHED` | any | The check raised an unexpected error. |
-
-The `config.schema` check reports the configuration load's own codes, described above.
-
-Dovo stops any `git` command that runs longer than 120 seconds. Set `DOVO_GIT_TIMEOUT_SECONDS` to a positive number of seconds, up to one day (86400), to change that limit, for example for a slow repository; any other value keeps 120. When a `git` command of the `git.repo` check times out, the check fails with `DOCTOR_GIT_TIMEOUT` and the message `Git timed out in '<dir>': Git timed out after <seconds>s ('git <command>')`, not as a directory that is not a Git repository. Its fix is to check for git lock files, credential prompts or stuck git processes and retry, or to raise `DOVO_GIT_TIMEOUT_SECONDS`. A timeout, or a `git` that disappears from `PATH` while the check runs, also writes a [diagnostic log](#diagnostic-logs) record, listed in the check's `diagnostics`.
-
-The command exits `1` when at least one check has status `FAILED`, and `0` otherwise (including when checks have `WARNING` or `SKIPPED` status). Passing an unrecognized `--category` value exits `2` before any check runs. See [Exit codes](#exit-codes).
+| `CONFIG_NOT_FOUND`, `CONFIG_UNREADABLE`, `CONFIG_PATH_INVALID`, `CONFIG_JSON_INVALID`, `CONFIG_ROOT_INVALID`, `CONFIG_SCHEMA_INVALID`, `CONFIG_TIER_UNREADABLE`, `CONFIG_TIER_JSON_INVALID`, `CONFIG_TIER_ROOT_INVALID`, `CONFIG_TIER_SCHEMA_INVALID` | `config.schema` | The configuration does not load, with the same `errors` and remediations that [`dovo config show`](config.md#dovo-config-show) reports. |
 
 ## Exit codes
 
 - `0`: no check failed, including a report whose checks only warn or skip.
-- `1`: at least one check has status `FAILED`, or a failure reported as an `error` event: a workspace without a valid `.dovo/project.json`, a workspace lock timeout or an unexpected error.
+- `1`: at least one check has status `FAILED`, or a failure reported as an `error` event: a workspace without a valid `.dovo/project.json` or an unexpected error.
 - `2`: a usage error, such as an unrecognized `--category` value or an unknown option.
 
 See [JSON Output](../reference/json-output.md#exit-codes) for the rule every command follows.

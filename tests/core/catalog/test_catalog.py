@@ -384,7 +384,7 @@ class CatalogUnreadableLookupTests:
     def test_validate_by_name_reports_file_unreadable_with_its_own_remediation(
         self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return valid False, CATALOG_FILE_UNREADABLE, the check-the-file remediation and the catalog.validate record."""
+        """Return ok False, CATALOG_FILE_UNREADABLE, the check-the-file remediation and the catalog.validate record."""
         catalog = Catalog(workspace_paths)
         catalog.create(CatalogItemType.BLUEPRINT, "locked")
         locked = _unreadable(workspace_paths.catalog_blueprints_dir / "locked.yml")
@@ -398,7 +398,7 @@ class CatalogUnreadableLookupTests:
         finally:
             locked.chmod(0o644)
 
-        assert (result.valid, result.error_code) == (False, ErrorCode.CATALOG_FILE_UNREADABLE)
+        assert (result.ok, result.error_code) == (False, ErrorCode.CATALOG_FILE_UNREADABLE)
         assert [remediation.message for remediation in result.remediations] == [
             f"Check that '{locked}' can be read by the current user, for example its permissions."
         ]
@@ -992,7 +992,7 @@ class CatalogResultItemTypeTests:
     def test_validate_result_without_item_type_is_rejected(self) -> None:
         """Raise ValidationError naming item_type when a CatalogValidateResult is built without one."""
         with pytest.raises(ValidationError, match="item_type"):
-            CatalogValidateResult.model_validate({"valid": True, "target": "demo"})
+            CatalogValidateResult.model_validate({"target": "demo"})
 
 
 def _raise_disk_full(path: Path, data: object) -> None:

@@ -135,7 +135,7 @@ An unknown option, a missing required option, a value an option does not accept 
 
 ## Exit codes
 
-Every command's exit code comes from its result:
+Every command's exit code comes from its result, except that a `dovo run` or `dovo resume` you interrupt ends by the signal it received, so its shell status is `128` plus the signal number:
 
 | Exit | When |
 | --- | --- |

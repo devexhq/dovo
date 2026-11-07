@@ -85,17 +85,33 @@ class CatalogItemCliTests:
         envelope = json.loads(result.stdout)
         assert envelope.get("event_type") == f"{kind.command}.validate"
         payload = envelope.get("payload", {})
-        assert payload.get("valid") is True
-        assert payload.get("status_label") == "PASSED"
+        assert payload.get("ok") is True
+        assert "valid" not in payload
+        assert "status_label" not in payload
+
+    def test_validate_terminal_reports_valid_definition_without_banner(
+        self, run_dovo: DovoRunner, initialized_project: Path, kind: CatalogKind
+    ) -> None:
+        """The terminal ends with `<Kind> is valid.` and prints no PASSED banner."""
+        name = f"custom-valid-terminal-{kind.suffix}"
+        run_dovo([kind.command, "create", "--name", name], cwd=initialized_project)
+
+        result = run_dovo([kind.command, "validate", name], cwd=initialized_project)
+
+        assert result.exit_code == 0
+        assert f"{kind.command.capitalize()} is valid." in result.stdout
+        assert "PASSED" not in result.stdout
 
     def test_validate_exit_codes_for_invalid_schema_and_missing_target(
         self, run_dovo: DovoRunner, initialized_project: Path, kind: CatalogKind
     ) -> None:
-        """An invalid schema and a missing catalog item both exit 1."""
+        """An invalid schema and a missing catalog item both exit 1, with no FAILED banner."""
         bad_path = initialized_project / kind.invalid_file_name
         bad_path.write_text(kind.invalid_content, encoding="utf-8")
         invalid_res = run_dovo([kind.command, "validate", str(bad_path)], cwd=initialized_project)
         assert invalid_res.exit_code == 1
+        assert "FAILED" not in invalid_res.stdout
+        assert f"{kind.command.capitalize()} is valid." not in invalid_res.stdout
 
         missing_res = run_dovo([kind.command, "validate", kind.missing_target], cwd=initialized_project)
         assert missing_res.exit_code == 1
