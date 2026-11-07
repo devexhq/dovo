@@ -858,7 +858,7 @@ class CatalogResultItemTypeTests:
     def test_validate_result_without_item_type_is_rejected(self) -> None:
         """Raise ValidationError naming item_type when a CatalogValidateResult is built without one."""
         with pytest.raises(ValidationError, match="item_type"):
-            CatalogValidateResult.model_validate({"valid": True, "target": "demo"})
+            CatalogValidateResult.model_validate({"target": "demo"})
 
 
 def _raise_disk_full(path: Path, data: object) -> None:
