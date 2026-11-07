@@ -303,7 +303,7 @@ def seed_new_session(
         auto_apply=auto_apply,
         agent=agent,
     )
-    SessionStateStore(sessions, paths, session_id).initialize(blueprint, manifest, [])
+    SessionStateStore(sessions, paths, session_id).initialize(blueprint, manifest, [], [])
     row = sessions.get(session_id)
     assert row is not None
     return row
@@ -333,14 +333,14 @@ def seed_crashed_session(
             id=worktree_id, branch_name=f"dovo/{worktree_id}", base_commit="0" * 40, worktree_path=worktree_path
         )
     store = SessionStateStore(sessions, paths, session_id)
-    state = store.load([])
+    state = store.load([], [])
 
     for node in state.nodes:
         if isinstance(node, ExecutionLeafNode) and node.id == interrupted_step_id:
             node.state = NodeState.RUNNING
             node.attempts = [StepAttemptRecord(number=1, span=TimeSpan(started_at=SEEDED_SPAN.started_at))]
 
-    store.save(state, [], LifecycleUpdate(worktree_id=worktree_id))
+    store.save(state, [], [], LifecycleUpdate(worktree_id=worktree_id))
     row = sessions.get(session_id)
     assert row is not None
     return row
@@ -369,7 +369,7 @@ def seed_paused_session(
         agent=agent,
     )
     store = SessionStateStore(sessions, paths, session_id)
-    state = store.load([])
+    state = store.load([], [])
 
     for node in state.nodes:
         assert isinstance(node, ExecutionLeafNode)
@@ -390,6 +390,7 @@ def seed_paused_session(
 
     store.save(
         state,
+        [],
         [],
         LifecycleUpdate(
             run_status=SessionStatus.PAUSED,
@@ -426,7 +427,7 @@ def seed_failed_session(
     """
     seed_new_session(paths, sessions, session_id=session_id, steps=steps)
     store = SessionStateStore(sessions, paths, session_id)
-    state = store.load([])
+    state = store.load([], [])
 
     for node in state.nodes:
         assert isinstance(node, ExecutionLeafNode)
@@ -449,6 +450,7 @@ def seed_failed_session(
 
     store.save(
         state,
+        [],
         [],
         LifecycleUpdate(
             run_status=SessionStatus.FAILED,

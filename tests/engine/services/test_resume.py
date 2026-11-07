@@ -66,7 +66,7 @@ def _seed(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) 
 def _end_crashed_run(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str, status: str) -> None:
     """Record a result of status on the crashed run's one step, leaving every top-level node terminal."""
     store = SessionStateStore(sessions, paths, session_id)
-    state = store.load([])
+    state = store.load([], [])
     leaf = state.nodes[0]
     assert isinstance(leaf, ExecutionLeafNode)
     result = StepRecord(
@@ -79,7 +79,7 @@ def _end_crashed_run(paths: WorkspacePaths, sessions: SessionsRepository, sessio
     )
     leaf.attempts = [StepAttemptRecord(number=1, span=SEEDED_SPAN, result=result)]
     leaf.state = NodeState.COMPLETED if status == "completed" else NodeState.FAILED
-    store.save(state, [])
+    store.save(state, [], [])
 
 
 def _resume_service(
@@ -389,8 +389,13 @@ class BlueprintResumeServiceCatchTests:
 
         monkeypatch.setattr(SessionsRepository, "get", _fail_read_back)
 
-        def _boom(sessions: SessionsRepository, paths: WorkspacePaths, session_id: str, warnings: list[str]) -> None:
-            driven.append(session_id)
+        def _boom(
+            store: SessionStateStore,
+            validation_warnings: list[str],
+            warnings: list[str],
+            diagnostics: list[DiagnosticRecord],
+        ) -> None:
+            driven.append(store.session_id)
             try:
                 raise PermissionError("state.json")
             except OSError as exc:

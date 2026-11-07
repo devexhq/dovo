@@ -16,6 +16,7 @@ from dovo.cli import app
 from dovo.common.filesystem import Filesystem
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogItemType, CatalogListResult
+from tests.harness.diagnostic_log import FROZEN_EVENT_ID
 from tests.harness.exit_codes import OUTPUT_FORMATS
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -116,3 +117,24 @@ class StepListCliIntegrationTests:
 
         assert result.exit_code == 0
         assert json.loads(result.stdout)["payload"]["item_type"] == "step"
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_unreadable_step_json_warns_and_lists_its_record(
+        self, cli_runner: CliRunner, isolated_workspace: Path, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Exit 0 with ok true, the unreadable file's read warning naming a step, and its record in diagnostics."""
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "locked")
+        locked = isolated_workspace / ".dovo" / "catalog" / "steps" / "locked.yml"
+        locked.chmod(0o000)
+        try:
+            result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "list", "--format", "json"])
+        finally:
+            locked.chmod(0o644)
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["ok"] is True
+        assert payload["warnings"] == [
+            f"Failed to read catalog step '{locked}': [Errno 13] Permission denied: '{locked}'"
+        ]
+        assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]

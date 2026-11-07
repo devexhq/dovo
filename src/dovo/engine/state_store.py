@@ -6,6 +6,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog.blueprint import Blueprint
@@ -22,7 +23,12 @@ from dovo.engine.state_models import (
     ExecutionStateTree,
     SessionJsonPayload,
 )
-from dovo.engine.writer import snapshot_blueprint_path, snapshot_step_path, write_session_projection
+from dovo.engine.writer import (
+    record_persist_failure,
+    snapshot_blueprint_path,
+    snapshot_step_path,
+    write_session_projection,
+)
 
 
 def _leaf_node(step: StepDefinition) -> ExecutionLeafNode:
@@ -83,9 +89,13 @@ class SessionStateStore:
         self.session_id = session_id
 
     def initialize(
-        self, blueprint: Blueprint, manifest: DefinitionsManifest, warnings: list[str]
+        self,
+        blueprint: Blueprint,
+        manifest: DefinitionsManifest,
+        warnings: list[str],
+        diagnostics: list[DiagnosticRecord],
     ) -> ExecutionStateTree:
-        """Build the revision 0 tree, commit it to the session row and return it, appending any session.json projection warning.
+        """Build the revision 0 tree, commit it to the session row and return it, appending any session.json projection warning and its record.
 
         Raises:
             EngineError: SESSION_NOT_FOUND or SESSION_STATE_REVISION_CONFLICT, leaving the row and projection untouched.
@@ -100,11 +110,11 @@ class SessionStateStore:
         if row is None:
             raise self._write_failure()
 
-        warnings.extend(self._sync_projection(state, row))
+        self._sync_projection(state, row, warnings, diagnostics)
         return state
 
-    def load(self, warnings: list[str]) -> ExecutionStateTree:
-        """Return the run's validated state from its row, appending any session.json projection warning to warnings.
+    def load(self, warnings: list[str], diagnostics: list[DiagnosticRecord]) -> ExecutionStateTree:
+        """Return the run's validated state from its row, appending any session.json projection warning to warnings and its record to diagnostics.
 
         Raises:
             EngineError: SESSION_NOT_FOUND, SESSION_STATE_MISSING, SESSION_STATE_CORRUPT,
@@ -136,16 +146,17 @@ class SessionStateStore:
             )
 
         if _projection_stale(projected, state, row):
-            warnings.extend(self._sync_projection(state, row))
+            self._sync_projection(state, row, warnings, diagnostics)
         return state
 
     def save(
         self,
         state: ExecutionStateTree,
         warnings: list[str],
+        diagnostics: list[DiagnosticRecord],
         lifecycle: LifecycleUpdate | None = None,
     ) -> ExecutionStateTree:
-        """Commit state at revision + 1 with optional lifecycle fields and return it, appending any session.json projection warning.
+        """Commit state at revision + 1 with optional lifecycle fields and return it, appending any session.json projection warning and its record.
 
         Raises:
             EngineError: SESSION_NOT_FOUND or SESSION_STATE_REVISION_CONFLICT, leaving the row and projection untouched.
@@ -165,7 +176,7 @@ class SessionStateStore:
         if row is None:
             raise self._write_failure()
 
-        warnings.extend(self._sync_projection(next_state, row))
+        self._sync_projection(next_state, row, warnings, diagnostics)
         return next_state
 
     def regenerate_projection(self, state: ExecutionStateTree, row: SessionRecord) -> Path:
@@ -183,13 +194,19 @@ class SessionStateStore:
             f"Execution state for session '{self.session_id}' was changed by another writer.",
         )
 
-    def _sync_projection(self, state: ExecutionStateTree, row: SessionRecord) -> list[str]:
-        """Write the session.json projection, returning a warning list instead of raising on OSError."""
+    def _sync_projection(
+        self,
+        state: ExecutionStateTree,
+        row: SessionRecord,
+        warnings: list[str],
+        diagnostics: list[DiagnosticRecord],
+    ) -> None:
+        """Write the session.json projection; on OSError append its warning to warnings and its record to diagnostics."""
         try:
             self.regenerate_projection(state, row)
         except OSError as exc:
-            return [f"Failed to write session.json projection: {exc}; it will be regenerated on the next load."]
-        return []
+            warnings.append(f"Failed to write session.json projection: {exc}; it will be regenerated on the next load.")
+            diagnostics.extend(record_persist_failure(exc, self.session_id))
 
     def _parse_state(self, row: SessionRecord) -> ExecutionStateTree | None:
         """Return the validated state when the JSON is valid and its revision matches the row, else None."""

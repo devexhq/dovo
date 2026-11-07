@@ -200,6 +200,32 @@ class BlueprintValidateCliTests:
         assert payload["error_code"] == "CATALOG_FILE_UNREADABLE"
         assert payload["ok"] is False
 
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_unreadable_catalog_name_json_has_file_unreadable_and_its_record(
+        self, cli_runner: CliRunner, isolated_workspace: Path, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Exit 1 with CATALOG_FILE_UNREADABLE, the check-the-file remediation and the record for an unreadable catalog name."""
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "locked")
+        locked = isolated_workspace / ".dovo" / "catalog" / "blueprints" / "locked.yml"
+        locked.chmod(0o000)
+        try:
+            result = cli_runner.invoke(
+                app, ["-p", str(isolated_workspace), "blueprint", "validate", "locked", "--format", "json"]
+            )
+        finally:
+            locked.chmod(0o644)
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert (payload["valid"], payload["error_code"]) == (False, "CATALOG_FILE_UNREADABLE")
+        assert payload["errors"] == [
+            f"Failed to read catalog blueprint '{locked}': [Errno 13] Permission denied: '{locked}'"
+        ]
+        assert [remediation["message"] for remediation in payload["remediations"]] == [
+            f"Check that '{locked}' can be read by the current user, for example its permissions."
+        ]
+        assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]
+
     def test_invalid_definition_json_has_schema_invalid(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """Exit 1 with error_code CATALOG_SCHEMA_INVALID, ok False and payload keys exactly, in order, {ok, error_code, errors, warnings, remediations, diagnostics, target, resolved_path, item_type} for a file target failing schema validation."""
         target = isolated_workspace / "bad.yml"

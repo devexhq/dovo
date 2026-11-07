@@ -112,11 +112,27 @@ class CatalogRecord(CatalogIndexEntry):
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogSkippedFile:
+    """A catalog file a scan skipped because it could not be read: its tier, type, key, absolute path and read error."""
+
+    tier: CatalogTier
+    item_type: CatalogItemType
+    key: str
+    path: Path
+    error: OSError
+
+    @property
+    def message(self) -> str:
+        """Return "Failed to read catalog <item_type> '<path>': <error>"."""
+        return f"Failed to read catalog {self.item_type.value} '{self.path}': {self.error}"
+
+
+@dataclass(frozen=True, slots=True)
 class CatalogScan:
-    """Records indexed by a catalog scan, and the read errors of files it skipped."""
+    """Records indexed by a catalog scan, and the files it skipped because they could not be read."""
 
     records: tuple[CatalogRecord, ...]
-    skipped_files: tuple[str, ...]
+    skipped_files: tuple[CatalogSkippedFile, ...]
 
 
 @dataclass(frozen=True, slots=True)

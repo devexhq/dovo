@@ -29,11 +29,11 @@ def _seed_running_loop(paths: WorkspacePaths, sessions: SessionsRepository, sess
     """Seed a run whose loop, first iteration and body leaf are RUNNING, and return its state store."""
     seed_new_session(paths, sessions, session_id=session_id, steps=[_LOOP])
     store = SessionStateStore(sessions, paths, session_id)
-    state = store.load([])
+    state = store.load([], [])
     loop = state.nodes[0]
     assert isinstance(loop, ExecutionLoopNode)
     loop.state = loop.iterations[0].state = loop.iterations[0].steps[0].state = NodeState.RUNNING
-    store.save(state, [])
+    store.save(state, [], [])
     return store
 
 
@@ -41,15 +41,15 @@ def _seed_paused_leaf(paths: WorkspacePaths, sessions: SessionsRepository, sessi
     """Seed a run whose one leaf is PAUSED, and return its state store."""
     seed_new_session(paths, sessions, session_id=session_id, steps=[{"id": "a", "run": "true"}])
     store = SessionStateStore(sessions, paths, session_id)
-    state = store.load([])
+    state = store.load([], [])
     state.nodes[0].state = NodeState.PAUSED
-    store.save(state, [])
+    store.save(state, [], [])
     return store
 
 
 def _loop_states(store: SessionStateStore) -> tuple[NodeState, NodeState, NodeState]:
     """Return the saved state of the loop, its first iteration and that iteration's body leaf."""
-    loop = store.load([]).nodes[0]
+    loop = store.load([], []).nodes[0]
     assert isinstance(loop, ExecutionLoopNode)
     return loop.state, loop.iterations[0].state, loop.iterations[0].steps[0].state
 
@@ -88,7 +88,7 @@ class RecordRunEndTests:
 
         row = sessions_repo.get("paused-1")
         assert row is not None
-        leaf = store.load([]).nodes[0]
+        leaf = store.load([], []).nodes[0]
         assert isinstance(leaf, ExecutionLeafNode)
         assert (row.status, leaf.state) == (SessionStatus.PAUSED, NodeState.PAUSED)
 
@@ -136,5 +136,55 @@ class RecordRunEndTests:
         )
 
         assert warnings == ["Failed to update run status in database: disk full"]
+        assert diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.persist"
+
+    def test_refused_state_save_is_a_warning_with_its_record(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With the state save refused as written by another writer, append the store's message and one engine.persist record."""
+        store = _seed_paused_leaf(engine_paths, sessions_repo, "conflict-1")
+        monkeypatch.setattr(SessionsRepository, "save_execution_state", lambda *args, **kwargs: None)
+        warnings: list[str] = []
+        diagnostics: list[DiagnosticRecord] = []
+
+        record_run_end(
+            store,
+            RunOutcome(status=SessionStatus.FAILED, worktree_path=engine_paths.root_dir),
+            warnings,
+            diagnostics,
+            worktree_kept=None,
+        )
+
+        event = read_single_event(frozen_diagnostic_clock)
+        assert warnings == ["Execution state for session 'conflict-1' was changed by another writer."]
+        assert diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        assert (event["operation"], event["context"]) == ("engine.persist", {"session_id": "conflict-1"})
+
+    def test_unreadable_state_is_a_warning_with_its_record_and_the_row_keeps_the_status(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, frozen_diagnostic_clock: Path
+    ) -> None:
+        """With the saved state corrupt, append the load's message and one engine.persist record, and write the status onto the row."""
+        store = _seed_paused_leaf(engine_paths, sessions_repo, "corrupt-1")
+        sessions_repo.save_execution_state("corrupt-1", "not json", expected_revision=1, next_revision=2)
+        warnings: list[str] = []
+        diagnostics: list[DiagnosticRecord] = []
+
+        record_run_end(
+            store,
+            RunOutcome(status=SessionStatus.FAILED, worktree_path=engine_paths.root_dir),
+            warnings,
+            diagnostics,
+            worktree_kept=None,
+        )
+
+        row = sessions_repo.get("corrupt-1")
+        assert row is not None
+        assert row.status == SessionStatus.FAILED
+        assert warnings == ["Execution state for session 'corrupt-1' is corrupt."]
         assert diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.persist"

@@ -225,7 +225,7 @@ def _run_new(
 
 
 def _state(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> ExecutionStateTree:
-    state = SessionStateStore(sessions, paths, session_id).load([])
+    state = SessionStateStore(sessions, paths, session_id).load([], [])
     return state
 
 
@@ -292,7 +292,7 @@ def _seed_interrupted(
     for done in completed:
         _complete(_leaf(state, done))
     _interrupt(_leaf(state, step_id))
-    SessionStateStore(sessions, paths, session_id).save(state, [])
+    SessionStateStore(sessions, paths, session_id).save(state, [], [])
 
 
 class CoordinatorExecuteTests:
@@ -964,7 +964,7 @@ class CoordinatorMetadataTests:
         _complete(code)
         summary = '{"status":"no_op","summary":null,"unfixable_reason":null,"touched_files":["a.py","b.py"]}\n'
         code.attempts[0].result = _last_result(code).model_copy(update={"stdout": summary})
-        SessionStateStore(sessions_repo, engine_paths, "resume-summary").save(state, [])
+        SessionStateStore(sessions_repo, engine_paths, "resume-summary").save(state, [], [])
 
         outcome = _coordinator(engine_paths, sessions_repo, "resume-summary").execute()
 
@@ -1453,7 +1453,7 @@ class CoordinatorLoopResumeTests:
         _interrupt(second.steps[0])
         loop.iterations.append(second)
         loop.state = NodeState.RUNNING
-        SessionStateStore(sessions_repo, engine_paths, "loop-crashed").save(state, [])
+        SessionStateStore(sessions_repo, engine_paths, "loop-crashed").save(state, [], [])
         prompter = ScriptedFailurePrompter([])
 
         outcome = _coordinator(engine_paths, sessions_repo, "loop-crashed", prompter=prompter).execute()
@@ -1495,7 +1495,7 @@ class CoordinatorLoopResumeTests:
         _interrupt(after)
         loop.iterations[0].state = loop.state = NodeState.RUNNING
         (engine_workspace / "check.count").write_text("ran\n", encoding="utf-8")
-        SessionStateStore(sessions_repo, engine_paths, "loop-legacy").save(state, [])
+        SessionStateStore(sessions_repo, engine_paths, "loop-legacy").save(state, [], [])
 
         outcome = _coordinator(engine_paths, sessions_repo, "loop-legacy").execute()
 
@@ -1930,7 +1930,7 @@ class CoordinatorCorruptLoopStateTests:
         store = SessionStateStore(sessions_repo, engine_paths, "corrupt-loop")
         state = _state(engine_paths, sessions_repo, "corrupt-loop")
         _loop_node(state, "fix").iterations[0].steps.reverse()
-        store.save(state, [])
+        store.save(state, [], [])
         revision = _state(engine_paths, sessions_repo, "corrupt-loop").revision
 
         outcome = _coordinator(engine_paths, sessions_repo, "corrupt-loop").execute()
@@ -2044,7 +2044,7 @@ class CoordinatorInvalidStateTests:
         store = SessionStateStore(sessions_repo, engine_paths, "ghost-def")
         state = _state(engine_paths, sessions_repo, "ghost-def")
         _leaf(state, "a").id = "ghost"
-        store.save(state, [])
+        store.save(state, [], [])
 
         outcome = _coordinator(engine_paths, sessions_repo, "ghost-def").execute()
 
@@ -2066,7 +2066,7 @@ class CoordinatorInvalidStateTests:
         state = _state(engine_paths, sessions_repo, "no-result")
         leaf = _leaf(state, "b")
         leaf.attempts[-1] = leaf.attempts[-1].model_copy(update={"result": None})
-        SessionStateStore(sessions_repo, engine_paths, "no-result").save(state, [])
+        SessionStateStore(sessions_repo, engine_paths, "no-result").save(state, [], [])
 
         outcome = _coordinator(engine_paths, sessions_repo, "no-result").execute()
 
@@ -2213,7 +2213,7 @@ class AskRun:
 
     def state(self) -> ExecutionStateTree:
         """Load the persisted execution state."""
-        state = SessionStateStore(self.sessions, self.paths, _SESSION_ID).load([])
+        state = SessionStateStore(self.sessions, self.paths, _SESSION_ID).load([], [])
         return state
 
     def leaf(self, step_id: str) -> ExecutionLeafNode:
@@ -2434,7 +2434,7 @@ class CoordinatorAskTests:
         assert isinstance(leaf, ExecutionLeafNode)
         assert leaf.pending_ask is not None
         leaf.pending_ask = leaf.pending_ask.model_copy(update={"options": [RequestOption(value="only", label="Only")]})
-        SessionStateStore(ask_run.sessions, ask_run.paths, _SESSION_ID).save(state, [])
+        SessionStateStore(ask_run.sessions, ask_run.paths, _SESSION_ID).save(state, [], [])
 
         outcome = ask_run.execute(_ScriptedPrompter([]))
 

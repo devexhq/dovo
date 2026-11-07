@@ -342,6 +342,98 @@ class CatalogShowTests:
         assert frozen_diagnostic_clock.exists() is False
 
 
+def _unreadable(path: Path) -> Path:
+    """Make path unreadable and return it; the caller restores its mode."""
+    path.chmod(0o000)
+    return path
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+class CatalogUnreadableLookupTests:
+    """Tests verifying a lookup by name that matches only an unreadable file fails as CATALOG_FILE_UNREADABLE."""
+
+    @pytest.mark.parametrize(
+        ("item_type", "type_dir"),
+        [
+            pytest.param(CatalogItemType.BLUEPRINT, "blueprints", id="blueprint"),
+            pytest.param(CatalogItemType.STEP, "steps", id="step"),
+        ],
+    )
+    def test_show_reports_file_unreadable_with_its_record(
+        self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path, item_type: CatalogItemType, type_dir: str
+    ) -> None:
+        """Return CATALOG_FILE_UNREADABLE naming the file, its check-the-file remediation and its catalog.show record."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(item_type, "locked")
+        locked = _unreadable(workspace_paths.catalog_dir / type_dir / "locked.yml")
+        try:
+            result = catalog.show("locked", item_type)
+        finally:
+            locked.chmod(0o644)
+
+        assert result.error_code == ErrorCode.CATALOG_FILE_UNREADABLE
+        assert result.errors == [
+            f"Failed to read catalog {item_type.value} '{locked}': [Errno 13] Permission denied: '{locked}'"
+        ]
+        assert [remediation.message for remediation in result.remediations] == [
+            f"Check that '{locked}' can be read by the current user, for example its permissions."
+        ]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "catalog.show"
+
+    def test_validate_by_name_reports_file_unreadable_with_its_own_remediation(
+        self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return valid False, CATALOG_FILE_UNREADABLE, the check-the-file remediation and the catalog.validate record."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "locked")
+        locked = _unreadable(workspace_paths.catalog_blueprints_dir / "locked.yml")
+        try:
+            result = catalog.validate(
+                "locked",
+                item_type=CatalogItemType.BLUEPRINT,
+                blueprint_cls=BlueprintDefinition,
+                step_cls=StepDefinition,
+            )
+        finally:
+            locked.chmod(0o644)
+
+        assert (result.valid, result.error_code) == (False, ErrorCode.CATALOG_FILE_UNREADABLE)
+        assert [remediation.message for remediation in result.remediations] == [
+            f"Check that '{locked}' can be read by the current user, for example its permissions."
+        ]
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "catalog.validate"
+
+    def test_get_of_other_item_type_stays_not_found(self, workspace_paths: WorkspacePaths) -> None:
+        """Raise CATALOG_NOT_FOUND for a step lookup when only a blueprint of that name is unreadable."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "locked")
+        locked = _unreadable(workspace_paths.catalog_blueprints_dir / "locked.yml")
+        try:
+            with pytest.raises(CatalogError) as raised:
+                catalog.get("locked", item_type=CatalogItemType.STEP)
+        finally:
+            locked.chmod(0o644)
+
+        assert raised.value.error_code == ErrorCode.CATALOG_NOT_FOUND
+
+    def test_readable_match_in_a_lower_tier_wins_over_an_unreadable_repo_file(
+        self, workspace_paths: WorkspacePaths
+    ) -> None:
+        """Resolve the readable USER-tier 'shared' when the REPO-tier 'shared' cannot be read."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "shared", user=True)
+        catalog.create(CatalogItemType.BLUEPRINT, "shared")
+        locked = _unreadable(workspace_paths.catalog_blueprints_dir / "shared.yml")
+        try:
+            resolution = catalog.get("shared", item_type=CatalogItemType.BLUEPRINT)
+        finally:
+            locked.chmod(0o644)
+
+        assert resolution.record.tier == CatalogTier.USER
+
+
 class CatalogDeleteTierGuardTests:
     """Tests verifying delete refuses to remove a match resolved from a non-REPO tier."""
 
@@ -711,8 +803,10 @@ class CatalogListTests:
     """Tests verifying Catalog.list reports skipped files as warnings and copies a caught failure into its result."""
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
-    def test_unreadable_file_is_a_warning_and_others_listed(self, workspace_paths: WorkspacePaths) -> None:
-        """Return items containing 'good' and the unreadable file's read error in warnings, with errors []."""
+    def test_unreadable_file_is_a_warning_and_others_listed(
+        self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return items containing 'good', the unreadable file's read message in warnings and its catalog.list record in diagnostics, with errors []."""
         catalog = Catalog(workspace_paths)
         catalog.create(CatalogItemType.BLUEPRINT, "good")
         catalog.create(CatalogItemType.BLUEPRINT, "bad")
@@ -726,9 +820,49 @@ class CatalogListTests:
         keys = [item.key for item in result.items]
         assert "good" in keys
         assert "bad" not in keys
-        assert len(result.warnings) == 1
-        assert result.warnings[0].startswith(f"Failed to read catalog blueprint '{bad_file}': ")
+        assert result.warnings == [
+            f"Failed to read catalog blueprint '{bad_file}': [Errno 13] Permission denied: '{bad_file}'"
+        ]
         assert result.errors == []
+        assert result.error_code is None
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert (event["level"], event["operation"], event["context"]) == (
+            "error",
+            "catalog.list",
+            {"path": str(bad_file)},
+        )
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_unreadable_file_of_the_other_type_is_not_reported(
+        self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """List blueprints with warnings [], diagnostics [] and no event file when only a step file is unreadable."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "good")
+        catalog.create(CatalogItemType.STEP, "locked")
+        locked = _unreadable(workspace_paths.catalog_steps_dir / "locked.yml")
+        try:
+            result = catalog.list(CatalogItemType.BLUEPRINT)
+        finally:
+            locked.chmod(0o644)
+
+        assert "good" in [item.key for item in result.items]
+        assert (result.warnings, result.diagnostics, result.error_code) == ([], [], None)
+        assert frozen_diagnostic_clock.exists() is False
+
+    def test_invalid_file_is_listed_with_no_warning_or_record(
+        self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Index a readable blueprint whose YAML does not parse, with no warning, diagnostics [] and no event file."""
+        workspace_paths.catalog_blueprints_dir.mkdir(parents=True, exist_ok=True)
+        (workspace_paths.catalog_blueprints_dir / "broken.yml").write_text("steps: [\n", encoding="utf-8")
+
+        result = Catalog(workspace_paths).list(CatalogItemType.BLUEPRINT)
+
+        assert "broken" in [item.key for item in result.items]
+        assert (result.warnings, result.diagnostics) == ([], [])
+        assert frozen_diagnostic_clock.exists() is False
 
     def test_list_failure_copies_error_and_record(
         self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
