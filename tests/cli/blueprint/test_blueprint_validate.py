@@ -217,7 +217,7 @@ class BlueprintValidateCliTests:
 
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
-        assert (payload["valid"], payload["error_code"]) == (False, "CATALOG_FILE_UNREADABLE")
+        assert (payload["ok"], payload["error_code"]) == (False, "CATALOG_FILE_UNREADABLE")
         assert payload["errors"] == [
             f"Failed to read catalog blueprint '{locked}': [Errno 13] Permission denied: '{locked}'"
         ]
