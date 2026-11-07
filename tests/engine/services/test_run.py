@@ -633,11 +633,12 @@ class BlueprintRunServiceCatchTests:
             self: SessionStateStore,
             state: ExecutionStateTree,
             warnings: list[str],
+            diagnostics: list[DiagnosticRecord],
             lifecycle: LifecycleUpdate | None = None,
         ) -> ExecutionStateTree:
             if lifecycle is not None and lifecycle.worktree_kept is not None:
                 raise OSError("disk full")
-            return original_save(self, state, warnings, lifecycle)
+            return original_save(self, state, warnings, diagnostics, lifecycle)
 
         monkeypatch.setattr(SessionStateStore, "save", _finalize_disk_full)
 

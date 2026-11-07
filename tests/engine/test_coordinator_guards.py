@@ -97,7 +97,7 @@ def _run(
 
 
 def _state(paths: WorkspacePaths, sessions: SessionsRepository) -> ExecutionStateTree:
-    return SessionStateStore(sessions, paths, _SESSION_ID).load([])
+    return SessionStateStore(sessions, paths, _SESSION_ID).load([], [])
 
 
 def _node(state: ExecutionStateTree, node_id: str) -> ExecutionLeafNode | ExecutionLoopNode:
@@ -119,12 +119,12 @@ def _step_events(paths: WorkspacePaths, step_id: str) -> list[str]:
 def _mark_check_ignored(paths: WorkspacePaths, sessions: SessionsRepository) -> None:
     """Rewrite the saved result of top-level step `check` as ignored, as if it had failed and continued."""
     store = SessionStateStore(sessions, paths, _SESSION_ID)
-    state = store.load([])
+    state = store.load([], [])
     check = _node(state, "check")
     assert isinstance(check, ExecutionLeafNode)
     ignored = StepRecord(step_id="check", status="ignored", exit_code=0, stdout="", stderr="", duration_seconds=0.0)
     check.attempts[-1] = check.attempts[-1].model_copy(update={"result": ignored})
-    store.save(state, [])
+    store.save(state, [], [])
 
 
 class WhenGuardTests:
@@ -348,13 +348,13 @@ class WhenGuardTests:
         steps: list[dict[str, object]] = [{"id": "a", "run": "true"}, {"id": "b", "run": "true"}]
         seed_new_session(engine_paths, sessions_repo, session_id=_SESSION_ID, steps=steps)
         store = SessionStateStore(sessions_repo, engine_paths, _SESSION_ID)
-        state = store.load([])
+        state = store.load([], [])
         skip = StepSkip(cause=SkipCause.WHEN_FALSE, expression="steps.x.exit_code == 0")
         state.nodes[0] = ExecutionLeafNode(id="a", state=NodeState.SKIPPED, skip=skip)
         state.nodes[1] = ExecutionLeafNode(id="b", state=NodeState.SKIPPED, skip=skip)
-        store.save(state, [])
+        store.save(state, [], [])
         sessions_repo.update_status(_SESSION_ID, SessionStatus.PAUSED)
-        EngineLoader.load_for_resume(sessions_repo, engine_paths, _SESSION_ID, [])
+        EngineLoader.load_for_resume(store, [], [], [])
 
         outcome = _coordinator(engine_paths, sessions_repo).execute()
 

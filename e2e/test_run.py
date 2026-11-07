@@ -766,6 +766,58 @@ steps:
 
 @pytest.mark.e2e
 @pytest.mark.fixture
+class RunSessionWriteFailureCliTests:
+    """E2E tests for a run that cannot write its session's saved files."""
+
+    def test_unwritable_session_dir_completes_with_warning_and_diagnostics(
+        self, run_dovo: DovoRunner, initialized_project: Path
+    ) -> None:
+        """A step that makes the session directory read-only leaves the run ok, with the session.json warning and a diagnostic record for each failed write."""
+        session_id = "readonly-session"
+        session_dir = (
+            DOVO_HOME / "storage" / "projects" / _get_project_id(initialized_project) / "sessions" / session_id
+        )
+        write_blueprint(
+            initialized_project,
+            "readonly-session-bp",
+            f"""version: "1.0"
+name: readonly-session-bp
+id: readonly-session-bp
+steps:
+  - id: lock
+    run: {json.dumps(f"chmod a-w {session_dir}")}
+  - id: after
+    run: "true"
+""",
+            runner=run_dovo,
+        )
+
+        try:
+            result = run_dovo(
+                ["run", "readonly-session-bp", "--no-worktree", "--session-id", session_id, "--format", "json"],
+                cwd=initialized_project,
+            )
+        finally:
+            session_dir.chmod(0o755)
+
+        payload = run_result(result.stdout)
+        warnings = payload.get("warnings")
+        diagnostics = payload.get("diagnostics")
+        assert isinstance(warnings, list)
+        assert isinstance(diagnostics, list)
+        projection_warnings = [
+            warning
+            for warning in warnings
+            if isinstance(warning, str) and warning.startswith("Failed to write session.json projection: ")
+        ]
+        assert (result.exit_code, payload.get("ok")) == (0, True)
+        assert projection_warnings
+        assert all(warning.endswith("; it will be regenerated on the next load.") for warning in projection_warnings)
+        assert len(diagnostics) == len(projection_warnings)
+
+
+@pytest.mark.e2e
+@pytest.mark.fixture
 class RunStepViewsCliTests:
     """E2E tests for a step reporting the same fields live, in session.json and in `dovo session show`."""
 

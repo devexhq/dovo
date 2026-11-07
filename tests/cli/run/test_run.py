@@ -14,6 +14,7 @@ from dovo.cli import app
 from dovo.cli.run.observer import DispatcherRunObserver
 from dovo.cli.run.prompter import DispatcherFailurePrompter, DispatcherInteractionPrompter
 from dovo.cli.ui.dispatcher import UiDispatcher, ui_dispatcher
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
@@ -380,11 +381,12 @@ class RunCliIntegrationTests:
             self: SessionStateStore,
             state: ExecutionStateTree,
             warnings: list[str],
+            diagnostics: list[DiagnosticRecord],
             lifecycle: LifecycleUpdate | None = None,
         ) -> ExecutionStateTree:
             if lifecycle is not None and lifecycle.worktree_kept is not None:
                 raise OSError("disk full")
-            return original_save(self, state, warnings, lifecycle)
+            return original_save(self, state, warnings, diagnostics, lifecycle)
 
         monkeypatch.setattr(SessionStateStore, "save", _finalize_disk_full)
 

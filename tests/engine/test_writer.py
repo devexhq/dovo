@@ -36,6 +36,7 @@ from dovo.engine.writer import (
 )
 from tests.harness.builders import BlueprintBuilder, StepBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.permissions import deny_read
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -168,6 +169,30 @@ class SnapshotDefinitionsTests:
         ]
         assert diagnostics == []
         assert frozen_diagnostic_clock.exists() is False
+
+    def test_snapshot_definitions_write_failure_warns_with_its_record(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """With the snapshot write raising OSError("disk full"), return None, warn with the write's message and add one engine.persist record naming the session."""
+        workspace = tmp_path / "workspace"
+        write_runnable_blueprint(workspace, key="unwritable-task", steps=[{"id": "s1", "run": "echo hi"}])
+        catalog = Catalog(initialized_workspace_paths(workspace))
+        blueprint = Blueprint.load("unwritable-task", catalog=catalog)
+
+        def _disk_full(_path: Path, _text: str) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(Filesystem, "atomic_write_text", _disk_full)
+        warnings: list[str] = []
+        diagnostics: list[DiagnosticRecord] = []
+
+        manifest = snapshot_definitions(catalog, blueprint, tmp_path / "snap-1", warnings, diagnostics)
+
+        event = read_single_event(frozen_diagnostic_clock)
+        assert manifest is None
+        assert warnings == ["Failed to write run definitions snapshot: disk full"]
+        assert diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        assert (event["operation"], event["context"]) == ("engine.persist", {"session_id": "snap-1"})
 
 
 class LoadBlueprintFromSnapshotTests:

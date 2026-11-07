@@ -225,8 +225,9 @@ class EngineStartTests:
         sessions_repo: SessionsRepository,
         stub_drive_run: StubDriveRun,
         monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
     ) -> None:
-        """With the run-start session.json write raising OSError("disk full"), the run completes and outcome.warnings contains the projection warning."""
+        """With the run-start session.json write raising OSError("disk full"), the run completes and outcome.warnings contains the projection warning and outcome.diagnostics its record."""
         blueprint = _catalog_blueprint(engine_paths, "projection-down", [{"id": "a", "run": "true"}])
         stub_drive_run(None)
         write_text = Filesystem.atomic_write_text
@@ -249,6 +250,7 @@ class EngineStartTests:
         assert outcome.warnings == [
             "Failed to write session.json projection: disk full; it will be regenerated on the next load."
         ]
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
 
 
 class EngineDispatchTests:
@@ -294,7 +296,7 @@ class EngineDispatchTests:
             steps=[{"id": "a", "run": "true"}, {"id": "b", "run": "exit 1", "on_failure": "prompt_user"}],
             paused_step_id="b",
         )
-        manifest = SessionStateStore(sessions_repo, engine_paths, "paused").load([])
+        manifest = SessionStateStore(sessions_repo, engine_paths, "paused").load([], [])
 
         resumed = engine.resume("paused", failure_prompter=ScriptedFailurePrompter([FailurePromptDecision.CONTINUE]))
 
@@ -309,7 +311,7 @@ class EngineDispatchTests:
             assert row is not None
             assert row.status == SessionStatus.COMPLETED
             assert (row.execution_state_revision or 0) > 0
-        final = SessionStateStore(sessions_repo, engine_paths, "paused").load([])
+        final = SessionStateStore(sessions_repo, engine_paths, "paused").load([], [])
         assert final.manifest == manifest.manifest
 
     @pytest.mark.parametrize(
@@ -592,9 +594,13 @@ class EngineRunSnapshotsDefinitionsTests:
         )
 
     def test_snapshot_write_failure_fails_run_with_run_snapshot_failed(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
     ) -> None:
-        """With the snapshot write raising OSError, return a FAILED outcome carrying RUN_SNAPSHOT_FAILED and the write's message, without recording a run row."""
+        """With the snapshot write raising OSError, return a FAILED outcome carrying RUN_SNAPSHOT_FAILED, the write's message and its record, without recording a run row."""
         blueprint = _catalog_blueprint(engine_paths, "snap-write", [{"id": "a", "run": "touch marker"}])
 
         def _raise_disk_full(*_args: object, **_kwargs: object) -> None:
@@ -611,6 +617,7 @@ class EngineRunSnapshotsDefinitionsTests:
             ErrorCode.RUN_SNAPSHOT_FAILED,
             ["Failed to write run definitions snapshot: disk full"],
         )
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         assert sessions_repo.get("snap-2") is None
         assert not (engine_paths.root_dir / "marker").exists()
 
@@ -631,7 +638,7 @@ class EngineRunSnapshotsDefinitionsTests:
         session_dir = get_session_dir(engine_paths, "snap-1")
         assert (session_dir / "definitions" / "snap-task.yml").is_file()
         assert (session_dir / "definitions" / "steps" / "lint-check.yml").is_file()
-        state = SessionStateStore(sessions_repo, engine_paths, "snap-1").load([])
+        state = SessionStateStore(sessions_repo, engine_paths, "snap-1").load([], [])
         assert state.manifest.blueprint.ref == "repo:blueprint:snap-task"
         assert [ref.ref for ref in state.manifest.steps] == ["repo:step:lint-check"]
 
@@ -646,7 +653,7 @@ class EngineRunSnapshotsDefinitionsTests:
         def observing_drive_run(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> RunOutcome:
             row = sessions.get(session_id)
             assert row is not None
-            state = SessionStateStore(sessions, paths, session_id).load([])
+            state = SessionStateStore(sessions, paths, session_id).load([], [])
             observed["status"] = row.status
             observed["revision"] = row.execution_state_revision
             observed["nodes"] = [node.id for node in state.nodes]
@@ -692,13 +699,51 @@ class EngineRunSnapshotsDefinitionsTests:
             ],
             paused_step_id="publish",
         )
-        before = SessionStateStore(sessions_repo, engine_paths, "task_defs").load([])
+        before = SessionStateStore(sessions_repo, engine_paths, "task_defs").load([], [])
         stub_drive_run(None)
 
         _engine(engine_paths, sessions_repo).resume("task_defs")
 
-        after = SessionStateStore(sessions_repo, engine_paths, "task_defs").load([])
+        after = SessionStateStore(sessions_repo, engine_paths, "task_defs").load([], [])
         assert after.revision == before.revision + 1
+
+    def test_resume_load_projection_warning_reaches_run_warnings(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        stub_drive_run: StubDriveRun,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With session.json absent and its first write on resume raising OSError("disk full"), the resume completes and outcome.warnings contains the projection warning once and outcome.diagnostics its one record."""
+        seed_paused_session(
+            engine_paths,
+            sessions_repo,
+            session_id="resume-proj",
+            steps=[{"id": "a", "run": "true"}, {"id": "b", "run": "exit 1", "on_failure": "prompt_user"}],
+            paused_step_id="b",
+        )
+        (engine_paths.session_dir("resume-proj") / "session.json").unlink()
+        stub_drive_run(None)
+        write_text = Filesystem.atomic_write_text
+        projection_writes: list[Path] = []
+
+        def fail_first_session_json(path: Path, text: str) -> None:
+            if path.name == "session.json":
+                projection_writes.append(path)
+                if len(projection_writes) == 1:
+                    raise OSError("disk full")
+            write_text(path, text)
+
+        monkeypatch.setattr(Filesystem, "atomic_write_text", fail_first_session_json)
+
+        outcome = _engine(engine_paths, sessions_repo).resume("resume-proj")
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert outcome.warnings == [
+            "Failed to write session.json projection: disk full; it will be regenerated on the next load."
+        ]
+        assert outcome.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
 
 
 class EngineRunConfigPersistenceTests:
@@ -866,12 +911,12 @@ def _git_engine(tmp_path: Path) -> tuple[WorkspacePaths, SessionsRepository]:
 
 def _node_states(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> list[NodeState]:
     """Return the state of every top-level node in the session's saved execution state."""
-    return [node.state for node in SessionStateStore(sessions, paths, session_id).load([]).nodes]
+    return [node.state for node in SessionStateStore(sessions, paths, session_id).load([], []).nodes]
 
 
 def _leaf_attempts(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str, step_id: str) -> int:
     """Return how many attempts the session's saved execution state holds for the top-level leaf step_id."""
-    for node in SessionStateStore(sessions, paths, session_id).load([]).nodes:
+    for node in SessionStateStore(sessions, paths, session_id).load([], []).nodes:
         if isinstance(node, ExecutionLeafNode) and node.id == step_id:
             return len(node.attempts)
     raise AssertionError(f"No top-level leaf '{step_id}' in session '{session_id}'.")

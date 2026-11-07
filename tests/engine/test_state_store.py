@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import WorkspacePaths
@@ -31,6 +32,7 @@ from dovo.engine.state_models import (
 )
 from dovo.engine.state_store import new_iteration
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
+from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.sessions import SEEDED_SPAN
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -81,9 +83,9 @@ class _Fixture:
 
     def initialized_at(self, revision: int) -> ExecutionStateTree:
         """Initialize the run, then advance it through the store to the given revision."""
-        state = self.store.initialize(_blueprint(), self.manifest, [])
+        state = self.store.initialize(_blueprint(), self.manifest, [], [])
         for _ in range(revision):
-            state = self.store.save(state, [])
+            state = self.store.save(state, [], [])
         return state
 
     def projection(self) -> SessionJsonPayload:
@@ -127,7 +129,7 @@ class SessionStateStoreInitializeTests:
 
         warnings: list[str] = []
 
-        state = fixture.store.initialize(_blueprint(), fixture.manifest, warnings)
+        state = fixture.store.initialize(_blueprint(), fixture.manifest, warnings, [])
 
         expected = ExecutionStateTree(
             manifest=fixture.manifest,
@@ -174,7 +176,7 @@ class SessionStateStoreInitializeTests:
             .build()
         )
 
-        state = fixture.store.initialize(blueprint, fixture.manifest, [])
+        state = fixture.store.initialize(blueprint, fixture.manifest, [], [])
 
         assert state.nodes == [ExecutionLeafNode(id="setup"), ExecutionIfNode(id="route", name="Route")]
 
@@ -184,7 +186,7 @@ class SessionStateStoreInitializeTests:
         store = SessionStateStore(fixture.sessions, fixture.paths, "unknown")
 
         with pytest.raises(EngineError) as raised:
-            store.initialize(_blueprint(), fixture.manifest, [])
+            store.initialize(_blueprint(), fixture.manifest, [], [])
 
         assert raised.value.error_code is ErrorCode.SESSION_NOT_FOUND
         assert raised.value.message == "Session 'unknown' not found."
@@ -197,9 +199,9 @@ class SessionStateStoreSaveTests:
     def test_save_loaded_state_persists_next_revision_in_row_and_projection(self, tmp_path: Path) -> None:
         fixture = _Fixture(tmp_path)
         fixture.initialized_at(4)
-        loaded = fixture.store.load([])
+        loaded = fixture.store.load([], [])
 
-        saved = fixture.store.save(loaded, [])
+        saved = fixture.store.save(loaded, [], [])
 
         row = fixture.sessions.get(SESSION_ID)
         assert row is not None
@@ -211,12 +213,12 @@ class SessionStateStoreSaveTests:
         """Raise EngineError(SESSION_STATE_REVISION_CONFLICT, ...); row and session.json stay at the winner's revision 5."""
         fixture = _Fixture(tmp_path)
         stale = fixture.initialized_at(4)
-        fixture.store.save(stale, [])
+        fixture.store.save(stale, [], [])
         before = fixture.sessions.get(SESSION_ID)
         assert before is not None
 
         with pytest.raises(EngineError) as raised:
-            fixture.store.save(stale, [])
+            fixture.store.save(stale, [], [])
 
         after = fixture.sessions.get(SESSION_ID)
         assert raised.value.error_code is ErrorCode.SESSION_STATE_REVISION_CONFLICT
@@ -233,7 +235,7 @@ class SessionStateStoreSaveTests:
         store = SessionStateStore(fixture.sessions, fixture.paths, "unknown")
 
         with pytest.raises(EngineError) as raised:
-            store.save(state, [])
+            store.save(state, [], [])
 
         assert raised.value.error_code is ErrorCode.SESSION_NOT_FOUND
         assert raised.value.message == "Session 'unknown' not found."
@@ -245,6 +247,7 @@ class SessionStateStoreSaveTests:
 
         fixture.store.save(
             state,
+            [],
             [],
             LifecycleUpdate(
                 run_status=SessionStatus.FAILED, error_message="boom", worktree_id="dovo_1", worktree_kept=True
@@ -324,7 +327,7 @@ class SessionStateStoreLoadTests:
             older = build_session_json_payload(state.model_copy(update={"revision": 1}), fixture.row())
             fixture.session_json.write_text(older.model_dump_json(), encoding="utf-8")
 
-        loaded = fixture.store.load([])
+        loaded = fixture.store.load([], [])
 
         assert loaded == state
         assert fixture.projection() == build_session_json_payload(state, fixture.row())
@@ -334,7 +337,7 @@ class SessionStateStoreLoadTests:
         fixture.initialized_at(2)
         fixture.sessions.update_status(SESSION_ID, SessionStatus.FAILED, error_message="stale")
 
-        fixture.store.load([])
+        fixture.store.load([], [])
 
         lifecycle = fixture.projection().lifecycle
         assert lifecycle.status == SessionStatus.FAILED
@@ -363,7 +366,7 @@ class SessionStateStoreLoadTests:
         projection_before = projection.read_bytes() if projection.exists() else None
 
         with pytest.raises(EngineError) as raised:
-            store.load([])
+            store.load([], [])
 
         assert raised.value.error_code is code
         assert raised.value.message == message
@@ -383,7 +386,7 @@ class SessionStateStoreLoadTests:
         document["nodes"][0]["attempts"][0]["result"].update({"errors": [], "remediations": [], "diagnostics": []})
         fixture.sessions.save_execution_state(SESSION_ID, json.dumps(document), expected_revision=0, next_revision=1)
 
-        loaded = fixture.store.load([])
+        loaded = fixture.store.load([], [])
 
         assert flatten_step_results(loaded) == [done]
 
@@ -392,7 +395,7 @@ class SessionStateStoreLoadTests:
         state = fixture.initialized_at(2)
         warnings: list[str] = []
 
-        loaded = fixture.store.load(warnings)
+        loaded = fixture.store.load(warnings, [])
 
         assert loaded == state
         assert warnings == []
@@ -400,10 +403,10 @@ class SessionStateStoreLoadTests:
 
 class SessionStateStoreProjectionWarningTests:
     @pytest.mark.parametrize("operation", ["load", "initialize", "save"])
-    def test_projection_write_failure_succeeds_and_appends_warning(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+    def test_projection_write_failure_succeeds_and_appends_warning_and_record(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path, operation: str
     ) -> None:
-        """With Filesystem.atomic_write_text raising OSError("disk full"), return the tree and append exactly the projection warning to warnings."""
+        """With Filesystem.atomic_write_text raising OSError("disk full"), return the tree, append exactly the projection warning to warnings and one engine.persist record to diagnostics."""
         fixture = _Fixture(tmp_path)
         state = fixture.initialized_at(1) if operation != "initialize" else None
         fixture.session_json.unlink(missing_ok=True)
@@ -413,15 +416,19 @@ class SessionStateStoreProjectionWarningTests:
 
         monkeypatch.setattr(Filesystem, "atomic_write_text", fail_write)
         warnings: list[str] = []
+        diagnostics: list[DiagnosticRecord] = []
 
         if state is None:
-            returned = fixture.store.initialize(_blueprint(), fixture.manifest, warnings)
+            returned = fixture.store.initialize(_blueprint(), fixture.manifest, warnings, diagnostics)
         elif operation == "save":
-            returned = fixture.store.save(state, warnings)
+            returned = fixture.store.save(state, warnings, diagnostics)
         else:
-            returned = fixture.store.load(warnings)
+            returned = fixture.store.load(warnings, diagnostics)
 
-        assert returned == fixture.store.load([])
+        event = read_single_event(frozen_diagnostic_clock)
+        assert returned == fixture.store.load([], [])
         assert warnings == [
             "Failed to write session.json projection: disk full; it will be regenerated on the next load."
         ]
+        assert diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+        assert (event["operation"], event["context"]) == ("engine.persist", {"session_id": SESSION_ID})

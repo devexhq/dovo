@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog.definitions import BlueprintDefinition
 from dovo.core.catalog.models import CatalogItemType
 from dovo.core.catalog.services.validate import check_catalog_item
-from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
+from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.interaction import HeadlessAnswerInput, Interaction, InteractionAnswer
 from dovo.core.sessions import STALE_RUN_ERROR_MESSAGE
 from dovo.engine.executors.exceptions import EngineError
@@ -38,14 +39,16 @@ class EngineLoader:
     @classmethod
     def load_for_resume(
         cls,
-        sessions: SessionsRepository,
-        paths: WorkspacePaths,
-        session_id: str,
+        store: SessionStateStore,
         validation_warnings: list[str],
+        warnings: list[str],
+        diagnostics: list[DiagnosticRecord],
     ) -> tuple[SessionRecord, ExecutionStateTree, DefinitionsManifest]:
-        """Return the paused run's row, state tree, and manifest, or raise EngineError with the failure's ErrorCode.
+        """Return the paused run's row, state tree, and manifest from its state store, or raise EngineError with the failure's ErrorCode.
 
-        The caller holds the workspace lock. A run whose every top-level node is completed, ignored or skipped loads
+        The caller holds the workspace lock. Loading the state rewrites a stale session.json; a rewrite that fails
+        appends its warning to warnings and its record to diagnostics, and the coordinator's own load at run start
+        attempts it again. A run whose every top-level node is completed, ignored or skipped loads
         like any other, so the coordinator ends it completed. A run whose every top-level node is terminal with one
         not completed, ignored or skipped has no step left: its row is written failed before SESSION_STATE_CORRUPT is raised.
         The blueprint snapshot is then checked as `dovo blueprint validate` checks a blueprint, each script_path
@@ -56,7 +59,8 @@ class EngineLoader:
             CatalogError: CATALOG_FILE_UNREADABLE, CATALOG_SYNTAX_INVALID or CATALOG_SCHEMA_INVALID, carrying every
                 error and warning in ``CatalogValidateFindings``, when the snapshot fails validation.
         """
-        row = sessions.get(session_id)
+        session_id, paths = store.session_id, store.paths
+        row = store.sessions.get(session_id)
         if row is None:
             raise EngineError(ErrorCode.SESSION_NOT_FOUND, f"Session '{session_id}' not found.")
 
@@ -67,15 +71,14 @@ class EngineLoader:
             )
 
         try:
-            # The coordinator reloads the state at run start and reports any projection warning itself.
-            state = SessionStateStore(sessions, paths, session_id).load([])
+            state = store.load(warnings, diagnostics)
         except EngineError as error:
             raise EngineError(
                 error.error_code, f"Cannot resume session '{session_id}': {error.message}"
             ) from error.__cause__
 
         if cls._ended_unfinished(state):
-            cls._finalize_finished_run(sessions, paths, session_id, state)
+            cls._finalize_finished_run(store, state)
             raise EngineError(
                 ErrorCode.SESSION_STATE_CORRUPT,
                 f"Cannot resume session '{session_id}': execution state has no step left to run.",
@@ -120,13 +123,12 @@ class EngineLoader:
         )
 
     @classmethod
-    def _finalize_finished_run(
-        cls, sessions: SessionsRepository, paths: WorkspacePaths, session_id: str, state: ExecutionStateTree
-    ) -> None:
+    def _finalize_finished_run(cls, store: SessionStateStore, state: ExecutionStateTree) -> None:
         """Write the row failed with the stale-run message through the state store, so the row and session.json agree."""
-        # The loader raises next, so the save's projection warning has no result to reach.
-        SessionStateStore(sessions, paths, session_id).save(
+        # The loader raises next, so the save's projection warning and record have no result to reach.
+        store.save(
             state,
+            [],
             [],
             LifecycleUpdate(run_status=SessionStatus.FAILED, error_message=STALE_RUN_ERROR_MESSAGE),
         )
