@@ -127,7 +127,7 @@ logs/<session_id>/
 └── 02_check_iter_1_attempt_1.stdout.log   # loop sub-steps carry an _iter_<n> segment
 ```
 
-Per-attempt stdout/stderr capture is controlled by `history.save_attempt_logs` in `.dovo/config.json` (default `true`). `session.log` is always written when the run has a session ID. Loop sub-steps appear in `session.log` as their own `STEP_START`/`STEP_DONE` events, interleaved with the loop's `LOOP_*` events, exactly like top-level steps; loop body events carry `loop_id` and `iteration`, and every step event carries `step_name` (`STEP_DONE` also `duration_seconds`).
+Per-attempt stdout/stderr capture is controlled by `history.save_attempt_logs` in `.dovo/config.json` (default `true`). `session.log` is always written when the run has a session ID. Loop sub-steps appear in `session.log` as their own `step_start`/`step_done` events, interleaved with the loop's `loop_start`, `loop_iteration_start`, `loop_conditions_evaluated` and `loop_done` events, exactly like top-level steps; loop body events carry `loop_id` and `iteration`, and every step event carries `step_name` (`step_done` also `duration_seconds`).
 
 Persisted step logs and error messages are masked when written and again when read, so a secret still present in the environment is hidden even in logs written before masking existed. Masked values print as `[REDACTED:<NAME>]` or `[REDACTED]`. Names listed under `environment.sensitive_variables` in `.dovo/config.json` are masked here too, including in logs written before the name was listed.
 
@@ -152,16 +152,6 @@ For agent steps, the capture files hold the provider's stdout and stderr lines a
 `--attempt` and `--stream` only apply together with `--step`; without it they are ignored.
 
 For a loop sub-step, `--step` matches the captures of every loop iteration: the selected attempt's output from each iteration is shown concatenated in iteration order, and the default attempt is the highest attempt number reached in any iteration. Captures from any steps that share the same step ID, such as a top-level step and a loop sub-step, are grouped under that ID. Capture file names do not include the loop's ID, so two loops that have a sub-step with the same ID at the same position write to the same files, and the later loop overwrites the earlier one's captures. Give loop sub-steps distinct IDs to keep both.
-
-### Errors
-
-`dovo session logs` exits `1` when:
-
-- no session record exists for the session: a **Logs Not Found** panel with `Session '<session_id>' not found.` and `error_code` `SESSION_NOT_FOUND`,
-- the session has no log directory: a **Logs Not Found** panel with `No logs found for session '<session_id>'.` and `error_code` `SESSION_NOT_FOUND`,
-- `--step` names a step with no captured logs: a **Step Not Found** panel with `Step '<step>' not found in session '<session_id>'. Available steps: <ids, or none>.` and `error_code` `SESSION_STEP_NOT_FOUND`; with `--format json`, `available_steps` lists the captured step IDs,
-- `--attempt` names an attempt that was not captured: an **Attempt Not Found** panel with `Attempt <n> not found for step '<step>' in session '<session_id>'. Available attempts: <numbers>.` and `error_code` `SESSION_ATTEMPT_NOT_FOUND`; with `--format json`, `available_attempts` lists the captured attempts,
-- a log file cannot be read, for example because of its permissions: a **Read Failure** panel with `Failed reading session logs in '<dir>': <detail>` and `error_code` `SESSION_LOGS_UNREADABLE`, and a [diagnostic log](doctor.md#diagnostic-logs) entry is recorded.
 
 A truncated final `session.log` line, for example after the process was killed mid-write, is skipped rather than reported as an error. Bytes that are not valid UTF-8 are shown as `�`.
 
@@ -231,8 +221,6 @@ Continues a paused session, by ID or the latest paused one.
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |
 | `--display <ansi\|live>` | Display format (`ansi` or `live`). Defaults to `ansi`. |
 
-The flag list is pinned to the command by [`tests/lint/test_step_schema_parity.py`](https://github.com/devexhq/dovo/blob/main/tests/lint/test_step_schema_parity.py).
-
 ### Behavior
 
 1. **Session Resolution**:
@@ -251,6 +239,43 @@ The flag list is pinned to the command by [`tests/lint/test_step_schema_parity.p
    - `2`: Answer arguments that conflict or are malformed (`INTERACTION_ARGUMENTS_INVALID`), an invalid `--env-passthrough` entry (`AGENT_ENV_OVERRIDE_INVALID`), or a usage error such as an `--env-mode` value it does not accept.
    - `130` for Ctrl-C (`SIGINT`), `143` for `SIGTERM` and `129` for a closed terminal (`SIGHUP`), `128` plus the signal number (`RUN_CANCELLED`): `dovo resume` finishes its cleanup and prints its run result, then ends by the same signal. A resume interrupted while a step runs, or while it sets up, applies its changes or removes its worktree, stops the run's processes, is recorded `cancelled` once they have exited, with every step and loop that had started, and prints its `Run Cancelled` outcome first; one interrupted while it applies its changes keeps its worktree. When a process group is still running 5 seconds after the stop, it is recorded `failed` with `SESSION_PROCESS_STOP_FAILED` and prints `Run Failed` instead. A resume interrupted at a `prompt_user` failure prompt, an `ask` prompt or a loop `max_iterations` prompt stays paused and prints `Run Cancelled`.
    - `1`: Every other failure, including a resume validation error, a blueprint snapshot that fails validation, an answer the prompt rejects (`INTERACTION_ANSWER_INVALID`), an unreadable `--comment-file` or `--answers-file` (`INTERACTION_ARGUMENT_FILE_UNREADABLE`), a failed step, no paused session found, and a failure reported as an `error` event.
+
+## Error codes
+
+With `--format json`, a failure reports one of these codes as `error_code`, and a success reports `null`. A failed step's own code is not listed here: it is the `error_code` of its step row, described under [Step failure codes](run.md#step-failure-codes).
+
+| Code | Commands | Cause |
+| --- | --- | --- |
+| `WORKSPACE_NOT_INITIALIZED` | all | The workspace has no valid `.dovo/project.json`; run `dovo init`. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `CONFIG_NOT_FOUND`, `CONFIG_UNREADABLE`, `CONFIG_PATH_INVALID`, `CONFIG_JSON_INVALID`, `CONFIG_ROOT_INVALID`, `CONFIG_SCHEMA_INVALID`, `CONFIG_TIER_UNREADABLE`, `CONFIG_TIER_JSON_INVALID`, `CONFIG_TIER_ROOT_INVALID`, `CONFIG_TIER_SCHEMA_INVALID` | all | The configuration does not load; [`dovo config show`](config.md#dovo-config-show) explains each code. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `WORKSPACE_LOCK_TIMEOUT` | `list`, `resume` | Another `dovo` process held the workspace lock until the wait timed out. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `INTERNAL_ERROR` | all | An unexpected error, with a [diagnostic log](doctor.md#diagnostic-logs) record. Reported in the result, or as an [`error` event](../reference/json-output.md#the-error-event) when it ends the command outside its result. |
+| `SESSION_NOT_FOUND` | `show`, `logs`, `diff`, `resume` | No session record matches `session_id` (`Session '<session_id>' not found.`), the project has no sessions (`No sessions found.`), `logs` finds no log directory for the session (`No logs found for session '<session_id>'.`), or `resume` without `session_id` finds no paused session (`No paused session found to resume.`). |
+| `SESSION_STEP_NOT_FOUND` | `logs` | `--step` names a step with no captured logs (a **Step Not Found** panel); with `--format json`, `available_steps` lists the captured step IDs. |
+| `SESSION_ATTEMPT_NOT_FOUND` | `logs` | `--attempt` names an attempt that was not captured (an **Attempt Not Found** panel); with `--format json`, `available_attempts` lists the captured attempts. |
+| `SESSION_LOGS_UNREADABLE` | `logs` | A log file cannot be read, for example because of its permissions (a **Read Failure** panel, with a [diagnostic log](doctor.md#diagnostic-logs) record). |
+| `SESSION_DIFF_NOT_FOUND` | `diff` | The session has no `diff.patch`. |
+| `SESSION_DIFF_UNREADABLE` | `diff` | `diff.patch` cannot be read, with a diagnostic log record. |
+| `SESSION_NOT_RESUMABLE` | `resume` | The session is not paused. |
+| `SESSION_PROMPT_NOT_PENDING` | `resume` | `--answer` or `--answers-file` was given for a session with no pending `ask` prompt. |
+| `SESSION_STATE_MISSING` | `resume` | The session has no saved execution state. |
+| `SESSION_STATE_CORRUPT` | `resume` | The saved execution state cannot be read, has no step left to run, or holds a pending prompt or paused step that is invalid. |
+| `SESSION_STATE_INCONSISTENT` | `resume` | The session's `session.json` is at a newer revision than its database record. |
+| `SESSION_STATE_REVISION_CONFLICT` | `resume` | Another writer changed the session's execution state while the resume ran. |
+| `SESSION_SNAPSHOT_MISSING` | `resume` | A blueprint or step file the run saved when it started is missing. |
+| `SESSION_SNAPSHOT_INVALID` | `resume` | A blueprint or step file the run saved cannot be parsed or fails validation, or a `uses:` step was not saved with it. |
+| `SESSION_WORKTREE_MISSING` | `resume` | The worktree the session ran in no longer exists, or its record is gone. |
+| `SESSION_PROCESS_STOP_FAILED` | `resume` | You interrupted the resume and a process group it started was still running 5 seconds after the stop. Exits by the signal. |
+| `INTERACTION_ARGUMENTS_INVALID` | `resume` | Answer flags conflict, `--answer` is not `<step_id>=<value>`, or `--answers-file` is not a valid answers JSON object. Exits `2`. |
+| `INTERACTION_ARGUMENT_FILE_UNREADABLE` | `resume` | `--comment-file` or `--answers-file` cannot be read or is not UTF-8 text. |
+| `INTERACTION_ANSWER_INVALID` | `resume` | The pending prompt rejects the answer: an unknown step id, a value that is not an option, a malformed multiselect JSON array, or a missing or too long comment. |
+| `AGENT_ENV_OVERRIDE_INVALID` | `resume` | An `--env-passthrough` entry is invalid. Exits `2`. |
+| `CATALOG_SYNTAX_INVALID`, `CATALOG_SCHEMA_INVALID`, `CATALOG_FILE_UNREADABLE` | `resume` | The run's saved blueprint fails validation, as [`dovo blueprint validate`](blueprint.md#error-codes) reports it. |
+| `RUN_STEP_FAILED` | `resume` | A step failed and stopped the run. The step's own code is in its `run.step_done` event and in `dovo session show`; see [Step failure codes](run.md#step-failure-codes). |
+| `RUN_LOOP_LIMIT_EXCEEDED` | `resume` | A loop reached `max_iterations` without meeting its `until` conditions, and its `on_max_iterations` policy stopped the run. |
+| `RUN_CANCELLED` | `resume` | You interrupted the resume. Exits by the signal. |
+| `GIT_FAILED`, `GIT_BINARY_MISSING`, `GIT_TIMEOUT`, `GIT_WORKDIR_MISSING` | `resume` | A git command failed while the resume saved its diff, applied its changes with `--auto-apply` or removed its worktree, as for [`dovo worktree`](worktree.md#error-codes). |
+| `WORKTREE_WORKSPACE_DIRTY`, `WORKTREE_CHANGES_EMPTY`, `WORKTREE_APPLY_CONFLICT`, `WORKTREE_MISSING` | `resume` | `--auto-apply` could not apply the changes, as for [`dovo worktree apply`](worktree.md#error-codes). |
 
 ## Exit codes
 

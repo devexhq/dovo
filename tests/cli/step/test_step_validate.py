@@ -63,7 +63,8 @@ class StepValidateCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", "valid-step"])
 
         assert result.exit_code == 0
-        assert "PASSED" in result.stdout
+        assert "Step is valid." in result.stdout
+        assert "PASSED" not in result.stdout
 
     def test_step_validate_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "json-valid-step")
@@ -75,7 +76,9 @@ class StepValidateCliIntegrationTests:
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
         assert payload["event_type"] == "step.validate"
-        assert payload["payload"]["valid"] is True
+        assert payload["payload"]["ok"] is True
+        assert "valid" not in payload["payload"]
+        assert "status_label" not in payload["payload"]
         assert payload["payload"]["item_type"] == "step"
 
     def test_validate_missing_json_has_catalog_not_found(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
@@ -95,7 +98,7 @@ class StepValidateCliTests:
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
     def test_unreadable_file_json_has_file_unreadable(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """Exit 1 with error_code CATALOG_FILE_UNREADABLE and valid False for a mode-000 file target."""
+        """Exit 1 with error_code CATALOG_FILE_UNREADABLE and ok False for a mode-000 file target."""
         target = isolated_workspace / "noperm.yml"
         target.write_text(yaml.safe_dump({"id": "noperm", "run": "echo hi"}), "utf-8")
         target.chmod(0o000)
@@ -109,10 +112,10 @@ class StepValidateCliTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["error_code"] == "CATALOG_FILE_UNREADABLE"
-        assert payload["valid"] is False
+        assert payload["ok"] is False
 
     def test_invalid_definition_json_has_schema_invalid(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """Exit 1 with error_code CATALOG_SCHEMA_INVALID, valid False and payload keys exactly, in order, {ok, error_code, errors, warnings, remediations, diagnostics, valid, status_label, target, resolved_path, item_type} for a file target failing schema validation."""
+        """Exit 1 with error_code CATALOG_SCHEMA_INVALID, ok False and payload keys exactly, in order, {ok, error_code, errors, warnings, remediations, diagnostics, target, resolved_path, item_type} for a file target failing schema validation."""
         target = isolated_workspace / "bad.yml"
         target.write_text(yaml.safe_dump({"run": "pytest"}), "utf-8")
 
@@ -123,7 +126,7 @@ class StepValidateCliTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["error_code"] == "CATALOG_SCHEMA_INVALID"
-        assert payload["valid"] is False
+        assert payload["ok"] is False
         assert list(payload) == [
             "ok",
             "error_code",
@@ -131,15 +134,26 @@ class StepValidateCliTests:
             "warnings",
             "remediations",
             "diagnostics",
-            "valid",
-            "status_label",
             "target",
             "resolved_path",
             "item_type",
         ]
 
+    def test_invalid_definition_renders_code_without_success_line(self, isolated_workspace: Path) -> None:
+        """Exit 1 and show CATALOG_SCHEMA_INVALID, with neither 'Step is valid.' nor FAILED, for a file target failing schema validation."""
+        target = isolated_workspace / "bad.yml"
+        target.write_text(yaml.safe_dump({"run": "pytest"}), "utf-8")
+        wide_runner = CliRunner(env={"NO_COLOR": "1", "COLUMNS": "400"})
+
+        result = wide_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", str(target)])
+
+        assert result.exit_code == 1
+        assert "CATALOG_SCHEMA_INVALID" in result.stdout
+        assert "Step is valid." not in result.stdout
+        assert "FAILED" not in result.stdout
+
     def test_blueprint_name_json_has_catalog_not_found(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """Exit 1 with error_code CATALOG_NOT_FOUND and valid False for `dovo step validate shared --format json` when only a REPO blueprint 'shared' exists."""
+        """Exit 1 with error_code CATALOG_NOT_FOUND and ok False for `dovo step validate shared --format json` when only a REPO blueprint 'shared' exists."""
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "shared")
 
         result = cli_runner.invoke(
@@ -149,7 +163,7 @@ class StepValidateCliTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["error_code"] == "CATALOG_NOT_FOUND"
-        assert payload["valid"] is False
+        assert payload["ok"] is False
 
 
 class StepValidateAskCliIntegrationTests:
@@ -199,8 +213,6 @@ class StepValidateAskCliIntegrationTests:
             "warnings": [],
             "remediations": [{"message": "Fix the reported schema error for target 'ask_step'.", "command": None}],
             "diagnostics": [],
-            "valid": False,
-            "status_label": "FAILED",
             "target": str(target),
             "resolved_path": target.as_posix(),
             "item_type": "step",

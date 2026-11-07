@@ -31,6 +31,19 @@ When reading the database fails, the health is `degraded`. When `.dovo/config.js
 
 Before it reports, `dovo status` settles sessions left `running` by a `dovo` process that no longer exists: it marks one `paused` when it saved its progress, its worktree still exists if it used one, and none of its processes is still running, and marks every other one `failed`. It adds `Paused 1 interrupted session; continue it with 'dovo resume <session_id>'.`, `Marked 1 interrupted session failed (session_id: <id>).`, or both sentences, paused first, to its warnings. If another `dovo` process holds the workspace lock until the wait times out, `dovo status` stops with a Workspace Lock Timeout panel, or with `--format json` an `error` event with `error_code` `WORKSPACE_LOCK_TIMEOUT` (see [JSON Output](../reference/json-output.md#the-error-event)), and exits `1`.
 
+## Error codes
+
+With `--format json`, a failure that stops `dovo status` reports one of the first three codes as an `error` event. The others are fields of a report that printed.
+
+| Code | Cause |
+| --- | --- |
+| `WORKSPACE_NOT_INITIALIZED` | The workspace has no valid `.dovo/project.json`; run `dovo init`. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `WORKSPACE_LOCK_TIMEOUT` | Another `dovo` process held the workspace lock while `dovo status` settled interrupted sessions, until the wait timed out. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `INTERNAL_ERROR` | An unexpected error, with a [diagnostic log](doctor.md#diagnostic-logs) record. Reported in the result, or as an [`error` event](../reference/json-output.md#the-error-event) when it ends the command outside its result. |
+| `CONFIG_NOT_FOUND`, `CONFIG_UNREADABLE`, `CONFIG_PATH_INVALID`, `CONFIG_JSON_INVALID`, `CONFIG_ROOT_INVALID`, `CONFIG_SCHEMA_INVALID`, `CONFIG_TIER_UNREADABLE`, `CONFIG_TIER_JSON_INVALID`, `CONFIG_TIER_ROOT_INVALID`, `CONFIG_TIER_SCHEMA_INVALID` | Reported in `config_error_code`, not as a failure: the configuration does not load, and the report still prints with exit `0`. [`dovo config show`](config.md#dovo-config-show) explains each code. |
+| `GIT_TIMEOUT` | Reported in `git_error_code`: `git` ran longer than the git timeout. The health is `degraded` and the report still prints with exit `0`. |
+| `GIT_BINARY_MISSING` | Reported in `git_error_code`: `git` is not on `PATH`. The health is `degraded` and the report still prints with exit `0`. |
+
 ## Exit codes
 
 - `0`: the report printed, whatever its health (`ok`, `degraded` or `uninitialized`) and whatever the config error code.

@@ -90,7 +90,7 @@ What a public entrypoint returns and what a caller branches on. These entries ho
 ## A step field appears in every step view
 
 - **Decision:** a step has one surface with three views: the saved `StepRecord`, the `steps[]` row of `dovo session show` (`StepRunSummary`) and the step-done event of `dovo run` and `dovo resume` (`StepDoneEvent`).
-  - A change that adds a step fact adds it to every view where a reader can observe it, in one change, and its PR names any view it skips and why. The `session.log` `STEP_DONE` timeline record carries no failure text, so `error_code` skips it.
+  - A change that adds a step fact adds it to every view where a reader can observe it, in one change, and its PR names any view it skips and why. The `session.log` `step_done` timeline record carries no failure text, so `error_code` skips it.
   - A new field goes after the last field it relates to, or at the end, and defaults to `null`, an empty list or an empty map, so a session saved before it loads and every view reports the default. `error_code` follows `error_message`.
   - A failed step's `error_code` is a `STEP_*` code for a failure the engine detects itself, or the code of the failure it consumed, copied unchanged.
   - The `dovo session show` page documents the row keys in its Step keys table; `tests/lint/test_session_show_step_doc_parity.py` fails, naming each key, when the documented keys and the emitted ones differ as sets.

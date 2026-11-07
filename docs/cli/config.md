@@ -117,12 +117,35 @@ On failure it lists the missing fields or invalid values. A `default_agent` valu
 
 When `.dovo/config.json` cannot be loaded, `dovo config validate` exits with code 1 and reports the same `error_code`, `errors` and remediations as [`dovo config show`](#dovo-config-show), including the `Details logged:` line and `diagnostics` entry when the file cannot be read; a missing file reports `error_code` `CONFIG_NOT_FOUND`, and a file that fails schema validation reports `error_code` `CONFIG_SCHEMA_INVALID`. A valid file reports `error_code` `null` and empty `errors`. The JSON payload has no `status` or `status_label` key.
 
+## Error codes
+
+With `--format json`, a failure reports one of these codes as `error_code`, and a success reports `null`. Other commands that cannot load the configuration report the same codes as an [`error` event](../reference/json-output.md#the-error-event).
+
+| Code | Commands | Cause |
+| --- | --- | --- |
+| `WORKSPACE_NOT_INITIALIZED` | all | The workspace has no valid `.dovo/project.json`; run `dovo init`. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `INTERNAL_ERROR` | all | An unexpected error, with a [diagnostic log](doctor.md#diagnostic-logs) record. Reported in the result, or as an [`error` event](../reference/json-output.md#the-error-event) when it ends the command outside its result. |
+| `CONFIG_NOT_FOUND` | all | `.dovo/config.json` does not exist; run `dovo init`. |
+| `CONFIG_PATH_INVALID` | all | `.dovo/config.json` is a directory. |
+| `CONFIG_UNREADABLE` | all | `.dovo/config.json` cannot be read, with a [diagnostic log](doctor.md#diagnostic-logs) record. |
+| `CONFIG_JSON_INVALID` | all | `.dovo/config.json` is not valid JSON. |
+| `CONFIG_ROOT_INVALID` | all | The root of `.dovo/config.json` is not a JSON object. |
+| `CONFIG_SCHEMA_INVALID` | all | `.dovo/config.json` fails schema validation, or for `set` and `unset` would fail it after the change. |
+| `CONFIG_TIER_UNREADABLE` | `show`, `validate` | The Global or User config file cannot be read, with a diagnostic log record. |
+| `CONFIG_TIER_JSON_INVALID` | `show`, `validate` | The Global or User config file is not valid JSON. |
+| `CONFIG_TIER_ROOT_INVALID` | `show`, `validate` | The root of the Global or User config file is not a JSON object. |
+| `CONFIG_TIER_SCHEMA_INVALID` | `show`, `validate` | The configuration merged from every tier fails schema validation. |
+| `CONFIG_KEY_PATH_INVALID` | `set`, `unset` | The key is empty or has an empty segment. Exits `2`. |
+| `CONFIG_TYPE_CONFLICT` | `set`, `unset` | The key path crosses a key that already holds a scalar value. |
+| `CONFIG_WRITE_FAILED` | `set`, `unset` | `.dovo/config.json` cannot be written, with a diagnostic log record. |
+| `AGENT_PROVIDER_UNSUPPORTED` | `validate` | `default_agent` passes schema validation but names no supported provider. |
+
 ## Exit codes
 
 Every `dovo config` subcommand exits by its result's `error_code`:
 
 - `0`: the command succeeded, including `dovo config unset` of a key that is already absent.
 - `2`: `dovo config set` or `dovo config unset` with an empty key or a key with an empty segment (`CONFIG_KEY_PATH_INVALID`), or a usage error such as an unknown option.
-- `1`: every other failure, such as `CONFIG_NOT_FOUND` or `CONFIG_SCHEMA_INVALID`, and every failure reported as an `error` event: a workspace without a valid `.dovo/project.json`, a workspace lock timeout or an unexpected error.
+- `1`: every other failure, such as `CONFIG_NOT_FOUND` or `CONFIG_SCHEMA_INVALID`, and every failure reported as an `error` event: a workspace without a valid `.dovo/project.json` or an unexpected error.
 
 See [JSON Output](../reference/json-output.md#exit-codes) for the rule every command follows.

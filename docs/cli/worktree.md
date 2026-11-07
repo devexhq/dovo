@@ -126,6 +126,32 @@ View diffstat summary:
 dovo worktree diff dovo_8f2a1b9c --stat
 ```
 
+## Error codes
+
+With `--format json`, a failure reports one of these codes as `error_code`, and a success reports `null`.
+
+| Code | Commands | Cause |
+| --- | --- | --- |
+| `WORKSPACE_NOT_INITIALIZED` | all | The workspace has no valid `.dovo/project.json`; run `dovo init`. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `CONFIG_NOT_FOUND`, `CONFIG_UNREADABLE`, `CONFIG_PATH_INVALID`, `CONFIG_JSON_INVALID`, `CONFIG_ROOT_INVALID`, `CONFIG_SCHEMA_INVALID`, `CONFIG_TIER_UNREADABLE`, `CONFIG_TIER_JSON_INVALID`, `CONFIG_TIER_ROOT_INVALID`, `CONFIG_TIER_SCHEMA_INVALID` | all | The configuration does not load; [`dovo config show`](config.md#dovo-config-show) explains each code. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `WORKSPACE_LOCK_TIMEOUT` | `create`, `apply`, `delete`, `prune` | Another `dovo` process held the workspace lock until the wait timed out. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `INTERNAL_ERROR` | all | An unexpected error, with a [diagnostic log](doctor.md#diagnostic-logs) record. Reported in the result, or as an [`error` event](../reference/json-output.md#the-error-event) when it ends the command outside its result. |
+| `GIT_FAILED` | `create`, `apply`, `diff`, `prune` | A git command failed, for example `git worktree list` during `prune`. |
+| `GIT_BINARY_MISSING` | `create`, `apply`, `diff`, `prune` | `git` is not on `PATH`. |
+| `GIT_TIMEOUT` | `create`, `apply`, `diff`, `prune` | A git command ran longer than the git timeout (120 seconds, or `DOVO_GIT_TIMEOUT_SECONDS`). |
+| `GIT_WORKDIR_MISSING` | `create`, `apply`, `diff` | The working directory disappeared while git ran. |
+| `WORKTREE_NOT_FOUND` | `show`, `delete`, `apply`, `diff` | No worktree has that id. |
+| `WORKTREE_MISSING` | `create`, `apply`, `diff` | The worktree directory is missing on disk, or `create --wip` lost the new worktree while it copied your uncommitted changes. |
+| `WORKTREE_PATH_CONFLICT` | `create` | The worktree directory or branch already exists. |
+| `WORKTREE_CREATE_FAILED` | `create` | The target path cannot be checked. |
+| `WORKTREE_CAPACITY_EXCEEDED` | `create` | `worktree.max_active_worktrees` worktrees are already active, kept worktrees included. |
+| `WORKTREE_WIP_COPY_FAILED` | `create` | `--wip` cannot copy your uncommitted changes into the new worktree. |
+| `WORKTREE_PRUNE_FAILED` | `prune` | At least one stale item could not be pruned (`status` `partial_failure`). |
+| `WORKTREE_ALREADY_MERGED` | `apply` | The worktree was already applied. |
+| `WORKTREE_WORKSPACE_DIRTY` | `apply` | The main workspace has uncommitted changes and `--allow-dirty` was not given, or with `--strategy squash` it has them in a file the worktree also changes. |
+| `WORKTREE_CHANGES_EMPTY` | `apply` | The worktree has no changes to apply. |
+| `WORKTREE_APPLY_CONFLICT` | `apply` | The changes do not apply cleanly; `conflicting_files` lists the paths. |
+
 ## Exit codes
 
 Every `dovo worktree` subcommand exits by its result's `error_code`:

@@ -56,7 +56,6 @@ class CatalogValidateServiceTests:
         result = _validate(str(target_path), path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
         assert (result.error_code, result.ok) == (None, True)
-        assert result.valid is True
         assert result.target == str(target_path)
         assert result.resolved_path == target_path
         assert result.item_type == "blueprint"
@@ -70,7 +69,6 @@ class CatalogValidateServiceTests:
         result = _validate("sample-flow", path=isolated_workspace)
 
         assert (result.error_code, result.ok) == (None, True)
-        assert result.valid is True
         assert result.target == "sample-flow"
         assert result.resolved_path == isolated_workspace / ".dovo" / "catalog" / "blueprints" / "sample-flow.yml"
         assert result.item_type == "blueprint"
@@ -82,7 +80,6 @@ class CatalogValidateServiceTests:
         result = _validate("nonexistent-flow", path=isolated_workspace)
 
         assert result.ok is False
-        assert result.valid is False
         assert result.target == "nonexistent-flow"
         assert result.resolved_path is None
         assert result.item_type is CatalogItemType.BLUEPRINT
@@ -107,7 +104,6 @@ class CatalogValidateServiceTests:
             target_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_FILE_UNREADABLE, False)
-        assert result.valid is False
         assert result.target == "noperm.yml"
         assert result.resolved_path == target_path
         assert result.item_type == "blueprint"
@@ -122,7 +118,6 @@ class CatalogValidateServiceTests:
         result = _validate("bad.yml", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SYNTAX_INVALID, False)
-        assert result.valid is False
         assert len(result.errors) == 1
         assert result.errors[0].startswith(f"YAML syntax error in '{target_path}' at line 1, column 9: ")
 
@@ -133,7 +128,6 @@ class CatalogValidateServiceTests:
         result = _validate("list.yml", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SYNTAX_INVALID, False)
-        assert result.valid is False
         assert result.target == "list.yml"
         assert result.resolved_path == target_path
         assert result.item_type == "blueprint"
@@ -152,7 +146,6 @@ class CatalogValidateServiceTests:
         result = _validate("bad_timeout.yml", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
-        assert result.valid is False
         assert len(result.errors) == 1
         assert result.errors[0].startswith("timeout_seconds: ")
         assert result.errors[0].endswith(".")
@@ -167,7 +160,6 @@ class CatalogValidateServiceTests:
         result = _validate("conflict.yml", path=isolated_workspace, item_type=CatalogItemType.STEP)
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
-        assert result.valid is False
         assert result.errors == ["<root>: Value error, Step 's1': 'run' cannot be combined with uses."]
 
     def test_validate_step_target_uses_step_schema(self, isolated_workspace: Path) -> None:
@@ -176,7 +168,6 @@ class CatalogValidateServiceTests:
         result = _validate("missing_id.yml", path=isolated_workspace, item_type=CatalogItemType.STEP)
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
-        assert result.valid is False
         assert result.target == "missing_id.yml"
         assert result.resolved_path == isolated_workspace / "missing_id.yml"
         assert result.item_type == "step"
@@ -193,7 +184,6 @@ class CatalogValidateServiceTests:
         result = _validate("dup.yml", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
-        assert result.valid is False
         assert result.target == "dup.yml"
         assert result.resolved_path == isolated_workspace / "dup.yml"
         assert result.item_type == "blueprint"
@@ -226,7 +216,6 @@ class CatalogValidateServiceTests:
         result = _validate("loopdup.yml", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
-        assert result.valid is False
         assert result.errors == ["Step id 'inner' is used by more than one step."]
 
     def test_validate_duplicate_input_alias_reports_error(self, isolated_workspace: Path) -> None:
@@ -245,7 +234,6 @@ class CatalogValidateServiceTests:
         result = _validate("alias.yml", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
-        assert result.valid is False
         assert result.target == "alias.yml"
         assert result.resolved_path == isolated_workspace / "alias.yml"
         assert result.item_type == "blueprint"
@@ -262,7 +250,6 @@ class CatalogValidateServiceTests:
         result = _validate("ph.yml", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
         assert (result.error_code, result.ok) == (None, True)
-        assert result.valid is True
         assert result.target == "ph.yml"
         assert result.resolved_path == isolated_workspace / "ph.yml"
         assert result.item_type == "blueprint"
@@ -298,7 +285,6 @@ class CatalogValidateServiceTests:
         result = _validate("script.yml", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
         assert (result.error_code, result.ok) == (ErrorCode.CATALOG_SCHEMA_INVALID, False)
-        assert result.valid is False
         assert result.target == "script.yml"
         assert result.resolved_path == isolated_workspace / "script.yml"
         assert result.item_type == "blueprint"
@@ -317,7 +303,6 @@ class CatalogValidateServiceTests:
         result = _validate("missing_script.yml", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
         assert (result.error_code, result.ok) == (None, True)
-        assert result.valid is True
         assert result.target == "missing_script.yml"
         assert result.resolved_path == isolated_workspace / "missing_script.yml"
         assert result.item_type == "blueprint"
@@ -333,34 +318,30 @@ class CatalogValidateServiceTests:
         result = _validate("clean-flow", path=isolated_workspace)
 
         assert (result.error_code, result.ok) == (None, True)
-        assert result.valid is True
         assert result.errors == []
 
     def test_validate_result_ok_follows_error_code(self) -> None:
         """Return ok False for a result with error_code CATALOG_SCHEMA_INVALID and ok True for one with error_code None and errors []."""
         failed = CatalogValidateResult(
-            valid=False,
             target="x",
             item_type=CatalogItemType.BLUEPRINT,
             error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
             errors=["Schema validation failed."],
         )
-        passed = CatalogValidateResult(
-            valid=True, target="x", item_type=CatalogItemType.BLUEPRINT, error_code=None, errors=[]
-        )
+        passed = CatalogValidateResult(target="x", item_type=CatalogItemType.BLUEPRINT, error_code=None, errors=[])
 
         assert failed.ok is False
         assert passed.ok is True
 
     def test_validate_catalog_name_is_scoped_to_item_type(self, isolated_workspace: Path) -> None:
-        """For a REPO blueprint 'shared' and no step 'shared', return error_code CATALOG_NOT_FOUND, valid False and errors ["Catalog item 'shared' not found."] and a step-named remediation with item_type STEP, and error_code None with item_type BLUEPRINT."""
+        """For a REPO blueprint 'shared' and no step 'shared', return error_code CATALOG_NOT_FOUND, ok False and errors ["Catalog item 'shared' not found."] and a step-named remediation with item_type STEP, and error_code None with item_type BLUEPRINT."""
         write_runnable_blueprint(isolated_workspace, key="shared", steps=[{"id": "s1", "run": "echo hi"}])
 
         as_step = _validate("shared", path=isolated_workspace, item_type=CatalogItemType.STEP)
         as_blueprint = _validate("shared", path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
 
         assert as_step.error_code == ErrorCode.CATALOG_NOT_FOUND
-        assert as_step.valid is False
+        assert as_step.ok is False
         assert as_step.errors == ["Catalog item 'shared' not found."]
         assert as_step.remediations == [
             Remediation(message="Check that 'shared' names an indexed step, or pass a file path instead.")
@@ -396,7 +377,7 @@ class CatalogValidateServiceTests:
         expected_errors: list[str],
         logged: bool,
     ) -> None:
-        """With dovo.core.catalog.catalog.scan_and_index_catalog patched to raise `raised` for a catalog-name target, return error_code expected_code, valid False, resolved_path None; write_failed has errors ["boom"], internal_error has the unexpected-error message alone, its record in diagnostics and writes the catalog.validate event file."""
+        """With dovo.core.catalog.catalog.scan_and_index_catalog patched to raise `raised` for a catalog-name target, return error_code expected_code, ok False, resolved_path None; write_failed has errors ["boom"], internal_error has the unexpected-error message alone, its record in diagnostics and writes the catalog.validate event file."""
 
         def _explode(*args: object) -> None:
             raise raised
@@ -406,7 +387,7 @@ class CatalogValidateServiceTests:
         result = _validate("demo", path=workspace_paths.root_dir, catalog=Catalog(workspace_paths))
 
         assert result.error_code == expected_code
-        assert result.valid is False
+        assert result.ok is False
         assert result.resolved_path is None
         assert result.errors == expected_errors
         assert result.diagnostics == ([diagnostic_record(frozen_diagnostic_clock)] if logged else [])
@@ -471,7 +452,6 @@ class CatalogValidateFailurePathTests:
                 {"message": f"Fix the YAML syntax error at line 1, column 9 in '{target_path}'.", "command": None}
             ],
             "diagnostics": [],
-            "valid": False,
             "target": "bad.yml",
             "resolved_path": target_path,
             "item_type": "blueprint",
@@ -490,7 +470,7 @@ class CatalogValidateFailurePathTests:
         result = _validate("multi.yml", path=isolated_workspace)
 
         assert result.error_code == ErrorCode.CATALOG_SCHEMA_INVALID
-        assert result.valid is False
+        assert result.ok is False
         assert result.errors == [
             "description: Input should be a valid string.",
             "timeout_seconds: Input should be a valid integer, unable to parse string as an integer.",
@@ -537,7 +517,6 @@ class CatalogValidateFailurePathTests:
             "warnings": list(_SEMANTIC_WARNINGS),
             "remediations": [{"message": f"Resolve: {error}", "command": None} for error in _SEMANTIC_ERRORS],
             "diagnostics": [],
-            "valid": False,
             "target": "semantic.yml",
             "resolved_path": isolated_workspace / "semantic.yml",
             "item_type": "blueprint",
@@ -840,7 +819,7 @@ class CatalogValidateDiagnosticLogTests:
     def test_unexpected_schema_failure_is_internal_error_under_catalog_validate(
         self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return valid False, INTERNAL_ERROR, the unexpected-error message alone and its record in diagnostics, with one catalog.validate event naming the item type and target."""
+        """Return ok False, INTERNAL_ERROR, the unexpected-error message alone and its record in diagnostics, with one catalog.validate event naming the item type and target."""
         target_path = _write_yaml(
             workspace_paths.root_dir / "demo.yml", {"name": "demo", "steps": [{"id": "s1", "run": "echo hi"}]}
         )
@@ -852,7 +831,7 @@ class CatalogValidateDiagnosticLogTests:
             step_cls=StepDefinition,
         )
 
-        assert result.valid is False
+        assert result.ok is False
         assert result.error_code == ErrorCode.INTERNAL_ERROR
         assert result.errors == ["Unexpected error during catalog.validate: boom"]
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]

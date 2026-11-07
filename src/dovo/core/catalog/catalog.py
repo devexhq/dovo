@@ -245,7 +245,6 @@ class Catalog:
                 return _target_lookup_failure(target, item_type, caught.failure)
             return _definition_failure(target, item_type, resolution, caught.failure)
         return CatalogValidateResult(
-            valid=True,
             target=target,
             resolved_path=resolved_path,
             item_type=item_type,
@@ -314,9 +313,7 @@ def _target_lookup_failure(target: str, item_type: CatalogItemType, failure: Fai
                 message=f"Check that '{target}' names an indexed {item_type.value}, or pass a file path instead."
             )
         ]
-    return CatalogValidateResult(
-        valid=False, target=target, resolved_path=None, item_type=item_type, warnings=[], **fields
-    )
+    return CatalogValidateResult(target=target, resolved_path=None, item_type=item_type, warnings=[], **fields)
 
 
 def _definition_failure(
@@ -330,7 +327,6 @@ def _definition_failure(
         fields["errors"] = builtins.list(findings.errors)
         warnings = findings.warnings
     return CatalogValidateResult(
-        valid=False,
         target=target,
         resolved_path=resolved_path,
         item_type=item_type,

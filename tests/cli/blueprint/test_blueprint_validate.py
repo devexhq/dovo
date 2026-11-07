@@ -75,7 +75,8 @@ class BlueprintValidateCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "validate", "valid-blueprint"])
 
         assert result.exit_code == 0
-        assert "PASSED" in result.stdout
+        assert "Blueprint is valid." in result.stdout
+        assert "PASSED" not in result.stdout
 
     def test_blueprint_validate_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         Catalog(initialized_workspace_paths(isolated_workspace)).create(
@@ -89,7 +90,9 @@ class BlueprintValidateCliIntegrationTests:
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
         assert payload["event_type"] == "blueprint.validate"
-        assert payload["payload"]["valid"] is True
+        assert payload["payload"]["ok"] is True
+        assert "valid" not in payload["payload"]
+        assert "status_label" not in payload["payload"]
         assert payload["payload"]["item_type"] == "blueprint"
 
     def test_validate_missing_json_has_catalog_not_found(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
@@ -181,7 +184,7 @@ class BlueprintValidateCliTests:
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
     def test_unreadable_file_json_has_file_unreadable(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """Exit 1 with error_code CATALOG_FILE_UNREADABLE and valid False for a mode-000 file target."""
+        """Exit 1 with error_code CATALOG_FILE_UNREADABLE and ok False for a mode-000 file target."""
         target = isolated_workspace / "noperm.yml"
         target.write_text(yaml.safe_dump({"name": "noperm", "steps": [{"id": "s1", "run": "echo hi"}]}), "utf-8")
         target.chmod(0o000)
@@ -195,10 +198,10 @@ class BlueprintValidateCliTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["error_code"] == "CATALOG_FILE_UNREADABLE"
-        assert payload["valid"] is False
+        assert payload["ok"] is False
 
     def test_invalid_definition_json_has_schema_invalid(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """Exit 1 with error_code CATALOG_SCHEMA_INVALID, valid False and payload keys exactly, in order, {ok, error_code, errors, warnings, remediations, diagnostics, valid, status_label, target, resolved_path, item_type} for a file target failing schema validation."""
+        """Exit 1 with error_code CATALOG_SCHEMA_INVALID, ok False and payload keys exactly, in order, {ok, error_code, errors, warnings, remediations, diagnostics, target, resolved_path, item_type} for a file target failing schema validation."""
         target = isolated_workspace / "bad.yml"
         target.write_text(yaml.safe_dump({"name": "bad", "timeout_seconds": "not-a-number", "steps": []}), "utf-8")
 
@@ -209,7 +212,7 @@ class BlueprintValidateCliTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["error_code"] == "CATALOG_SCHEMA_INVALID"
-        assert payload["valid"] is False
+        assert payload["ok"] is False
         assert list(payload) == [
             "ok",
             "error_code",
@@ -217,8 +220,6 @@ class BlueprintValidateCliTests:
             "warnings",
             "remediations",
             "diagnostics",
-            "valid",
-            "status_label",
             "target",
             "resolved_path",
             "item_type",
@@ -241,15 +242,13 @@ class BlueprintValidateCliTests:
             "warnings": list(_SEMANTIC_WARNINGS),
             "remediations": [{"message": f"Resolve: {error}", "command": None} for error in _SEMANTIC_ERRORS],
             "diagnostics": [],
-            "valid": False,
-            "status_label": "FAILED",
             "target": str(target),
             "resolved_path": target.as_posix(),
             "item_type": "blueprint",
         }
 
     def test_semantic_errors_and_warnings_render_codes(self, isolated_workspace: Path) -> None:
-        """Exit 1 and show FAILED, the error_code beside each error, each error's remediation and each warning's own code."""
+        """Exit 1 and show the error_code beside each error, each error's remediation and each warning's own code."""
         target = isolated_workspace / "semantic.yml"
         target.write_text(yaml.safe_dump(_SEMANTIC_BLUEPRINT, sort_keys=False), "utf-8")
         wide_runner = CliRunner(env={"NO_COLOR": "1", "COLUMNS": "400"})
@@ -257,7 +256,8 @@ class BlueprintValidateCliTests:
         result = wide_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "validate", str(target)])
 
         assert result.exit_code == 1
-        assert "FAILED" in result.stdout
+        assert "FAILED" not in result.stdout
+        assert "Blueprint is valid." not in result.stdout
         assert result.stdout.count("CATALOG_SCHEMA_INVALID") == len(_SEMANTIC_ERRORS)
         for error in _SEMANTIC_ERRORS:
             assert error in result.stdout

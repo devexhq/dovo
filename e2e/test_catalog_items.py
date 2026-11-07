@@ -84,8 +84,9 @@ class CatalogItemCliTests:
         envelope = json.loads(result.stdout)
         assert envelope.get("event_type") == f"{kind.command}.validate"
         payload = envelope.get("payload", {})
-        assert payload.get("valid") is True
-        assert payload.get("status_label") == "PASSED"
+        assert payload.get("ok") is True
+        assert "valid" not in payload
+        assert "status_label" not in payload
 
     def test_validate_exit_codes_for_invalid_schema_and_missing_target(
         self, run_dovo: DovoRunner, initialized_project: Path, kind: CatalogKind

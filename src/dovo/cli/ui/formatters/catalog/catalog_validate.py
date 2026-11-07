@@ -29,17 +29,12 @@ def _split_issue_code(message: str) -> tuple[str, str]:
     return match.group(1), message[: match.start()].rstrip()
 
 
-def _build_status_banner(view: CatalogValidateView) -> Text:
-    """Render the status banner with target, item type, and resolved path.
-
-    ``view.status_label`` is derived in ``transform()``, not here: the only decision made in this
-    function is a display color for an already-known label, never a pass/fail verdict from raw fields.
-    """
-    color = "green" if view.status_label == "PASSED" else "red"
-    lines = [f"[bold {color}]{view.status_label}[/]", f"Target: {view.target}", f"Type: {view.item_type}"]
+def _build_target_lines(view: CatalogValidateView) -> Text:
+    """Render the target, item type and resolved path lines."""
+    lines = [f"Target: {view.target}", f"Type: {view.item_type}"]
     if view.resolved_path is not None:
         lines.append(f"Path: {view.resolved_path}")
-    return Text.from_markup("\n".join(lines))
+    return Text("\n".join(lines))
 
 
 def _build_issues_table(
@@ -68,8 +63,8 @@ def _build_issues_table(
 
 
 def _render(view: CatalogValidateView) -> RenderableType:
-    """Render the status banner plus Errors/Warnings tables from the view."""
-    renderables: list[RenderableType] = [_build_status_banner(view)]
+    """Render the target lines, the Errors/Warnings tables, and a closing success line when error_code is None."""
+    renderables: list[RenderableType] = [_build_target_lines(view)]
     if view.errors:
         renderables.append(
             _build_issues_table(
@@ -78,6 +73,8 @@ def _render(view: CatalogValidateView) -> RenderableType:
         )
     if view.warnings:
         renderables.append(_build_issues_table("Warnings", view.warnings, [], show_remediation=False))
+    if view.error_code is None:
+        renderables.append(Text(f"{view.item_type.capitalize()} is valid.", style="green"))
     return Group(*renderables)
 
 
@@ -100,14 +97,12 @@ class CatalogValidateFormatter(CatalogFormatter[CatalogValidateResult, CatalogVa
         """
         return CatalogValidateView(
             **header_fields(data),
-            valid=data.valid,
-            status_label="PASSED" if data.ok else "FAILED",
             target=data.target,
             resolved_path=data.resolved_path.as_posix() if data.resolved_path is not None else None,
             item_type=enum_value(data.item_type),
         )
 
     def to_rich(self, data: CatalogValidateResult) -> RenderableType:
-        """Render the status banner plus Errors/Warnings tables, followed by diagnostic_lines(diagnostics)."""
+        """Render the target lines, Errors/Warnings tables and success line, followed by diagnostic_lines(diagnostics)."""
         view = self.transform(data)
         return with_diagnostics(_render(view), view.diagnostics)

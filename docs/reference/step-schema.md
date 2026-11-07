@@ -80,8 +80,6 @@ A `type: ask` step pauses the run for a person's answer. The answer is recorded 
 | `options` | `list` | Conditional | `null` | Static options. |
 | `options_from` | `object` | Conditional | `null` | Options read from a JSON array inside an artifact file. |
 
-This table and the [Ask step outputs](#ask-step-outputs) table are pinned to the models by [`tests/lint/test_step_schema_parity.py`](https://github.com/devexhq/dovo/blob/main/tests/lint/test_step_schema_parity.py).
-
 | Mode | Options | Answer |
 |---|---|---|
 | `confirm` | omitted, or exactly 2. Omitted means `approve` (Approve) and `deny` (Deny, `fail: true`). | one option |

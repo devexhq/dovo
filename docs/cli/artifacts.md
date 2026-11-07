@@ -52,19 +52,23 @@ Every file's SHA256 is checksum-verified against `manifest.json` before anything
 
 Pruning deletes artifact revisions whose `expires_at` (set from a step's `retention_days`) is in the past; each revision expires on its own, so pruning revision 1 leaves revision 2 untouched. Without `--force`, `dovo artifacts prune` is a no-op when `prune.remove_expired_artifacts` is `false` (the default). `retention_days=0` (or omitted) means an artifact never expires.
 
-## Errors
+`dovo artifacts prune` without `--force` while `prune.remove_expired_artifacts` is `false` prints `Artifact pruning is disabled; pass --force to override.` and exits `0`; with `--format json` it reports `disabled: true` and `items: []`. Every other pass reports `disabled: false`. A revision that cannot be deleted is listed with `pruned: false` and its `error`, and the command still exits `0`. When the workspace lock cannot be acquired in time, `dovo artifacts prune` prints the Workspace Lock Timeout panel and exits `1`.
 
-`dovo artifacts download` exits `1` and reports its `error_code` when:
+## Error codes
 
-- no artifact named `<name>` exists for `<session_id>`: `ARTIFACT_NOT_FOUND`, `Artifact '<name>' not found for session '<session_id>'`,
-- `--revision <n>` names a revision that does not exist: `ARTIFACT_NOT_FOUND`, `Artifact '<name>' revision <n> not found for session '<session_id>'`,
-- a stored file's live checksum no longer matches `manifest.json`: `ARTIFACT_CHECKSUM_INVALID`, `Checksum mismatch for: <paths>`, and `--dest` is left untouched,
-- the stored `manifest.json` or a stored file cannot be read, or a file cannot be copied (for example, a permissions error on the destination): `ARTIFACT_DOWNLOAD_FAILED`, with the operating system's error text,
-- an unexpected error occurs: `INTERNAL_ERROR`.
+With `--format json`, a failure reports one of these codes as `error_code`, and a success reports `null`.
+
+| Code | Commands | Cause |
+| --- | --- | --- |
+| `WORKSPACE_NOT_INITIALIZED` | all | The workspace has no valid `.dovo/project.json`; run `dovo init`. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `CONFIG_NOT_FOUND`, `CONFIG_UNREADABLE`, `CONFIG_PATH_INVALID`, `CONFIG_JSON_INVALID`, `CONFIG_ROOT_INVALID`, `CONFIG_SCHEMA_INVALID`, `CONFIG_TIER_UNREADABLE`, `CONFIG_TIER_JSON_INVALID`, `CONFIG_TIER_ROOT_INVALID`, `CONFIG_TIER_SCHEMA_INVALID` | all | The configuration does not load; [`dovo config show`](config.md#dovo-config-show) explains each code. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `WORKSPACE_LOCK_TIMEOUT` | `prune` | Another `dovo` process held the workspace lock until the wait timed out. Reported as an [`error` event](../reference/json-output.md#the-error-event). |
+| `INTERNAL_ERROR` | all | An unexpected error, with a [diagnostic log](doctor.md#diagnostic-logs) record. Reported in the result, or as an [`error` event](../reference/json-output.md#the-error-event) when it ends the command outside its result. |
+| `ARTIFACT_NOT_FOUND` | `download` | No artifact named `<name>` exists for `<session_id>` (`Artifact '<name>' not found for session '<session_id>'`), or `--revision <n>` names a revision that does not exist (`Artifact '<name>' revision <n> not found for session '<session_id>'`). |
+| `ARTIFACT_CHECKSUM_INVALID` | `download` | A stored file's checksum no longer matches `manifest.json` (`Checksum mismatch for: <paths>`). `--dest` is left untouched. |
+| `ARTIFACT_DOWNLOAD_FAILED` | `download` | The stored `manifest.json` or a stored file cannot be read, or a file cannot be copied (for example, a permissions error on the destination). The message holds the operating system's error text. |
 
 A failure to read Dovo's own artifact storage writes a [diagnostic log](doctor.md#diagnostic-logs) record, listed in `diagnostics` with `--format json`.
-
-`dovo artifacts prune` without `--force` while `prune.remove_expired_artifacts` is `false` prints `Artifact pruning is disabled; pass --force to override.` and exits `0`; with `--format json` it reports `disabled: true` and `items: []`. Every other pass reports `disabled: false`. A revision that cannot be deleted is listed with `pruned: false` and its `error`, and the command still exits `0`. When the workspace lock cannot be acquired in time, `dovo artifacts prune` prints the Workspace Lock Timeout panel, or with `--format json` an `error` event with `error_code` `WORKSPACE_LOCK_TIMEOUT` (see [JSON Output](../reference/json-output.md#the-error-event)), and exits `1`, as every other command does.
 
 ## Exit codes
 

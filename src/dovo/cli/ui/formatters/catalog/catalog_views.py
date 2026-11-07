@@ -53,8 +53,6 @@ class CatalogShowView(ResultHeaderView):
 class CatalogValidateView(ResultHeaderView):
     """Semantic view of catalog validate results."""
 
-    valid: bool
-    status_label: str
     target: str
     resolved_path: str | None = None
     item_type: str

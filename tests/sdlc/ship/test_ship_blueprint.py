@@ -313,7 +313,7 @@ class ShipBlueprintCatalogResolutionTests:
             blueprint_cls=BlueprintDefinition,
             step_cls=StepDefinition,
         )
-        assert (bp_result.valid, bp_result.errors, bp_result.warnings) == (True, [], [])
+        assert (bp_result.ok, bp_result.errors, bp_result.warnings) == (True, [], [])
 
         for step_key in sorted(EXPECTED_STEP_KEYS):
             step_result = catalog.validate(
@@ -322,7 +322,7 @@ class ShipBlueprintCatalogResolutionTests:
                 blueprint_cls=BlueprintDefinition,
                 step_cls=StepDefinition,
             )
-            assert (step_result.valid, step_result.errors, step_result.warnings) == (True, [], [])
+            assert (step_result.ok, step_result.errors, step_result.warnings) == (True, [], [])
 
     def test_ship_blueprint_shape_and_delivery_loop_contract(self) -> None:
         blueprint = _load_ship_blueprint()

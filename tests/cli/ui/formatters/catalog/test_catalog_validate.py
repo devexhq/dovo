@@ -17,11 +17,11 @@ from tests.harness.formatter import (
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
     assert_transform_derives_expected_view,
+    render_rich,
 )
 
 VALID_CASE = FormatterCase(
     data=CatalogValidateResult(
-        valid=True,
         target="my-flow",
         resolved_path=Path(".dovo/catalog/blueprints/my-flow.yml"),
         item_type=CatalogItemType.BLUEPRINT,
@@ -31,8 +31,6 @@ VALID_CASE = FormatterCase(
     ),
     view=CatalogValidateView(
         ok=True,
-        valid=True,
-        status_label="PASSED",
         target="my-flow",
         resolved_path=".dovo/catalog/blueprints/my-flow.yml",
         item_type="blueprint",
@@ -40,12 +38,11 @@ VALID_CASE = FormatterCase(
         warnings=[],
         remediations=[],
     ),
-    render_expectations=["PASSED", "my-flow", "blueprint", "blueprints/my-flow.yml"],
+    render_expectations=["Blueprint is valid.", "my-flow", "blueprint", "blueprints/my-flow.yml"],
 )
 
 INVALID_CASE = FormatterCase(
     data=CatalogValidateResult(
-        valid=False,
         error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
         target="dup.yml",
         resolved_path=Path("/workspace/dup.yml"),
@@ -56,8 +53,6 @@ INVALID_CASE = FormatterCase(
     ),
     view=CatalogValidateView(
         ok=False,
-        valid=False,
-        status_label="FAILED",
         error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
         target="dup.yml",
         resolved_path="/workspace/dup.yml",
@@ -67,7 +62,6 @@ INVALID_CASE = FormatterCase(
         remediations=[Remediation(message="Resolve: Step id 'run-tests' is used by more than one step.")],
     ),
     render_expectations=[
-        "FAILED",
         "dup.yml",
         "CATALOG_SCHEMA_INVALID",
         "run-tests",
@@ -77,7 +71,6 @@ INVALID_CASE = FormatterCase(
 
 MORE_ERRORS_THAN_REMEDIATIONS_CASE = FormatterCase(
     data=CatalogValidateResult(
-        valid=False,
         error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
         target="two.yml",
         resolved_path=Path("/workspace/two.yml"),
@@ -90,8 +83,6 @@ MORE_ERRORS_THAN_REMEDIATIONS_CASE = FormatterCase(
     ),
     view=CatalogValidateView(
         ok=False,
-        valid=False,
-        status_label="FAILED",
         error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
         target="two.yml",
         resolved_path="/workspace/two.yml",
@@ -103,7 +94,6 @@ MORE_ERRORS_THAN_REMEDIATIONS_CASE = FormatterCase(
         remediations=[Remediation(message="Rename one of the 'build' steps")],
     ),
     render_expectations=[
-        "FAILED",
         "CATALOG_SCHEMA_INVALID",
         "Step id 'build' is used by more than one step.",
         "Alias '-f' is declared by both 'foo' and 'bar'.",
@@ -127,8 +117,6 @@ PAYLOAD_CASES = [
             "warnings": [],
             "remediations": [],
             "diagnostics": [],
-            "valid": True,
-            "status_label": "PASSED",
             "target": "my-flow",
             "resolved_path": ".dovo/catalog/blueprints/my-flow.yml",
             "item_type": "blueprint",
@@ -149,8 +137,6 @@ PAYLOAD_CASES = [
                 }
             ],
             "diagnostics": [],
-            "valid": False,
-            "status_label": "FAILED",
             "target": "dup.yml",
             "resolved_path": "/workspace/dup.yml",
             "item_type": "blueprint",
@@ -182,3 +168,21 @@ class CatalogValidateFormatterTests:
         self, case: FormatterCase[CatalogValidateResult, CatalogValidateView]
     ) -> None:
         assert_rich_render_shows_every_view_value(CatalogValidateFormatter, case.data, case.render_expectations)
+
+    @pytest.mark.parametrize(
+        ("case", "shows_success_line"),
+        [
+            pytest.param(VALID_CASE, True, id="valid"),
+            pytest.param(INVALID_CASE, False, id="invalid"),
+            pytest.param(MORE_ERRORS_THAN_REMEDIATIONS_CASE, False, id="more-errors-than-remediations"),
+        ],
+    )
+    def test_render_reports_pass_or_fail_only_through_error_code(
+        self, case: FormatterCase[CatalogValidateResult, CatalogValidateView], *, shows_success_line: bool
+    ) -> None:
+        """Show 'Blueprint is valid.' only when error_code is None, and never a PASSED or FAILED label."""
+        rendered = render_rich(CatalogValidateFormatter().to_rich(case.data))
+
+        assert ("Blueprint is valid." in rendered) is shows_success_line
+        assert "PASSED" not in rendered
+        assert "FAILED" not in rendered
